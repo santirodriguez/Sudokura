@@ -6,61 +6,61 @@ on:
       - 'v1.*'
 
 jobs:
-linux-appimage:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+  linux-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Install deps
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick
 
-    - name: Build linux binary
-      run: |
-        set -euo pipefail
-        gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
-          $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
+      - name: Build linux binary
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
+            $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
 
-    - name: Prepare AppDir (+ desktop + icon)
-      run: |
-        set -euo pipefail
-        mkdir -p AppDir/usr/bin
-        cp Sudokura-v1 AppDir/usr/bin/
-        chmod +x AppDir/usr/bin/Sudokura-v1
+      - name: Prepare AppDir (+ desktop + icon)
+        run: |
+          set -euo pipefail
+          mkdir -p AppDir/usr/bin
+          cp Sudokura-v1 AppDir/usr/bin/
+          chmod +x AppDir/usr/bin/Sudokura-v1
 
-        # .desktop (Icon=sudokura)
-        cat > AppDir/sudokura.desktop <<'EOF'
-        [Desktop Entry]
-        Type=Application
-        Name=Sudokura v1
-        Exec=Sudokura-v1
-        Icon=sudokura
-        Categories=Game;
-        EOF
+          # .desktop (Icon=sudokura)
+          cat > AppDir/sudokura.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Sudokura v1
+          Exec=Sudokura-v1
+          Icon=sudokura
+          Categories=Game;
+          EOF
 
-        # Crear un PNG válido (256x256) con ImageMagick
-        convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
+          # Crear un PNG válido (256x256) con ImageMagick
+          convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
 
-    - name: Build AppImage
-      run: |
-        set -euo pipefail
-        wget -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-        chmod +x linuxdeploy.AppImage
+      - name: Build AppImage
+        run: |
+          set -euo pipefail
+          wget -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
 
-        ./linuxdeploy.AppImage \
-          --appdir AppDir \
-          --executable AppDir/usr/bin/Sudokura-v1 \
-          --desktop-file AppDir/sudokura.desktop \
-          --icon-file AppDir/sudokura.png \
-          --output appimage
+          ./linuxdeploy.AppImage \
+            --appdir AppDir \
+            --executable AppDir/usr/bin/Sudokura-v1 \
+            --desktop-file AppDir/sudokura.desktop \
+            --icon-file AppDir/sudokura.png \
+            --output appimage
 
-        mv *.AppImage Sudokura-v1-x86_64.AppImage
+          mv *.AppImage Sudokura-v1-x86_64.AppImage
 
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Sudokura-v1-x86_64.AppImage
-        path: Sudokura-v1-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sudokura-v1-x86_64.AppImage
+          path: Sudokura-v1-x86_64.AppImage
 
   macos:
     runs-on: macos-latest
@@ -105,18 +105,12 @@ linux-appimage:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-
-          # Listar DLLs con ruta absoluta (ignorar "not found" y entradas vacías)
           ntldd -R Sudokura-v1.exe | awk '/=>/ {print $3}' | grep -E '^/' | sort -u > dlls.txt || true
-
-          # Copiar DLLs si hay
           if [ -s dlls.txt ]; then
             while IFS= read -r f; do
               [ -f "$f" ] && cp "$f" .
             done < dlls.txt
           fi
-
-          # Empaquetar aunque no haya DLLs nuevas
           if ls *.dll >/dev/null 2>&1; then
             zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe *.dll
           else
