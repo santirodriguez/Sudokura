@@ -13,8 +13,9 @@ jobs:
 
       - name: Install deps
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick fuse
 
       - name: Build linux binary
         run: |
@@ -29,7 +30,7 @@ jobs:
           cp Sudokura-v1 AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sudokura-v1
 
-          # .desktop (Icon=sudokura)
+          # Archivo .desktop (Icon=sudokura, sin rutas absolutas)
           cat > AppDir/sudokura.desktop <<'EOF'
           [Desktop Entry]
           Type=Application
@@ -39,37 +40,33 @@ jobs:
           Categories=Game;
           EOF
 
-          # Icono válido (256x256) con ImageMagick
+          # Icono PNG válido (256x256)
           convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
 
-      - name: Build AppImage
+      - name: Deploy runtime to AppDir (linuxdeploy)
         run: |
           set -euo pipefail
           wget -O linuxdeploy.AppImage \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy.AppImage
 
-          ./linuxdeploy.AppImage \
-            --appdir AppDir \
+          # Construir SOLO AppDir (sin plugin appimage)
+          ./linuxdeploy.AppImage --appdir AppDir \
             --executable AppDir/usr/bin/Sudokura-v1 \
             --desktop-file AppDir/sudokura.desktop \
-            --icon-file AppDir/sudokura.png \
-            --output appimage
+            --icon-file AppDir/sudokura.png
 
-          # Buscar el/los AppImage generados y renombrar robustamente
-          echo "Looking for generated AppImage files..."
-          mapfile -t APPS < <(find . -maxdepth 2 -type f -name '*.AppImage' -printf '%p\n')
-          printf 'Found:\n%s\n' "${APPS[@]:-<none>}"
+      - name: Create AppImage (appimagetool)
+        run: |
+          set -euo pipefail
+          wget -O appimagetool.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
 
-          if [ "${#APPS[@]}" -eq 0 ]; then
-            echo "ERROR: linuxdeploy finished but no *.AppImage found." >&2
-            exit 1
-          fi
-
-          SRC="${APPS[0]}"
-          echo "Using: $SRC"
-          mv -f "$SRC" Sudokura-v1-x86_64.AppImage
+          # Crear archivo con nombre determinístico
+          ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
           ls -lh Sudokura-v1-x86_64.AppImage
+          file Sudokura-v1-x86_64.AppImage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -119,17 +116,15 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          # Buscar DLLs reales y copiarlas al lado del exe
           ntldd -R Sudokura-v1.exe | awk '/=>/ {print $3}' | grep -E '^/' | sort -u > dlls.txt || true
           if [ -s dlls.txt ]; then
             while IFS= read -r f; do
               [ -f "$f" ] && cp "$f" .
             done < dlls.txt
           fi
-          if ls *.dll >/dev/null 2>&1; then
-            zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe *.dll
-          else
-            zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe
-          fi
+          # Empaquetar todo junto
+          zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe *.dll 2>/dev/null || zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe
 
       - uses: actions/upload-artifact@v4
         with:
