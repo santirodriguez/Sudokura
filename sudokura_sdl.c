@@ -40,6 +40,11 @@
   #ifndef PATH_MAX
   #define PATH_MAX MAX_PATH
   #endif
+#elif defined(__APPLE__)
+  #include <dirent.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+  #include <mach-o/dyld.h>
 #else
   #include <dirent.h>
   #include <sys/stat.h>
@@ -281,6 +286,7 @@ static bool try_candidates(char out[PATH_MAX], const char* name){
   }
   return false;
 }
+
 #if defined(_WIN32)
 static bool search_dir_win(const char* dir, char out[PATH_MAX]){
   char pattern[PATH_MAX]; snprintf(pattern,sizeof(pattern), "%s\\*.*", dir);
@@ -317,14 +323,82 @@ static bool search_dir_posix(const char* dir, char out[PATH_MAX]){
   closedir(d); return false;
 }
 #endif
+
+/* === NUEVO: helpers para localizar el directorio del ejecutable y probar fuentes locales === */
+static bool get_exe_dir(char out[PATH_MAX]) {
+#if defined(_WIN32)
+  char buf[PATH_MAX]; DWORD n = GetModuleFileNameA(NULL, buf, PATH_MAX);
+  if(n==0 || n>=PATH_MAX) return false;
+  for(size_t i=0;i<n;i++) if(buf[i]=='/') buf[i]='\\';
+  char *slash = strrchr(buf, '\\');
+  if(!slash) return false;
+  *slash = '\0';
+  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  return true;
+#elif defined(__APPLE__)
+  char buf[PATH_MAX]; uint32_t size = (uint32_t)sizeof(buf);
+  if(_NSGetExecutablePath(buf, &size)!=0) return false;
+  char *slash = strrchr(buf, '/');
+  if(!slash) return false;
+  *slash = '\0';
+  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  return true;
+#else
+  char buf[PATH_MAX];
+  ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf)-1);
+  if(n<=0) return false;
+  buf[n] = 0;
+  char *slash = strrchr(buf, '/');
+  if(!slash) return false;
+  *slash = '\0';
+  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  return true;
+#endif
+}
+
+static bool try_in_dir(const char*dir, const char*name, char out[PATH_MAX]){
+  if(!dir||!name) return false;
+  char p[PATH_MAX];
+#if defined(_WIN32)
+  snprintf(p,sizeof(p), "%s\\%s", dir, name);
+#else
+  snprintf(p,sizeof(p), "%s/%s", dir, name);
+#endif
+  if(try_open_font_path(p)){ strncpy(out,p,PATH_MAX); out[PATH_MAX-1]=0; return true; }
+  return false;
+}
+
+/* Reforzado: primero cwd y directorio del ejecutable; luego rutas del sistema */
 static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
+  /* 0) CLI explícito */
   if(cli && try_open_font_path(cli)){ strncpy(out,cli,PATH_MAX); out[PATH_MAX-1]=0; return out; }
+
+  /* 1) Local (cwd + exe dir) */
+  const char* local_first[] = {
+    "NotoSans-Regular.ttf",
+    "DejaVuSans.ttf",
+    "DejaVuSans-Regular.ttf",
+    "Arial.ttf"
+  };
+  char exedir[PATH_MAX]={0};
+  bool have_exe_dir = get_exe_dir(exedir);
+
+  for(size_t i=0;i<sizeof(local_first)/sizeof(local_first[0]); ++i){
+    /* cwd */
+    if(try_open_font_path(local_first[i])){ strncpy(out,local_first[i],PATH_MAX); out[PATH_MAX-1]=0; return out; }
+    /* exe dir */
+    if(have_exe_dir && try_in_dir(exedir, local_first[i], out)) return out;
+  }
+
+  /* 2) Preferidas en ubicaciones conocidas del sistema */
   const char* preferred[]={
     "DejaVuSans.ttf","DejaVuSans-Regular.ttf","NotoSans-Regular.ttf","LiberationSans-Regular.ttf",
     "FreeSans.ttf","Arial.ttf","Ubuntu-R.ttf","Cantarell-VF.otf","SFNS.ttf"
   };
   for(size_t i=0;i<sizeof(preferred)/sizeof(preferred[0]);++i)
     if(try_candidates(out,preferred[i])) return out;
+
+  /* 3) Escaneo profundo como último recurso */
 #if defined(_WIN32)
   const char* roots[]={
     "C:\\\\Windows\\\\Fonts",
