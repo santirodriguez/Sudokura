@@ -15,20 +15,25 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick fuse
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick fuse file
 
       - name: Build linux binary
         run: |
           set -euo pipefail
-          gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
+          gcc -std=c11 -O2 -s -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
+          strip -s Sudokura-v1 || true
 
-      - name: Prepare AppDir (+ desktop + icon)
+      - name: Prepare AppDir (+ desktop + icon + fallback font)
         run: |
           set -euo pipefail
           mkdir -p AppDir/usr/bin
           cp Sudokura-v1 AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sudokura-v1
+
+          # Fallback TTF junto al binario (el juego la buscará ahí primero)
+          wget -qO AppDir/usr/bin/NotoSans-Regular.ttf \
+            https://github.com/google/fonts/raw/main/ofl/notosans/static/NotoSans-Regular.ttf
 
           cat > AppDir/sudokura.desktop <<'EOF'
           [Desktop Entry]
@@ -44,10 +49,9 @@ jobs:
       - name: Deploy runtime to AppDir (linuxdeploy)
         run: |
           set -euo pipefail
-          wget -O linuxdeploy.AppImage \
+          wget -qO linuxdeploy.AppImage \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy.AppImage
-
           ./linuxdeploy.AppImage --appdir AppDir \
             --executable AppDir/usr/bin/Sudokura-v1 \
             --desktop-file AppDir/sudokura.desktop \
@@ -56,7 +60,7 @@ jobs:
       - name: Create AppImage (appimagetool)
         run: |
           set -euo pipefail
-          wget -O appimagetool.AppImage \
+          wget -qO appimagetool.AppImage \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
           ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
@@ -73,11 +77,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install sdl2 sdl2_ttf pkg-config
-      - run: |
+      - name: Build + zip (incluye fuente)
+        run: |
           set -euo pipefail
           clang -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
-          zip -9r Sudokura-v1-macos.zip Sudokura-v1
+          strip -x Sudokura-v1 || true
+          curl -L -o NotoSans-Regular.ttf \
+            https://github.com/google/fonts/raw/main/ofl/notosans/static/NotoSans-Regular.ttf
+          zip -9r Sudokura-v1-macos.zip Sudokura-v1 NotoSans-Regular.ttf
       - uses: actions/upload-artifact@v4
         with:
           name: Sudokura-v1-macos.zip
@@ -98,27 +106,33 @@ jobs:
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-SDL2_ttf
             mingw-w64-x86_64-ntldd-git
+            mingw-w64-x86_64-upx
             zip
 
       - name: Build EXE
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
-            $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
+          gcc -std=c11 -O2 -s -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
+            $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -static-libgcc
+          strip --strip-unneeded Sudokura-v1.exe || true
 
-      - name: Bundle runtime and zip
+      - name: Bundle runtime (DLLs + fuente) y comprimir
         shell: msys2 {0}
         run: |
           set -euo pipefail
           mkdir -p dist
           cp Sudokura-v1.exe dist/
 
-          # 1) Copiar SDL runtime principal
+          # Fuente fallback junto al .exe (el juego la localizará ahí)
+          curl -L -o dist/NotoSans-Regular.ttf \
+            https://github.com/google/fonts/raw/main/ofl/notosans/static/NotoSans-Regular.ttf
+
+          # 1) Copiar DLLs principales
           cp /mingw64/bin/SDL2.dll      dist/ || true
           cp /mingw64/bin/SDL2_ttf.dll  dist/ || true
 
-          # 2) Resolver dependencias transitivas (exe + dlls principales)
+          # 2) Resolver dependencias transitivas del exe y de las DLLs copiadas
           ntldd -R dist/Sudokura-v1.exe dist/SDL2.dll dist/SDL2_ttf.dll \
             | awk '/=>/ {print $3}' \
             | sed -e 's/\r$//' -e '/^$/d' > deps.txt || true
@@ -126,22 +140,28 @@ jobs:
           echo "ntldd deps:"; cat deps.txt || true
 
           while IFS= read -r f; do
-            # Convertir C:\... a ruta POSIX
+            # Convertir C:\... a ruta POSIX si hace falta
             if echo "$f" | grep -Eq '^[A-Za-z]:\\\\'; then
               p=$(cygpath -u "$f")
             else
               p="$f"
             fi
-            # Saltar DLLs del sistema Windows
+            # Omitir DLLs del propio Windows (ucrt/vcruntime, etc.)
             case "$p" in
               /c/WINDOWS/*|/c/Windows/*|/c/windows/*) continue ;;
             esac
             [ -f "$p" ] && cp -n "$p" dist/ || true
           done < deps.txt
 
-          echo "Bundled files in dist/:"
-          ls -la dist
+          # 3) Strip y UPX para achicar
+          (cd dist && for d in *.dll; do [ -f "$d" ] && strip --strip-unneeded "$d" || true; done)
+          upx --best --lzma dist/*.exe || true
+          upx --best --lzma dist/*.dll || true
 
+          echo "Contenido final en dist/:"
+          ls -lah dist
+
+          # 4) Zip final (sin anidar)
           (cd dist && zip -9r ../Sudokura-v1-windows.zip .)
 
       - uses: actions/upload-artifact@v4
