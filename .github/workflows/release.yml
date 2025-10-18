@@ -30,7 +30,6 @@ jobs:
           cp Sudokura-v1 AppDir/usr/bin/
           chmod +x AppDir/usr/bin/Sudokura-v1
 
-          # Archivo .desktop (Icon=sudokura, sin rutas absolutas)
           cat > AppDir/sudokura.desktop <<'EOF'
           [Desktop Entry]
           Type=Application
@@ -40,7 +39,6 @@ jobs:
           Categories=Game;
           EOF
 
-          # Icono PNG válido (256x256)
           convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
 
       - name: Deploy runtime to AppDir (linuxdeploy)
@@ -50,7 +48,6 @@ jobs:
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy.AppImage
 
-          # Construir SOLO AppDir (sin plugin appimage)
           ./linuxdeploy.AppImage --appdir AppDir \
             --executable AppDir/usr/bin/Sudokura-v1 \
             --desktop-file AppDir/sudokura.desktop \
@@ -62,8 +59,6 @@ jobs:
           wget -O appimagetool.AppImage \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
-
-          # Crear archivo con nombre determinístico
           ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
           ls -lh Sudokura-v1-x86_64.AppImage
           file Sudokura-v1-x86_64.AppImage
@@ -112,19 +107,42 @@ jobs:
           gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
 
-      - name: Bundle DLLs and zip
+      - name: Bundle runtime and zip
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          # Buscar DLLs reales y copiarlas al lado del exe
-          ntldd -R Sudokura-v1.exe | awk '/=>/ {print $3}' | grep -E '^/' | sort -u > dlls.txt || true
-          if [ -s dlls.txt ]; then
-            while IFS= read -r f; do
-              [ -f "$f" ] && cp "$f" .
-            done < dlls.txt
-          fi
-          # Empaquetar todo junto
-          zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe *.dll 2>/dev/null || zip -9r Sudokura-v1-windows.zip Sudokura-v1.exe
+          mkdir -p dist
+          cp Sudokura-v1.exe dist/
+
+          # 1) Copiar SDL runtime principal
+          cp /mingw64/bin/SDL2.dll      dist/ || true
+          cp /mingw64/bin/SDL2_ttf.dll  dist/ || true
+
+          # 2) Resolver dependencias transitivas (exe + dlls principales)
+          ntldd -R dist/Sudokura-v1.exe dist/SDL2.dll dist/SDL2_ttf.dll \
+            | awk '/=>/ {print $3}' \
+            | sed -e 's/\r$//' -e '/^$/d' > deps.txt || true
+
+          echo "ntldd deps:"; cat deps.txt || true
+
+          while IFS= read -r f; do
+            # Convertir C:\... a ruta POSIX
+            if echo "$f" | grep -Eq '^[A-Za-z]:\\\\'; then
+              p=$(cygpath -u "$f")
+            else
+              p="$f"
+            fi
+            # Saltar DLLs del sistema Windows
+            case "$p" in
+              /c/WINDOWS/*|/c/Windows/*|/c/windows/*) continue ;;
+            esac
+            [ -f "$p" ] && cp -n "$p" dist/ || true
+          done < deps.txt
+
+          echo "Bundled files in dist/:"
+          ls -la dist
+
+          (cd dist && zip -9r ../Sudokura-v1-windows.zip .)
 
       - uses: actions/upload-artifact@v4
         with:
