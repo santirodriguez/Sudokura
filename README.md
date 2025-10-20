@@ -9,19 +9,20 @@ A compact, modern **Sudoku** written in **C + SDL2**, with responsive UI, notes,
 ## Table of Contents
 - [Features](#features)
 - [Controls](#controls)
-- [Download and Releases](#download-and-releases)
+- [Download](#download)
 - [Build from Source](#build-from-source)
   - [Prerequisites](#prerequisites)
   - [Linux (Fedora / Ubuntu / Debian / Arch)](#linux-fedora--ubuntu--debian--arch)
   - [macOS (Homebrew)](#macos-homebrew)
-  - [Windows (MSVC + vcpkg)](#windows-msvc--vcpkg)
-  - [Windows (MinGW-w64, native on Windows)](#windows-mingw-w64-native-on-windows)
+  - [Windows (MSVC + vcpkg, optional)](#windows-msvc--vcpkg-optional)
+  - [Windows (MSYS2 / MinGW-w64)](#windows-msys2--mingw-w64)
 - [Command-line Options](#command-line-options)
 - [Packaging Releases](#packaging-releases)
-  - [Linux AppImage](#linux-portable-recommended-appimage)
+  - [Linux AppImage](#linux-appimage)
   - [Windows ZIP](#windows-zip)
   - [macOS ZIP](#macos-zip)
 - [Development Notes](#development-notes)
+- [Known Notes](#known-notes)
 - [License](#license)
 
 ---
@@ -32,169 +33,170 @@ A compact, modern **Sudoku** written in **C + SDL2**, with responsive UI, notes,
   - **Classic** – play at your pace
   - **Strikes** – 3 wrong moves = lose
   - **Time Attack** – solve under 10:00
-- Notes (pencil marks): toggle with **N** or hold **Shift** while entering numbers; also click sub-cells in the mini 3x3 grid inside a cell
+- Notes (pencil marks): toggle with **N** or hold **Shift** while entering numbers; also click sub-cells in the mini 3×3 grid inside a cell
 - Hint: fills the current cell correctly
 - Verify: checks row, column, and box conflicts (does not reveal the solution)
-- Strict mode: blocks illegal placements (toggle with **M**)
+- **Strict mode**: blocks illegal placements (toggle with **M**). Free mode allows them (they still count as mistakes)
 - Dark / Light theme (toggle **T**)
-- Responsive UI: side panel right or stacked, works on Wayland and X11
+- Responsive UI: sidebar on the right or stacked depending on window size
 - Robust font discovery: runs out-of-the-box on Linux, macOS, and Windows
 
 ---
 
 ## Controls
 
-- **Mouse:** click to select a cell. In Notes mode (or right-click), click a sub-cell to toggle a pencil mark  
+- **Mouse:** click to select a cell. In Notes mode (or with right-click), click a sub-cell to toggle a pencil mark.  
 - **Keyboard:**
   - Move: Arrows / WASD
-  - Place number: 1..9 (main row or numpad)
+  - Place number: 1..9 (top row or numpad)
   - Clear: 0 / Backspace / Delete
-  - Notes mode: N (or hold Shift while typing 1..9)
-  - Strict/Free: M
-  - Hint: H
-  - Theme: T
-  - Pause: P
-  - Menu: ESC
+  - Notes mode: **N** (or hold **Shift** while typing 1..9)
+  - Strict/Free: **M**
+  - Hint: **H**
+  - Theme: **T**
+  - Pause: **P**
+  - Menu / Back: **ESC**
 
 ---
 
-## Download and Releases
+## Download
 
-Ready-to-play builds for **Linux**, **Windows**, and **macOS** are available in the  
-[Releases section](https://github.com/santirodriguez/Sudokura/releases).
+Grab the latest builds for **Linux**, **Windows**, and **macOS** from:  
+**➡️ [Releases ›](https://github.com/santirodriguez/Sudokura/releases/latest)**
 
-Each release includes:
-- AppImage for Linux (portable, no install required)
-- ZIP for Windows (contains .exe and required DLLs)
-- ZIP for macOS (standalone binary)
+Each release typically includes:
+- **Linux:** AppImage (`Sudokura-v1-x86_64.AppImage`) — portable, no install
+- **Windows:** ZIP (`Sudokura-v1-windows.zip`) — includes `Sudokura-v1.exe`, required DLLs, and a fallback font
+- **macOS:** ZIP (`Sudokura-v1-macos.zip`) — standalone binary
 
-You can test or play directly by downloading the package for your platform and running it.  
-No compilation required.
+> Checksums and per-version notes are listed in the corresponding Release page.
 
 ---
 
 ## Build from Source
 
-The game is a single C file: `sudokura_sdl.c`
+Single C file: `sudokura_sdl.c`
 
 ### Prerequisites
 
-- A C compiler (gcc, clang, or MSVC)
-- SDL2 and SDL2_ttf development packages
-- pkg-config (for Linux and macOS builds)
+- A C compiler (**gcc**, **clang**, or **MSVC**)
+- **SDL2** and **SDL2_ttf** development packages
+- **pkg-config** (Linux/macOS)
 
 ### Linux (Fedora / Ubuntu / Debian / Arch)
-
 ```bash
 # Fedora
 sudo dnf install -y gcc SDL2-devel SDL2_ttf-devel pkgconf-pkg-config
-
 # Ubuntu/Debian
+sudo apt-get update
 sudo apt-get install -y build-essential libsdl2-dev libsdl2-ttf-dev pkg-config
-
 # Arch
 sudo pacman -S --needed gcc sdl2 sdl2_ttf pkgconf
-
 # Build
 gcc -std=c11 -O2 -Wall -Wextra \
   sudokura_sdl.c -o Sudokura-v1 \
   $(pkg-config --cflags --libs sdl2 SDL2_ttf) \
   -lm
-
 # Run
 ./Sudokura-v1
 ```
 
 ### macOS (Homebrew)
-
 ```bash
 brew install sdl2 sdl2_ttf pkg-config
-
 clang -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
   $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
-
 ./Sudokura-v1
 ```
 
-### Windows (MSVC + vcpkg)
-
+### Windows (MSVC + vcpkg, optional)
 ```bat
-:: Install
+:: Install deps (from a Developer Command Prompt)
 vcpkg install sdl2 sdl2-ttf
-
-:: Build in "Developer Command Prompt for VS"
-cl /std:c11 /O2 /W3 sudokura_sdl.c ^
+:: Build (adjust VCPKG_ROOT if needed)
+cl /O2 /W3 sudokura_sdl.c ^
   /I"%VCPKG_ROOT%\installed\x64-windows\include" ^
   /link /LIBPATH:"%VCPKG_ROOT%\installed\x64-windows\lib" SDL2.lib SDL2_ttf.lib
-
-:: Rename for releases
+:: (Optional) Rename for releases
 ren sudokura.exe Sudokura-v1.exe
 ```
 
-### Windows (MinGW-w64, native on Windows)
-
+### Windows (MSYS2 / MinGW-w64)
 ```bash
-pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf
-x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
-  $(x86_64-w64-mingw32-pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
+# In MSYS2's MINGW64 shell:
+pacman -S --needed \
+  mingw-w64-x86_64-gcc \
+  mingw-w64-x86_64-pkg-config \
+  mingw-w64-x86_64-SDL2 \
+  mingw-w64-x86_64-SDL2_ttf
+gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
+  $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
 ```
 
 ---
 
 ## Command-line Options
 
-- `--font /path/to/font.ttf` – force a font (normally not needed; auto-discovery picks an installed TTF or OTF)
+- `--font /path/to/font.ttf` – force a specific TrueType/OpenType font (normally unnecessary; auto-discovery tries local folder, executable folder, and system font paths).
 
 ---
 
 ## Packaging Releases
 
-### Linux portable (recommended): AppImage
+If you want to reproduce the release artifacts locally:
 
-1. Build the Linux binary: `./Sudokura-v1`
-2. Create a minimal desktop file (for example `sudokura.desktop`) and icon, then:
-
+### Linux AppImage
 ```bash
-wget -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-chmod +x linuxdeploy.AppImage
-
+# Assuming you already built ./Sudokura-v1
+wget -O linuxdeploy.AppImage \
+  https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+wget -O appimagetool.AppImage \
+  https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+chmod +x linuxdeploy.AppImage appimagetool.AppImage
 mkdir -p AppDir/usr/bin
 cp Sudokura-v1 AppDir/usr/bin/
-cp sudokura.desktop AppDir/
-cp icons/sudokura.png AppDir/
-
-./linuxdeploy.AppImage --appdir AppDir --executable AppDir/usr/bin/Sudokura-v1 \
-  --desktop-file AppDir/sudokura.desktop --icon-file AppDir/sudokura.png \
-  --output appimage
-
-# Resulting artifact:
-# Sudokura-v1-x86_64.AppImage
+cat > AppDir/sudokura.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Sudokura v1
+Exec=Sudokura-v1
+Icon=sudokura
+Categories=Game;
+EOF
+convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
+./linuxdeploy.AppImage --appdir AppDir \
+  --executable AppDir/usr/bin/Sudokura-v1 \
+  --desktop-file AppDir/sudokura.desktop \
+  --icon-file AppDir/sudokura.png
+ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
 ```
-
-This produces a portable file that runs on most modern distros (Ubuntu, Fedora, etc.) without extra dependencies.
 
 ### Windows ZIP
 
-If you built with MinGW or MSVC, bundle the produced `Sudokura-v1.exe` with required DLLs if dynamic:
-- SDL2.dll, SDL2_ttf.dll, and dependencies (freetype, zlib, brotli, harfbuzz – varies per build)
-  
-Use `dumpbin /dependents Sudokura-v1.exe` (MSVC) or  
-`x86_64-w64-mingw32-objdump -p Sudokura-v1.exe | grep 'DLL Name'` (cross toolchain) to list required DLLs.  
-
-Zip them together as: `Sudokura-v1-windows.zip`
+Bundle the executable plus its runtime DLLs (SDL2, SDL2_ttf, and any dependencies found by `ntldd` or `dumpbin`). Include a fallback font (e.g., **DejaVuSans.ttf**) in the same folder.
 
 ### macOS ZIP
 
-On macOS, compile as above and zip the binary (or wrap into an `.app` bundle if you prefer).  
-Name it `Sudokura-v1-macos.zip`.
+Zip the binary as `Sudokura-v1-macos.zip`. (Optionally package an `.app` bundle and/or sign & notarize for a smoother first run.)
 
 ---
 
 ## Development Notes
 
-- The UI uses a shared layout function for both painting and hit-testing, ensuring accurate clicks on Wayland and X11 at any window size
-- Font loader searches common system locations on Linux, macOS, and Windows, and falls back gracefully
-- The Sudoku generator ensures unique solutions and targets a medium clue count by default
+- Shared layout & hit-testing: one geometry function for drawing and mouse interactions → accurate clicks at any window size.
+- Font loader: tries current working directory and executable directory first (e.g., nearby `DejaVuSans.ttf`), then common system font paths, then deep scan if needed.
+- Sudoku generation: creates a solved board, removes clues down to a **medium** range, and enforces **unique solution**.
+- UI polish: layered selection highlights, “same number” highlights, animated selection glow, conflict tinting, and toast messages.
+
+---
+
+## Known Notes
+
+- **macOS:** the uploaded binary is **not tested** by the author and is **not code-signed** or notarized. If Gatekeeper blocks it:
+```bash
+xattr -dr com.apple.quarantine ./Sudokura-v1
+```
+- **Windows (portable):** a fallback font (`DejaVuSans.ttf`) is bundled. The app also auto-discovers installed fonts. If you remove the fallback and the system lacks fonts, run with `--font path\to\some.ttf`.
 
 ---
 
@@ -202,5 +204,4 @@ Name it `Sudokura-v1-macos.zip`.
 
 **GPLv3** — see <https://www.gnu.org/licenses/>
 
-Copyright © 2025  
-[santirodriguez](https://santiagorodriguez.com)
+© 2025 — [santirodriguez](https://santiagorodriguez.com)
