@@ -94,6 +94,9 @@ jobs:
           update: true
           install: >-
             base-devel
+            wget
+            unzip
+            ca-certificates
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
@@ -125,62 +128,53 @@ jobs:
             [ -f "$RTBIN/$f" ] && cp -n "$RTBIN/$f" "$DIST/" || true
           done
 
-          # 2) Resolver deps (incluye "not found" -> buscar por nombre en $RTBIN)
+          # 2) Resolver dependencias (maneja rutas Windows y nombres sueltos)
           ntldd -R "$DIST/Sudokura-v1.exe" "$DIST/SDL2.dll" "$DIST/SDL2_ttf.dll" \
             | sed -e 's/\r$//' \
-            | awk '/=>/ { if ($3 == "not") print $1; else print $3 }' \
-            > deps_all.txt || true
+            | awk '/=>/ {
+                if ($3 == "not" && $4 == "found") print $1;
+                else if ($3 != "") print $3;
+              }' > deps_all.txt || true
 
-          echo "Deps report (resolved or names):"
+          echo "Deps report:"
           cat deps_all.txt || true
 
           while IFS= read -r item; do
+            item="${item//$'\r'/}"
             src=""
-            if [ -f "$item" ]; then
+            # Ruta Windows -> POSIX
+            if echo "$item" | grep -Eq '^[A-Za-z]:\\\\'; then
+              src="$(cygpath -u "$item")"
+            elif [ -f "$item" ]; then
               src="$item"
             else
               name="$item"
-              # Algunos ntldd imprimen "libX.dll" cuando no resuelven la ruta
               if [ -f "$RTBIN/$name" ]; then src="$RTBIN/$name"; fi
             fi
 
-            # Excluir DLLs del sistema Windows
             case "$src" in
               /c/WINDOWS/*|/c/Windows/*|/c/windows/*) continue ;;
             esac
-
             if [ -n "${src:-}" ] && [ -f "$src" ]; then
               cp -n "$src" "$DIST/" || true
             fi
           done < deps_all.txt
 
-          # 3) Fuente fallback para tu buscador local (fonts/DejaVuSans.ttf)
-          # (DejaVu 2.37, fuente ampliamente usada y libre)
-          if [ ! -f "$DIST/fonts/DejaVuSans.ttf" ]; then
-            curl -L -o "$DIST/fonts/DejaVuSans.ttf" \
-              "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-sans-ttf-2.37.zip"
-            # Extraer solo el TTF que nos interesa
-            python - <<'PY'
-import zipfile, sys, os
-z="dist/fonts/DejaVuSans.ttf".replace("DejaVuSans.ttf","dejavu-sans-ttf-2.37.zip")
-with zipfile.ZipFile(z) as f:
-    for n in f.namelist():
-        if n.endswith("DejaVuSans.ttf"):
-            f.extract(n, "dist/fonts_tmp")
-            src=os.path.join("dist/fonts_tmp",n)
-            os.replace(src, "dist/fonts/DejaVuSans.ttf")
-            break
-os.remove(z)
-PY
-          fi
+          # 3) Fuente fallback: DejaVuSans.ttf (2.37) desde proyecto oficial
+          WZIP="$DIST/fonts/dejavu-fonts-ttf-2.37.zip"
+          wget -q -O "$WZIP" \
+            "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-fonts-ttf-2.37.zip"
+          unzip -j "$WZIP" "ttf/DejaVuSans.ttf" -d "$DIST/fonts"
+          rm -f "$WZIP"
 
           # 4) strip para reducir tamaño
-          strip -s "$DIST"/{*.dll,Sudokura-v1.exe} 2>/dev/null || true
+          strip -s "$DIST"/Sudokura-v1.exe 2>/dev/null || true
+          strip -s "$DIST"/*.dll 2>/dev/null || true
 
           echo "Contenido final de $DIST:"
           ls -la "$DIST"
 
-          # 5) Empaquetar (una sola vez, sin zip dentro de zip)
+          # 5) Empaquetar (zip único, sin zip dentro de zip)
           (cd "$DIST" && zip -9r ../Sudokura-v1-windows.zip .)
 
       - uses: actions/upload-artifact@v4
