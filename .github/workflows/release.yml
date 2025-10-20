@@ -52,6 +52,7 @@ jobs:
             --executable AppDir/usr/bin/Sudokura-v1 \
             --desktop-file AppDir/sudokura.desktop \
             --icon-file AppDir/sudokura.png
+          # linuxdeploy empaqueta dependencias en AppDir (buen patrón para AppImage). :contentReference[oaicite:1]{index=1}
 
       - name: Create AppImage (appimagetool)
         run: |
@@ -62,6 +63,7 @@ jobs:
           ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
           ls -lh Sudokura-v1-x86_64.AppImage
           file Sudokura-v1-x86_64.AppImage
+          # appimagetool crea el .AppImage a partir de AppDir. :contentReference[oaicite:2]{index=2}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,15 +95,12 @@ jobs:
           msystem: MINGW64
           update: true
           install: >-
-            base-devel
-            wget
-            unzip
-            ca-certificates
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-SDL2_ttf
             mingw-w64-x86_64-ntldd-git
+            unzip
             zip
 
       - name: Build EXE (static libstdc++/libgcc)
@@ -112,69 +111,85 @@ jobs:
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm \
             -static-libstdc++ -static-libgcc
 
-      - name: Bundle runtime, fonts and zip
+      - name: Bundle runtime, fallback font and zip (flat)
         shell: msys2 {0}
         run: |
           set -euo pipefail
+
           DIST=dist
           mkdir -p "$DIST/fonts"
           cp -f Sudokura-v1.exe "$DIST/"
 
-          # Prefijo MINGW actual (ej. /mingw64)
-          RTBIN="$MINGW_PREFIX/bin"
+          # Prefijo MINGW actual (p.ej. /mingw64)
+          RTBIN="${MINGW_PREFIX:-/mingw64}/bin"
+          echo "MINGW_PREFIX=${MINGW_PREFIX:-/mingw64}"
 
           # 1) DLLs principales
           for f in SDL2.dll SDL2_ttf.dll; do
             [ -f "$RTBIN/$f" ] && cp -n "$RTBIN/$f" "$DIST/" || true
           done
 
-          # 2) Resolver dependencias (maneja rutas Windows y nombres sueltos)
-          ntldd -R "$DIST/Sudokura-v1.exe" "$DIST/SDL2.dll" "$DIST/SDL2_ttf.dll" \
-            | sed -e 's/\r$//' \
-            | awk '/=>/ {
-                if ($3 == "not" && $4 == "found") print $1;
-                else if ($3 != "") print $3;
-              }' > deps_all.txt || true
+          # 2) Resolver deps (maneja '=> not found' buscando por nombre en $RTBIN)
+          {
+            ntldd -R "$DIST/Sudokura-v1.exe" 2>/dev/null || true
+            ntldd -R "$DIST"/SDL2*.dll 2>/dev/null || true
+          } | sed -e 's/\r$//' \
+            | awk -v rt="$RTBIN" '
+                /=>/ {
+                  # Buscar el token "=>" y decidir si hay ruta o "not found"
+                  for (i=1;i<=NF;i++) if ($i=="=>") {
+                    if ($(i+1)=="not") {
+                      # imprimir marcador de nombre para resolver manualmente
+                      print "NAME:" $1;
+                    } else {
+                      print $(i+1);
+                    }
+                    break;
+                  }
+                }
+              ' \
+            | sort -u > deps_all.txt
 
-          echo "Deps report:"
+          echo "Deps (paths o NAME:...):"
           cat deps_all.txt || true
 
           while IFS= read -r item; do
-            item="${item//$'\r'/}"
             src=""
-            # Ruta Windows -> POSIX
-            if echo "$item" | grep -Eq '^[A-Za-z]:\\\\'; then
-              src="$(cygpath -u "$item")"
-            elif [ -f "$item" ]; then
-              src="$item"
-            else
-              name="$item"
-              if [ -f "$RTBIN/$name" ]; then src="$RTBIN/$name"; fi
-            fi
-
-            case "$src" in
-              /c/WINDOWS/*|/c/Windows/*|/c/windows/*) continue ;;
+            case "$item" in
+              NAME:*)
+                name="${item#NAME:}"
+                if [ -f "$RTBIN/$name" ]; then src="$RTBIN/$name"; fi
+                ;;
+              *)
+                src="$item"
+                ;;
             esac
-            if [ -n "${src:-}" ] && [ -f "$src" ]; then
-              cp -n "$src" "$DIST/" || true
+            # Excluir DLLs del sistema Windows
+            case "$src" in
+              C:\\Windows\\*|C:\\WINDOWS\\*|/c/Windows/*|/c/WINDOWS/*|/c/windows/*) continue ;;
+            esac
+            # Normalizar ruta Windows -> POSIX si hace falta
+            if echo "$src" | grep -Eq '^[A-Za-z]:\\'; then
+              src="$(cygpath -u "$src")"
             fi
+            [ -n "$src" ] && [ -f "$src" ] && cp -n "$src" "$DIST/" || true
           done < deps_all.txt
 
-          # 3) Fuente fallback: DejaVuSans.ttf (2.37) desde proyecto oficial
-          WZIP="$DIST/fonts/dejavu-fonts-ttf-2.37.zip"
-          wget -q -O "$WZIP" \
-            "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-fonts-ttf-2.37.zip"
-          unzip -j "$WZIP" "ttf/DejaVuSans.ttf" -d "$DIST/fonts"
-          rm -f "$WZIP"
+          # 3) Fallback font (ZIP mínimo oficial: contiene solo DejaVuSans.ttf)
+          #    https://dejavu-fonts.github.io/Download.html  (zip "DejaVuSans.ttf")
+          curl -L -o "$DIST/fonts/dejavu-sans-ttf-2.37.zip" \
+            "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-sans-ttf-2.37.zip"
+          unzip -j "$DIST/fonts/dejavu-sans-ttf-2.37.zip" "DejaVuSans.ttf" -d "$DIST/fonts"
+          rm -f "$DIST/fonts/dejavu-sans-ttf-2.37.zip"
 
-          # 4) strip para reducir tamaño
+          # 4) strip para reducir tamaño (ignorar errores si alguna DLL no admite)
           strip -s "$DIST"/Sudokura-v1.exe 2>/dev/null || true
           strip -s "$DIST"/*.dll 2>/dev/null || true
 
           echo "Contenido final de $DIST:"
           ls -la "$DIST"
 
-          # 5) Empaquetar (zip único, sin zip dentro de zip)
+          # 5) Empaquetar (zip plano, sin zip dentro de zip)
           (cd "$DIST" && zip -9r ../Sudokura-v1-windows.zip .)
 
       - uses: actions/upload-artifact@v4
