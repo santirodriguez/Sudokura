@@ -52,7 +52,6 @@ jobs:
             --executable AppDir/usr/bin/Sudokura-v1 \
             --desktop-file AppDir/sudokura.desktop \
             --icon-file AppDir/sudokura.png
-          # linuxdeploy empaqueta dependencias en AppDir (buen patrón para AppImage). :contentReference[oaicite:1]{index=1}
 
       - name: Create AppImage (appimagetool)
         run: |
@@ -63,7 +62,6 @@ jobs:
           ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
           ls -lh Sudokura-v1-x86_64.AppImage
           file Sudokura-v1-x86_64.AppImage
-          # appimagetool crea el .AppImage a partir de AppDir. :contentReference[oaicite:2]{index=2}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,7 +98,7 @@ jobs:
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-SDL2_ttf
             mingw-w64-x86_64-ntldd-git
-            unzip
+            curl
             zip
 
       - name: Build EXE (static libstdc++/libgcc)
@@ -111,7 +109,7 @@ jobs:
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm \
             -static-libstdc++ -static-libgcc
 
-      - name: Bundle runtime, fallback font and zip (flat)
+      - name: Bundle runtime + fallback font (flat) and zip
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -120,7 +118,6 @@ jobs:
           mkdir -p "$DIST/fonts"
           cp -f Sudokura-v1.exe "$DIST/"
 
-          # Prefijo MINGW actual (p.ej. /mingw64)
           RTBIN="${MINGW_PREFIX:-/mingw64}/bin"
           echo "MINGW_PREFIX=${MINGW_PREFIX:-/mingw64}"
 
@@ -129,25 +126,18 @@ jobs:
             [ -f "$RTBIN/$f" ] && cp -n "$RTBIN/$f" "$DIST/" || true
           done
 
-          # 2) Resolver deps (maneja '=> not found' buscando por nombre en $RTBIN)
+          # 2) Resolver deps (incluye transitivas); si ntldd no resuelve imprime NAME:lib.dll
           {
             ntldd -R "$DIST/Sudokura-v1.exe" 2>/dev/null || true
             ntldd -R "$DIST"/SDL2*.dll 2>/dev/null || true
           } | sed -e 's/\r$//' \
             | awk -v rt="$RTBIN" '
                 /=>/ {
-                  # Buscar el token "=>" y decidir si hay ruta o "not found"
                   for (i=1;i<=NF;i++) if ($i=="=>") {
-                    if ($(i+1)=="not") {
-                      # imprimir marcador de nombre para resolver manualmente
-                      print "NAME:" $1;
-                    } else {
-                      print $(i+1);
-                    }
+                    if ($(i+1)=="not") { print "NAME:" $1; } else { print $(i+1); }
                     break;
                   }
-                }
-              ' \
+                }' \
             | sort -u > deps_all.txt
 
           echo "Deps (paths o NAME:...):"
@@ -164,25 +154,19 @@ jobs:
                 src="$item"
                 ;;
             esac
-            # Excluir DLLs del sistema Windows
             case "$src" in
               C:\\Windows\\*|C:\\WINDOWS\\*|/c/Windows/*|/c/WINDOWS/*|/c/windows/*) continue ;;
             esac
-            # Normalizar ruta Windows -> POSIX si hace falta
-            if echo "$src" | grep -Eq '^[A-Za-z]:\\'; then
-              src="$(cygpath -u "$src")"
-            fi
+            if echo "$src" | grep -Eq '^[A-Za-z]:\\'; then src="$(cygpath -u "$src")"; fi
             [ -n "$src" ] && [ -f "$src" ] && cp -n "$src" "$DIST/" || true
           done < deps_all.txt
 
-          # 3) Fallback font (ZIP mínimo oficial: contiene solo DejaVuSans.ttf)
-          #    https://dejavu-fonts.github.io/Download.html  (zip "DejaVuSans.ttf")
-          curl -L -o "$DIST/fonts/dejavu-sans-ttf-2.37.zip" \
-            "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-sans-ttf-2.37.zip"
-          unzip -j "$DIST/fonts/dejavu-sans-ttf-2.37.zip" "DejaVuSans.ttf" -d "$DIST/fonts"
-          rm -f "$DIST/fonts/dejavu-sans-ttf-2.37.zip"
+          # 3) Fallback font directa (sin ZIP) desde jsDelivr
+          curl -L --fail -o "$DIST/DejaVuSans.ttf" \
+            "https://cdn.jsdelivr.net/npm/@vintproykt/dejavu-fonts-ttf@2.37.0/ttf/DejaVuSans.ttf"
+          cp -n "$DIST/DejaVuSans.ttf" "$DIST/fonts/DejaVuSans.ttf" || true
 
-          # 4) strip para reducir tamaño (ignorar errores si alguna DLL no admite)
+          # 4) strip opcional (ignorar si no aplica)
           strip -s "$DIST"/Sudokura-v1.exe 2>/dev/null || true
           strip -s "$DIST"/*.dll 2>/dev/null || true
 
