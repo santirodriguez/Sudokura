@@ -109,7 +109,7 @@ jobs:
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm \
             -static-libstdc++ -static-libgcc
 
-      - name: Bundle runtime + fallback font (flat) and zip
+      - name: Bundle runtime + fallback font (flat)
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -126,7 +126,7 @@ jobs:
             [ -f "$RTBIN/$f" ] && cp -n "$RTBIN/$f" "$DIST/" || true
           done
 
-          # 2) Resolver deps (incluye transitivas); si ntldd no resuelve imprime NAME:lib.dll
+          # 2) Resolver dependencias (maneja '=> not found' buscando por nombre en $RTBIN)
           {
             ntldd -R "$DIST/Sudokura-v1.exe" 2>/dev/null || true
             ntldd -R "$DIST"/SDL2*.dll 2>/dev/null || true
@@ -161,22 +161,20 @@ jobs:
             [ -n "$src" ] && [ -f "$src" ] && cp -n "$src" "$DIST/" || true
           done < deps_all.txt
 
-          # 3) Fallback font directa (sin ZIP) desde jsDelivr
+          # 3) Fallback font directo (sin ZIP)
           curl -L --fail -o "$DIST/DejaVuSans.ttf" \
             "https://cdn.jsdelivr.net/npm/@vintproykt/dejavu-fonts-ttf@2.37.0/ttf/DejaVuSans.ttf"
           cp -n "$DIST/DejaVuSans.ttf" "$DIST/fonts/DejaVuSans.ttf" || true
 
-          # 4) strip opcional (ignorar si no aplica)
+          # 4) strip opcional
           strip -s "$DIST"/Sudokura-v1.exe 2>/dev/null || true
           strip -s "$DIST"/*.dll 2>/dev/null || true
 
           echo "Contenido final de $DIST:"
           ls -la "$DIST"
 
-          # 5) Empaquetar (zip plano, sin zip dentro de zip)
-          (cd "$DIST" && zip -9r ../Sudokura-v1-windows.zip .)
-
       - uses: actions/upload-artifact@v4
         with:
-          name: Sudokura-v1-windows.zip
-          path: Sudokura-v1-windows.zip
+          name: Sudokura-v1-windows   # <- artifact sin zip interno
+          path: dist/**
+          if-no-files-found: error
