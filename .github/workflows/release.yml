@@ -15,8 +15,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick fuse
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev pkg-config wget imagemagick fuse
 
       - name: Build linux binary
         run: |
@@ -74,16 +73,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install sdl2 sdl2_ttf pkg-config
-      - name: Build (and add fallback font)
-        run: |
+      - run: |
           set -euo pipefail
           clang -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
             $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
-          mkdir -p mac-dist/fonts
-          curl -L -o mac-dist/fonts/NotoSans-Regular.ttf \
-            https://github.com/google/fonts/raw/main/ofl/notosans/static/NotoSans-Regular.ttf
-          cp Sudokura-v1 mac-dist/
-          (cd mac-dist && zip -9r ../Sudokura-v1-macos.zip .)
+          zip -9r Sudokura-v1-macos.zip Sudokura-v1
       - uses: actions/upload-artifact@v4
         with:
           name: Sudokura-v1-macos.zip
@@ -99,61 +93,97 @@ jobs:
           msystem: MINGW64
           update: true
           install: >-
+            base-devel
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-SDL2_ttf
+            mingw-w64-x86_64-ntldd-git
             zip
 
-      - name: Build EXE
+      - name: Build EXE (static libstdc++/libgcc)
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          gcc -std=c11 -O2 -s -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
-            $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
+          gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
+            $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm \
+            -static-libstdc++ -static-libgcc
 
-      - name: Stage runtime (DLLs + font) into dist/
+      - name: Bundle runtime, fonts and zip
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          mkdir -p dist/fonts
-          cp Sudokura-v1.exe dist/
+          DIST=dist
+          mkdir -p "$DIST/fonts"
+          cp -f Sudokura-v1.exe "$DIST/"
 
-          # Fuente libre (OFL) para asegurar TTF disponible
-          curl -L -o dist/fonts/NotoSans-Regular.ttf \
-            https://github.com/google/fonts/raw/main/ofl/notosans/static/NotoSans-Regular.ttf
+          # Prefijo MINGW actual (ej. /mingw64)
+          RTBIN="$MINGW_PREFIX/bin"
 
-          # DLLs mínimas habituales para SDL2/SDL2_ttf en MSYS2
-          for f in \
-            /mingw64/bin/SDL2.dll \
-            /mingw64/bin/SDL2_ttf.dll \
-            /mingw64/bin/libfreetype-6.dll \
-            /mingw64/bin/libharfbuzz-0.dll \
-            /mingw64/bin/libgraphite2.dll \
-            /mingw64/bin/libbz2-1.dll \
-            /mingw64/bin/libbrotlidec.dll \
-            /mingw64/bin/libbrotlicommon.dll \
-            /mingw64/bin/libpng16-16.dll \
-            /mingw64/bin/zlib1.dll \
-            /mingw64/bin/libglib-2.0-0.dll \
-            /mingw64/bin/libiconv-2.dll \
-            /mingw64/bin/libintl-8.dll \
-            /mingw64/bin/libpcre2-8-0.dll \
-            /mingw64/bin/libgcc_s_seh-1.dll \
-            /mingw64/bin/libwinpthread-1.dll \
-          ; do
-            [ -f "$f" ] && cp -n "$f" dist/ || true
+          # 1) DLLs principales
+          for f in SDL2.dll SDL2_ttf.dll; do
+            [ -f "$RTBIN/$f" ] && cp -n "$RTBIN/$f" "$DIST/" || true
           done
 
-          # Reducir tamaño
-          strip --strip-unneeded dist/*.dll || true
-          strip --strip-unneeded dist/*.exe || true
+          # 2) Resolver deps (incluye "not found" -> buscar por nombre en $RTBIN)
+          ntldd -R "$DIST/Sudokura-v1.exe" "$DIST/SDL2.dll" "$DIST/SDL2_ttf.dll" \
+            | sed -e 's/\r$//' \
+            | awk '/=>/ { if ($3 == "not") print $1; else print $3 }' \
+            > deps_all.txt || true
 
-          echo "Final contents of dist/:"
-          ls -lh dist
+          echo "Deps report (resolved or names):"
+          cat deps_all.txt || true
 
-      # Sube la carpeta (GitHub la comprimirá UNA sola vez al descargar)
+          while IFS= read -r item; do
+            src=""
+            if [ -f "$item" ]; then
+              src="$item"
+            else
+              name="$item"
+              # Algunos ntldd imprimen "libX.dll" cuando no resuelven la ruta
+              if [ -f "$RTBIN/$name" ]; then src="$RTBIN/$name"; fi
+            fi
+
+            # Excluir DLLs del sistema Windows
+            case "$src" in
+              /c/WINDOWS/*|/c/Windows/*|/c/windows/*) continue ;;
+            esac
+
+            if [ -n "${src:-}" ] && [ -f "$src" ]; then
+              cp -n "$src" "$DIST/" || true
+            fi
+          done < deps_all.txt
+
+          # 3) Fuente fallback para tu buscador local (fonts/DejaVuSans.ttf)
+          # (DejaVu 2.37, fuente ampliamente usada y libre)
+          if [ ! -f "$DIST/fonts/DejaVuSans.ttf" ]; then
+            curl -L -o "$DIST/fonts/DejaVuSans.ttf" \
+              "https://downloads.sourceforge.net/project/dejavu/dejavu/2.37/dejavu-sans-ttf-2.37.zip"
+            # Extraer solo el TTF que nos interesa
+            python - <<'PY'
+import zipfile, sys, os
+z="dist/fonts/DejaVuSans.ttf".replace("DejaVuSans.ttf","dejavu-sans-ttf-2.37.zip")
+with zipfile.ZipFile(z) as f:
+    for n in f.namelist():
+        if n.endswith("DejaVuSans.ttf"):
+            f.extract(n, "dist/fonts_tmp")
+            src=os.path.join("dist/fonts_tmp",n)
+            os.replace(src, "dist/fonts/DejaVuSans.ttf")
+            break
+os.remove(z)
+PY
+          fi
+
+          # 4) strip para reducir tamaño
+          strip -s "$DIST"/{*.dll,Sudokura-v1.exe} 2>/dev/null || true
+
+          echo "Contenido final de $DIST:"
+          ls -la "$DIST"
+
+          # 5) Empaquetar (una sola vez, sin zip dentro de zip)
+          (cd "$DIST" && zip -9r ../Sudokura-v1-windows.zip .)
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Sudokura-v1-windows
-          path: dist
+          name: Sudokura-v1-windows.zip
+          path: Sudokura-v1-windows.zip
