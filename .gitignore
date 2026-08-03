@@ -1,0 +1,6 @@
+/sudokura
+/tests/test_main
+/AppDir/
+/dist/
+*.AppImage
+*.zip

@@ -51,139 +51,14 @@
   #include <unistd.h>
 #endif
 
-/* =================== SUDOKU CORE =================== */
+#include "game.h"
+#include "geometry.h"
+#include "version.h"
+#include "i18n.h"
+#include "assets/generated/window_icon.h"
 #define N 9
-#define NN (N*N)
-static inline int IDX(int r,int c){ return r*N + c; }
-
-typedef struct {
-  int puzzle[NN];
-  int solution[NN];
-  unsigned char fixed[NN];
-  uint16_t notes[NN]; /* bitmask: bit v (1..9) */
-} Game;
-
-static inline bool row_has(const int*b,int r,int v){ for(int c=0;c<9;c++) if(b[IDX(r,c)]==v) return true; return false; }
-static inline bool col_has(const int*b,int c,int v){ for(int r=0;r<9;r++) if(b[IDX(r,c)]==v) return true; return false; }
-static inline bool box_has(const int*b,int r,int c,int v){
-  int br=(r/3)*3, bc=(c/3)*3;
-  for(int rr=0;rr<3;rr++) for(int cc=0;cc<3;cc++)
-    if(b[IDX(br+rr,bc+cc)]==v) return true;
-  return false;
-}
-static inline bool can_place_local(const int*b,int r,int c,int v){
-  return !row_has(b,r,v)&&!col_has(b,c,v)&&!box_has(b,r,c,v);
-}
-static void shuffle(int *a,int n){ for(int i=n-1;i>0;--i){ int j=rand()%(i+1); int t=a[i]; a[i]=a[j]; a[j]=t; } }
-
-static int find_mrv(const int*b){
-  int best=-1, bc=10;
-  for(int i=0;i<81;i++){
-    if(b[i]) continue;
-    int r=i/9,c=i%9, cnt=0;
-    for(int v=1;v<=9;v++) if(can_place_local(b,r,c,v)) cnt++;
-    if(cnt<bc){ bc=cnt; best=i; if(cnt==1) break; }
-  }
-  return best;
-}
-static bool rec_first(int*b,int*out){
-  int i=find_mrv(b); if(i<0){ memcpy(out,b,81*sizeof(int)); return true; }
-  int r=i/9,c=i%9,opts[9],o=0; for(int v=1;v<=9;v++) if(can_place_local(b,r,c,v)) opts[o++]=v;
-  for(int k=0;k<o;k++){ b[i]=opts[k]; if(rec_first(b,out)) return true; b[i]=0; } return false;
-}
-static int count_limit(int*b,int limit){
-  int i=find_mrv(b); if(i<0) return 1;
-  int r=i/9,c=i%9,opts[9],o=0; for(int v=1;v<=9;v++) if(can_place_local(b,r,c,v)) opts[o++]=v;
-  int tot=0; for(int k=0;k<o;k++){ b[i]=opts[k]; int got=count_limit(b,limit-tot); tot+=got; if(tot>=limit){ b[i]=0; return tot; } b[i]=0; } return tot;
-}
-static bool unique_solution(const int*puz,int*out_sol){
-  int tmp[81]; memcpy(tmp,puz,sizeof(tmp)); if(!rec_first(tmp,out_sol)) return false;
-  memcpy(tmp,puz,sizeof(tmp)); return count_limit(tmp,2)==1;
-}
-
-/* solved grid via pattern + shuffles */
-static void make_solved(int*out){
-  int rows[9]={0,1,2,3,4,5,6,7,8}, cols[9]={0,1,2,3,4,5,6,7,8}, nums[9]={1,2,3,4,5,6,7,8,9};
-  int band[3]={0,1,2}; shuffle(band,3);
-  int rin[3][3]={{0,1,2},{3,4,5},{6,7,8}}; for(int b=0;b<3;b++) shuffle(rin[b],3);
-  int p=0; for(int b0=0;b0<3;b0++){ int bi=band[b0]; for(int i=0;i<3;i++) rows[p++]=rin[bi][i]; }
-  int stack_[3]={0,1,2}; shuffle(stack_,3);
-  int cin[3][3]={{0,1,2},{3,4,5},{6,7,8}}; for(int s=0;s<3;s++) shuffle(cin[s],3);
-  p=0; for(int s0=0;s0<3;s0++){ int si=stack_[s0]; for(int i=0;i<3;i++) cols[p++]=cin[si][i]; }
-  shuffle(nums,9);
-  for(int r=0;r<9;r++) for(int c=0;c<9;c++){
-    int r2=rows[r], c2=cols[c];
-    int base=(r2*3 + r2/3 + c2) % 9;
-    out[IDX(r,c)]=nums[base];
-  }
-}
-
-/* remove clues to medium difficulty; unique-solution enforced */
-static void remove_to_medium(int*grid){
-  int minC=32,maxC=38;
-  int pos[81]; for(int i=0;i<81;i++) pos[i]=i; shuffle(pos,81);
-  int clues=81;
-  for(int k=0;k<81;k++){
-    int i=pos[k]; int r=i/9,c=i%9; int j=IDX(8-r,8-c);
-    if(grid[i]==0 && grid[j]==0) continue;
-    int bi=grid[i], bj=grid[j]; grid[i]=0; if(j!=i) grid[j]=0;
-    int tmp[81]; memcpy(tmp,grid,sizeof(tmp)); int sol[81];
-    bool ok=unique_solution(tmp,sol);
-    int delta=(j==i)?1:2;
-    if(!ok || (clues-delta)<minC){ grid[i]=bi; if(j!=i) grid[j]=bj; }
-    else{ clues-=delta; if(clues<=maxC){ if(rand()%3==0) break; } }
-  }
-}
-
-static void new_game(Game*g,unsigned seed){
-  if(seed) srand(seed); else srand((unsigned)time(NULL));
-  int solved[81]; make_solved(solved);
-  int puzzle[81]; memcpy(puzzle,solved,sizeof(puzzle));
-  remove_to_medium(puzzle);
-  int finalSol[81];
-  if(!unique_solution(puzzle,finalSol)){
-    int safe[81]={
-      5,3,0, 0,7,0, 0,0,0,
-      6,0,0, 1,9,5, 0,0,0,
-      0,9,8, 0,0,0, 0,6,0,
-      8,0,0, 0,6,0, 0,0,3,
-      4,0,0, 8,0,3, 0,0,1,
-      7,0,0, 0,2,0, 0,0,6,
-      0,6,0, 0,0,0, 2,8,0,
-      0,0,0, 4,1,9, 0,0,5,
-      0,0,0, 0,8,0, 0,7,9
-    };
-    memcpy(puzzle,safe,sizeof(safe)); unique_solution(puzzle,finalSol);
-  }
-  for(int i=0;i<81;i++){ g->puzzle[i]=puzzle[i]; g->solution[i]=finalSol[i]; g->fixed[i]=(puzzle[i]!=0); g->notes[i]=0; }
-}
-static bool is_solved(const Game*g){
-  for(int i=0;i<81;i++){ if(g->puzzle[i]==0) return false; if(g->puzzle[i]!=g->solution[i]) return false; } return true;
-}
-static bool place(Game*g,int r,int c,int v,bool strict){
-  if(g->fixed[IDX(r,c)]) return false;
-  if(v==0){ g->puzzle[IDX(r,c)]=0; g->notes[IDX(r,c)]=0; return true; }
-  if(strict && !can_place_local(g->puzzle,r,c,v)) return false;
-  g->puzzle[IDX(r,c)]=v; g->notes[IDX(r,c)]=0; return true;
-}
-static bool give_hint(Game*g,int r,int c){
-  if(g->fixed[IDX(r,c)]) return false;
-  int corr=g->solution[IDX(r,c)];
-  if(g->puzzle[IDX(r,c)]==corr) return false;
-  g->puzzle[IDX(r,c)]=corr; g->notes[IDX(r,c)]=0; return true;
-}
-static bool has_conflict(const Game*g,int rr,int cc,int v){
-  if(v==0) return false;
-  for(int c=0;c<9;c++) if(c!=cc && g->puzzle[IDX(rr,c)]==v) return true;
-  for(int r=0;r<9;r++) if(r!=rr && g->puzzle[IDX(r,cc)]==v) return true;
-  int br=(rr/3)*3, bc=(cc/3)*3;
-  for(int r=0;r<3;r++) for(int c=0;c<3;c++){
-    int R=br+r, C=bc+c; if(R==rr&&C==cc) continue; if(g->puzzle[IDX(R,C)]==v) return true;
-  } return false;
-}
-static int count_conflicts(const Game*g){
-  int cnt=0; for(int r=0;r<9;r++) for(int c=0;c<9;c++){ int v=g->puzzle[IDX(r,c)]; if(v && has_conflict(g,r,c,v)) cnt++; } return cnt;
-}
+#define NN 81
+#define IDX(r,c) ((r)*9+(c))
 
 /* =================== GUI & THEME =================== */
 typedef struct { SDL_Window* win; SDL_Renderer* ren; TTF_Font* font_big; TTF_Font* font_small; int width, height; } Gfx;
@@ -215,13 +90,14 @@ static Theme theme_light(void){
   return t;
 }
 
-typedef enum {MODE_CLASSIC=0, MODE_STRIKES=1, MODE_TIME=2} Mode;
+typedef GameMode Mode;
 typedef enum {SCR_TITLE=0, SCR_PLAY=1, SCR_END=2, SCR_HELP=3, SCR_ABOUT=4} Screen;
 typedef enum {RES_NONE=0, RES_WIN=1, RES_LOSE=2} Result;
 
 typedef struct {
   int sel_r, sel_c;
   bool notes_mode, strict_mode, paused, dark_theme;
+  Language language;
 
   int mistakes, strikes, strikes_max;
   double start_t, pause_t0, paused_accum;
@@ -468,73 +344,23 @@ static SDL_Texture* render_text_wrapped(Gfx*g, TTF_Font* f, const char* txt, SDL
   SDL_FreeSurface(s); return t;
 }
 static bool point_in(SDL_Rect r,int x,int y){ return x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h; }
+static SDL_Rect language_rect(const Gfx*g){ return (SDL_Rect){g->width-190,8,182,28}; }
+static void draw_language_selector(Gfx*g,const UI*ui){ Theme th=ui->dark_theme?theme_dark():theme_light(); SDL_Rect r=language_rect(g); char label[64]; snprintf(label,sizeof label,"%s: %s (L)",tr(ui->language,T_LANGUAGE),language_name(ui->language)); draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn); int w,h; SDL_Texture*t=render_text(g,g->font_small,label,th.btnfg,&w,&h); if(t){SDL_Rect d={r.x+6,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
 
-/* Responsive layout */
-typedef struct { SDL_Rect board; SDL_Rect side; bool right; } Layout;
+/* Responsive geometry shared by rendering and hit-testing. */
+typedef struct { SDL_Rect board; SDL_Rect side; bool right; AppGeometry model; } Layout;
+typedef struct { SDL_Rect btn[9], pal[9]; int count_btn,count_pal,title_h,info_h,info_lines; } SidebarRects;
+static SDL_Rect sdl_rect(GeoRect r){ return (SDL_Rect){r.x,r.y,r.w,r.h}; }
 static Layout compute_layout(int W,int H){
-  Layout L; int margin=18; int gap=16; int minCell=28; int minSide = 9*minCell;
-
-  if(W >= 980){
-    int sidebarW=260;
-    int side = H - 2*margin;
-    int usableW = W - 2*margin - sidebarW - gap;
-    if(side > usableW) side = usableW;
-    if(side < minSide) side=minSide;
-    side = (side/9)*9;
-    L.board = (SDL_Rect){ margin, (H - side)/2, side, side };
-    L.side  = (SDL_Rect){ L.board.x + L.board.w + gap, L.board.y, sidebarW, side };
-    L.right = true;
-  }else{
-    int side = W - 2*margin;
-    if(side < minSide) side = minSide;
-    if(side > H - (margin*3 + 280)) side = H - (margin*3 + 280);
-    if(side < minSide) side = minSide;
-    side = (side/9)*9;
-    L.board = (SDL_Rect){ (W - side)/2, margin, side, side };
-    L.side  = (SDL_Rect){ margin, L.board.y + L.board.h + gap, W - 2*margin, 260 };
-    L.right = false;
-  }
-  return L;
+  Layout l; memset(&l,0,sizeof l); geometry_compute(W,H,&l.model);
+  l.board=sdl_rect(l.model.board); l.side=sdl_rect(l.model.side); l.right=l.model.side_by_side; return l;
 }
-
-/* ===== Sidebar geometry: ONE source of truth for render + clicks ===== */
-typedef struct {
-  SDL_Rect btn[9];   /* New, Mode, Hint, Notes, Verify, Theme, Help, About, Menu */
-  SDL_Rect pal[9];   /* numbers 1..9 */
-  int count_btn;
-  int count_pal;
-  int title_h, info_h, info_lines;
-} SidebarRects;
-
-static void compute_sidebar_rects(const Layout*L, const UI*ui, SidebarRects*R){
-  const int sx=L->side.x, sy=L->side.y, sw=L->side.w;
-  const int title_h=46, info_h=24, gap_small=4, gap_big=8;
-  int info_lines = 2; /* Mode + Time */
-  if(ui->mode==MODE_TIME)     info_lines += 1;
-  if(ui->mode==MODE_STRIKES)  info_lines += 1;
-
-  int y = sy + title_h + gap_small + info_lines*(info_h + gap_small) + gap_big;
-  int bw = sw;
-  const int bh = 34;
-
-  for(int i=0;i<9;i++){ R->btn[i] = (SDL_Rect){sx, y, bw, bh}; y += bh + gap_big; }
-  y += 4 + info_h; /* "Palette" label + gap */
-  for(int n=0;n<9;n++){ R->pal[n] = (SDL_Rect){sx, y, bw, bh}; y += bh + 6; }
-
-  R->count_btn=9; R->count_pal=9; R->title_h=title_h; R->info_h=info_h; R->info_lines=info_lines;
+static void compute_sidebar_rects(const Layout*l,const UI*ui,SidebarRects*r){
+  (void)ui; memset(r,0,sizeof *r); r->count_btn=r->count_pal=9; r->title_h=28;r->info_h=20;r->info_lines=2;
+  for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.buttons[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}
 }
-
-/* Back button geometry + draw */
-static SDL_Rect back_rect(const Gfx* g){
-  int bw=140, bh=40, x=40, y= g->height - bh - 40;
-  SDL_Rect r={x,y,bw,bh}; return r;
-}
-static void draw_back_button(Gfx*g, Theme th){
-  SDL_Rect r = back_rect(g);
-  draw_rect(g->ren, r.x, r.y, r.w, r.h, th.btn);
-  int tw,thh; SDL_Texture* t=render_text(g,g->font_small,"Back", th.btnfg,&tw,&thh);
-  if(t){ SDL_Rect d={r.x+12,r.y+(r.h-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
-}
+static SDL_Rect back_rect(const Gfx*g){ int w=g->width<700?140:180; return (SDL_Rect){20,g->height-52,w,36}; }
+static void draw_back_button(Gfx*g,const UI*ui,Theme th){ SDL_Rect r=back_rect(g); draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn); int w,h; SDL_Texture*t=render_text(g,g->font_small,tr(ui->language,T_BACK),th.btnfg,&w,&h); if(t){SDL_Rect d={r.x+10,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);} }
 
 /* =================== RENDER SCREENS =================== */
 static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
@@ -623,41 +449,41 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   int tw,thh;
 
   /* Title */
-  SDL_Texture* tt=render_text(g,g->font_big,"Sudokura v1.0", th.title,&tw,&thh);
+  SDL_Texture* tt=render_text(g,g->font_big,SUDOKURA_NAME_VERSION, th.title,&tw,&thh);
   if(tt){ SDL_Rect d={sx,sy,tw,thh}; SDL_RenderCopy(g->ren,tt,NULL,&d); SDL_DestroyTexture(tt); }
 
   /* HUD lines (fixed spacing to match compute_sidebar_rects) */
   const int line_y0 = sy + R.title_h + 0;
   int y=line_y0;
   char buf[64];
-  const char* modeName=(ui->mode==MODE_CLASSIC?"Classic": ui->mode==MODE_STRIKES?"Strikes":"Time Attack");
-  snprintf(buf,sizeof(buf),"Mode: %s", modeName);
+  const char* modeName=tr(ui->language,ui->mode==MODE_CLASSIC?T_CLASSIC:ui->mode==MODE_STRIKES?T_STRIKES:T_TIME_ATTACK);
+  snprintf(buf,sizeof(buf),"%s: %s",tr(ui->language,T_MODE),modeName);
   SDL_Texture* t1=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
   if(t1){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t1,NULL,&d); SDL_DestroyTexture(t1); }
   y += R.info_h + 4;
 
   double el=elapsed_time(ui);
-  snprintf(buf,sizeof(buf),"Time: %02d:%02d", (int)(el/60),(int)fmod(el,60));
+  snprintf(buf,sizeof(buf),"%s: %02d:%02d",tr(ui->language,T_TIME), (int)(el/60),(int)fmod(el,60));
   SDL_Texture* t2=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
   if(t2){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t2,NULL,&d); SDL_DestroyTexture(t2); }
   y += R.info_h + 4;
 
   if(ui->mode==MODE_TIME){
     int rem=(int)(ui->time_limit_s-el); if(rem<0) rem=0;
-    snprintf(buf,sizeof(buf),"Target: %02d:%02d", rem/60,rem%60);
+    snprintf(buf,sizeof(buf),"%s: %02d:%02d",tr(ui->language,T_TARGET), rem/60,rem%60);
     SDL_Texture* t=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
     if(t){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
     y += R.info_h + 4;
   }
   if(ui->mode==MODE_STRIKES){
     int left=ui->strikes_max-ui->strikes; if(left<0) left=0;
-    snprintf(buf,sizeof(buf),"Strikes left: %d/%d", left, ui->strikes_max);
+    snprintf(buf,sizeof(buf),"%s: %d/%d",tr(ui->language,T_STRIKES_LEFT), left, ui->strikes_max);
     SDL_Texture* t=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
     if(t){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
   }
 
   /* Buttons */
-  const char* labels[]={"New","Mode","Hint","Notes (N/Shift)","Verify","Theme","Help","About","Menu"};
+  const char* labels[]={tr(ui->language,T_NEW),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_THEME),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
   for(int i=0;i<R.count_btn;i++){
     SDL_Rect rc=R.btn[i];
     draw_rect(g->ren,rc.x,rc.y,rc.w,rc.h,th.btn);
@@ -666,7 +492,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   }
 
   /* Palette */
-  SDL_Texture* tp=render_text(g,g->font_small,"Palette", th.dim, &tw,&thh);
+  SDL_Texture* tp=render_text(g,g->font_small,tr(ui->language,T_PALETTE), th.dim, &tw,&thh);
   if(tp){ SDL_Rect d={sx, R.pal[0].y - (thh+6), tw, thh}; SDL_RenderCopy(g->ren,tp,NULL,&d); SDL_DestroyTexture(tp); }
   for(int n=1;n<=9;n++){
     SDL_Rect rc=R.pal[n-1];
@@ -677,7 +503,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
 
   /* bottom info */
   int filled=0; for(int i=0;i<81;i++) if(game->puzzle[i]) filled++;
-  snprintf(buf,sizeof(buf),"Progress %d%%   Errors %d", (filled*100)/81, ui->mistakes);
+  snprintf(buf,sizeof(buf),tr(ui->language,T_PROGRESS),(filled*100)/81,ui->mistakes);
   SDL_Texture* ts=render_text_wrapped(g,g->font_small, buf, th.dim, sw, &tw,&thh);
   if(ts){ SDL_Rect d={sx, R.pal[8].y + R.pal[8].h + 6, tw, thh}; SDL_RenderCopy(g->ren,ts,NULL,&d); SDL_DestroyTexture(ts); }
 
@@ -696,7 +522,7 @@ static void render_title(Gfx*g, UI*ui){
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255);
   SDL_RenderClear(g->ren);
 
-  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,"Sudokura v1.0", th.title,&tw,&thh);
+  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,SUDOKURA_NAME_VERSION, th.title,&tw,&thh);
   if(T){ SDL_Rect d={ (g->width-tw)/2, g->height/2-160, tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
 
   int bx=g->width/2-180, by=g->height/2-60, bw=360, bh=42, gap=12;
@@ -707,22 +533,22 @@ static void render_title(Gfx*g, UI*ui){
   SDL_Rect r_quit={bx,by,bw,bh};
 
   draw_rect(g->ren,r_mode.x,r_mode.y,bw,bh,th.btn);
-  const char* modeName=(ui->mode==MODE_CLASSIC?"Classic": ui->mode==MODE_STRIKES?"Strikes":"Time Attack");
-  char mline[64]; snprintf(mline,sizeof(mline),"Mode: %s", modeName);
+  const char* modeName=tr(ui->language,ui->mode==MODE_CLASSIC?T_CLASSIC:ui->mode==MODE_STRIKES?T_STRIKES:T_TIME_ATTACK);
+  char mline[64]; snprintf(mline,sizeof(mline),"%s: %s",tr(ui->language,T_MODE),modeName);
   SDL_Texture* m1=render_text(g,g->font_small,mline, th.btnfg,&tw,&thh);
   if(m1){ SDL_Rect d={r_mode.x+12,r_mode.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,m1,NULL,&d); SDL_DestroyTexture(m1); }
 
   draw_rect(g->ren,r_start.x,r_start.y,bw,bh,(SDL_Color){(Uint8)(th.btn.r+10),(Uint8)(th.btn.g+10),(Uint8)(th.btn.b+10),th.btn.a});
-  SDL_Texture* s=render_text(g,g->font_small,"Start", th.btnfg,&tw,&thh); if(s){ SDL_Rect d={r_start.x+12,r_start.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,s,NULL,&d); SDL_DestroyTexture(s); }
+  SDL_Texture* s=render_text(g,g->font_small,tr(ui->language,T_START), th.btnfg,&tw,&thh); if(s){ SDL_Rect d={r_start.x+12,r_start.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,s,NULL,&d); SDL_DestroyTexture(s); }
 
   draw_rect(g->ren,r_help.x,r_help.y,bw,bh,th.btn);
-  SDL_Texture* h=render_text(g,g->font_small,"Help (F1)", th.btnfg,&tw,&thh); if(h){ SDL_Rect d={r_help.x+12,r_help.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,h,NULL,&d); SDL_DestroyTexture(h); }
+  SDL_Texture* h=render_text(g,g->font_small,tr(ui->language,T_HELP), th.btnfg,&tw,&thh); if(h){ SDL_Rect d={r_help.x+12,r_help.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,h,NULL,&d); SDL_DestroyTexture(h); }
 
   draw_rect(g->ren,r_about.x,r_about.y,bw,bh,th.btn);
-  SDL_Texture* a=render_text(g,g->font_small,"About (F2)", th.btnfg,&tw,&thh); if(a){ SDL_Rect d={r_about.x+12,r_about.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,a,NULL,&d); SDL_DestroyTexture(a); }
+  SDL_Texture* a=render_text(g,g->font_small,tr(ui->language,T_ABOUT), th.btnfg,&tw,&thh); if(a){ SDL_Rect d={r_about.x+12,r_about.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,a,NULL,&d); SDL_DestroyTexture(a); }
 
   draw_rect(g->ren,r_quit.x,r_quit.y,bw,bh,th.btn);
-  SDL_Texture* q=render_text(g,g->font_small,"Quit", th.btnfg,&tw,&thh); if(q){ SDL_Rect d={r_quit.x+12,r_quit.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,q,NULL,&d); SDL_DestroyTexture(q); }
+  SDL_Texture* q=render_text(g,g->font_small,tr(ui->language,T_QUIT), th.btnfg,&tw,&thh); if(q){ SDL_Rect d={r_quit.x+12,r_quit.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,q,NULL,&d); SDL_DestroyTexture(q); }
 }
 
 static void blit_wrapped(Gfx*g,int x,int y,int w,const char*text, SDL_Color col){
@@ -732,65 +558,51 @@ static void blit_wrapped(Gfx*g,int x,int y,int w,const char*text, SDL_Color col)
 static void render_help(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
-  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,"Help", th.title,&tw,&thh);
+  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,tr(ui->language,T_HELP), th.title,&tw,&thh);
   if(T){ SDL_Rect d={60,40,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
   int x=60, y=40+thh+12, w=g->width-120;
-  const char* text =
-    "- Goal: fill the 9x9 grid so each row, column and 3x3 box contains 1..9 with no repeats.\n"
-    "- Modes: Classic (no limits). Strikes (3 wrong moves = lose). Time Attack (solve under 10:00).\n"
-    "- Select a cell with mouse or arrows (WASD). Place with keys 1..9 or the palette.\n"
-    "- Notes: press N to toggle Notes mode or hold Shift while typing numbers.\n"
-    "         You can also note with the mouse: click a sub-cell (the 3x3 mini-grid inside the cell).\n"
-    "- Hint: fills the selected cell with the correct answer.\n"
-    "- Verify: checks conflicts against Sudoku rules (rows/cols/boxes). It does not reveal the solution.\n"
-    "- Strict mode (M): blocks illegal placements. Free mode allows them (they still count as mistakes).\n"
-    "- Theme (T) toggles dark/light. Pause (P) pauses the timer. ESC or Back returns.";
+  const char* text = tr(ui->language,T_HELP_BODY);
   blit_wrapped(g,x,y,w,text, th.dim);
-  draw_back_button(g, th);
+  draw_back_button(g, ui, th);
 }
 
 static void render_about(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
-  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,"About", th.title,&tw,&thh);
+  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,tr(ui->language,T_ABOUT), th.title,&tw,&thh);
   if(T){ SDL_Rect d={60,40,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
   int x=60, y=40+thh+12, w=g->width-120;
-  const char* text =
-    "Sudokura v1.0 — a compact, modern Sudoku written in C + SDL2.\n"
-    "Author: santirodriguez — https://santiagorodriguez.com\n\n"
-    "License: GNU General Public License v3. You can redistribute it and/or modify it under the terms of the GPLv3.\n"
-    "See <https://www.gnu.org/licenses/> for details.\n\n"
-    "Press ESC or Back to return.";
+  const char* text = tr(ui->language,T_ABOUT_BODY);
   blit_wrapped(g,x,y,w,text, th.dim);
-  draw_back_button(g, th);
+  draw_back_button(g, ui, th);
 }
 
 static void render_end(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
-  const char* title = (ui->result==RES_WIN? "You Win" : "You Lose");
+  const char* title = tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);
   int tw,thh; SDL_Texture* T=render_text(g,g->font_big,title, (ui->result==RES_WIN? (SDL_Color){60,220,160,255} : (SDL_Color){220,80,80,255}), &tw,&thh);
   if(T){ SDL_Rect d={ (g->width-tw)/2, 120, tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
 
   char line[64]; double el=elapsed_time(ui);
-  snprintf(line,sizeof(line),"Time %02d:%02d   Errors %d", (int)(el/60),(int)fmod(el,60), ui->mistakes);
+  snprintf(line,sizeof(line),"%s %02d:%02d   %s %d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60),tr(ui->language,T_ERRORS),ui->mistakes);
   SDL_Texture* t=render_text(g,g->font_small,line, th.dim,&tw,&thh);
   if(t){ SDL_Rect d={ (g->width-tw)/2, 160+thh, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
 
   int bx=g->width/2-160, by=260, bw=320, bh=40, gap=12;
   SDL_Rect b1={bx,by,bw,bh}; by+=bh+gap; SDL_Rect b2={bx,by,bw,bh};
   draw_rect(g->ren,b1.x,b1.y,b1.w,b1.h, th.btn);
-  SDL_Texture* s=render_text(g,g->font_small, (ui->result==RES_WIN? "Next" : "Retry"), th.btnfg,&tw,&thh);
+  SDL_Texture* s=render_text(g,g->font_small, tr(ui->language,ui->result==RES_WIN?T_NEXT:T_RETRY), th.btnfg,&tw,&thh);
   if(s){ SDL_Rect d={b1.x+12,b1.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,s,NULL,&d); SDL_DestroyTexture(s); }
   draw_rect(g->ren,b2.x,b2.y,b2.w,b2.h, th.btn);
-  SDL_Texture* m=render_text(g,g->font_small,"Menu", th.btnfg,&tw,&thh);
+  SDL_Texture* m=render_text(g,g->font_small,tr(ui->language,T_MENU), th.btnfg,&tw,&thh);
   if(m){ SDL_Rect d={b2.x+12,b2.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,m,NULL,&d); SDL_DestroyTexture(m); }
 }
 
 /* tiny confirm box */
-static bool confirm_box(SDL_Window* win, const char* title, const char* msg, const char* ok_label){
+static bool confirm_box(SDL_Window* win,const char*title,const char*msg,const char*ok_label,const char*cancel_label){
   const SDL_MessageBoxButtonData buttons[] = {
-    {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel"},
+    {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,cancel_label},
     {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, ok_label?ok_label:"OK"}
   };
   const SDL_MessageBoxColorScheme scheme = {{
@@ -813,32 +625,33 @@ int main(int argc,char**argv){
   if(TTF_Init()!=0){ fprintf(stderr,"TTF_Init: %s\n", TTF_GetError()); return 1; }
 
   Gfx g={0}; g.width=1024; g.height=720;
-  g.win = SDL_CreateWindow("Sudokura v1.0", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g.width, g.height, SDL_WINDOW_RESIZABLE);
+  g.win = SDL_CreateWindow(SUDOKURA_NAME_VERSION, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g.width, g.height, SDL_WINDOW_RESIZABLE);
+  SDL_SetWindowMinimumSize(g.win,640,480);
   g.ren = SDL_CreateRenderer(g.win, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
   if(!g.win||!g.ren){ fprintf(stderr,"SDL window/renderer failed\n"); return 1; }
+  SDL_Surface* icon=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_icon_rgba,(int)sudokura_icon_width,(int)sudokura_icon_height,32,(int)sudokura_icon_width*4,SDL_PIXELFORMAT_RGBA32);
+  if(icon){ SDL_SetWindowIcon(g.win,icon); SDL_FreeSurface(icon); }
 
   /* robust font discovery */
   char font_path[PATH_MAX]={0};
   const char* fpath=find_font_path_dynamic(font_path, font_cli);
   if(!fpath){
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Sudokura v1.0",
-      "Could not find a usable TTF/OTF font.\n"
-      "Install any TrueType/OpenType font and try again,\n"
-      "or run: ./sudokura --font /path/to/font.ttf", g.win);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,SUDOKURA_NAME_VERSION,
+      tr(LANG_EN,T_FONT_ERROR), g.win);
     return 1;
   }
 
   g.font_big   = TTF_OpenFont(fpath, 44);
   g.font_small = TTF_OpenFont(fpath, 20);
   if(!g.font_big || !g.font_small){
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Sudokura v1.0","TTF_OpenFont failed with the chosen font.", g.win);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,SUDOKURA_NAME_VERSION,tr(LANG_EN,T_FONT_OPEN_ERROR), g.win);
     return 1;
   }
 
-  Game game; new_game(&game,(unsigned)time(NULL));
+  Game game; game_new(&game,(unsigned)time(NULL));
 
   UI ui; memset(&ui,0,sizeof(ui));
-  ui.sel_r=4; ui.sel_c=4; ui.dark_theme=true; ui.mode=MODE_CLASSIC; ui.screen=SCR_TITLE; ui.prev_screen=SCR_TITLE;
+  ui.sel_r=4; ui.sel_c=4; ui.language=LANG_EN; ui.dark_theme=true; ui.mode=MODE_CLASSIC; ui.screen=SCR_TITLE; ui.prev_screen=SCR_TITLE;
   set_mode_params(&ui);
 
   bool running=true; SDL_Event e;
@@ -848,6 +661,7 @@ int main(int argc,char**argv){
       else if(e.type==SDL_WINDOWEVENT && e.window.event==SDL_WINDOWEVENT_SIZE_CHANGED){ g.width=e.window.data1; g.height=e.window.data2; }
       else if(e.type==SDL_KEYDOWN){
         SDL_Keycode k=e.key.keysym.sym;
+        if(k==SDLK_l){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
         if(ui.screen==SCR_TITLE){
           if(k==SDLK_ESCAPE) running=false;
           else if(k==SDLK_RETURN){ ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
@@ -860,7 +674,7 @@ int main(int argc,char**argv){
         } else if(ui.screen==SCR_END){
           if(k==SDLK_ESCAPE) ui.screen=SCR_TITLE;
           else if(k==SDLK_RETURN){
-            new_game(&game,(unsigned)time(NULL));
+            game_new(&game,(unsigned)time(NULL));
             ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
           }
         } else { /* PLAY */
@@ -873,20 +687,20 @@ int main(int argc,char**argv){
           else if(k==SDLK_RIGHT||k==SDLK_d) ui.sel_c=(ui.sel_c+1)%9;
           else if(k==SDLK_p){ if(!ui.paused){ ui.paused=true; ui.pause_t0=now_s(); } else { ui.paused=false; ui.paused_accum += now_s()-ui.pause_t0; } }
           else if(k==SDLK_t) ui.dark_theme=!ui.dark_theme;
-          else if(k==SDLK_n){ ui.notes_mode=!ui.notes_mode; show_toast(&ui, ui.notes_mode?"Notes ON":"Notes OFF"); }
-          else if(k==SDLK_m){ ui.strict_mode=!ui.strict_mode; show_toast(&ui, ui.strict_mode?"Strict":"Free"); }
-          else if(k==SDLK_h){ if(give_hint(&game,r,c)) show_toast(&ui,"Hint used"); }
+          else if(k==SDLK_n){ ui.notes_mode=!ui.notes_mode; show_toast(&ui, tr(ui.language,ui.notes_mode?T_NOTES_ON:T_NOTES_OFF)); }
+          else if(k==SDLK_m){ ui.strict_mode=!ui.strict_mode; show_toast(&ui, tr(ui.language,ui.strict_mode?T_STRICT:T_FREE)); }
+          else if(k==SDLK_h){ if(game_hint(&game,r,c)) show_toast(&ui,tr(ui.language,T_HINT_USED)); }
           else if(k==SDLK_DELETE || k==SDLK_BACKSPACE || k==SDLK_0 || k==SDLK_KP_0){
             if(!game.fixed[i]){ game.puzzle[i]=0; game.notes[i]=0; }
           } else {
             int v=0; if(k>=SDLK_1 && k<=SDLK_9) v=(k-SDLK_0); else if(k>=SDLK_KP_1 && k<=SDLK_KP_9) v=(k-SDLK_KP_0);
             if(v>=1 && v<=9){
-              if(ui.notes_mode || shifted){ if(!game.fixed[i] && game.puzzle[i]==0) game.notes[i]^=(1u<<v); }
+              if(ui.notes_mode || shifted){ game_toggle_note(&game,r,c,v); }
               else{
-                if(place(&game,r,c,v, ui.strict_mode)){
-                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,"Wrong"); }
+                if(game_place(&game,r,c,v, ui.strict_mode)){
+                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_WRONG)); }
                 } else {
-                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,"Illegal"); }
+                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_ILLEGAL)); }
                 }
               }
             }
@@ -895,6 +709,7 @@ int main(int argc,char**argv){
       }
       else if(e.type==SDL_MOUSEBUTTONDOWN){
         int x=e.button.x, y=e.button.y; bool right=(e.button.button==SDL_BUTTON_RIGHT);
+        if(point_in(language_rect(&g),x,y)){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
 
         if(ui.screen==SCR_TITLE){
           int bx=g.width/2-180, by=g.height/2-60, bw=360, bh=42, gap=12;
@@ -908,7 +723,7 @@ int main(int argc,char**argv){
         } else if(ui.screen==SCR_END){
           int bx=g.width/2-160, by=260, bw=320, bh=40, gap=12;
           SDL_Rect b1={bx,by,bw,bh}; by+=bh+gap; SDL_Rect b2={bx,by,bw,bh};
-          if(point_in(b1,x,y)){ new_game(&game,(unsigned)time(NULL)); ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
+          if(point_in(b1,x,y)){ game_new(&game,(unsigned)time(NULL)); ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
           else if(point_in(b2,x,y)) ui.screen=SCR_TITLE;
         } else if(ui.screen==SCR_HELP || ui.screen==SCR_ABOUT){
           Theme th = ui.dark_theme?theme_dark():theme_light();
@@ -925,27 +740,27 @@ int main(int argc,char**argv){
               int lx=x-(gx+c*cs), ly=y-(gy+r*cs);
               int sub=cs/3, qq=lx/sub, q=ly/sub; if(qq<0) qq=0; if(q<0) q=0; if(qq>2) qq=2; if(q>2) q=2;
               int vv=q*3+qq+1;
-              if(right || ui.notes_mode){ if(game.puzzle[i]==0) game.notes[i]^=(1u<<vv); }
+              if(right || ui.notes_mode){ game_toggle_note(&game,r,c,vv); }
             }
           }else{
             SidebarRects R; compute_sidebar_rects(&L, &ui, &R);
 
             if(point_in(R.btn[0],x,y)){ /* New */
-              if(confirm_box(g.win,"New game","Start a new game? Current progress will be lost.","New")){
-                new_game(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
+              if(confirm_box(g.win,tr(ui.language,T_NEW_GAME),tr(ui.language,T_NEW_PROMPT),tr(ui.language,T_NEW),tr(ui.language,T_CANCEL))){
+                game_new(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
               }
             }
             else if(point_in(R.btn[1],x,y)){ /* Mode */
-              const char* next = (ui.mode==MODE_CLASSIC?"Strikes": ui.mode==MODE_STRIKES?"Time Attack":"Classic");
-              char msg[128]; snprintf(msg,sizeof(msg),"Change mode to %s?\nThis will start a new game.", next);
-              if(confirm_box(g.win,"Change mode",msg,"Change")){
+              const char* next=tr(ui.language,ui.mode==MODE_CLASSIC?T_STRIKES:ui.mode==MODE_STRIKES?T_TIME_ATTACK:T_CLASSIC);
+              char msg[128]; snprintf(msg,sizeof(msg),tr(ui.language,T_CHANGE_PROMPT),next);
+              if(confirm_box(g.win,tr(ui.language,T_CHANGE_MODE),msg,tr(ui.language,T_CHANGE),tr(ui.language,T_CANCEL))){
                 ui.mode = (ui.mode+1)%3; set_mode_params(&ui);
-                new_game(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
+                game_new(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
               }
             }
-            else if(point_in(R.btn[2],x,y)){ if(give_hint(&game,ui.sel_r,ui.sel_c)) show_toast(&ui,"Hint used"); } /* Hint */
-            else if(point_in(R.btn[3],x,y)){ ui.notes_mode=!ui.notes_mode; show_toast(&ui, ui.notes_mode?"Notes ON":"Notes OFF"); }
-            else if(point_in(R.btn[4],x,y)){ int conf=count_conflicts(&game); if(conf==0) show_toast(&ui,"No conflicts"); else { char m[32]; snprintf(m,sizeof(m),"Conflicts: %d",conf); show_toast(&ui,m);} }
+            else if(point_in(R.btn[2],x,y)){ if(game_hint(&game,ui.sel_r,ui.sel_c)) show_toast(&ui,tr(ui.language,T_HINT_USED)); } /* Hint */
+            else if(point_in(R.btn[3],x,y)){ ui.notes_mode=!ui.notes_mode; show_toast(&ui, tr(ui.language,ui.notes_mode?T_NOTES_ON:T_NOTES_OFF)); }
+            else if(point_in(R.btn[4],x,y)){ int conf=game_conflict_count(&game); if(conf==0) show_toast(&ui,tr(ui.language,T_NO_CONFLICTS)); else { char m[32]; snprintf(m,sizeof(m),tr(ui.language,T_CONFLICTS),conf); show_toast(&ui,m);} }
             else if(point_in(R.btn[5],x,y)){ ui.dark_theme=!ui.dark_theme; }
             else if(point_in(R.btn[6],x,y)){ ui.prev_screen=SCR_PLAY; ui.screen=SCR_HELP; }
             else if(point_in(R.btn[7],x,y)){ ui.prev_screen=SCR_PLAY; ui.screen=SCR_ABOUT; }
@@ -954,12 +769,12 @@ int main(int argc,char**argv){
               for(int n=1;n<=9;n++) if(point_in(R.pal[n-1],x,y)){
                 int i=IDX(ui.sel_r,ui.sel_c);
                 if(!game.fixed[i]){
-                  if(ui.notes_mode){ if(game.puzzle[i]==0) game.notes[i]^=(1u<<n); }
+                  if(ui.notes_mode){ game_toggle_note(&game,ui.sel_r,ui.sel_c,n); }
                   else{
-                    if(place(&game,ui.sel_r,ui.sel_c,n, ui.strict_mode)){
-                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,"Wrong"); }
+                    if(game_place(&game,ui.sel_r,ui.sel_c,n, ui.strict_mode)){
+                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_WRONG)); }
                     }else{
-                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,"Illegal"); }
+                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_ILLEGAL)); }
                     }
                   }
                 }
@@ -973,9 +788,8 @@ int main(int argc,char**argv){
     /* win/lose checks */
     if(ui.screen==SCR_PLAY && !ui.paused){
       bool lose=false;
-      if(ui.mode==MODE_TIME && ui.time_limit_s>0 && elapsed_time(&ui)>ui.time_limit_s) lose=true;
-      if(ui.mode==MODE_STRIKES && ui.strikes>=ui.strikes_max) lose=true;
-      if(is_solved(&game)){ ui.result=RES_WIN; ui.screen=SCR_END; }
+      lose=game_mode_lost(ui.mode,ui.strikes,ui.strikes_max,elapsed_time(&ui),ui.time_limit_s);
+      if(game_is_solved(&game)){ ui.result=RES_WIN; ui.screen=SCR_END; }
       else if(lose){ ui.result=RES_LOSE; ui.screen=SCR_END; }
     }
 
@@ -985,6 +799,7 @@ int main(int argc,char**argv){
     else if(ui.screen==SCR_END) render_end(&g,&ui);
     else render_board_and_sidebar(&g,&game,&ui);
 
+    draw_language_selector(&g,&ui);
     SDL_RenderPresent(g.ren);
   }
 

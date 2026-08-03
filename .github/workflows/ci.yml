@@ -1,0 +1,13 @@
+name: CI
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev python3-pil
+      - run: make assets && git diff --exit-code -- assets/generated
+      - run: make test
+      - run: make
+      - run: ldd sudokura && size sudokura && du -h sudokura
