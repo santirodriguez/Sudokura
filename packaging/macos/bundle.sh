@@ -14,7 +14,9 @@ while (( index < ${#queue[@]} )); do
  cp "$src" "$APP/Contents/Frameworks/$base"
  while read -r dep; do case "$dep" in "$PREFIX"/*) queue+=("$dep");; esac; done < <(otool -L "$src"|tail -n +2|awk '{print $1}')
 done
-install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/sudokura" 2>/dev/null || true
+if ! otool -l "$APP/Contents/MacOS/sudokura" | grep -q '@executable_path/../Frameworks'; then
+  install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/sudokura"
+fi
 for f in "$APP/Contents/MacOS/sudokura" "$APP/Contents/Frameworks/"*.dylib; do
  while read -r dep; do case "$dep" in "$PREFIX"/*) install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$f";; esac; done < <(otool -L "$f"|tail -n +2|awk '{print $1}')
 done

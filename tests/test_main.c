@@ -95,23 +95,24 @@ static void assert_screen_geometry(const AppGeometry *g, int width, int height) 
 
 static void test_geometry(void) {
   const int sizes[][2] = {{640,480},{800,600},{1024,720},{1280,720},
-                          {1366,768},{1920,1080}};
+      {1366,768},{1920,1080},{2560,1440},{3440,1440},
+      {360,640},{390,844},{412,915}};
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
       int width = sizes[s][0], height = sizes[s][1];
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert(geometry_play_valid(&g, width, height));
-      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 32);
+      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 30);
       assert(g.hud_count == (mode == GEOMETRY_MODE_CLASSIC ? 2 : 3));
       assert(geometry_rect_in_bounds(g.play_title, width, height));
       for (int i = 0; i < g.hud_count; ++i)
         assert(geometry_rect_in_bounds(g.hud[i], width, height));
       for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i)
-        assert(g.actions[i].w >= 110 && g.actions[i].h >= 26);
+        assert(g.actions[i].w >= 70 && g.actions[i].h >= 40);
       assert(geometry_rect_in_bounds(g.palette_label, width, height));
       for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
-        assert(g.palette[i].w >= 70 && g.palette[i].h >= 24);
+        assert(g.palette[i].w >= 70 && g.palette[i].h >= 28);
       assert(geometry_rect_in_bounds(g.progress, width, height));
       assert(geometry_rect_in_bounds(g.language, width, height));
       assert(!rects_overlap(g.language, g.play_title));
@@ -121,7 +122,7 @@ static void test_geometry(void) {
     }
   }
   AppGeometry invalid;
-  assert(!geometry_compute(639, 480, GEOMETRY_MODE_CLASSIC, &invalid));
+  assert(!geometry_compute(359, 640, GEOMETRY_MODE_CLASSIC, &invalid));
   assert(!geometry_compute(640, 479, GEOMETRY_MODE_CLASSIC, &invalid));
 }
 
@@ -139,6 +140,6 @@ int main(void) {
   test_conflicts_and_end();
   test_geometry();
   test_i18n();
-  puts("all tests passed (12 seeds; 18 mode/viewports; all screens; API bounds)");
+  puts("all tests passed (12 seeds; 33 mode/viewports including portrait and ultrawide; all screens; API bounds)");
   return 0;
 }

@@ -34,7 +34,14 @@ make clean
 ./sudokura [--font /path/to/font.ttf]
 ```
 
-The automated geometry suite covers 640×480, 800×600, 1024×720, 1280×720, 1366×768, and 1920×1080. Runtime packages bundle a UTF-8-capable fallback font.
+The bounded desktop shell is tested from 640×480 through 3440×1440, and the
+touch-ready stacked shell is tested at 360×640, 390×844, and 412×915. Runtime
+packages bundle a UTF-8-capable fallback font. The English, Español, and Català
+segments use the same geometry for rendering and pointer hit-testing.
+
+`./sudokura --smoke-test` renders deterministic title and play frames without
+interaction. `./sudokura --render-screenshots DIR` writes 40 dependency-free
+BMP reviews covering ten viewports, four screens, all languages, and both themes.
 
 ## Packages
 
