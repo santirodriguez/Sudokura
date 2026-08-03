@@ -24,7 +24,7 @@ A lightweight desktop Sudoku written in **C11 with SDL2 and SDL2_ttf**. Sudokura
 
 ## Build and test
 
-Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, and Python 3 + Pillow (only for reproducible asset generation).
+Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, Python 3, and Go (the latter two are used only by reproducible asset generation and validation).
 
 ```sh
 make assets       # regenerate icons from immutable Sudokura05.png
@@ -41,8 +41,8 @@ The automated geometry suite covers 640×480, 800×600, 1024×720, 1280×720, 13
 The tag/manual packaging workflow builds consistently named v1.1.0 artifacts and SHA-256 files, prints their sizes, and uploads artifacts. A tag run only creates a **draft** release for manual verification.
 
 - **Linux:** executable x86_64 AppImage with the derived application icon and desktop entry.
-- **Windows:** portable x86_64 ZIP with icon embedded in the executable, SDL runtime and transitive non-system DLLs, plus one fallback font. CI fails on missing DLLs.
-- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries and a fallback font are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths. Builds are **not signed or notarized**.
+- **Windows:** portable x86_64 ZIP with icon embedded in the executable, SDL runtime and recursively collected transitive non-system DLLs, plus DejaVu Sans and its license. CI fails on missing DLLs.
+- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries, recursively collected non-system dependencies, DejaVu Sans, and its license are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths. Builds are **not signed or notarized**.
 
 On macOS, unzip and drag `Sudokura.app` to Applications. Because current artifacts are unsigned, use Finder's **Open** context action if Gatekeeper asks you to confirm. No claim of signing or notarization is made.
 

@@ -258,12 +258,20 @@ static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
   };
   char exedir[PATH_MAX]={0};
   bool have_exe_dir = get_exe_dir(exedir);
+#if defined(__APPLE__)
+  char resources[PATH_MAX]={0};
+  if(have_exe_dir) snprintf(resources,sizeof(resources),"%s/../Resources",exedir);
+#endif
 
   for(size_t i=0;i<sizeof(local_first)/sizeof(local_first[0]); ++i){
     /* cwd */
     if(try_open_font_path(local_first[i])){ strncpy(out,local_first[i],PATH_MAX); out[PATH_MAX-1]=0; return out; }
     /* exe dir */
     if(have_exe_dir && try_in_dir(exedir, local_first[i], out)) return out;
+#if defined(__APPLE__)
+    /* App bundle resources live beside Contents/MacOS. */
+    if(have_exe_dir && try_in_dir(resources,local_first[i],out)) return out;
+#endif
   }
 
   /* 2) Preferidas en ubicaciones conocidas del sistema */
@@ -344,23 +352,18 @@ static SDL_Texture* render_text_wrapped(Gfx*g, TTF_Font* f, const char* txt, SDL
   SDL_FreeSurface(s); return t;
 }
 static bool point_in(SDL_Rect r,int x,int y){ return x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h; }
-static SDL_Rect language_rect(const Gfx*g){ return (SDL_Rect){g->width-190,8,182,28}; }
-static void draw_language_selector(Gfx*g,const UI*ui){ Theme th=ui->dark_theme?theme_dark():theme_light(); SDL_Rect r=language_rect(g); char label[64]; snprintf(label,sizeof label,"%s: %s (L)",tr(ui->language,T_LANGUAGE),language_name(ui->language)); draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn); int w,h; SDL_Texture*t=render_text(g,g->font_small,label,th.btnfg,&w,&h); if(t){SDL_Rect d={r.x+6,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
-
-/* Responsive geometry shared by rendering and hit-testing. */
-typedef struct { SDL_Rect board; SDL_Rect side; bool right; AppGeometry model; } Layout;
-typedef struct { SDL_Rect btn[9], pal[9]; int count_btn,count_pal,title_h,info_h,info_lines; } SidebarRects;
+static GeometryMode geometry_mode(Mode mode){ return (GeometryMode)mode; }
+static bool get_geometry(const Gfx*g,const UI*ui,AppGeometry*out){ return geometry_compute(g->width,g->height,geometry_mode(ui->mode),out); }
 static SDL_Rect sdl_rect(GeoRect r){ return (SDL_Rect){r.x,r.y,r.w,r.h}; }
-static Layout compute_layout(int W,int H){
-  Layout l; memset(&l,0,sizeof l); geometry_compute(W,H,&l.model);
-  l.board=sdl_rect(l.model.board); l.side=sdl_rect(l.model.side); l.right=l.model.side_by_side; return l;
-}
-static void compute_sidebar_rects(const Layout*l,const UI*ui,SidebarRects*r){
-  (void)ui; memset(r,0,sizeof *r); r->count_btn=r->count_pal=9; r->title_h=28;r->info_h=20;r->info_lines=2;
-  for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.buttons[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}
-}
-static SDL_Rect back_rect(const Gfx*g){ int w=g->width<700?140:180; return (SDL_Rect){20,g->height-52,w,36}; }
-static void draw_back_button(Gfx*g,const UI*ui,Theme th){ SDL_Rect r=back_rect(g); draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn); int w,h; SDL_Texture*t=render_text(g,g->font_small,tr(ui->language,T_BACK),th.btnfg,&w,&h); if(t){SDL_Rect d={r.x+10,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);} }
+static SDL_Rect language_rect(const Gfx*g,const UI*ui){ AppGeometry a; return get_geometry(g,ui,&a)?sdl_rect(a.language):(SDL_Rect){0,0,0,0}; }
+static void draw_language_selector(Gfx*g,const UI*ui){ Theme th=ui->dark_theme?theme_dark():theme_light(); SDL_Rect r=language_rect(g,ui); char label[64]; snprintf(label,sizeof label,"%s: %s (L)",tr(ui->language,T_LANGUAGE),language_name(ui->language)); draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn); int w,h; SDL_Texture*t=render_text(g,g->font_small,label,th.btnfg,&w,&h); if(t){SDL_Rect d={r.x+6,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
+
+typedef struct { SDL_Rect board,side; AppGeometry model; } Layout;
+typedef struct { SDL_Rect btn[9],pal[9],palette_label,progress; int count_btn,count_pal; } SidebarRects;
+static Layout compute_layout(int W,int H,Mode mode){ Layout l; memset(&l,0,sizeof l); if(geometry_compute(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l; }
+static void compute_sidebar_rects(const Layout*l,SidebarRects*r){ memset(r,0,sizeof *r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
+static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
+static void draw_back_button(Gfx*g,const UI*ui,Theme th){SDL_Rect r=back_rect(g,ui);draw_rect(g->ren,r.x,r.y,r.w,r.h,th.btn);int w,h;SDL_Texture*t=render_text(g,g->font_small,tr(ui->language,T_BACK),th.btnfg,&w,&h);if(t){SDL_Rect d={r.x+10,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
 
 /* =================== RENDER SCREENS =================== */
 static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
@@ -368,8 +371,9 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255);
   SDL_RenderClear(g->ren);
 
-  Layout L = compute_layout(g->width,g->height);
+  Layout L = compute_layout(g->width,g->height,ui->mode);
   int gx=L.board.x, gy=L.board.y, side=L.board.w, cs=side/9;
+  if(side <= 0 || cs <= 0) return;
 
   /* board bg + shadow */
   draw_rect(g->ren, gx-6, gy-6, side+12, side+12, th.shadow);
@@ -412,7 +416,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
       draw_rect(g->ren, x+2,y+2, cs-4,cs-4, th.hover);
     }
 
-    if(v && has_conflict(game,r,c,v)) draw_rect(g->ren, x+2,y+2, cs-4,cs-4, th.conflict);
+    if(v && game_has_conflict(game,r,c)) draw_rect(g->ren, x+2,y+2, cs-4,cs-4, th.conflict);
 
     if(sel || ui->notes_mode){
       SDL_Color sgrid=(SDL_Color){th.thin.r,th.thin.g,th.thin.b, (Uint8)120};
@@ -443,44 +447,23 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   }
 
   /* sidebar text + buttons (using shared geometry) */
-  SidebarRects R; compute_sidebar_rects(&L, ui, &R);
+  SidebarRects R; compute_sidebar_rects(&L,&R);
 
-  int sx=L.side.x, sy=L.side.y, sw=L.side.w;
+  int sw=L.side.w;
   int tw,thh;
 
-  /* Title */
-  SDL_Texture* tt=render_text(g,g->font_big,SUDOKURA_NAME_VERSION, th.title,&tw,&thh);
-  if(tt){ SDL_Rect d={sx,sy,tw,thh}; SDL_RenderCopy(g->ren,tt,NULL,&d); SDL_DestroyTexture(tt); }
-
-  /* HUD lines (fixed spacing to match compute_sidebar_rects) */
-  const int line_y0 = sy + R.title_h + 0;
-  int y=line_y0;
+  /* Title and mode-specific HUD use the shared geometry. */
+  SDL_Rect title_rect=sdl_rect(L.model.play_title);
+  SDL_Texture* tt=render_text(g,g->font_small,SUDOKURA_NAME_VERSION,th.title,&tw,&thh);
+  if(tt){SDL_Rect d={title_rect.x,title_rect.y+(title_rect.h-thh)/2,tw,thh};SDL_RenderCopy(g->ren,tt,NULL,&d);SDL_DestroyTexture(tt);}
   char buf[64];
   const char* modeName=tr(ui->language,ui->mode==MODE_CLASSIC?T_CLASSIC:ui->mode==MODE_STRIKES?T_STRIKES:T_TIME_ATTACK);
   snprintf(buf,sizeof(buf),"%s: %s",tr(ui->language,T_MODE),modeName);
-  SDL_Texture* t1=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
-  if(t1){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t1,NULL,&d); SDL_DestroyTexture(t1); }
-  y += R.info_h + 4;
-
-  double el=elapsed_time(ui);
-  snprintf(buf,sizeof(buf),"%s: %02d:%02d",tr(ui->language,T_TIME), (int)(el/60),(int)fmod(el,60));
-  SDL_Texture* t2=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
-  if(t2){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t2,NULL,&d); SDL_DestroyTexture(t2); }
-  y += R.info_h + 4;
-
-  if(ui->mode==MODE_TIME){
-    int rem=(int)(ui->time_limit_s-el); if(rem<0) rem=0;
-    snprintf(buf,sizeof(buf),"%s: %02d:%02d",tr(ui->language,T_TARGET), rem/60,rem%60);
-    SDL_Texture* t=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
-    if(t){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
-    y += R.info_h + 4;
-  }
-  if(ui->mode==MODE_STRIKES){
-    int left=ui->strikes_max-ui->strikes; if(left<0) left=0;
-    snprintf(buf,sizeof(buf),"%s: %d/%d",tr(ui->language,T_STRIKES_LEFT), left, ui->strikes_max);
-    SDL_Texture* t=render_text(g,g->font_small,buf, th.dim,&tw,&thh);
-    if(t){ SDL_Rect d={sx, y + (R.info_h-thh)/2, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
-  }
+  const char*huds[3]={buf,NULL,NULL}; char time_text[64],extra_text[64]; double el=elapsed_time(ui);
+  snprintf(time_text,sizeof time_text,"%s: %02d:%02d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60));huds[1]=time_text;
+  if(ui->mode==MODE_TIME){int rem=(int)(ui->time_limit_s-el);if(rem<0)rem=0;snprintf(extra_text,sizeof extra_text,"%s: %02d:%02d",tr(ui->language,T_TARGET),rem/60,rem%60);huds[2]=extra_text;}
+  else if(ui->mode==MODE_STRIKES){int left=ui->strikes_max-ui->strikes;if(left<0)left=0;snprintf(extra_text,sizeof extra_text,"%s: %d/%d",tr(ui->language,T_STRIKES_LEFT),left,ui->strikes_max);huds[2]=extra_text;}
+  for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);SDL_Texture*t=render_text(g,g->font_small,huds[i],th.dim,&tw,&thh);if(t){SDL_Rect d={hr.x,hr.y+(hr.h-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
 
   /* Buttons */
   const char* labels[]={tr(ui->language,T_NEW),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_THEME),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
@@ -493,7 +476,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
 
   /* Palette */
   SDL_Texture* tp=render_text(g,g->font_small,tr(ui->language,T_PALETTE), th.dim, &tw,&thh);
-  if(tp){ SDL_Rect d={sx, R.pal[0].y - (thh+6), tw, thh}; SDL_RenderCopy(g->ren,tp,NULL,&d); SDL_DestroyTexture(tp); }
+  if(tp){ SDL_Rect d={R.palette_label.x,R.palette_label.y+(R.palette_label.h-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,tp,NULL,&d); SDL_DestroyTexture(tp); }
   for(int n=1;n<=9;n++){
     SDL_Rect rc=R.pal[n-1];
     draw_rect(g->ren,rc.x,rc.y,rc.w,rc.h,th.palette_bg);
@@ -505,7 +488,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   int filled=0; for(int i=0;i<81;i++) if(game->puzzle[i]) filled++;
   snprintf(buf,sizeof(buf),tr(ui->language,T_PROGRESS),(filled*100)/81,ui->mistakes);
   SDL_Texture* ts=render_text_wrapped(g,g->font_small, buf, th.dim, sw, &tw,&thh);
-  if(ts){ SDL_Rect d={sx, R.pal[8].y + R.pal[8].h + 6, tw, thh}; SDL_RenderCopy(g->ren,ts,NULL,&d); SDL_DestroyTexture(ts); }
+  if(ts){ SDL_Rect d={R.progress.x,R.progress.y+(R.progress.h-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,ts,NULL,&d); SDL_DestroyTexture(ts); }
 
   /* toast */
   if(ui->toast_on){
@@ -522,15 +505,11 @@ static void render_title(Gfx*g, UI*ui){
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255);
   SDL_RenderClear(g->ren);
 
-  int tw,thh; SDL_Texture* T=render_text(g,g->font_big,SUDOKURA_NAME_VERSION, th.title,&tw,&thh);
-  if(T){ SDL_Rect d={ (g->width-tw)/2, g->height/2-160, tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
-
-  int bx=g->width/2-180, by=g->height/2-60, bw=360, bh=42, gap=12;
-  SDL_Rect r_mode={bx,by,bw,bh}; by+=bh+gap;
-  SDL_Rect r_start={bx,by,bw,bh}; by+=bh+gap;
-  SDL_Rect r_help={bx,by,bw,bh}; by+=bh+gap;
-  SDL_Rect r_about={bx,by,bw,bh}; by+=bh+gap;
-  SDL_Rect r_quit={bx,by,bw,bh};
+  AppGeometry a; if(!get_geometry(g,ui,&a)) return;
+  int tw,thh; SDL_Rect heading=sdl_rect(a.title_heading); SDL_Texture* T=render_text(g,g->font_big,SUDOKURA_NAME_VERSION,th.title,&tw,&thh);
+  if(T){SDL_Rect d={heading.x+(heading.w-tw)/2,heading.y+(heading.h-thh)/2,tw,thh};SDL_RenderCopy(g->ren,T,NULL,&d);SDL_DestroyTexture(T);}
+  SDL_Rect r_mode=sdl_rect(a.title_buttons[0]),r_start=sdl_rect(a.title_buttons[1]),r_help=sdl_rect(a.title_buttons[2]),r_about=sdl_rect(a.title_buttons[3]),r_quit=sdl_rect(a.title_buttons[4]);
+  int bw=r_mode.w,bh=r_mode.h;
 
   draw_rect(g->ren,r_mode.x,r_mode.y,bw,bh,th.btn);
   const char* modeName=tr(ui->language,ui->mode==MODE_CLASSIC?T_CLASSIC:ui->mode==MODE_STRIKES?T_STRIKES:T_TIME_ATTACK);
@@ -558,39 +537,37 @@ static void blit_wrapped(Gfx*g,int x,int y,int w,const char*text, SDL_Color col)
 static void render_help(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
+  AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
   int tw,thh; SDL_Texture* T=render_text(g,g->font_big,tr(ui->language,T_HELP), th.title,&tw,&thh);
-  if(T){ SDL_Rect d={60,40,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
-  int x=60, y=40+thh+12, w=g->width-120;
-  const char* text = tr(ui->language,T_HELP_BODY);
-  blit_wrapped(g,x,y,w,text, th.dim);
+  if(T){ SDL_Rect d={heading.x,heading.y,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
+  const char* text=tr(ui->language,T_HELP_BODY);blit_wrapped(g,body.x,body.y,body.w,text,th.dim);
   draw_back_button(g, ui, th);
 }
 
 static void render_about(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
+  AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
   int tw,thh; SDL_Texture* T=render_text(g,g->font_big,tr(ui->language,T_ABOUT), th.title,&tw,&thh);
-  if(T){ SDL_Rect d={60,40,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
-  int x=60, y=40+thh+12, w=g->width-120;
-  const char* text = tr(ui->language,T_ABOUT_BODY);
-  blit_wrapped(g,x,y,w,text, th.dim);
+  if(T){ SDL_Rect d={heading.x,heading.y,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
+  const char* text=tr(ui->language,T_ABOUT_BODY);blit_wrapped(g,body.x,body.y,body.w,text,th.dim);
   draw_back_button(g, ui, th);
 }
 
 static void render_end(Gfx*g, UI*ui){
   Theme th = ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren, th.bg.r,th.bg.g,th.bg.b,255); SDL_RenderClear(g->ren);
+  AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
   const char* title = tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);
   int tw,thh; SDL_Texture* T=render_text(g,g->font_big,title, (ui->result==RES_WIN? (SDL_Color){60,220,160,255} : (SDL_Color){220,80,80,255}), &tw,&thh);
-  if(T){ SDL_Rect d={ (g->width-tw)/2, 120, tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
+  if(T){ SDL_Rect d={heading.x+(heading.w-tw)/2,heading.y+(heading.h-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,T,NULL,&d); SDL_DestroyTexture(T); }
 
   char line[64]; double el=elapsed_time(ui);
   snprintf(line,sizeof(line),"%s %02d:%02d   %s %d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60),tr(ui->language,T_ERRORS),ui->mistakes);
   SDL_Texture* t=render_text(g,g->font_small,line, th.dim,&tw,&thh);
-  if(t){ SDL_Rect d={ (g->width-tw)/2, 160+thh, tw, thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
+  if(t){ SDL_Rect d={summary.x+(summary.w-tw)/2,summary.y+(summary.h-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,t,NULL,&d); SDL_DestroyTexture(t); }
 
-  int bx=g->width/2-160, by=260, bw=320, bh=40, gap=12;
-  SDL_Rect b1={bx,by,bw,bh}; by+=bh+gap; SDL_Rect b2={bx,by,bw,bh};
+  SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);int bh=b1.h;
   draw_rect(g->ren,b1.x,b1.y,b1.w,b1.h, th.btn);
   SDL_Texture* s=render_text(g,g->font_small, tr(ui->language,ui->result==RES_WIN?T_NEXT:T_RETRY), th.btnfg,&tw,&thh);
   if(s){ SDL_Rect d={b1.x+12,b1.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,s,NULL,&d); SDL_DestroyTexture(s); }
@@ -622,13 +599,15 @@ int main(int argc,char**argv){
 
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
   if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){ fprintf(stderr,"SDL_Init: %s\n", SDL_GetError()); return 1; }
-  if(TTF_Init()!=0){ fprintf(stderr,"TTF_Init: %s\n", TTF_GetError()); return 1; }
+  if(TTF_Init()!=0){ fprintf(stderr,"TTF_Init: %s\n", TTF_GetError()); SDL_Quit(); return 1; }
 
   Gfx g={0}; g.width=1024; g.height=720;
   g.win = SDL_CreateWindow(SUDOKURA_NAME_VERSION, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, g.width, g.height, SDL_WINDOW_RESIZABLE);
+  if(!g.win){fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());TTF_Quit();SDL_Quit();return 1;}
   SDL_SetWindowMinimumSize(g.win,640,480);
   g.ren = SDL_CreateRenderer(g.win, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
-  if(!g.win||!g.ren){ fprintf(stderr,"SDL window/renderer failed\n"); return 1; }
+  if(!g.ren) g.ren=SDL_CreateRenderer(g.win,-1,SDL_RENDERER_SOFTWARE);
+  if(!g.ren){fprintf(stderr,"SDL_CreateRenderer: %s\n",SDL_GetError());SDL_DestroyWindow(g.win);TTF_Quit();SDL_Quit();return 1;}
   SDL_Surface* icon=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_icon_rgba,(int)sudokura_icon_width,(int)sudokura_icon_height,32,(int)sudokura_icon_width*4,SDL_PIXELFORMAT_RGBA32);
   if(icon){ SDL_SetWindowIcon(g.win,icon); SDL_FreeSurface(icon); }
 
@@ -638,6 +617,7 @@ int main(int argc,char**argv){
   if(!fpath){
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,SUDOKURA_NAME_VERSION,
       tr(LANG_EN,T_FONT_ERROR), g.win);
+    SDL_DestroyRenderer(g.ren);SDL_DestroyWindow(g.win);TTF_Quit();SDL_Quit();
     return 1;
   }
 
@@ -645,6 +625,9 @@ int main(int argc,char**argv){
   g.font_small = TTF_OpenFont(fpath, 20);
   if(!g.font_big || !g.font_small){
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,SUDOKURA_NAME_VERSION,tr(LANG_EN,T_FONT_OPEN_ERROR), g.win);
+    if(g.font_big) TTF_CloseFont(g.font_big);
+    if(g.font_small) TTF_CloseFont(g.font_small);
+    SDL_DestroyRenderer(g.ren);SDL_DestroyWindow(g.win);TTF_Quit();SDL_Quit();
     return 1;
   }
 
@@ -709,41 +692,39 @@ int main(int argc,char**argv){
       }
       else if(e.type==SDL_MOUSEBUTTONDOWN){
         int x=e.button.x, y=e.button.y; bool right=(e.button.button==SDL_BUTTON_RIGHT);
-        if(point_in(language_rect(&g),x,y)){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
+        if(point_in(language_rect(&g,&ui),x,y)){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
 
         if(ui.screen==SCR_TITLE){
-          int bx=g.width/2-180, by=g.height/2-60, bw=360, bh=42, gap=12;
-          SDL_Rect r_mode={bx,by,bw,bh}; by+=bh+gap; SDL_Rect r_start={bx,by,bw,bh}; by+=bh+gap;
-          SDL_Rect r_help={bx,by,bw,bh}; by+=bh+gap; SDL_Rect r_about={bx,by,bw,bh}; by+=bh+gap; SDL_Rect r_quit={bx,by,bw,bh};
+          AppGeometry a;if(!get_geometry(&g,&ui,&a))continue;SDL_Rect r_mode=sdl_rect(a.title_buttons[0]),r_start=sdl_rect(a.title_buttons[1]),r_help=sdl_rect(a.title_buttons[2]),r_about=sdl_rect(a.title_buttons[3]),r_quit=sdl_rect(a.title_buttons[4]);
           if(point_in(r_mode,x,y)){ ui.mode=(ui.mode+1)%3; set_mode_params(&ui); }
           else if(point_in(r_start,x,y)){ ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
           else if(point_in(r_help,x,y)){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_HELP; }
           else if(point_in(r_about,x,y)){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_ABOUT; }
-          else if(point_in(r_quit,x,y)) return 0;
+          else if(point_in(r_quit,x,y)) running=false;
         } else if(ui.screen==SCR_END){
-          int bx=g.width/2-160, by=260, bw=320, bh=40, gap=12;
-          SDL_Rect b1={bx,by,bw,bh}; by+=bh+gap; SDL_Rect b2={bx,by,bw,bh};
+          AppGeometry a;if(!get_geometry(&g,&ui,&a))continue;SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
           if(point_in(b1,x,y)){ game_new(&game,(unsigned)time(NULL)); ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
           else if(point_in(b2,x,y)) ui.screen=SCR_TITLE;
         } else if(ui.screen==SCR_HELP || ui.screen==SCR_ABOUT){
           Theme th = ui.dark_theme?theme_dark():theme_light();
           (void)th;
-          SDL_Rect r = back_rect(&g);
+          SDL_Rect r=back_rect(&g,&ui);
           if(point_in(r, x,y)) ui.screen=ui.prev_screen;
         } else {
-          Layout L = compute_layout(g.width,g.height);
+          Layout L = compute_layout(g.width,g.height,ui.mode);
           int gx=L.board.x, gy=L.board.y, side=L.board.w, cs=side/9;
+          if(side<=0||cs<=0) continue;
           if(x>=gx && x<gx+side && y>=gy && y<gy+side){
             int c=(x-gx)/cs, r=(y-gy)/cs; ui.sel_r=r; ui.sel_c=c;
             int i=IDX(r,c);
             if(!game.fixed[i]){
               int lx=x-(gx+c*cs), ly=y-(gy+r*cs);
-              int sub=cs/3, qq=lx/sub, q=ly/sub; if(qq<0) qq=0; if(q<0) q=0; if(qq>2) qq=2; if(q>2) q=2;
+              int sub=cs/3;if(sub<=0)continue;int qq=lx/sub,q=ly/sub;if(qq<0)qq=0;if(q<0)q=0;if(qq>2)qq=2;if(q>2)q=2;
               int vv=q*3+qq+1;
               if(right || ui.notes_mode){ game_toggle_note(&game,r,c,vv); }
             }
           }else{
-            SidebarRects R; compute_sidebar_rects(&L, &ui, &R);
+            SidebarRects R; compute_sidebar_rects(&L,&R);
 
             if(point_in(R.btn[0],x,y)){ /* New */
               if(confirm_box(g.win,tr(ui.language,T_NEW_GAME),tr(ui.language,T_NEW_PROMPT),tr(ui.language,T_NEW),tr(ui.language,T_CANCEL))){

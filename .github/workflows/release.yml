@@ -9,14 +9,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev python3-pil libfuse2 wget
-      - run: make assets test all
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libfuse2 wget
+      - run: make assets && make WERROR=-Werror test all
       - name: AppImage
         run: |
           set -euo pipefail; mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
           cp sudokura AppDir/usr/bin/; cp packaging/linux/sudokura.desktop AppDir/usr/share/applications/; cp assets/generated/sudokura-256.png AppDir/usr/share/icons/hicolor/256x256/apps/sudokura.png
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -O linuxdeploy; chmod +x linuxdeploy
           ./linuxdeploy --appdir AppDir --output appimage; mv Sudokura*.AppImage Sudokura-v${VERSION}-linux-x86_64.AppImage; chmod +x Sudokura-*.AppImage
+          test -x Sudokura-v${VERSION}-linux-x86_64.AppImage
           file Sudokura-*.AppImage; du -h Sudokura-*.AppImage; sha256sum Sudokura-*.AppImage > SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -29,16 +32,23 @@ jobs:
     defaults: {run: {shell: 'msys2 {0}'}}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
       - uses: msys2/setup-msys2@v2
-        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-python-pillow mingw-w64-x86_64-ntldd mingw-w64-x86_64-dejavu-fonts zip'}
+        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-ntldd mingw-w64-x86_64-dejavu-fonts zip'}
       - run: |
-          make assets test; windres packaging/windows/sudokura.rc -O coff -o icon.o
-          gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic sudokura_sdl.c game.c geometry.c i18n.c assets/generated/window_icon.c icon.o -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -mwindows
+          make assets && make WERROR=-Werror test; windres packaging/windows/sudokura.rc -O coff -o icon.o
+          gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror sudokura_sdl.c game.c geometry.c i18n.c assets/generated/window_icon.c icon.o -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -mwindows
           mkdir dist; cp sudokura.exe dist/; cp /mingw64/bin/SDL2.dll /mingw64/bin/SDL2_ttf.dll dist/
-          ntldd -R dist/*.exe dist/*.dll | awk '/=> \/mingw64/{print $3}' | sort -u | xargs -r -I{} cp -n {} dist/
-          cp /mingw64/share/fonts/TTF/DejaVuSans.ttf dist/ 2>/dev/null || cp /usr/share/fonts/TTF/DejaVuSans.ttf dist/
+          for pass in 1 2 3 4 5; do
+            before=$(find dist -type f | wc -l)
+            ntldd -R dist/*.exe dist/*.dll | awk '/=> \/mingw64/{print $3}' | sort -u | xargs -r -I{} cp -n {} dist/
+            after=$(find dist -type f | wc -l); [ "$before" = "$after" ] && break
+          done
+          cp /mingw64/share/fonts/TTF/DejaVuSans.ttf dist/
+          cp /mingw64/share/licenses/dejavu-fonts/LICENSE dist/DejaVu-FONT-LICENSE.txt
           ! ntldd -R dist/*.exe dist/*.dll | grep 'not found'; (cd dist && zip -9 ../Sudokura-v${VERSION}-windows-x86_64.zip *)
-          du -h Sudokura-*.zip; sha256sum Sudokura-*.zip > SHA256SUMS-windows.txt
+          unzip -l Sudokura-*.zip; du -h Sudokura-*.zip; sha256sum Sudokura-*.zip > SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x86_64
@@ -50,13 +60,19 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - run: brew install sdl2 sdl2_ttf pkg-config python-pillow
-      - run: make assets test all
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.22.x'}
+      - run: brew install sdl2 sdl2_ttf pkg-config
+      - run: make assets && make WERROR=-Werror test all
       - run: |
           chmod +x packaging/macos/bundle.sh
-          FONT=/System/Library/Fonts/Supplemental/Arial.ttf PREFIX=$(brew --prefix) packaging/macos/bundle.sh Sudokura.app sudokura
+          curl -L --fail --retry 3 -o DejaVuSans.ttf https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/DejaVuSans.ttf
+          curl -L --fail --retry 3 -o DejaVu-LICENSE https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/LICENSE
+          FONT=$PWD/DejaVuSans.ttf FONT_LICENSE=$PWD/DejaVu-LICENSE PREFIX=$(brew --prefix) packaging/macos/bundle.sh Sudokura.app sudokura
+          test -x Sudokura.app/Contents/MacOS/sudokura
+          test -f Sudokura.app/Contents/Resources/DejaVu-FONT-LICENSE.txt
           ditto -c -k --sequesterRsrc --keepParent Sudokura.app Sudokura-v${VERSION}-macos-${{ matrix.arch }}-unsigned.zip
-          du -h Sudokura-*.zip; shasum -a 256 Sudokura-*.zip > SHA256SUMS-macos-${{ matrix.arch }}.txt
+          unzip -l Sudokura-*.zip; du -h Sudokura-*.zip; shasum -a 256 Sudokura-*.zip > SHA256SUMS-macos-${{ matrix.arch }}.txt
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
@@ -68,8 +84,9 @@ jobs:
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: {path: artifacts, merge-multiple: true}
-      - run: cat artifacts/SHA256SUMS-*.txt > artifacts/SHA256SUMS.txt
+      - run: cat artifacts/SHA256SUMS-*.txt | sort -k2 > artifacts/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with: {draft: true, prerelease: false, files: 'artifacts/*', body_path: 'docs/RELEASE_NOTES_1.1.0.md'}

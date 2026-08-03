@@ -1,7 +1,7 @@
 CC ?= cc
 CPPFLAGS += -I.
 CFLAGS ?= -O2
-CFLAGS += -std=c11 -Wall -Wextra -Wpedantic
+CFLAGS += -std=c11 -Wall -Wextra -Wpedantic $(WERROR)
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null)
 SDL_LIBS := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 CORE = game.c geometry.c i18n.c
@@ -15,6 +15,7 @@ test: tests/test_main
 	./tests/test_main
 assets:
 	./scripts/generate_assets.py
+	./scripts/validate_assets.py
 assets/generated/window_icon.c assets/generated/window_icon.h: assets/branding/source/Sudokura05.png scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
