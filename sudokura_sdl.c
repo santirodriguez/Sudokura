@@ -119,6 +119,12 @@ static void set_mode_params(UI*ui){
 }
 
 /* ===== Font discovery (robust, cross-platform) ===== */
+static void copy_path(char destination[PATH_MAX],const char*source){
+  size_t i=0;
+  if(source) while(i<PATH_MAX-1&&source[i]){destination[i]=source[i];++i;}
+  destination[i]='\0';
+}
+
 static bool ends_withi(const char* s, const char* suf){
   size_t ns=strlen(s), ms=strlen(suf); if(ms>ns) return false;
   for(size_t i=0;i<ms;i++){
@@ -158,7 +164,7 @@ static bool try_candidates(char out[PATH_MAX], const char* name){
 #if defined(_WIN32)
     for(char* c=p; *c; ++c) if(*c=='/') *c='\\';
 #endif
-    if(try_open_font_path(p)){ strncpy(out,p,PATH_MAX); out[PATH_MAX-1]=0; return true; }
+    if(try_open_font_path(p)){ copy_path(out,p); return true; }
   }
   return false;
 }
@@ -174,7 +180,7 @@ static bool search_dir_win(const char* dir, char out[PATH_MAX]){
       if(search_dir_win(path,out)){ FindClose(h); return true; }
     }else{
       if(ends_withi(path,".ttf") || ends_withi(path,".otf")){
-        if(try_open_font_path(path)){ strncpy(out,path,PATH_MAX); out[PATH_MAX-1]=0; FindClose(h); return true; }
+        if(try_open_font_path(path)){ copy_path(out,path); FindClose(h); return true; }
       }
     }
   }while(FindNextFileA(h,&fd));
@@ -192,7 +198,7 @@ static bool search_dir_posix(const char* dir, char out[PATH_MAX]){
       if(search_dir_posix(path,out)){ closedir(d); return true; }
     }else{
       if(ends_withi(path,".ttf") || ends_withi(path,".otf")){
-        if(try_open_font_path(path)){ strncpy(out,path,PATH_MAX); out[PATH_MAX-1]=0; closedir(d); return true; }
+        if(try_open_font_path(path)){ copy_path(out,path); closedir(d); return true; }
       }
     }
   }
@@ -209,7 +215,7 @@ static bool get_exe_dir(char out[PATH_MAX]) {
   char *slash = strrchr(buf, '\\');
   if(!slash) return false;
   *slash = '\0';
-  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  copy_path(out,buf);
   return true;
 #elif defined(__APPLE__)
   char buf[PATH_MAX]; uint32_t size = (uint32_t)sizeof(buf);
@@ -217,7 +223,7 @@ static bool get_exe_dir(char out[PATH_MAX]) {
   char *slash = strrchr(buf, '/');
   if(!slash) return false;
   *slash = '\0';
-  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  copy_path(out,buf);
   return true;
 #else
   char buf[PATH_MAX];
@@ -227,7 +233,7 @@ static bool get_exe_dir(char out[PATH_MAX]) {
   char *slash = strrchr(buf, '/');
   if(!slash) return false;
   *slash = '\0';
-  strncpy(out, buf, PATH_MAX); out[PATH_MAX-1]=0;
+  copy_path(out,buf);
   return true;
 #endif
 }
@@ -240,14 +246,14 @@ static bool try_in_dir(const char*dir, const char*name, char out[PATH_MAX]){
 #else
   snprintf(p,sizeof(p), "%s/%s", dir, name);
 #endif
-  if(try_open_font_path(p)){ strncpy(out,p,PATH_MAX); out[PATH_MAX-1]=0; return true; }
+  if(try_open_font_path(p)){ copy_path(out,p); return true; }
   return false;
 }
 
 /* Reforzado: primero cwd y directorio del ejecutable; luego rutas del sistema */
 static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
   /* 0) CLI explícito */
-  if(cli && try_open_font_path(cli)){ strncpy(out,cli,PATH_MAX); out[PATH_MAX-1]=0; return out; }
+  if(cli && try_open_font_path(cli)){ copy_path(out,cli); return out; }
 
   /* 1) Local (cwd + exe dir) */
   const char* local_first[] = {
@@ -265,7 +271,7 @@ static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
 
   for(size_t i=0;i<sizeof(local_first)/sizeof(local_first[0]); ++i){
     /* cwd */
-    if(try_open_font_path(local_first[i])){ strncpy(out,local_first[i],PATH_MAX); out[PATH_MAX-1]=0; return out; }
+    if(try_open_font_path(local_first[i])){ copy_path(out,local_first[i]); return out; }
     /* exe dir */
     if(have_exe_dir && try_in_dir(exedir, local_first[i], out)) return out;
 #if defined(__APPLE__)
@@ -524,7 +530,7 @@ static void render_title(Gfx*g, UI*ui){
   SDL_Texture* h=render_text(g,g->font_small,tr(ui->language,T_HELP), th.btnfg,&tw,&thh); if(h){ SDL_Rect d={r_help.x+12,r_help.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,h,NULL,&d); SDL_DestroyTexture(h); }
 
   draw_rect(g->ren,r_about.x,r_about.y,bw,bh,th.btn);
-  SDL_Texture* a=render_text(g,g->font_small,tr(ui->language,T_ABOUT), th.btnfg,&tw,&thh); if(a){ SDL_Rect d={r_about.x+12,r_about.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,a,NULL,&d); SDL_DestroyTexture(a); }
+  SDL_Texture* about_texture=render_text(g,g->font_small,tr(ui->language,T_ABOUT),th.btnfg,&tw,&thh); if(about_texture){SDL_Rect d={r_about.x+12,r_about.y+(bh-thh)/2,tw,thh};SDL_RenderCopy(g->ren,about_texture,NULL,&d);SDL_DestroyTexture(about_texture);}
 
   draw_rect(g->ren,r_quit.x,r_quit.y,bw,bh,th.btn);
   SDL_Texture* q=render_text(g,g->font_small,tr(ui->language,T_QUIT), th.btnfg,&tw,&thh); if(q){ SDL_Rect d={r_quit.x+12,r_quit.y+(bh-thh)/2,tw,thh}; SDL_RenderCopy(g->ren,q,NULL,&d); SDL_DestroyTexture(q); }
