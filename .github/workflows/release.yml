@@ -137,7 +137,13 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          name: Sudokura v${{ env.VERSION }}
           draft: true
           prerelease: false
-          files: artifacts/*
+          files: |
+            artifacts/Sudokura-v${{ env.VERSION }}-linux-x86_64.AppImage
+            artifacts/Sudokura-v${{ env.VERSION }}-windows-x86_64.zip
+            artifacts/Sudokura-v${{ env.VERSION }}-macos-x86_64-unsigned.zip
+            artifacts/Sudokura-v${{ env.VERSION }}-macos-arm64-unsigned.zip
+            artifacts/SHA256SUMS.txt
           body_path: docs/RELEASE_NOTES_1.1.0.md
