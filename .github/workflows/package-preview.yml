@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-go@v6
         with: {go-version: '1.24.x', cache: false}
       - uses: msys2/setup-msys2@v2
-        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-ntldd-git mingw-w64-x86_64-ttf-dejavu zip'}
+        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-ntldd-git mingw-w64-x86_64-ttf-dejavu make zip unzip'}
       - run: VERSION=$VERSION packaging/ci/package-windows.sh
       - uses: actions/upload-artifact@v7
         with: {name: windows-x86_64, path: "Sudokura-*.zip\nSHA256SUMS-windows.txt\ninventory-windows.txt\ndependencies-windows.txt"}
@@ -52,7 +52,7 @@ jobs:
       - run: font=$(find "$HOME/Library/Fonts" /Library/Fonts -type f -name DejaVuSans.ttf -print -quit 2>/dev/null); test -n "$font"; test -f "$font"; echo "FONT=$font" >> "$GITHUB_ENV"
       - run: VERSION=$VERSION ARCH=${{ matrix.arch }} packaging/ci/package-macos.sh
       - uses: actions/upload-artifact@v7
-        with: {name: 'macos-${{ matrix.arch }}', path: "Sudokura-*.zip\nSHA256SUMS-*.txt\ninventory-macos-*.txt\ndependencies-macos-*.txt\narchitecture-macos-*.txt"}
+        with: {name: 'macos-${{ matrix.arch }}', path: "Sudokura-*.zip\nSHA256SUMS-*.txt\ninventory-macos-*.txt\ndependencies-macos-*.txt\narchitecture-macos-*.txt\nsmoke-macos-*.txt"}
   checksums:
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
