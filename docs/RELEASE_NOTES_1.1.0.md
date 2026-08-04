@@ -4,16 +4,18 @@ This release modernizes Sudokura while keeping the lightweight C11 + SDL2 design
 
 <p align="center"><img src="https://raw.githubusercontent.com/santirodriguez/Sudokura/6f15ddc81e3600489e61fcea3b090bb00ca970de/docs/images/sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
 
-Feel free to download, play, and report any issue.
+Feel free to download, play, and report any issue. Feedback is especially appreciated from macOS users.
 
 ## ✅ Supported platforms
 
 - **Linux x86_64:** ✅ Tested manually and validated as a portable AppImage.
 - **Windows x86_64:** ✅ Tested manually and validated as a self-contained portable ZIP.
-- **macOS Intel (x86_64):** ✅ Built and package-validated automatically; unsigned and not notarized.
-- **macOS Apple Silicon (arm64):** ✅ Built and package-validated automatically; unsigned and not notarized.
+- **macOS Intel (x86_64):** ⚠️ Built and package-validated automatically, but not tested manually on real Mac hardware; unsigned and not notarized.
+- **macOS Apple Silicon (arm64):** ⚠️ Built and package-validated automatically, but not tested manually on real Mac hardware; unsigned and not notarized.
 
-The macOS packages contain a real `Sudokura.app`. Because they are unsigned, Finder may require the **Open** context action the first time they are launched.
+The macOS packages contain a real `Sudokura.app` and passed automated architecture, dependency, resource, archive-integrity, and checksum validation. They are published as untested builds. Because they are unsigned, Finder may require the **Open** context action the first time they are launched.
+
+Reports from Intel and Apple Silicon users are welcome. When reporting a macOS result, please include the Mac chip, macOS version, whether the app opened successfully, and any Gatekeeper or launch message shown.
 
 ## Downloads
 
@@ -38,7 +40,7 @@ The macOS packages contain a real `Sudokura.app`. Because they are unsigned, Fin
 
 - The five source branding artworks remain unchanged.
 - Android and iOS are not part of v1.1.0.
-- The macOS builds are not signed or notarized.
+- The macOS builds are not signed, notarized, or manually tested on real Mac hardware.
 - The release is generated as a draft and must be reviewed manually before publication.
 
 Thank you for trying Sudokura, and happy Sudoku!
