@@ -34,7 +34,7 @@ Ready-to-play packages are published in [GitHub Releases](https://github.com/san
 - `Sudokura-v1.1.0-macos-arm64-unsigned.zip` — macOS Apple Silicon.
 - `SHA256SUMS.txt` — SHA-256 checksums for all four packages.
 
-The Linux AppImage and Windows ZIP have been tested manually. Both macOS packages passed automated architecture, dependency, resource, archive-integrity, and checksum validation, but were **not launched manually on real Mac hardware**. They are distributed as unsigned, unnotarized, untested builds. Feedback from Intel and Apple Silicon users is especially appreciated.
+The Linux AppImage and Windows ZIP were tested manually. The macOS builds passed automated packaging checks but were not tested on real Macs; feedback is welcome.
 
 ## Build and test
 
@@ -55,13 +55,13 @@ The bounded desktop shell is tested from 640×480 through 3440×1440, and the po
 
 ## Package details
 
-The tag/manual packaging workflow builds consistently named v1.1.0 artifacts and SHA-256 files, prints their sizes, and uploads diagnostic reports to Actions. A tag run creates only a **draft** release for manual verification.
+The packaging workflows build consistently named v1.1.0 artifacts, checksums, and diagnostic reports.
 
 - **Linux:** executable x86_64 AppImage with the derived application icon and desktop entry.
-- **Windows:** portable x86_64 ZIP with an embedded icon, SDL runtime, recursively collected transitive non-system DLLs, DejaVu Sans, and its license. CI fails on missing direct imports and smoke-tests both the package directory and the extracted ZIP with a clean dependency path.
-- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries, recursively collected non-system dependencies, DejaVu Sans, and its license are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths. These packages were not manually tested on a real Mac for v1.1.0.
+- **Windows:** portable x86_64 ZIP with an embedded icon, SDL runtime, recursively collected non-system DLLs, DejaVu Sans, and its license.
+- **macOS:** separate x86_64 and arm64 ZIPs containing a real `Sudokura.app`. They are unsigned and were not manually tested on real Mac hardware for v1.1.0.
 
-On macOS, unzip and drag `Sudokura.app` to Applications. Because the artifacts are unsigned, use Finder's **Open** context action if Gatekeeper asks for confirmation. macOS users are invited to report whether the app opens and runs correctly, ideally including the Mac chip and macOS version.
+On macOS, unzip and drag `Sudokura.app` to Applications. Use Finder's **Open** context action if macOS asks for confirmation.
 
 ## Visual and technical history
 
@@ -69,12 +69,12 @@ The current screenshot is stored at [`docs/images/sudokura-v1.1.0.png`](docs/ima
 
 See the [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md), the [technical implementation record](docs/V1.1.0_IMPLEMENTATION.md), and the [documentation image archive](docs/images/README.md).
 
-## Asset policy
+## Branding assets
 
-`assets/branding/source/` is immutable artwork. `scripts/generate_assets.py` removes only alpha values at or below 8, crops visible content, centers it with transparent padding, and losslessly writes PNG sizes 16–1024, a multi-size ICO, ICNS, and embedded 128×128 RGBA data for `SDL_SetWindowIcon`. Runtime packages contain only the required derivatives, never all five originals.
+The logo artwork added for v1.1.0 lives in `assets/branding/source/`. `Sudokura03.png` is used for project presentation, `Sudokura02.png` supplies the in-game wordmark, and `Sudokura05.png` supplies reproducible application icons. Generated packages include only the required derived assets.
 
 ## Project scope
 
-Android and iOS remain a later feasibility phase; v1.1.0 contains no mobile projects.
+Sudokura remains a lightweight desktop game focused on Linux, Windows, and macOS.
 
 GPLv3 — © 2025–2026 [santirodriguez](https://santiagorodriguez.com)
