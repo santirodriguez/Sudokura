@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${VERSION:?}"
-font=$(pacman -Ql mingw-w64-x86_64-dejavu-fonts | awk '!found && /\/DejaVuSans.ttf$/{value=$2;found=1} END{print value}'); test -n "$font"; test -f "$font"; ./scripts/validate_font.py "$font"; export SUDOKURA_TEST_FONT="$font"
+font=$(pacman -Ql mingw-w64-x86_64-ttf-dejavu | awk '!found && /\/DejaVuSans.ttf$/{value=$2;found=1} END{print value}'); test -n "$font"; test -f "$font"; ./scripts/validate_font.py "$font"; export SUDOKURA_TEST_FONT="$font"
 make assets
 make WERROR=-Werror test test-ui
 windres packaging/windows/sudokura.rc -O coff -o icon.o
@@ -22,7 +22,7 @@ cp "$font" dist/; cp packaging/licenses/DejaVu-FONT-LICENSE.txt dist/
 sections=$(objdump -h dist/sudokura.exe); grep -Eq '[[:space:]]\.rsrc[[:space:]]' <<<"$sections"
 headers=$(objdump -p dist/sudokura.exe); grep -q 'Subsystem.*Windows GUI' <<<"$headers"
 resource_dump=$(objdump -s -j .rsrc dist/sudokura.exe); grep -qi '89504e47' <<<"$resource_dump"
-SDL_VIDEODRIVER=dummy timeout 30s dist/sudokura.exe --smoke-test
+SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 timeout 30s dist/sudokura.exe --smoke-test
 find dist -type f -printf '%f\n' | sort | tee inventory-windows.txt
 (cd dist && zip -9 ../Sudokura-v${VERSION}-windows-x86_64.zip ./*)
 unzip -t "Sudokura-v${VERSION}-windows-x86_64.zip"; zip_inventory=$(unzip -Z1 "Sudokura-v${VERSION}-windows-x86_64.zip"); grep -q '^sudokura.exe$' <<<"$zip_inventory"
