@@ -19,46 +19,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify assets and update draft notes
+      - name: Locate v1.1.0 draft
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -Eeuo pipefail
-
-          status_url="repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}"
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-
-          report_failure() {
-            code=$?
-            trap - ERR
-            set +e
-            gh api --method POST "$status_url" \
-              -f state='failure' \
-              -f context='release-draft-v1.1.0' \
-              -f description='Draft verification or update failed' \
-              -f target_url="$run_url" >/dev/null
-            exit "$code"
-          }
-          trap report_failure ERR
-
-          gh api --method POST "$status_url" \
-            -f state='pending' \
-            -f context='release-draft-v1.1.0' \
-            -f description='Verifying draft release and five assets' \
-            -f target_url="$run_url" >/dev/null
-
+          set -euo pipefail
           expected_tag_sha='7891a25bf22de9ac404fb42cb913ee7f341dc1c0'
           actual_tag_sha=$(git rev-list -n 1 v1.1.0)
+          echo "tag commit: $actual_tag_sha"
           test "$actual_tag_sha" = "$expected_tag_sha"
 
           gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases.json
-          jq '[.[] | select(.tag_name == "v1.1.0")] | if length == 1 then .[0] else error("expected exactly one v1.1.0 release") end' \
-            releases.json > release-before.json
+          count=$(jq '[.[] | select(.tag_name == "v1.1.0")] | length' releases.json)
+          echo "v1.1.0 release matches: $count"
+          test "$count" = '1'
+          jq '.[] | select(.tag_name == "v1.1.0")' releases.json > release-before.json
+          jq '{id, name, tag_name, draft, prerelease, assets: [.assets[].name]}' release-before.json
 
-          test "$(jq -r '.tag_name' release-before.json)" = 'v1.1.0'
           test "$(jq -r '.draft' release-before.json)" = 'true'
-          test "$(jq -r '.prerelease' release-before.json)" = 'false'
+          echo "release_id=$(jq -r '.id' release-before.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify five release assets
+        run: |
+          set -euo pipefail
           cat > expected-assets.txt <<'EOF'
           SHA256SUMS.txt
           Sudokura-v1.1.0-linux-x86_64.AppImage
@@ -66,10 +50,17 @@ jobs:
           Sudokura-v1.1.0-macos-x86_64-unsigned.zip
           Sudokura-v1.1.0-windows-x86_64.zip
           EOF
-          jq -r '.assets[].name' release-before.json | sort > actual-assets-before.txt
-          diff -u expected-assets.txt actual-assets-before.txt
+          jq -r '.assets[].name' release-before.json | sort > actual-assets.txt
+          echo 'release assets:'
+          cat actual-assets.txt
+          diff -u expected-assets.txt actual-assets.txt
 
-          release_id=$(jq -r '.id' release-before.json)
+      - name: Update and verify draft notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
           jq -n \
             --arg name 'Sudokura v1.1.0' \
             --rawfile body docs/RELEASE_NOTES_1.1.0.md \
@@ -77,10 +68,11 @@ jobs:
             > release-patch.json
 
           gh api --method PATCH \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             --input release-patch.json \
             > release-after.json
 
+          jq '{id, name, tag_name, draft, prerelease, assets: [.assets[].name]}' release-after.json
           test "$(jq -r '.name' release-after.json)" = 'Sudokura v1.1.0'
           test "$(jq -r '.tag_name' release-after.json)" = 'v1.1.0'
           test "$(jq -r '.draft' release-after.json)" = 'true'
@@ -99,9 +91,14 @@ jobs:
               raise SystemExit('release body does not match current release notes')
           PY
 
-          trap - ERR
-          gh api --method POST "$status_url" \
+      - name: Record successful draft verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state='success' \
             -f context='release-draft-v1.1.0' \
             -f description='Draft verified: five assets, notes updated, unpublished' \
-            -f target_url="$run_url" >/dev/null
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
