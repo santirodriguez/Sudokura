@@ -26,6 +26,66 @@ func scaled(src *image.NRGBA, size int) *image.NRGBA {
 	return dst
 }
 
+func scaledRect(src image.Image, width int) *image.NRGBA {
+	height := width * src.Bounds().Dy() / src.Bounds().Dx()
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			dst.Set(x, y, src.At(src.Bounds().Min.X+x*src.Bounds().Dx()/width,
+				src.Bounds().Min.Y+y*src.Bounds().Dy()/height))
+		}
+	}
+	return dst
+}
+
+func cropVisible(src image.Image, threshold uint8) *image.NRGBA {
+	b := src.Bounds()
+	minX, minY, maxX, maxY := b.Max.X, b.Max.Y, b.Min.X, b.Min.Y
+	clean := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
+			if c.A <= threshold {
+				c = color.NRGBA{}
+			}
+			clean.SetNRGBA(x-b.Min.X, y-b.Min.Y, c)
+			if c.A > 0 {
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x+1 > maxX {
+					maxX = x + 1
+				}
+				if y+1 > maxY {
+					maxY = y + 1
+				}
+			}
+		}
+	}
+	if maxX <= minX || maxY <= minY {
+		panic("source has no visible pixels")
+	}
+	return clean.SubImage(image.Rect(minX-b.Min.X, minY-b.Min.Y, maxX-b.Min.X, maxY-b.Min.Y)).(*image.NRGBA)
+}
+
+func emitRGBA(path, symbol string, img *image.NRGBA) {
+	var c bytes.Buffer
+	fmt.Fprintf(&c, "#include \"%s.h\"\nconst unsigned int %s_width=%d,%s_height=%d;\nconst unsigned char %s_rgba[]={", filepath.Base(path), symbol, img.Bounds().Dx(), symbol, img.Bounds().Dy(), symbol)
+	for i, v := range img.Pix {
+		if i%20 == 0 {
+			c.WriteByte('\n')
+		}
+		fmt.Fprintf(&c, "%d,", v)
+	}
+	c.WriteString("\n};\n")
+	os.WriteFile(path+".c", c.Bytes(), 0644)
+	header := fmt.Sprintf("#ifndef %s_H\n#define %s_H\nextern const unsigned int %s_width,%s_height;\nextern const unsigned char %s_rgba[];\n#endif\n", symbol, symbol, symbol, symbol, symbol)
+	os.WriteFile(path+".h", []byte(header), 0644)
+}
+
 func pngBytes(img image.Image) []byte {
 	var data bytes.Buffer
 	encoder := png.Encoder{CompressionLevel: png.BestCompression}
@@ -130,17 +190,18 @@ func main() {
 	binary.Write(&icns, binary.BigEndian, uint32(body.Len()+8))
 	icns.Write(body.Bytes())
 	os.WriteFile("assets/generated/sudokura.icns", icns.Bytes(), 0644)
-	var c bytes.Buffer
-	c.WriteString("#include \"window_icon.h\"\nconst unsigned int sudokura_icon_width=128,sudokura_icon_height=128;\nconst unsigned char sudokura_icon_rgba[]={")
-	for i, v := range images[4].Pix {
-		if i%20 == 0 {
-			c.WriteByte('\n')
-		}
-		fmt.Fprintf(&c, "%d,", v)
+	emitRGBA("assets/generated/window_icon", "sudokura_icon", images[4])
+	wordFile, err := os.Open("assets/branding/source/Sudokura02.png")
+	if err != nil {
+		panic(err)
 	}
-	c.WriteString("\n};\n")
-	os.WriteFile("assets/generated/window_icon.c", c.Bytes(), 0644)
-	os.WriteFile("assets/generated/window_icon.h", []byte("#ifndef WINDOW_ICON_H\n#define WINDOW_ICON_H\nextern const unsigned int sudokura_icon_width,sudokura_icon_height;\nextern const unsigned char sudokura_icon_rgba[];\n#endif\n"), 0644)
+	wordSource, err := png.Decode(wordFile)
+	wordFile.Close()
+	if err != nil {
+		panic(err)
+	}
+	wordmark := scaledRect(cropVisible(wordSource, 8), 384)
+	emitRGBA("assets/generated/wordmark", "sudokura_wordmark", wordmark)
 	files, _ := filepath.Glob("assets/generated/*")
 	fmt.Printf("generated and validated %d icon resources\n", len(files))
 }

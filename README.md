@@ -30,11 +30,23 @@ Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, Python 3, and Go (the latter
 make assets       # regenerate icons from immutable Sudokura05.png
 make              # builds ./sudokura with C11 warnings enabled
 make test         # deterministic gameplay, generator, i18n, and geometry tests
+make test-ui      # SDL_ttf measurements for every language and viewport tier
 make clean
 ./sudokura [--font /path/to/font.ttf]
 ```
 
-The automated geometry suite covers 640×480, 800×600, 1024×720, 1280×720, 1366×768, and 1920×1080. Runtime packages bundle a UTF-8-capable fallback font.
+The bounded desktop shell is tested from 640×480 through 3440×1440, and the
+touch-ready stacked shell is tested at 360×640, 390×844, and 412×915. Runtime
+packages bundle a UTF-8-capable fallback font. The English, Español, and Català
+segments use the same geometry for rendering and pointer hit-testing.
+
+`./sudokura --smoke-test` renders deterministic title and play frames without
+interaction. `./sudokura --render-screenshots DIR` writes 40 dependency-free
+BMP reviews covering ten viewports, four screens, all languages, and both themes.
+`./scripts/validate_screenshots.py DIR` verifies every BMP's exact dimensions
+and rejects missing or blank-looking frames. Fonts come from a 17-entry cache
+(10–48 px); geometry selects separate note, body, control, cell, HUD, and heading
+tiers without reopening fonts during frames.
 
 ## Packages
 

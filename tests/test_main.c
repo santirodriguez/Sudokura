@@ -95,24 +95,26 @@ static void assert_screen_geometry(const AppGeometry *g, int width, int height) 
 
 static void test_geometry(void) {
   const int sizes[][2] = {{640,480},{800,600},{1024,720},{1280,720},
-                          {1366,768},{1920,1080}};
+      {1366,768},{1920,1080},{2560,1440},{3440,1440},
+      {360,640},{390,844},{412,915}};
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
       int width = sizes[s][0], height = sizes[s][1];
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert(geometry_play_valid(&g, width, height));
-      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 32);
+      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 25);
       assert(g.hud_count == (mode == GEOMETRY_MODE_CLASSIC ? 2 : 3));
       assert(geometry_rect_in_bounds(g.play_title, width, height));
       for (int i = 0; i < g.hud_count; ++i)
         assert(geometry_rect_in_bounds(g.hud[i], width, height));
       for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i)
-        assert(g.actions[i].w >= 110 && g.actions[i].h >= 26);
+        assert(g.actions[i].w >= 70 && g.actions[i].h >= 40);
       assert(geometry_rect_in_bounds(g.palette_label, width, height));
       for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
-        assert(g.palette[i].w >= 70 && g.palette[i].h >= 24);
+        assert(g.palette[i].w >= 70 && g.palette[i].h >= 28);
       assert(geometry_rect_in_bounds(g.progress, width, height));
+      assert(g.progress.h >= 18 && g.palette_label.h >= 18);
       assert(geometry_rect_in_bounds(g.language, width, height));
       assert(!rects_overlap(g.language, g.play_title));
       for (int i = 0; i < g.hud_count; ++i)
@@ -121,8 +123,30 @@ static void test_geometry(void) {
     }
   }
   AppGeometry invalid;
-  assert(!geometry_compute(639, 480, GEOMETRY_MODE_CLASSIC, &invalid));
+  assert(!geometry_compute(359, 640, GEOMETRY_MODE_CLASSIC, &invalid));
   assert(!geometry_compute(640, 479, GEOMETRY_MODE_CLASSIC, &invalid));
+}
+
+static void test_window_size_normalization(void) {
+  const int cases[][4] = {
+    {640,480,640,480}, {800,600,800,600},
+    {360,640,360,640}, {390,844,390,844}, {412,915,412,915},
+    {500,500,640,500}
+  };
+  for (unsigned i=0;i<sizeof(cases)/sizeof(cases[0]);++i) {
+    int width=0,height=0;
+    bool changed=geometry_normalize_window_size(cases[i][0],cases[i][1],&width,&height);
+    assert(width==cases[i][2]&&height==cases[i][3]);
+    assert(changed==(width!=cases[i][0]||height!=cases[i][1]));
+    assert(geometry_window_size_supported(width,height));
+    for(int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode){
+      AppGeometry geometry;
+      assert(geometry_compute(width,height,(GeometryMode)mode,&geometry));
+    }
+    int second_width=0,second_height=0;
+    assert(!geometry_normalize_window_size(width,height,&second_width,&second_height));
+    assert(second_width==width&&second_height==height);
+  }
 }
 
 static void test_i18n(void) {
@@ -138,7 +162,8 @@ int main(void) {
   test_bounds();
   test_conflicts_and_end();
   test_geometry();
+  test_window_size_normalization();
   test_i18n();
-  puts("all tests passed (12 seeds; 18 mode/viewports; all screens; API bounds)");
+  puts("all tests passed (12 seeds; 33 mode/viewports including portrait and ultrawide; all screens; API bounds)");
   return 0;
 }

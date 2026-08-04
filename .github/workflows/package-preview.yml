@@ -1,14 +1,20 @@
-name: Package Sudokura v1.1.0
+name: Preview Sudokura v1.1.0 packages
 on:
   workflow_dispatch:
-  push: {tags: ['v1.*']}
-permissions: {contents: write}
+    inputs:
+      ref:
+        description: Commit, branch, or tag to package without publishing
+        required: true
+        default: upgrade/v1.1.0
+        type: string
+permissions: {contents: read}
 env: {VERSION: '1.1.0'}
 jobs:
   linux:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with: {ref: '${{ inputs.ref }}'}
       - uses: actions/setup-go@v6
         with: {go-version: '1.24.x', cache: false}
       - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libfuse2 wget fonts-dejavu-core
@@ -26,6 +32,7 @@ jobs:
     defaults: {run: {shell: 'msys2 {0}'}}
     steps:
       - uses: actions/checkout@v6
+        with: {ref: '${{ inputs.ref }}'}
       - uses: actions/setup-go@v6
         with: {go-version: '1.24.x', cache: false}
       - uses: msys2/setup-msys2@v2
@@ -38,6 +45,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
+        with: {ref: '${{ inputs.ref }}'}
       - uses: actions/setup-go@v6
         with: {go-version: '1.24.x', cache: false}
       - run: brew untap aws/tap || true; brew install sdl2 sdl2_ttf pkg-config; brew install --cask font-dejavu-sans
@@ -54,14 +62,3 @@ jobs:
       - run: cat artifacts/SHA256SUMS-*.txt | sort -k2 > artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v7
         with: {name: checksums, path: artifacts/SHA256SUMS.txt}
-
-  draft-release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [linux, windows, macos, checksums]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
-        with: {path: artifacts, merge-multiple: true}
-      - uses: softprops/action-gh-release@v2
-        with: {draft: true, prerelease: false, files: 'artifacts/*', body_path: 'docs/RELEASE_NOTES_1.1.0.md'}

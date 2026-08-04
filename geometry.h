@@ -41,9 +41,17 @@ typedef struct {
   GeoRect end_buttons[GEOMETRY_END_BUTTON_COUNT];
 } AppGeometry;
 
+typedef struct {
+  int note, help, body, control, hud, cell, heading;
+} GeometryFonts;
+
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *out);
+bool geometry_window_size_supported(int width, int height);
+bool geometry_normalize_window_size(int requested_width, int requested_height,
+                                    int *normalized_width, int *normalized_height);
 bool geometry_contains(GeoRect rect, int x, int y);
 bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
+GeometryFonts geometry_font_sizes(const AppGeometry *geometry, int width, int height);
 
 #endif
