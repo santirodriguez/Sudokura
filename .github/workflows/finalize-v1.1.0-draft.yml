@@ -1,0 +1,83 @@
+name: Finalize Sudokura v1.1.0 draft
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/finalize-v1.1.0-draft.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-update-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify assets and update draft notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          expected_tag_sha='7891a25bf22de9ac404fb42cb913ee7f341dc1c0'
+          actual_tag_sha=$(git rev-list -n 1 v1.1.0)
+          test "$actual_tag_sha" = "$expected_tag_sha"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.0" > release-before.json
+          test "$(jq -r '.draft' release-before.json)" = 'true'
+          test "$(jq -r '.prerelease' release-before.json)" = 'false'
+
+          cat > expected-assets.txt <<'EOF'
+          SHA256SUMS.txt
+          Sudokura-v1.1.0-linux-x86_64.AppImage
+          Sudokura-v1.1.0-macos-arm64-unsigned.zip
+          Sudokura-v1.1.0-macos-x86_64-unsigned.zip
+          Sudokura-v1.1.0-windows-x86_64.zip
+          EOF
+          jq -r '.assets[].name' release-before.json | sort > actual-assets.txt
+          diff -u expected-assets.txt actual-assets.txt
+
+          gh release edit v1.1.0 \
+            --title 'Sudokura v1.1.0' \
+            --notes-file docs/RELEASE_NOTES_1.1.0.md \
+            --draft
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.0" > release-after.json
+          test "$(jq -r '.draft' release-after.json)" = 'true'
+          test "$(jq -r '.prerelease' release-after.json)" = 'false'
+          jq -r '.assets[].name' release-after.json | sort > actual-assets-after.txt
+          diff -u expected-assets.txt actual-assets-after.txt
+          jq -r '.body' release-after.json > actual-body.md
+          cmp docs/RELEASE_NOTES_1.1.0.md actual-body.md
+
+          release_id=$(jq -r '.id' release-after.json)
+          release_url=$(jq -r '.html_url' release-after.json)
+          body_sha=$(sha256sum docs/RELEASE_NOTES_1.1.0.md | awk '{print $1}')
+
+          cat > docs/RELEASE_DRAFT_1.1.0_VALIDATED.md <<EOF
+          # Sudokura v1.1.0 draft validation
+
+          - Tag: \`v1.1.0\`
+          - Tag commit: \`${actual_tag_sha}\`
+          - Release ID: \`${release_id}\`
+          - Release URL: ${release_url}
+          - Draft: \`true\`
+          - Prerelease: \`false\`
+          - Release body SHA-256: \`${body_sha}\`
+          - Assets verified: exactly five
+
+          \`\`\`text
+          $(cat expected-assets.txt)
+          \`\`\`
+          EOF
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/RELEASE_DRAFT_1.1.0_VALIDATED.md
+          git commit -m 'chore: record v1.1.0 draft validation'
+          git push
