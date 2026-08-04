@@ -7,8 +7,9 @@ SDL_LIBS := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 # SDL's MinGW pkg-config metadata targets GUI applications and may inject
 # main=SDL_main, SDL2main, mingw32, and -mwindows. The SDL_ttf test is a
 # normal console executable, so keep the library headers/libs but remove the
-# application entry-point wrappers.
-SDL_TEST_CFLAGS := $(filter-out -Dmain=SDL_main,$(SDL_CFLAGS)) -DSDL_MAIN_HANDLED
+# application entry-point wrappers. tests/test_text_fit.c defines
+# SDL_MAIN_HANDLED itself before including SDL headers.
+SDL_TEST_CFLAGS := $(filter-out -Dmain=SDL_main,$(SDL_CFLAGS))
 SDL_TEST_LIBS := $(filter-out -lmingw32 -lSDL2main -mwindows,$(SDL_LIBS))
 CORE = game.c geometry.c i18n.c
 .PHONY: all test test-ui clean assets
