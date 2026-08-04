@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  statuses: write
 
 jobs:
   verify-and-update-draft:
@@ -22,13 +23,33 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+
+          status_url="repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          report_failure() {
+            set +e
+            gh api --method POST "$status_url" \
+              -f state='failure' \
+              -f context='release-draft-v1.1.0' \
+              -f description='Draft verification or update failed' \
+              -f target_url="$run_url" >/dev/null
+          }
+          trap report_failure ERR
+
+          gh api --method POST "$status_url" \
+            -f state='pending' \
+            -f context='release-draft-v1.1.0' \
+            -f description='Verifying draft release and five assets' \
+            -f target_url="$run_url" >/dev/null
 
           expected_tag_sha='7891a25bf22de9ac404fb42cb913ee7f341dc1c0'
           actual_tag_sha=$(git rev-list -n 1 v1.1.0)
           test "$actual_tag_sha" = "$expected_tag_sha"
 
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.0" > release-before.json
+          test "$(jq -r '.tag_name' release-before.json)" = 'v1.1.0'
           test "$(jq -r '.draft' release-before.json)" = 'true'
           test "$(jq -r '.prerelease' release-before.json)" = 'false'
 
@@ -39,45 +60,42 @@ jobs:
           Sudokura-v1.1.0-macos-x86_64-unsigned.zip
           Sudokura-v1.1.0-windows-x86_64.zip
           EOF
-          jq -r '.assets[].name' release-before.json | sort > actual-assets.txt
-          diff -u expected-assets.txt actual-assets.txt
+          jq -r '.assets[].name' release-before.json | sort > actual-assets-before.txt
+          diff -u expected-assets.txt actual-assets-before.txt
 
-          gh release edit v1.1.0 \
-            --title 'Sudokura v1.1.0' \
-            --notes-file docs/RELEASE_NOTES_1.1.0.md \
-            --draft
+          release_id=$(jq -r '.id' release-before.json)
+          jq -n \
+            --arg name 'Sudokura v1.1.0' \
+            --rawfile body docs/RELEASE_NOTES_1.1.0.md \
+            '{name: $name, body: $body, draft: true, prerelease: false}' \
+            > release-patch.json
 
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.0" > release-after.json
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            --input release-patch.json \
+            > release-after.json
+
+          test "$(jq -r '.name' release-after.json)" = 'Sudokura v1.1.0'
+          test "$(jq -r '.tag_name' release-after.json)" = 'v1.1.0'
           test "$(jq -r '.draft' release-after.json)" = 'true'
           test "$(jq -r '.prerelease' release-after.json)" = 'false'
           jq -r '.assets[].name' release-after.json | sort > actual-assets-after.txt
           diff -u expected-assets.txt actual-assets-after.txt
-          jq -r '.body' release-after.json > actual-body.md
-          cmp docs/RELEASE_NOTES_1.1.0.md actual-body.md
 
-          release_id=$(jq -r '.id' release-after.json)
-          release_url=$(jq -r '.html_url' release-after.json)
-          body_sha=$(sha256sum docs/RELEASE_NOTES_1.1.0.md | awk '{print $1}')
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
 
-          cat > docs/RELEASE_DRAFT_1.1.0_VALIDATED.md <<EOF
-          # Sudokura v1.1.0 draft validation
+          release = json.loads(Path('release-after.json').read_text(encoding='utf-8'))
+          expected = Path('docs/RELEASE_NOTES_1.1.0.md').read_text(encoding='utf-8')
+          actual = release.get('body') or ''
+          if actual.rstrip('\n') != expected.rstrip('\n'):
+              raise SystemExit('release body does not match current release notes')
+          PY
 
-          - Tag: \`v1.1.0\`
-          - Tag commit: \`${actual_tag_sha}\`
-          - Release ID: \`${release_id}\`
-          - Release URL: ${release_url}
-          - Draft: \`true\`
-          - Prerelease: \`false\`
-          - Release body SHA-256: \`${body_sha}\`
-          - Assets verified: exactly five
-
-          \`\`\`text
-          $(cat expected-assets.txt)
-          \`\`\`
-          EOF
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/RELEASE_DRAFT_1.1.0_VALIDATED.md
-          git commit -m 'chore: record v1.1.0 draft validation'
-          git push
+          trap - ERR
+          gh api --method POST "$status_url" \
+            -f state='success' \
+            -f context='release-draft-v1.1.0' \
+            -f description='Draft verified: five assets, notes updated, unpublished' \
+            -f target_url="$run_url" >/dev/null
