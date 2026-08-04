@@ -21,62 +21,78 @@ rm -rf dist zipcheck
 mkdir dist
 cp sudokura.exe dist/
 
-# Recursively discover only redistributable MSYS2 dependencies. ntldd -R also
-# descends into Windows system DLLs, whose optional/API-set imports are useful
-# diagnostics but are not files that belong in a portable application bundle.
-for pass in 1 2 3 4 5 6; do
+is_system_import() {
+  local dll=$1 lower
+  lower=$(printf '%s' "$dll" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    api-ms-*.dll|ext-ms-*.dll) return 0 ;;
+  esac
+  [[ -f "/c/Windows/System32/$dll" || -f "/c/Windows/SysWOW64/$dll" ]]
+}
+
+bundled_import_path() {
+  find dist -maxdepth 1 -type f -iname "$1" -print -quit
+}
+
+mingw_import_path() {
+  find /mingw64/bin -maxdepth 1 -type f -iname "$1" -print -quit
+}
+
+# Build the complete redistributable dependency closure from the direct PE
+# import tables. This is independent of ntldd output formatting and never
+# traverses optional internals of Windows system DLLs.
+for pass in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  changed=0
   mapfile -t files < <(find dist -maxdepth 1 -type f \( -iname '*.exe' -o -iname '*.dll' \) -print | sort)
   test "${#files[@]}" -gt 0
-  ntldd -R "${files[@]}" > dependencies-windows-recursive.txt
-  mapfile -t deps < <(awk 'tolower($0) ~ /=> \/mingw64\// {print $3}' dependencies-windows-recursive.txt | sort -u)
-  before=${#files[@]}
-  for dep in "${deps[@]}"; do
-    test -f "$dep"
-    cp -n "$dep" dist/
+  for file in "${files[@]}"; do
+    while IFS= read -r dll; do
+      test -n "$dll" || continue
+      if [[ -n "$(bundled_import_path "$dll")" ]] || is_system_import "$dll"; then
+        continue
+      fi
+      dep=$(mingw_import_path "$dll")
+      if [[ -z "$dep" ]]; then
+        printf '%s -> %s\n' "$file" "$dll" >&2
+        echo 'direct DLL import is neither bundled, provided by Windows, nor available from MSYS2' >&2
+        exit 1
+      fi
+      cp -n "$dep" dist/
+      changed=1
+    done < <(objdump -p "$file" | awk '/DLL Name:/{print $3}')
   done
-  mapfile -t files < <(find dist -maxdepth 1 -type f \( -iname '*.exe' -o -iname '*.dll' \) -print)
-  (( ${#files[@]} == before )) && break
+  (( changed == 0 )) && break
 done
 
 mapfile -t files < <(find dist -maxdepth 1 -type f \( -iname '*.exe' -o -iname '*.dll' \) -print | sort)
 test "${#files[@]}" -gt 0
 
-# Keep a concise direct-dependency report. Recursive system-DLL traversal is
-# intentionally not used as a release gate because it reports optional Windows
-# internals and API-set contracts that applications neither ship nor control.
-ntldd "${files[@]}" | tee dependencies-windows.txt
-
-if grep -Ei '=>[[:space:]]+(/mingw64/|[A-Za-z]:[\\/][^[:space:]]*mingw64[\\/])' dependencies-windows.txt; then
-  echo 'packaged dependency still resolves from the MSYS2 installation' >&2
-  exit 1
-fi
-
-# Validate the actual PE import tables of every file we ship. An import is
-# satisfied only by another bundled file, a physical Windows system DLL, or a
-# Windows API-set contract. Any other direct import is a real packaging error.
+# Verify closure independently after collection. Any remaining direct import
+# outside the bundle, Windows, or an API-set contract is a real package error.
 : > unresolved-direct-windows.txt
 for file in "${files[@]}"; do
   while IFS= read -r dll; do
     test -n "$dll" || continue
-    lower=$(printf '%s' "$dll" | tr '[:upper:]' '[:lower:]')
-    case "$lower" in
-      api-ms-*.dll|ext-ms-*.dll) continue ;;
-    esac
-    if find dist -maxdepth 1 -type f -iname "$dll" -print -quit | grep -q .; then
-      continue
-    fi
-    if [[ -f "/c/Windows/System32/$dll" || -f "/c/Windows/SysWOW64/$dll" ]]; then
+    if [[ -n "$(bundled_import_path "$dll")" ]] || is_system_import "$dll"; then
       continue
     fi
     printf '%s -> %s\n' "$file" "$dll" >> unresolved-direct-windows.txt
   done < <(objdump -p "$file" | awk '/DLL Name:/{print $3}')
 done
-
 if [[ -s unresolved-direct-windows.txt ]]; then
   cat unresolved-direct-windows.txt >&2
   echo 'unresolved direct non-system DLL import' >&2
   exit 1
 fi
+
+# ntldd remains a human-readable report only. Prepending dist makes its search
+# order match a portable launch; no direct dependency may resolve from MSYS2.
+PATH="$PWD/dist:$PATH" ntldd "${files[@]}" | tee dependencies-windows.txt
+if grep -Ei '=>[[:space:]]+[^[:space:]]*[/\\]mingw64[/\\]' dependencies-windows.txt; then
+  echo 'packaged dependency still resolves from the MSYS2 installation' >&2
+  exit 1
+fi
+PATH="$PWD/dist:$PATH" ntldd -R "${files[@]}" > dependencies-windows-recursive.txt
 
 cp "$font" dist/
 cp packaging/licenses/DejaVu-FONT-LICENSE.txt dist/
@@ -88,11 +104,10 @@ grep -q 'Subsystem.*Windows GUI' <<<"$headers"
 resource_dump=$(objdump -s -j .rsrc dist/sudokura.exe)
 grep -qi '89504e47' <<<"$resource_dump"
 
-# Use a clean runtime PATH so the MSYS2 installation cannot hide a DLL that is
-# absent from the portable directory.
 timeout_bin=$(command -v timeout)
 clean_path="$PWD/dist:/c/Windows/System32:/c/Windows"
-env PATH="$clean_path" SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
+env PATH="$clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$PWD/dist/sudokura.exe" --smoke-test
 
 find dist -type f -printf '%f\n' | sort | tee inventory-windows.txt
@@ -102,11 +117,11 @@ unzip -t "$archive"
 zip_inventory=$(unzip -Z1 "$archive")
 grep -q '^sudokura.exe$' <<<"$zip_inventory"
 
-# Validate the exact extracted archive, again without access to MSYS2 DLLs.
 mkdir zipcheck
 unzip -q "$archive" -d zipcheck
 zip_clean_path="$PWD/zipcheck:/c/Windows/System32:/c/Windows"
-env PATH="$zip_clean_path" SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
+env PATH="$zip_clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+  SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$PWD/zipcheck/sudokura.exe" --smoke-test
 
 sha256sum "$archive" > SHA256SUMS-windows.txt
