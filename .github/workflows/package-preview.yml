@@ -19,7 +19,7 @@ jobs:
         with: {go-version: '1.24.x', cache: false}
       - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libfuse2 wget fonts-dejavu-core
       - run: make assets && make WERROR=-Werror test test-ui all
-      - run: SDL_VIDEODRIVER=dummy ./sudokura --render-screenshots ui-review
+      - run: SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 ./sudokura --render-screenshots ui-review
       - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
       - run: wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -O linuxdeploy && chmod +x linuxdeploy
       - run: VERSION=$VERSION LINUXDEPLOY=$PWD/linuxdeploy packaging/ci/package-linux.sh
@@ -36,12 +36,12 @@ jobs:
       - uses: actions/setup-go@v6
         with: {go-version: '1.24.x', cache: false}
       - uses: msys2/setup-msys2@v2
-        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-ntldd-git mingw-w64-x86_64-dejavu-fonts zip'}
+        with: {msystem: MINGW64, update: true, install: 'mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_ttf mingw-w64-x86_64-ntldd-git mingw-w64-x86_64-ttf-dejavu zip'}
       - run: VERSION=$VERSION packaging/ci/package-windows.sh
       - uses: actions/upload-artifact@v7
         with: {name: windows-x86_64, path: "Sudokura-*.zip\nSHA256SUMS-windows.txt\ninventory-windows.txt\ndependencies-windows.txt"}
   macos:
-    strategy: {matrix: {include: [{runner: macos-13, arch: x86_64}, {runner: macos-14, arch: arm64}]}}
+    strategy: {fail-fast: false, matrix: {include: [{runner: macos-13, arch: x86_64}, {runner: macos-14, arch: arm64}]}}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
