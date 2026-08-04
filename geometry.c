@@ -4,6 +4,21 @@
 
 enum { GAP = 6, DESKTOP_MIN_W = 640, DESKTOP_MIN_H = 480 };
 
+bool geometry_window_size_supported(int width,int height){
+  return (width>=DESKTOP_MIN_W&&height>=DESKTOP_MIN_H)||
+         (width>=360&&height>=640);
+}
+
+bool geometry_normalize_window_size(int requested_width,int requested_height,
+                                    int *normalized_width,int *normalized_height){
+  if(!normalized_width||!normalized_height)return false;
+  int width=requested_width<360?360:requested_width;
+  int height=requested_height<DESKTOP_MIN_H?DESKTOP_MIN_H:requested_height;
+  if(!geometry_window_size_supported(width,height))width=DESKTOP_MIN_W;
+  *normalized_width=width;*normalized_height=height;
+  return width!=requested_width||height!=requested_height;
+}
+
 static bool overlaps(GeoRect a, GeoRect b) {
   return a.x < b.x + b.w && b.x < a.x + a.w &&
          a.y < b.y + b.h && b.y < a.y + a.h;
@@ -48,7 +63,7 @@ static void common_screens(int width, int height, int margin, AppGeometry *g) {
 
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) {
   bool portrait = width >= 360 && height >= 640 && width < 640;
-  if (!g || (!portrait && (width < DESKTOP_MIN_W || height < DESKTOP_MIN_H)) ||
+  if (!g || !geometry_window_size_supported(width,height) ||
       mode < GEOMETRY_MODE_CLASSIC || mode > GEOMETRY_MODE_TIME) return false;
   memset(g,0,sizeof(*g));
   int margin = portrait ? 8 : 16;

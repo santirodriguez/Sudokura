@@ -127,6 +127,28 @@ static void test_geometry(void) {
   assert(!geometry_compute(640, 479, GEOMETRY_MODE_CLASSIC, &invalid));
 }
 
+static void test_window_size_normalization(void) {
+  const int cases[][4] = {
+    {640,480,640,480}, {800,600,800,600},
+    {360,640,360,640}, {390,844,390,844}, {412,915,412,915},
+    {500,500,640,500}
+  };
+  for (unsigned i=0;i<sizeof(cases)/sizeof(cases[0]);++i) {
+    int width=0,height=0;
+    bool changed=geometry_normalize_window_size(cases[i][0],cases[i][1],&width,&height);
+    assert(width==cases[i][2]&&height==cases[i][3]);
+    assert(changed==(width!=cases[i][0]||height!=cases[i][1]));
+    assert(geometry_window_size_supported(width,height));
+    for(int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode){
+      AppGeometry geometry;
+      assert(geometry_compute(width,height,(GeometryMode)mode,&geometry));
+    }
+    int second_width=0,second_height=0;
+    assert(!geometry_normalize_window_size(width,height,&second_width,&second_height));
+    assert(second_width==width&&second_height==height);
+  }
+}
+
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key)
@@ -140,6 +162,7 @@ int main(void) {
   test_bounds();
   test_conflicts_and_end();
   test_geometry();
+  test_window_size_normalization();
   test_i18n();
   puts("all tests passed (12 seeds; 33 mode/viewports including portrait and ultrawide; all screens; API bounds)");
   return 0;

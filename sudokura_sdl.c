@@ -641,7 +641,7 @@ static bool app_init(Gfx*g,const char*font_cli){
   if(TTF_Init()!=0){fprintf(stderr,"TTF_Init: %s\n",TTF_GetError());app_shutdown(g);return false;}
   g->win=SDL_CreateWindow(SUDOKURA_NAME_VERSION,SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,g->width,g->height,SDL_WINDOW_RESIZABLE);
   if(!g->win){fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());app_shutdown(g);return false;}
-  SDL_SetWindowMinimumSize(g->win,640,480);
+  SDL_SetWindowMinimumSize(g->win,360,480);
   g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
   if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);
   if(!g->ren){fprintf(stderr,"SDL_CreateRenderer: %s\n",SDL_GetError());app_shutdown(g);return false;}
@@ -675,6 +675,13 @@ static bool make_directory(const char*path){
     part[i]=saved;
   }
   return true;
+}
+
+static void apply_window_resize(Gfx*g,int requested_width,int requested_height){
+  int width=0,height=0;
+  bool changed=geometry_normalize_window_size(requested_width,requested_height,&width,&height);
+  if(changed)SDL_SetWindowSize(g->win,width,height);
+  SDL_GetWindowSize(g->win,&g->width,&g->height);
 }
 
 /* =================== MAIN =================== */
@@ -720,7 +727,7 @@ int main(int argc,char**argv){
   while(running){
     while(SDL_PollEvent(&e)){
       if(e.type==SDL_QUIT) running=false;
-      else if(e.type==SDL_WINDOWEVENT && e.window.event==SDL_WINDOWEVENT_SIZE_CHANGED){ g.width=e.window.data1; g.height=e.window.data2; }
+      else if(e.type==SDL_WINDOWEVENT && e.window.event==SDL_WINDOWEVENT_SIZE_CHANGED){apply_window_resize(&g,e.window.data1,e.window.data2);}
       else if(e.type==SDL_KEYDOWN){
         SDL_Keycode k=e.key.keysym.sym;
         if(k==SDLK_l){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
