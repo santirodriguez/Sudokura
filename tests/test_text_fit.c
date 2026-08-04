@@ -1,6 +1,10 @@
 #include "geometry.h"
 #include "i18n.h"
+#define SDL_MAIN_HANDLED
 #include <SDL2/SDL_ttf.h>
+#ifdef main
+#undef main
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
