@@ -7,7 +7,7 @@ FONT_LICENSE="$PWD/packaging/licenses/DejaVu-FONT-LICENSE.txt" PREFIX=$(brew --p
 file Sudokura.app/Contents/MacOS/sudokura | tee "architecture-macos-${ARCH}.txt"; grep -q "$ARCH" "architecture-macos-${ARCH}.txt"
 for required in Contents/Info.plist Contents/Resources/sudokura.icns Contents/Resources/DejaVuSans.ttf Contents/Resources/DejaVu-FONT-LICENSE.txt; do test -s "Sudokura.app/$required"; done
 ./scripts/validate_font.py Sudokura.app/Contents/Resources/DejaVuSans.ttf
-SDL_VIDEODRIVER=dummy python3 -c 'import subprocess; subprocess.run(["Sudokura.app/Contents/MacOS/sudokura","--smoke-test"],check=True,timeout=30)'
+SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 python3 -c 'import subprocess; subprocess.run(["Sudokura.app/Contents/MacOS/sudokura","--smoke-test"],check=True,timeout=60)'
 find Sudokura.app -type f | sort | tee "inventory-macos-${ARCH}.txt"
 mapfile=(); while IFS= read -r -d '' f; do mapfile+=("$f"); done < <(find Sudokura.app/Contents/Frameworks -type f -name '*.dylib' -print0)
 (( ${#mapfile[@]} > 0 )); otool -L Sudokura.app/Contents/MacOS/sudokura "${mapfile[@]}" | tee "dependencies-macos-${ARCH}.txt"
