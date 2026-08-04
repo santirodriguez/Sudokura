@@ -34,7 +34,7 @@ Ready-to-play packages are published in [GitHub Releases](https://github.com/san
 - `Sudokura-v1.1.0-macos-arm64-unsigned.zip` — macOS Apple Silicon.
 - `SHA256SUMS.txt` — SHA-256 checksums for all four packages.
 
-The Linux AppImage and Windows ZIP have been tested manually. Both macOS packages are structurally and dependency validated by CI but remain unsigned and not notarized.
+The Linux AppImage and Windows ZIP have been tested manually. Both macOS packages passed automated architecture, dependency, resource, archive-integrity, and checksum validation, but were **not launched manually on real Mac hardware**. They are distributed as unsigned, unnotarized, untested builds. Feedback from Intel and Apple Silicon users is especially appreciated.
 
 ## Build and test
 
@@ -59,9 +59,9 @@ The tag/manual packaging workflow builds consistently named v1.1.0 artifacts and
 
 - **Linux:** executable x86_64 AppImage with the derived application icon and desktop entry.
 - **Windows:** portable x86_64 ZIP with an embedded icon, SDL runtime, recursively collected transitive non-system DLLs, DejaVu Sans, and its license. CI fails on missing direct imports and smoke-tests both the package directory and the extracted ZIP with a clean dependency path.
-- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries, recursively collected non-system dependencies, DejaVu Sans, and its license are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths.
+- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries, recursively collected non-system dependencies, DejaVu Sans, and its license are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths. These packages were not manually tested on a real Mac for v1.1.0.
 
-On macOS, unzip and drag `Sudokura.app` to Applications. Because the artifacts are unsigned, use Finder's **Open** context action if Gatekeeper asks for confirmation.
+On macOS, unzip and drag `Sudokura.app` to Applications. Because the artifacts are unsigned, use Finder's **Open** context action if Gatekeeper asks for confirmation. macOS users are invited to report whether the app opens and runs correctly, ideally including the Mac chip and macOS version.
 
 ## Visual and technical history
 
