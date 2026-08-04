@@ -64,6 +64,6 @@ On macOS, unzip and drag `Sudokura.app` to Applications. Because current artifac
 
 ## Project scope
 
-Android and iOS remain a later feasibility phase; v1.1.0 contains no mobile projects. See [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md).
+Android and iOS remain a later feasibility phase; v1.1.0 contains no mobile projects. See [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md) and the [technical implementation record](docs/V1.1.0_IMPLEMENTATION.md).
 
 GPLv3 — © 2025–2026 [santirodriguez](https://santiagorodriguez.com)
