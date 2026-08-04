@@ -27,11 +27,11 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state='pending' \
             -f context='release-draft-v1.1.0' \
-            -f description='Verifying unpublished v1.1.0 release' \
+            -f description='Removing duplicate and verifying canonical draft' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             >/dev/null
 
-      - name: Locate draft through GraphQL
+      - name: Locate canonical and duplicate drafts
         id: locate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,30 +53,55 @@ jobs:
           import json
           from pathlib import Path
 
+          expected_assets = {
+              'SHA256SUMS.txt',
+              'Sudokura-v1.1.0-linux-x86_64.AppImage',
+              'Sudokura-v1.1.0-windows-x86_64.zip',
+              'Sudokura-v1.1.0-macos-x86_64-unsigned.zip',
+              'Sudokura-v1.1.0-macos-arm64-unsigned.zip',
+          }
           data = json.loads(Path('releases-graphql.json').read_text(encoding='utf-8'))
           releases = data['data']['repository']['releases']['nodes']
-          matches = [
+          canonical = [
               release for release in releases
               if release.get('isDraft') is True
-              and (
-                  release.get('tagName') == 'v1.1.0'
-                  or release.get('name') == 'Sudokura v1.1.0'
-              )
+              and release.get('tagName') == 'v1.1.0'
           ]
-          print(json.dumps(releases, indent=2))
-          if len(matches) != 1:
-              raise SystemExit(f'expected exactly one Sudokura v1.1.0 draft, found {len(matches)}')
-          release = matches[0]
-          Path('release-id.txt').write_text(str(release['databaseId']), encoding='utf-8')
-          print(f"Draft release ID: {release['databaseId']}")
-          print(f"Draft URL: {release.get('url')}")
-          PY
-          echo "release_id=$(cat release-id.txt)" >> "$GITHUB_OUTPUT"
+          duplicates = [
+              release for release in releases
+              if release.get('isDraft') is True
+              and release.get('name') == 'Sudokura v1.1.0'
+              and release.get('tagName', '').startswith('untagged-')
+          ]
+          if len(canonical) != 1:
+              raise SystemExit(f'expected one canonical v1.1.0 draft, found {len(canonical)}')
+          if len(duplicates) != 1:
+              raise SystemExit(f'expected one temporary duplicate draft, found {len(duplicates)}')
 
-      - name: Synchronize draft metadata and notes
+          for label, release in [('canonical', canonical[0]), ('duplicate', duplicates[0])]:
+              assets = {node['name'] for node in release['releaseAssets']['nodes']}
+              if assets != expected_assets:
+                  raise SystemExit(f'{label} asset mismatch: {sorted(assets)}')
+              print(f"{label}: id={release['databaseId']} tag={release['tagName']} url={release['url']}")
+
+          Path('canonical-id.txt').write_text(str(canonical[0]['databaseId']), encoding='utf-8')
+          Path('duplicate-id.txt').write_text(str(duplicates[0]['databaseId']), encoding='utf-8')
+          PY
+          echo "canonical_id=$(cat canonical-id.txt)" >> "$GITHUB_OUTPUT"
+          echo "duplicate_id=$(cat duplicate-id.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Delete only the temporary duplicate draft
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ steps.locate.outputs.release_id }}
+          DUPLICATE_ID: ${{ steps.locate.outputs.duplicate_id }}
+        run: |
+          set -euo pipefail
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${DUPLICATE_ID}"
+
+      - name: Synchronize canonical draft metadata and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANONICAL_ID: ${{ steps.locate.outputs.canonical_id }}
         run: |
           set -euo pipefail
           jq -n \
@@ -85,21 +110,34 @@ jobs:
             --rawfile body docs/RELEASE_NOTES_1.1.0.md \
             '{tag_name: $tag_name, name: $name, body: $body, draft: true, prerelease: false}' \
             > release-patch.json
-
           gh api --method PATCH \
-            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            "repos/${GITHUB_REPOSITORY}/releases/${CANONICAL_ID}" \
             --input release-patch.json \
             > release-after.json
 
-      - name: Verify final draft
+      - name: Verify one final unpublished release
         id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANONICAL_ID: ${{ steps.locate.outputs.canonical_id }}
         run: |
           set -euo pipefail
+          owner=${GITHUB_REPOSITORY%%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          gh api graphql \
+            -f owner="$owner" \
+            -f repo="$repo" \
+            -f query='query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){releases(first:100,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId name tagName isDraft}}}}' \
+            > releases-final.json
+
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           release = json.loads(Path('release-after.json').read_text(encoding='utf-8'))
+          graph = json.loads(Path('releases-final.json').read_text(encoding='utf-8'))
+          releases = graph['data']['repository']['releases']['nodes']
           notes = Path('docs/RELEASE_NOTES_1.1.0.md').read_text(encoding='utf-8')
           expected_assets = {
               'SHA256SUMS.txt',
@@ -109,7 +147,10 @@ jobs:
               'Sudokura-v1.1.0-macos-arm64-unsigned.zip',
           }
           actual_assets = {asset['name'] for asset in release.get('assets', [])}
+          remaining = [item for item in releases if item.get('isDraft') and item.get('name') == 'Sudokura v1.1.0']
           checks = {
+              'canonical_id': str(release.get('id')) == os.environ['CANONICAL_ID'],
+              'single_draft': len(remaining) == 1,
               'name': release.get('name') == 'Sudokura v1.1.0',
               'tag': release.get('tag_name') == 'v1.1.0',
               'draft': release.get('draft') is True,
@@ -136,10 +177,10 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = 'success' ]; then
             state='success'
-            description='Draft verified: five assets, notes synchronized, unpublished'
+            description='One draft verified: five assets, concise notes, unpublished'
           else
             state='failure'
-            description='Draft verification failed; release remains unpublished'
+            description='Draft cleanup or verification failed; nothing was published'
           fi
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
