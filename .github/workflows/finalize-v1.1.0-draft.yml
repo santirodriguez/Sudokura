@@ -8,19 +8,18 @@ on:
       - '.github/workflows/finalize-v1.1.0-draft.yml'
 
 permissions:
-  actions: read
   contents: write
   statuses: write
 
 jobs:
-  create-and-verify-draft:
+  verify-draft:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Mark finalization pending
+      - name: Mark verification pending
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -28,161 +27,80 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state='pending' \
             -f context='release-draft-v1.1.0' \
-            -f description='Creating verified draft from successful package run' \
+            -f description='Verifying unpublished v1.1.0 release' \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             >/dev/null
 
-      - name: Locate successful v1.1.0 package run
-        id: package_run
+      - name: Locate draft through GraphQL
+        id: locate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           expected_sha='7891a25bf22de9ac404fb42cb913ee7f341dc1c0'
           actual_sha=$(git rev-list -n 1 v1.1.0)
-          echo "Tag commit: $actual_sha"
           test "$actual_sha" = "$expected_sha"
 
-          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?per_page=30" > runs.json
+          owner=${GITHUB_REPOSITORY%%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          gh api graphql \
+            -f owner="$owner" \
+            -f repo="$repo" \
+            -f query='query($owner:String!,$repo:String!){repository(owner:$owner,name:$repo){releases(first:100,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId name tagName isDraft isPrerelease url releaseAssets(first:100){nodes{name}}}}}}' \
+            > releases-graphql.json
+
           python3 - <<'PY'
           import json
           from pathlib import Path
 
-          expected_sha = '7891a25bf22de9ac404fb42cb913ee7f341dc1c0'
-          runs = json.loads(Path('runs.json').read_text(encoding='utf-8')).get('workflow_runs', [])
+          data = json.loads(Path('releases-graphql.json').read_text(encoding='utf-8'))
+          releases = data['data']['repository']['releases']['nodes']
           matches = [
-              run for run in runs
-              if run.get('head_sha') == expected_sha
-              and run.get('status') == 'completed'
-              and run.get('conclusion') == 'success'
+              release for release in releases
+              if release.get('isDraft') is True
+              and (
+                  release.get('tagName') == 'v1.1.0'
+                  or release.get('name') == 'Sudokura v1.1.0'
+              )
           ]
-          if not matches:
-              raise SystemExit('no successful release.yml run found for the v1.1.0 tag commit')
-          run = max(matches, key=lambda item: item.get('run_number', 0))
-          print(f"Package run: {run['id']} ({run.get('html_url')})")
-          Path('package-run-id.txt').write_text(str(run['id']), encoding='utf-8')
-          PY
-          echo "run_id=$(cat package-run-id.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Verify package jobs and artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ steps.package_run.outputs.run_id }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" > jobs.json
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100" > artifacts.json
-
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          jobs = json.loads(Path('jobs.json').read_text(encoding='utf-8')).get('jobs', [])
-          artifacts = json.loads(Path('artifacts.json').read_text(encoding='utf-8')).get('artifacts', [])
-
-          required_job_prefixes = ('linux', 'windows', 'macos', 'checksums')
-          relevant = [job for job in jobs if job.get('name', '').startswith(required_job_prefixes)]
-          failed = [(job.get('name'), job.get('conclusion')) for job in relevant if job.get('conclusion') != 'success']
-          if failed:
-              raise SystemExit(f'required package jobs are not all successful: {failed}')
-
-          names = {artifact.get('name') for artifact in artifacts if not artifact.get('expired')}
-          expected = {'linux-x86_64', 'windows-x86_64', 'macos-x86_64', 'macos-arm64', 'checksums'}
-          if not expected.issubset(names):
-              raise SystemExit(f'missing workflow artifacts: {sorted(expected - names)}')
-
-          print('Verified successful package jobs:')
-          for job in relevant:
-              print(f"  - {job.get('name')}: {job.get('conclusion')}")
-          print('Verified publish artifacts:')
-          for name in sorted(expected):
-              print(f'  - {name}')
-          PY
-
-      - name: Download and validate publish files
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ steps.package_run.outputs.run_id }}
-        run: |
-          set -euo pipefail
-          mkdir -p downloaded publish
-          for artifact in linux-x86_64 windows-x86_64 macos-x86_64 macos-arm64 checksums; do
-            gh run download "$RUN_ID" --name "$artifact" --dir "downloaded/$artifact"
-          done
-
-          find downloaded -type f -name 'Sudokura-v1.1.0-linux-x86_64.AppImage' -exec cp '{}' publish/ \;
-          find downloaded -type f -name 'Sudokura-v1.1.0-windows-x86_64.zip' -exec cp '{}' publish/ \;
-          find downloaded -type f -name 'Sudokura-v1.1.0-macos-x86_64-unsigned.zip' -exec cp '{}' publish/ \;
-          find downloaded -type f -name 'Sudokura-v1.1.0-macos-arm64-unsigned.zip' -exec cp '{}' publish/ \;
-          find downloaded -type f -name 'SHA256SUMS.txt' -exec cp '{}' publish/ \;
-
-          expected_files=(
-            SHA256SUMS.txt
-            Sudokura-v1.1.0-linux-x86_64.AppImage
-            Sudokura-v1.1.0-windows-x86_64.zip
-            Sudokura-v1.1.0-macos-x86_64-unsigned.zip
-            Sudokura-v1.1.0-macos-arm64-unsigned.zip
-          )
-          for file in "${expected_files[@]}"; do
-            test -s "publish/$file"
-          done
-          test "$(find publish -maxdepth 1 -type f | wc -l)" -eq 5
-          (cd publish && sha256sum -c SHA256SUMS.txt)
-          ls -lh publish
-
-      - name: Create or update unpublished release
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases-before.json
-          count=$(jq '[.[] | select(.tag_name == "v1.1.0")] | length' releases-before.json)
-          test "$count" -le 1
-
-          if [ "$count" -eq 0 ]; then
-            gh release create v1.1.0 \
-              --verify-tag \
-              --draft \
-              --title 'Sudokura v1.1.0' \
-              --notes-file docs/RELEASE_NOTES_1.1.0.md \
-              publish/Sudokura-v1.1.0-linux-x86_64.AppImage \
-              publish/Sudokura-v1.1.0-windows-x86_64.zip \
-              publish/Sudokura-v1.1.0-macos-x86_64-unsigned.zip \
-              publish/Sudokura-v1.1.0-macos-arm64-unsigned.zip \
-              publish/SHA256SUMS.txt
-          else
-            release_id=$(jq -r '.[] | select(.tag_name == "v1.1.0") | .id' releases-before.json)
-            test "$(jq -r '.[] | select(.tag_name == "v1.1.0") | .draft' releases-before.json)" = 'true'
-            jq -n \
-              --arg name 'Sudokura v1.1.0' \
-              --rawfile body docs/RELEASE_NOTES_1.1.0.md \
-              '{name: $name, body: $body, draft: true, prerelease: false}' \
-              > release-patch.json
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-              --input release-patch.json \
-              >/dev/null
-          fi
-
-      - name: Verify final draft release
-        id: verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases-after.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          releases = json.loads(Path('releases-after.json').read_text(encoding='utf-8'))
-          matches = [release for release in releases if release.get('tag_name') == 'v1.1.0']
+          print(json.dumps(releases, indent=2))
           if len(matches) != 1:
-              raise SystemExit(f'expected one v1.1.0 release, found {len(matches)}')
-
+              raise SystemExit(f'expected exactly one Sudokura v1.1.0 draft, found {len(matches)}')
           release = matches[0]
+          Path('release-id.txt').write_text(str(release['databaseId']), encoding='utf-8')
+          print(f"Draft release ID: {release['databaseId']}")
+          print(f"Draft URL: {release.get('url')}")
+          PY
+          echo "release_id=$(cat release-id.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Synchronize draft metadata and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.locate.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg tag_name 'v1.1.0' \
+            --arg name 'Sudokura v1.1.0' \
+            --rawfile body docs/RELEASE_NOTES_1.1.0.md \
+            '{tag_name: $tag_name, name: $name, body: $body, draft: true, prerelease: false}' \
+            > release-patch.json
+
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --input release-patch.json \
+            > release-after.json
+
+      - name: Verify final draft
+        id: verify
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          release = json.loads(Path('release-after.json').read_text(encoding='utf-8'))
+          notes = Path('docs/RELEASE_NOTES_1.1.0.md').read_text(encoding='utf-8')
           expected_assets = {
               'SHA256SUMS.txt',
               'Sudokura-v1.1.0-linux-x86_64.AppImage',
@@ -191,8 +109,6 @@ jobs:
               'Sudokura-v1.1.0-macos-arm64-unsigned.zip',
           }
           actual_assets = {asset['name'] for asset in release.get('assets', [])}
-          notes = Path('docs/RELEASE_NOTES_1.1.0.md').read_text(encoding='utf-8')
-
           checks = {
               'name': release.get('name') == 'Sudokura v1.1.0',
               'tag': release.get('tag_name') == 'v1.1.0',
@@ -201,17 +117,18 @@ jobs:
               'assets': actual_assets == expected_assets,
               'notes': (release.get('body') or '').rstrip('\n') == notes.rstrip('\n'),
           }
-          print(json.dumps({
+          result = {
               'release_id': release.get('id'),
               'html_url': release.get('html_url'),
               'checks': checks,
               'assets': sorted(actual_assets),
-          }, indent=2))
+          }
+          print(json.dumps(result, indent=2))
           if not all(checks.values()):
-              raise SystemExit(f'final release verification failed: {checks}')
+              raise SystemExit(f'final draft verification failed: {checks}')
           PY
 
-      - name: Record finalization result
+      - name: Record verification result
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -219,10 +136,10 @@ jobs:
         run: |
           if [ "$VERIFY_OUTCOME" = 'success' ]; then
             state='success'
-            description='Draft created: five assets verified, notes synchronized'
+            description='Draft verified: five assets, notes synchronized, unpublished'
           else
             state='failure'
-            description='Draft finalization failed; nothing was published'
+            description='Draft verification failed; release remains unpublished'
           fi
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
