@@ -2,6 +2,8 @@
 
 This release modernizes Sudokura while keeping the lightweight C11 + SDL2 design, the original visual identity, and all three game modes.
 
+<p align="center"><img src="https://raw.githubusercontent.com/santirodriguez/Sudokura/6f15ddc81e3600489e61fcea3b090bb00ca970de/docs/images/sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
+
 Feel free to download, play, and report any issue.
 
 ## ✅ Supported platforms
