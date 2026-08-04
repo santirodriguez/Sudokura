@@ -103,7 +103,7 @@ static void test_geometry(void) {
       int width = sizes[s][0], height = sizes[s][1];
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert(geometry_play_valid(&g, width, height));
-      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 30);
+      assert(g.board.w % 9 == 0 && g.board.w / 9 >= 25);
       assert(g.hud_count == (mode == GEOMETRY_MODE_CLASSIC ? 2 : 3));
       assert(geometry_rect_in_bounds(g.play_title, width, height));
       for (int i = 0; i < g.hud_count; ++i)
@@ -114,6 +114,7 @@ static void test_geometry(void) {
       for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
         assert(g.palette[i].w >= 70 && g.palette[i].h >= 28);
       assert(geometry_rect_in_bounds(g.progress, width, height));
+      assert(g.progress.h >= 18 && g.palette_label.h >= 18);
       assert(geometry_rect_in_bounds(g.language, width, height));
       assert(!rects_overlap(g.language, g.play_title));
       for (int i = 0; i < g.hud_count; ++i)

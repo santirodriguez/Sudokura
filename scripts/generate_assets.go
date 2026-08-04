@@ -38,6 +38,39 @@ func scaledRect(src image.Image, width int) *image.NRGBA {
 	return dst
 }
 
+func cropVisible(src image.Image, threshold uint8) *image.NRGBA {
+	b := src.Bounds()
+	minX, minY, maxX, maxY := b.Max.X, b.Max.Y, b.Min.X, b.Min.Y
+	clean := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(src.At(x, y)).(color.NRGBA)
+			if c.A <= threshold {
+				c = color.NRGBA{}
+			}
+			clean.SetNRGBA(x-b.Min.X, y-b.Min.Y, c)
+			if c.A > 0 {
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x+1 > maxX {
+					maxX = x + 1
+				}
+				if y+1 > maxY {
+					maxY = y + 1
+				}
+			}
+		}
+	}
+	if maxX <= minX || maxY <= minY {
+		panic("source has no visible pixels")
+	}
+	return clean.SubImage(image.Rect(minX-b.Min.X, minY-b.Min.Y, maxX-b.Min.X, maxY-b.Min.Y)).(*image.NRGBA)
+}
+
 func emitRGBA(path, symbol string, img *image.NRGBA) {
 	var c bytes.Buffer
 	fmt.Fprintf(&c, "#include \"%s.h\"\nconst unsigned int %s_width=%d,%s_height=%d;\nconst unsigned char %s_rgba[]={", filepath.Base(path), symbol, img.Bounds().Dx(), symbol, img.Bounds().Dy(), symbol)
@@ -167,7 +200,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	wordmark := scaledRect(wordSource, 384)
+	wordmark := scaledRect(cropVisible(wordSource, 8), 384)
 	emitRGBA("assets/generated/wordmark", "sudokura_wordmark", wordmark)
 	files, _ := filepath.Glob("assets/generated/*")
 	fmt.Printf("generated and validated %d icon resources\n", len(files))

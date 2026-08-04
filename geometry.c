@@ -56,9 +56,9 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
 
   if (portrait) {
     int shell_w=width-margin*2, board=width-margin*2;
-    int board_budget=height-370;
+    int board_budget=height-415;
     if(board>board_budget)board=board_budget;
-    if(board<270)board=270;
+    if(board<225)board=225;
     board-=board%9;
     g->language=(GeoRect){margin,margin,shell_w,40};
     g->play_title=(GeoRect){margin,margin+46,shell_w,26};
@@ -67,15 +67,16 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
     int hud_h=24;
     grid((GeoRect){margin,y,shell_w,hud_h},g->hud_count,g->hud,g->hud_count);
     y+=hud_h+6;
+    g->palette_label=(GeoRect){margin,y,shell_w,18};
+    y+=24;
     int palette_h=height >= 800 ? 126 : 96;
     grid((GeoRect){margin,y,shell_w,palette_h},3,g->palette,9);
-    g->palette_label=(GeoRect){margin,y,shell_w,1}; /* semantic anchor; hidden in compact UI */
     y+=palette_h+6;
-    int remaining=height-margin-y-16;
+    int remaining=height-margin-y-24;
     int rows=3, action_h=(remaining-(rows-1)*GAP)/rows;
     if(action_h<40) action_h=40;
     grid((GeoRect){margin,y,shell_w,rows*action_h+(rows-1)*GAP},3,g->actions,9);
-    g->progress=(GeoRect){margin,height-margin-1,shell_w,1};
+    g->progress=(GeoRect){margin,height-margin-18,shell_w,18};
     g->sidebar=(GeoRect){margin,g->board.y+board+4,shell_w,height-margin-(g->board.y+board+4)};
   } else {
     int max_shell_w=1180, max_shell_h=900;
@@ -102,6 +103,26 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
   }
   common_screens(width,height,margin,g);
   return geometry_play_valid(g,width,height);
+}
+
+GeometryFonts geometry_font_sizes(const AppGeometry *g,int width,int height){
+  GeometryFonts f={12,14,16,16,14,28,36};
+  if(!g)return f;
+  int cell=g->board.w/9;
+  f.cell=cell*3/5;
+  if(f.cell<16)f.cell=16;
+  if(f.cell>48)f.cell=48;
+  f.note=f.cell/3;
+  if(f.note<10)f.note=10;
+  if(f.note>16)f.note=16;
+  int scale=width<640?0:(g->board.w>=630?2:g->board.w>=450?1:0);
+  f.control=scale==2?20:scale==1?18:15;
+  f.hud=scale==2?18:scale==1?16:13;
+  f.body=scale==2?20:scale==1?18:15;
+  f.help=scale==2?18:scale==1?16:14;
+  f.heading=scale==2?44:scale==1?38:30;
+  if(height<600&&f.heading>32)f.heading=32;
+  return f;
 }
 
 bool geometry_play_valid(const AppGeometry *g,int width,int height) {

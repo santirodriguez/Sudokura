@@ -30,6 +30,7 @@ Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, Python 3, and Go (the latter
 make assets       # regenerate icons from immutable Sudokura05.png
 make              # builds ./sudokura with C11 warnings enabled
 make test         # deterministic gameplay, generator, i18n, and geometry tests
+make test-ui      # SDL_ttf measurements for every language and viewport tier
 make clean
 ./sudokura [--font /path/to/font.ttf]
 ```
@@ -42,6 +43,10 @@ segments use the same geometry for rendering and pointer hit-testing.
 `./sudokura --smoke-test` renders deterministic title and play frames without
 interaction. `./sudokura --render-screenshots DIR` writes 40 dependency-free
 BMP reviews covering ten viewports, four screens, all languages, and both themes.
+`./scripts/validate_screenshots.py DIR` verifies every BMP's exact dimensions
+and rejects missing or blank-looking frames. Fonts come from a 17-entry cache
+(10–48 px); geometry selects separate note, body, control, cell, HUD, and heading
+tiers without reopening fonts during frames.
 
 ## Packages
 
