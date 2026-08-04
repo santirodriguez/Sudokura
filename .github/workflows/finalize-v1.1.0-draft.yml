@@ -29,12 +29,15 @@ jobs:
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           report_failure() {
+            code=$?
+            trap - ERR
             set +e
             gh api --method POST "$status_url" \
               -f state='failure' \
               -f context='release-draft-v1.1.0' \
               -f description='Draft verification or update failed' \
               -f target_url="$run_url" >/dev/null
+            exit "$code"
           }
           trap report_failure ERR
 
@@ -48,7 +51,10 @@ jobs:
           actual_tag_sha=$(git rev-list -n 1 v1.1.0)
           test "$actual_tag_sha" = "$expected_tag_sha"
 
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.1.0" > release-before.json
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases.json
+          jq '[.[] | select(.tag_name == "v1.1.0")] | if length == 1 then .[0] else error("expected exactly one v1.1.0 release") end' \
+            releases.json > release-before.json
+
           test "$(jq -r '.tag_name' release-before.json)" = 'v1.1.0'
           test "$(jq -r '.draft' release-before.json)" = 'true'
           test "$(jq -r '.prerelease' release-before.json)" = 'false'
