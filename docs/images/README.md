@@ -1,11 +1,25 @@
 # Documentation images
 
-Repository screenshots used by the README and release notes belong in this directory.
+Repository screenshots used by the README, release notes, and historical documentation belong in this directory.
 
-For Sudokura v1.1.0, use the canonical filename:
+## Current interface — v1.1.0
 
-```text
-sudokura-v1.1.0.png
-```
+<p align="center"><img src="sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
 
-The image should show the current v1.1.0 interface at a readable desktop size, without unrelated desktop windows or personal information. PNG is preferred so text and board lines remain sharp.
+- File: `sudokura-v1.1.0.png`
+- Dimensions: 1112×944
+- Status: current interface shown by the main README and v1.1.0 release notes
+
+## Historical interface — v1
+
+<p align="center"><img src="sudokura-v1.png" alt="Legacy Sudokura v1 game interface" width="900"></p>
+
+- File: `sudokura-v1.png`
+- Dimensions: 1713×1383
+- Status: retained as the visual record of the original v1 interface; it is no longer the current UI
+
+The legacy file is byte-identical to the former root-level `screenshot.png`. The duplicate root file was removed after this archival copy was confirmed.
+
+## Naming policy
+
+Use `sudokura-v<version>.png` for canonical release screenshots. Images should show only the application at a readable size, without unrelated windows or personal information. PNG is preferred so text and board lines remain sharp.
