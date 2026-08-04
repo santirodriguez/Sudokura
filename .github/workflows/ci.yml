@@ -13,3 +13,34 @@ jobs:
       - run: make WERROR=-Werror test test-ui
       - run: make WERROR=-Werror
       - run: ldd sudokura && size sudokura && du -h sudokura
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Expose setup-go executable to MSYS2
+        shell: pwsh
+        run: |
+          $go = (Get-Command go -ErrorAction Stop).Source
+          "SUDOKURA_GO=$go" >> $env:GITHUB_ENV
+          & $go version
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_ttf
+            mingw-w64-x86_64-ntldd-git
+            mingw-w64-x86_64-ttf-dejavu
+            make zip unzip
+      - name: Build and validate Windows package
+        run: VERSION=1.1.0 packaging/ci/package-windows.sh

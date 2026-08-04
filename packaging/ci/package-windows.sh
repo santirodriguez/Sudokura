@@ -5,7 +5,7 @@ font=$(pacman -Ql mingw-w64-x86_64-ttf-dejavu | awk '!found && /\/DejaVuSans.ttf
 make assets
 make WERROR=-Werror test test-ui
 windres packaging/windows/sudokura.rc -O coff -o icon.o
-gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror sudokura_sdl.c game.c geometry.c i18n.c assets/generated/window_icon.c assets/generated/wordmark.c icon.o -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -mwindows
+gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 sudokura_sdl.c game.c geometry.c i18n.c assets/generated/window_icon.c assets/generated/wordmark.c icon.o -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -mwindows
 rm -rf dist; mkdir dist; cp sudokura.exe dist/
 for pass in 1 2 3 4 5 6; do
   mapfile -t files < <(find dist -maxdepth 1 -type f \( -iname '*.exe' -o -iname '*.dll' \) -print | sort)

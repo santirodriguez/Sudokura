@@ -124,10 +124,34 @@ static void set_mode_params(UI*ui){
 }
 
 /* ===== Font discovery (robust, cross-platform) ===== */
-static void copy_path(char destination[PATH_MAX],const char*source){
-  size_t i=0;
-  if(source) while(i<PATH_MAX-1&&source[i]){destination[i]=source[i];++i;}
-  destination[i]='\0';
+static bool path_copy(char*destination,size_t destination_size,const char*source){
+  if(!destination||destination_size==0||!source)return false;
+  size_t source_size=strlen(source)+1;
+  if(source_size>destination_size){destination[0]='\0';return false;}
+  memcpy(destination,source,source_size);
+  return true;
+}
+
+static bool path_join(char*destination,size_t destination_size,const char*directory,const char*component,char separator){
+  if(!destination||destination_size==0||!directory||!component)return false;
+  size_t directory_length=strlen(directory),component_length=strlen(component);
+  bool needs_separator=directory_length>0&&directory[directory_length-1]!=separator;
+  if(directory_length>=destination_size){destination[0]='\0';return false;}
+  size_t available=destination_size-directory_length-1;
+  if((needs_separator&&available==0)||component_length>available-(needs_separator?1u:0u)){
+    destination[0]='\0';return false;
+  }
+  memcpy(destination,directory,directory_length);
+  size_t offset=directory_length;
+  if(needs_separator)destination[offset++]=separator;
+  memcpy(destination+offset,component,component_length+1);
+  return true;
+}
+
+static bool path_append(char*destination,size_t destination_size,const char*component,char separator){
+  char original[PATH_MAX];
+  if(!path_copy(original,sizeof(original),destination))return false;
+  return path_join(destination,destination_size,original,component,separator);
 }
 
 static bool ends_withi(const char* s, const char* suf){
@@ -151,41 +175,44 @@ static bool try_candidates(char out[PATH_MAX], const char* name){
 #if defined(_WIN32)
   dirs[n++]="C:\\\\Windows\\\\Fonts";
   const char* local= getenv("LOCALAPPDATA");
-  if(local){ static char buf[PATH_MAX]; snprintf(buf,sizeof(buf),"%s\\\\Microsoft\\\\Windows\\\\Fonts",local); dirs[n++]=buf; }
+  if(local){ static char buf[PATH_MAX]; if(path_copy(buf,sizeof(buf),local)&&path_append(buf,sizeof(buf),"Microsoft\\Windows\\Fonts",'\\'))dirs[n++]=buf; }
 #else
   dirs[n++]="/usr/share/fonts";
   dirs[n++]="/usr/local/share/fonts";
   const char* home=getenv("HOME");
   static char buf1[PATH_MAX], buf2[PATH_MAX];
-  if(home){ snprintf(buf1,sizeof(buf1),"%s/.local/share/fonts",home); dirs[n++]=buf1; snprintf(buf2,sizeof(buf2),"%s/.fonts",home); dirs[n++]=buf2; }
+  if(home){ if(path_copy(buf1,sizeof(buf1),home)&&path_append(buf1,sizeof(buf1),".local/share/fonts",'/'))dirs[n++]=buf1; if(path_join(buf2,sizeof(buf2),home,".fonts",'/'))dirs[n++]=buf2; }
 # if defined(__APPLE__)
   dirs[n++]="/System/Library/Fonts";
   dirs[n++]="/Library/Fonts";
-  if(home){ static char buf3[PATH_MAX]; snprintf(buf3,sizeof(buf3),"%s/Library/Fonts",home); dirs[n++]=buf3; }
+  if(home){ static char buf3[PATH_MAX]; if(path_join(buf3,sizeof(buf3),home,"Library/Fonts",'/'))dirs[n++]=buf3; }
 # endif
 #endif
   for(int i=0;i<n;i++){
-    char p[PATH_MAX]; snprintf(p,sizeof(p), "%s/%s", dirs[i], name);
+    char p[PATH_MAX];
 #if defined(_WIN32)
-    for(char* c=p; *c; ++c) if(*c=='/') *c='\\';
+    if(!path_join(p,sizeof(p),dirs[i],name,'\\'))continue;
 #endif
-    if(try_open_font_path(p)){ copy_path(out,p); return true; }
+#if !defined(_WIN32)
+    if(!path_join(p,sizeof(p),dirs[i],name,'/'))continue;
+#endif
+    if(try_open_font_path(p)&&path_copy(out,PATH_MAX,p))return true;
   }
   return false;
 }
 
 #if defined(_WIN32)
 static bool search_dir_win(const char* dir, char out[PATH_MAX]){
-  char pattern[PATH_MAX]; snprintf(pattern,sizeof(pattern), "%s\\*.*", dir);
+  char pattern[PATH_MAX]; if(!path_join(pattern,sizeof(pattern),dir,"*.*",'\\'))return false;
   WIN32_FIND_DATAA fd; HANDLE h=FindFirstFileA(pattern,&fd); if(h==INVALID_HANDLE_VALUE) return false;
   do{
     if(strcmp(fd.cFileName,".")==0 || strcmp(fd.cFileName,"..")==0) continue;
-    char path[PATH_MAX]; snprintf(path,sizeof(path), "%s\\%s", dir, fd.cFileName);
+    char path[PATH_MAX]; if(!path_join(path,sizeof(path),dir,fd.cFileName,'\\'))continue;
     if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY){
       if(search_dir_win(path,out)){ FindClose(h); return true; }
     }else{
       if(ends_withi(path,".ttf") || ends_withi(path,".otf")){
-        if(try_open_font_path(path)){ copy_path(out,path); FindClose(h); return true; }
+        if(try_open_font_path(path)&&path_copy(out,PATH_MAX,path)){ FindClose(h); return true; }
       }
     }
   }while(FindNextFileA(h,&fd));
@@ -197,13 +224,13 @@ static bool search_dir_posix(const char* dir, char out[PATH_MAX]){
   struct dirent* ent;
   while((ent=readdir(d))){
     if(ent->d_name[0]=='.') continue;
-    char path[PATH_MAX]; snprintf(path,sizeof(path), "%s/%s", dir, ent->d_name);
+    char path[PATH_MAX]; if(!path_join(path,sizeof(path),dir,ent->d_name,'/'))continue;
     struct stat st; if(stat(path,&st)!=0) continue;
     if(S_ISDIR(st.st_mode)){
       if(search_dir_posix(path,out)){ closedir(d); return true; }
     }else{
       if(ends_withi(path,".ttf") || ends_withi(path,".otf")){
-        if(try_open_font_path(path)){ copy_path(out,path); closedir(d); return true; }
+        if(try_open_font_path(path)&&path_copy(out,PATH_MAX,path)){ closedir(d); return true; }
       }
     }
   }
@@ -220,16 +247,14 @@ static bool get_exe_dir(char out[PATH_MAX]) {
   char *slash = strrchr(buf, '\\');
   if(!slash) return false;
   *slash = '\0';
-  copy_path(out,buf);
-  return true;
+  return path_copy(out,PATH_MAX,buf);
 #elif defined(__APPLE__)
   char buf[PATH_MAX]; uint32_t size = (uint32_t)sizeof(buf);
   if(_NSGetExecutablePath(buf, &size)!=0) return false;
   char *slash = strrchr(buf, '/');
   if(!slash) return false;
   *slash = '\0';
-  copy_path(out,buf);
-  return true;
+  return path_copy(out,PATH_MAX,buf);
 #else
   char buf[PATH_MAX];
   ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf)-1);
@@ -238,8 +263,7 @@ static bool get_exe_dir(char out[PATH_MAX]) {
   char *slash = strrchr(buf, '/');
   if(!slash) return false;
   *slash = '\0';
-  copy_path(out,buf);
-  return true;
+  return path_copy(out,PATH_MAX,buf);
 #endif
 }
 
@@ -247,18 +271,18 @@ static bool try_in_dir(const char*dir, const char*name, char out[PATH_MAX]){
   if(!dir||!name) return false;
   char p[PATH_MAX];
 #if defined(_WIN32)
-  snprintf(p,sizeof(p), "%s\\%s", dir, name);
+  if(!path_join(p,sizeof(p),dir,name,'\\'))return false;
 #else
-  snprintf(p,sizeof(p), "%s/%s", dir, name);
+  if(!path_join(p,sizeof(p),dir,name,'/'))return false;
 #endif
-  if(try_open_font_path(p)){ copy_path(out,p); return true; }
+  if(try_open_font_path(p)&&path_copy(out,PATH_MAX,p))return true;
   return false;
 }
 
 /* Reforzado: primero cwd y directorio del ejecutable; luego rutas del sistema */
 static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
   /* 0) CLI explícito */
-  if(cli && try_open_font_path(cli)){ copy_path(out,cli); return out; }
+  if(cli && try_open_font_path(cli)&&path_copy(out,PATH_MAX,cli))return out;
 
   /* 1) Local (cwd + exe dir) */
   const char* local_first[] = {
@@ -271,17 +295,17 @@ static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
   bool have_exe_dir = get_exe_dir(exedir);
 #if defined(__APPLE__)
   char resources[PATH_MAX]={0};
-  if(have_exe_dir) snprintf(resources,sizeof(resources),"%s/../Resources",exedir);
+  bool have_resources=have_exe_dir&&path_join(resources,sizeof(resources),exedir,"../Resources",'/');
 #endif
 
   for(size_t i=0;i<sizeof(local_first)/sizeof(local_first[0]); ++i){
     /* cwd */
-    if(try_open_font_path(local_first[i])){ copy_path(out,local_first[i]); return out; }
+    if(try_open_font_path(local_first[i])&&path_copy(out,PATH_MAX,local_first[i]))return out;
     /* exe dir */
     if(have_exe_dir && try_in_dir(exedir, local_first[i], out)) return out;
 #if defined(__APPLE__)
     /* App bundle resources live beside Contents/MacOS. */
-    if(have_exe_dir && try_in_dir(resources,local_first[i],out)) return out;
+    if(have_resources && try_in_dir(resources,local_first[i],out)) return out;
 #endif
   }
 
@@ -302,8 +326,8 @@ static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
   for(size_t i=0;i<sizeof(roots)/sizeof(roots[0]);++i){
     if(roots[i] && roots[i][0]){
       char start[PATH_MAX];
-      if(i==1) snprintf(start,sizeof(start), "%s\\\\Microsoft\\\\Windows\\\\Fonts", roots[i]);
-      else snprintf(start,sizeof(start), "%s", roots[i]);
+      bool valid=i==1?path_join(start,sizeof(start),roots[i],"Microsoft\\Windows\\Fonts",'\\'):path_copy(start,sizeof(start),roots[i]);
+      if(!valid)continue;
       if(search_dir_win(start,out)) return out;
     }
   }
@@ -318,17 +342,13 @@ static const char* find_font_path_dynamic(char out[PATH_MAX], const char* cli){
     if(!roots[i]) continue;
     char start[PATH_MAX];
     if(roots[i]==getenv("HOME")){
-      snprintf(start,sizeof(start), "%s/.local/share/fonts", roots[i]);
-      if(search_dir_posix(start,out)) return out;
-      snprintf(start,sizeof(start), "%s/.fonts", roots[i]);
-      if(search_dir_posix(start,out)) return out;
+      if(path_join(start,sizeof(start),roots[i],".local/share/fonts",'/')&&search_dir_posix(start,out)) return out;
+      if(path_join(start,sizeof(start),roots[i],".fonts",'/')&&search_dir_posix(start,out)) return out;
 #if defined(__APPLE__)
-      snprintf(start,sizeof(start), "%s/Library/Fonts", roots[i]);
-      if(search_dir_posix(start,out)) return out;
+      if(path_join(start,sizeof(start),roots[i],"Library/Fonts",'/')&&search_dir_posix(start,out)) return out;
 #endif
     }else{
-      snprintf(start,sizeof(start), "%s", roots[i]);
-      if(search_dir_posix(start,out)) return out;
+      if(path_copy(start,sizeof(start),roots[i])&&search_dir_posix(start,out)) return out;
     }
   }
 #endif
@@ -662,7 +682,7 @@ static bool app_init(Gfx*g,const char*font_cli){
 
 static bool make_directory(const char*path){
   char part[PATH_MAX];size_t length=strlen(path);if(length==0||length>=sizeof(part))return false;
-  copy_path(part,path);
+  if(!path_copy(part,sizeof(part),path))return false;
   for(size_t i=1;i<=length;i++)if(part[i]=='/'||part[i]=='\\'||part[i]=='\0'){
     char saved=part[i];part[i]='\0';
     if(part[0]){
@@ -715,7 +735,9 @@ int main(int argc,char**argv){
         SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,sizes[n][0],sizes[n][1]);SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
         if(g.width!=sizes[n][0]||g.height!=sizes[n][1]){fprintf(stderr,"renderer refused %dx%d (got %dx%d)\n",sizes[n][0],sizes[n][1],g.width,g.height);app_shutdown(&g);return 1;}
         ui.screen=screens[s];ui.language=(Language)((n+s)%LANG_COUNT);ui.dark_theme=((n+s)&1)==0;ui.result=RES_WIN;
-        app_render(&g,&game,&ui);char path[PATH_MAX];snprintf(path,sizeof path,"%s/%dx%d-%s-%s-%s.bmp",screenshot_dir,g.width,g.height,names[s],language_name(ui.language),ui.dark_theme?"dark":"light");
+        app_render(&g,&game,&ui);char path[PATH_MAX],filename[160];
+        int filename_length=snprintf(filename,sizeof(filename),"%dx%d-%s-%s-%s.bmp",g.width,g.height,names[s],language_name(ui.language),ui.dark_theme?"dark":"light");
+        if(filename_length<0||(size_t)filename_length>=sizeof(filename)||!path_join(path,sizeof(path),screenshot_dir,filename,'/')){fprintf(stderr,"screenshot path is too long: %s\n",screenshot_dir);app_shutdown(&g);return 1;}
         if(!save_frame(&g,path)){fprintf(stderr,"screenshot: %s\n",SDL_GetError());app_shutdown(&g);return 1;}
       }
       printf("rendered 40 UI review screenshots to %s\n",screenshot_dir);
