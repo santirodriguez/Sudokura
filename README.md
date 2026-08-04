@@ -1,207 +1,69 @@
-# Sudokura v1.0
+# Sudokura v1.1.0
 
-A compact, modern **Sudoku** written in **C + SDL2**, with responsive UI, notes, strict mode, hints, verification, multiple play modes (Classic / Strikes / Time Attack), and dark/light themes.
+<p align="center"><img src="assets/branding/source/Sudokura03.png" alt="Sudokura" width="520"></p>
 
-[![screenshot](https://github.com/santirodriguez/Sudokura/blob/main/screenshot.png)](https://github.com/santirodriguez/Sudokura/blob/main/screenshot.png)
+A lightweight desktop Sudoku written in **C11 with SDL2 and SDL2_ttf**. Sudokura keeps its dark/light visual identity, notes, hints, verification, strict mode and three game modes while fitting every control into compact windows.
 
----
+## Features and languages
 
-## Table of Contents
-- [Features](#features)
-- [Controls](#controls)
-- [Download](#download)
-- [Build from Source](#build-from-source)
-  - [Prerequisites](#prerequisites)
-  - [Linux (Fedora / Ubuntu / Debian / Arch)](#linux-fedora--ubuntu--debian--arch)
-  - [macOS (Homebrew)](#macos-homebrew)
-  - [Windows (MSVC + vcpkg, optional)](#windows-msvc--vcpkg-optional)
-  - [Windows (MSYS2 / MinGW-w64)](#windows-msys2--mingw-w64)
-- [Command-line Options](#command-line-options)
-- [Packaging Releases](#packaging-releases)
-  - [Linux AppImage](#linux-appimage)
-  - [Windows ZIP](#windows-zip)
-  - [macOS ZIP](#macos-zip)
-- [Development Notes](#development-notes)
-- [Known Notes](#known-notes)
-- [License](#license)
-
----
-
-## Features
-
-- Three modes:
-  - **Classic** – play at your pace
-  - **Strikes** – 3 wrong moves = lose
-  - **Time Attack** – solve under 10:00
-- Notes (pencil marks): toggle with **N** or hold **Shift** while entering numbers; also click sub-cells in the mini 3×3 grid inside a cell
-- Hint: fills the current cell correctly
-- Verify: checks row, column, and box conflicts (does not reveal the solution)
-- **Strict mode**: blocks illegal placements (toggle with **M**). Free mode allows them (they still count as mistakes)
-- Dark / Light theme (toggle **T**)
-- Responsive UI: sidebar on the right or stacked depending on window size
-- Robust font discovery: runs out-of-the-box on Linux, macOS, and Windows
-
----
+- Classic, Strikes (three wrong moves), and 10-minute Time Attack modes.
+- English, natural Argentine **Español**, and **Català**; press **L** to cycle the visible language selector.
+- A responsive board, compact action grid and 3×3 numeric palette. The supported minimum is 640×480 and the same geometry drives drawing and pointer hit-testing.
+- Dark/light themes, notes, conflict verification, hints, pause, and keyboard or mouse play.
 
 ## Controls
 
-- **Mouse:** click to select a cell. In Notes mode (or with right-click), click a sub-cell to toggle a pencil mark.  
-- **Keyboard:**
-  - Move: Arrows / WASD
-  - Place number: 1..9 (top row or numpad)
-  - Clear: 0 / Backspace / Delete
-  - Notes mode: **N** (or hold **Shift** while typing 1..9)
-  - Strict/Free: **M**
-  - Hint: **H**
-  - Theme: **T**
-  - Pause: **P**
-  - Menu / Back: **ESC**
+| Action | Control |
+|---|---|
+| Select | Mouse, arrows, or WASD |
+| Place / clear | 1–9; 0, Backspace, or Delete |
+| Notes | N, Shift+number, right-click, or a cell sub-position |
+| Hint / strict mode | H / M |
+| Theme / pause / language | T / P / L |
+| Help / about / back | F1 / F2 / Escape |
 
----
+## Build and test
 
-## Download
+Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, Python 3, and Go (the latter two are used only by reproducible asset generation and validation).
 
-Grab the latest builds for **Linux**, **Windows**, and **macOS** from:  
-**➡️ [Releases ›](https://github.com/santirodriguez/Sudokura/releases/latest)**
-
-Each release typically includes:
-- **Linux:** AppImage (`Sudokura-v1-x86_64.AppImage`) — portable, no install
-- **Windows:** ZIP (`Sudokura-v1-windows.zip`) — includes `Sudokura-v1.exe`, required DLLs, and a fallback font
-- **macOS:** ZIP (`Sudokura-v1-macos.zip`) — standalone binary
-
-> Checksums and per-version notes are listed in the corresponding Release page.
-
----
-
-## Build from Source
-
-Single C file: `sudokura_sdl.c`
-
-### Prerequisites
-
-- A C compiler (**gcc**, **clang**, or **MSVC**)
-- **SDL2** and **SDL2_ttf** development packages
-- **pkg-config** (Linux/macOS)
-
-### Linux (Fedora / Ubuntu / Debian / Arch)
-```bash
-# Fedora
-sudo dnf install -y gcc SDL2-devel SDL2_ttf-devel pkgconf-pkg-config
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install -y build-essential libsdl2-dev libsdl2-ttf-dev pkg-config
-# Arch
-sudo pacman -S --needed gcc sdl2 sdl2_ttf pkgconf
-# Build
-gcc -std=c11 -O2 -Wall -Wextra \
-  sudokura_sdl.c -o Sudokura-v1 \
-  $(pkg-config --cflags --libs sdl2 SDL2_ttf) \
-  -lm
-# Run
-./Sudokura-v1
+```sh
+make assets       # regenerate icons from immutable Sudokura05.png
+make              # builds ./sudokura with C11 warnings enabled
+make test         # deterministic gameplay, generator, i18n, and geometry tests
+make test-ui      # SDL_ttf measurements for every language and viewport tier
+make clean
+./sudokura [--font /path/to/font.ttf]
 ```
 
-### macOS (Homebrew)
-```bash
-brew install sdl2 sdl2_ttf pkg-config
-clang -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1 \
-  $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
-./Sudokura-v1
-```
+The bounded desktop shell is tested from 640×480 through 3440×1440, and the
+touch-ready stacked shell is tested at 360×640, 390×844, and 412×915. Runtime
+packages bundle a UTF-8-capable fallback font. The English, Español, and Català
+segments use the same geometry for rendering and pointer hit-testing.
 
-### Windows (MSVC + vcpkg, optional)
-```bat
-:: Install deps (from a Developer Command Prompt)
-vcpkg install sdl2 sdl2-ttf
-:: Build (adjust VCPKG_ROOT if needed)
-cl /O2 /W3 sudokura_sdl.c ^
-  /I"%VCPKG_ROOT%\installed\x64-windows\include" ^
-  /link /LIBPATH:"%VCPKG_ROOT%\installed\x64-windows\lib" SDL2.lib SDL2_ttf.lib
-:: (Optional) Rename for releases
-ren sudokura.exe Sudokura-v1.exe
-```
+`./sudokura --smoke-test` renders deterministic title and play frames without
+interaction. `./sudokura --render-screenshots DIR` writes 40 dependency-free
+BMP reviews covering ten viewports, four screens, all languages, and both themes.
+`./scripts/validate_screenshots.py DIR` verifies every BMP's exact dimensions
+and rejects missing or blank-looking frames. Fonts come from a 17-entry cache
+(10–48 px); geometry selects separate note, body, control, cell, HUD, and heading
+tiers without reopening fonts during frames.
 
-### Windows (MSYS2 / MinGW-w64)
-```bash
-# In MSYS2's MINGW64 shell:
-pacman -S --needed \
-  mingw-w64-x86_64-gcc \
-  mingw-w64-x86_64-pkg-config \
-  mingw-w64-x86_64-SDL2 \
-  mingw-w64-x86_64-SDL2_ttf
-gcc -std=c11 -O2 -Wall -Wextra sudokura_sdl.c -o Sudokura-v1.exe \
-  $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm
-```
+## Packages
 
----
+The tag/manual packaging workflow builds consistently named v1.1.0 artifacts and SHA-256 files, prints their sizes, and uploads artifacts. A tag run only creates a **draft** release for manual verification.
 
-## Command-line Options
+- **Linux:** executable x86_64 AppImage with the derived application icon and desktop entry.
+- **Windows:** portable x86_64 ZIP with icon embedded in the executable, SDL runtime and recursively collected transitive non-system DLLs, plus DejaVu Sans and its license. CI fails on missing DLLs.
+- **macOS:** separate x86_64 and arm64 unsigned ZIPs containing a real `Sudokura.app` (`MacOS`, `Frameworks`, `Resources`, `Info.plist`). SDL libraries, recursively collected non-system dependencies, DejaVu Sans, and its license are bundled; install names use `@rpath`, and CI rejects Homebrew or runner-local paths. Builds are **not signed or notarized**.
 
-- `--font /path/to/font.ttf` – force a specific TrueType/OpenType font (normally unnecessary; auto-discovery tries local folder, executable folder, and system font paths).
+On macOS, unzip and drag `Sudokura.app` to Applications. Because current artifacts are unsigned, use Finder's **Open** context action if Gatekeeper asks you to confirm. No claim of signing or notarization is made.
 
----
+## Asset policy
 
-## Packaging Releases
+`assets/branding/source/` is immutable artwork. `scripts/generate_assets.py` removes only alpha values at or below 8, crops visible content, centers it with transparent padding, and losslessly writes PNG sizes 16–1024, a multi-size ICO, ICNS, and embedded 128×128 RGBA data for `SDL_SetWindowIcon`. Runtime packages contain only the required derivatives, never all five originals.
 
-If you want to reproduce the release artifacts locally:
+## Project scope
 
-### Linux AppImage
-```bash
-# Assuming you already built ./Sudokura-v1
-wget -O linuxdeploy.AppImage \
-  https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-wget -O appimagetool.AppImage \
-  https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-chmod +x linuxdeploy.AppImage appimagetool.AppImage
-mkdir -p AppDir/usr/bin
-cp Sudokura-v1 AppDir/usr/bin/
-cat > AppDir/sudokura.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Sudokura v1
-Exec=Sudokura-v1
-Icon=sudokura
-Categories=Game;
-EOF
-convert -size 256x256 xc:'#3B4A7A' AppDir/sudokura.png
-./linuxdeploy.AppImage --appdir AppDir \
-  --executable AppDir/usr/bin/Sudokura-v1 \
-  --desktop-file AppDir/sudokura.desktop \
-  --icon-file AppDir/sudokura.png
-ARCH=x86_64 ./appimagetool.AppImage AppDir Sudokura-v1-x86_64.AppImage
-```
+Android and iOS remain a later feasibility phase; v1.1.0 contains no mobile projects. See [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md) and the [technical implementation record](docs/V1.1.0_IMPLEMENTATION.md).
 
-### Windows ZIP
-
-Bundle the executable plus its runtime DLLs (SDL2, SDL2_ttf, and any dependencies found by `ntldd` or `dumpbin`). Include a fallback font (e.g., **DejaVuSans.ttf**) in the same folder.
-
-### macOS ZIP
-
-Zip the binary as `Sudokura-v1-macos.zip`. (Optionally package an `.app` bundle and/or sign & notarize for a smoother first run.)
-
----
-
-## Development Notes
-
-- Shared layout & hit-testing: one geometry function for drawing and mouse interactions → accurate clicks at any window size.
-- Font loader: tries current working directory and executable directory first (e.g., nearby `DejaVuSans.ttf`), then common system font paths, then deep scan if needed.
-- Sudoku generation: creates a solved board, removes clues down to a **medium** range, and enforces **unique solution**.
-- UI polish: layered selection highlights, “same number” highlights, animated selection glow, conflict tinting, and toast messages.
-
----
-
-## Known Notes
-
-- **macOS:** the uploaded binary is **not tested** by the author and is **not code-signed** or notarized. If Gatekeeper blocks it:
-```bash
-xattr -dr com.apple.quarantine ./Sudokura-v1
-```
-- **Windows (portable):** a fallback font (`DejaVuSans.ttf`) is bundled. The app also auto-discovers installed fonts. If you remove the fallback and the system lacks fonts, run with `--font path\to\some.ttf`.
-
----
-
-## License
-
-**GPLv3** — see <https://www.gnu.org/licenses/>
-
-© 2025 — [santirodriguez](https://santiagorodriguez.com)
+GPLv3 — © 2025–2026 [santirodriguez](https://santiagorodriguez.com)

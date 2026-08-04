@@ -1,0 +1,8 @@
+/sudokura
+/tests/test_main
+/tests/test_text_fit
+/AppDir/
+/dist/
+/assets/generated/
+*.AppImage
+*.zip

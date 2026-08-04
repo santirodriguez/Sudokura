@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>sudokura</string>
+<key>CFBundleIdentifier</key><string>com.santiagorodriguez.sudokura</string>
+<key>CFBundleName</key><string>Sudokura</string>
+<key>CFBundleDisplayName</key><string>Sudokura</string>
+<key>CFBundleShortVersionString</key><string>1.1.0</string>
+<key>CFBundleVersion</key><string>1.1.0</string>
+<key>CFBundleIconFile</key><string>sudokura.icns</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>LSApplicationCategoryType</key><string>public.app-category.puzzle-games</string>
+</dict></plist>
