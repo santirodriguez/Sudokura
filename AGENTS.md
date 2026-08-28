@@ -13,7 +13,7 @@ These instructions apply to the entire repository.
 ## Engineering requirements
 
 - Add or update automated tests alongside behavior changes.
-- Keep game rules, persistence, localization, audio state, and responsive geometry testable without unnecessary architecture changes.
+- Keep game rules, persistence, localization, audio state, input mapping, and responsive geometry testable without unnecessary architecture changes.
 - Use one shared geometry result for rendering and pointer hit-testing, including presentation-only Home positioning.
 - All visible controls must remain inside the usable window at supported sizes. Large desktop windows must use the XL geometry tier rather than merely centering the regular 720-pixel board in unused space.
 - Compile as C11 with `-Wall -Wextra -Wpedantic`; CI treats warnings as errors.
@@ -38,6 +38,7 @@ These instructions apply to the entire repository.
 - Keep button and input effects subtle. Runtime-generated effects are preferred over adding more media files for simple clicks/cues.
 - Correct/incorrect audio cues must obey `game_mode_reveals_correctness()` so Classic and Daily remain neutral.
 - Audio enable/disable is a persisted preference and must remain backward compatible with existing v1.2 release-candidate preference files.
+- Preserve the established startup, win, and loss jingles. Returning to Home from unfinished gameplay must restore the normal Clear loop without adding a second Home jingle, and enabled/available audio must not remain accidentally silent after screen transitions.
 
 ## Localization
 
@@ -49,10 +50,10 @@ These instructions apply to the entire repository.
 
 ## Branding
 
-- `sudokura-head.png` is the full project identity for Home, About, Pause, result, and public documentation. Use the compact application icon in gameplay chrome.
-- `assets/branding/source/sudokura-icon.png` is the canonical 512×512 application-icon master for generated PNG sizes, Windows ICO, macOS ICNS, and the SDL window icon.
-- The retired white-background `favicon-16x16.png`, `favicon-32x32.png`, and `favicon.ico` variants must not be reintroduced.
-- Other retained files under `assets/branding/source/` and `assets/branding/source-packed/` are source artwork supplied for Sudokura v1.2 and must not be reinterpreted.
+- Exactly two source branding masters are canonical for v1.2: `assets/branding/source/sudokura-head.png` and `assets/branding/source/sudokura-512.png`.
+- `sudokura-head.png` is the full project identity for Home, About, Pause, result, and public documentation.
+- `sudokura-512.png` is the compact/application master for gameplay chrome, generated PNG sizes, Windows ICO, macOS ICNS, Linux packaging, and the SDL window icon.
+- Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
 - Do not create or publish a canonical v1.2 screenshot. Only a user-supplied screenshot captured after real package testing may become the release screenshot. Automated diagnostic renders are never canonical artwork.
@@ -68,4 +69,4 @@ These instructions apply to the entire repository.
 
 ## Completion standard
 
-Before declaring a change complete, run the available build, test, sanitizer, UI-fit, audio, and packaging checks that apply; summarize exact outcomes; report artifact sizes when packages are part of the gate; review the net diff for accidental scope expansion; and state any validation that could not be performed.
+Before declaring a change complete, run the available build, test, sanitizer, UI-fit, audio, input, and packaging checks that apply; summarize exact outcomes; report artifact sizes when packages are part of the gate; review the net diff for accidental scope expansion; and state any validation that could not be performed.

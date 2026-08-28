@@ -126,10 +126,10 @@ func writeICNS(path string, data [][]byte) {
 func main() {
 	must(os.MkdirAll("assets/generated", 0755))
 
-	iconMasterPath := "assets/branding/source/sudokura-icon.png"
+	iconMasterPath := "assets/branding/source/sudokura-512.png"
 	iconMaster := readPNG(iconMasterPath)
 	if iconMaster.Bounds().Dx() != 512 || iconMaster.Bounds().Dy() != 512 {
-		panic("sudokura-icon.png must be 512x512")
+		panic("sudokura-512.png must be 512x512")
 	}
 
 	iconImages := make([]*image.NRGBA, len(iconSizes))
@@ -157,8 +157,6 @@ func main() {
 	if head.Bounds().Dx() != 516 || head.Bounds().Dy() != 166 {
 		panic("sudokura-head.png must be 516x166")
 	}
-	// Keep the historical symbol/file name for this stage so the refreshed
-	// branding can replace the existing in-app wordmark without UI refactoring.
 	emitRGBA("assets/generated/wordmark", "sudokura_wordmark", head)
 
 	flags := []struct {

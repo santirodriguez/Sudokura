@@ -12,7 +12,7 @@
 #define GEOMETRY_TITLE_BUTTON_COUNT 7
 #define GEOMETRY_END_BUTTON_COUNT 2
 #define GEOMETRY_PAUSE_BUTTON_COUNT 2
-#define GEOMETRY_ABOUT_LINK_COUNT 3
+#define GEOMETRY_ABOUT_LINK_COUNT 4
 
 typedef struct {
   int x, y, w, h;
@@ -52,6 +52,10 @@ typedef struct {
   GeoRect about_logo;
   GeoRect about_body;
   GeoRect about_meta;
+  GeoRect about_fact;
+  GeoRect about_study;
+  GeoRect about_study_link;
+  GeoRect about_credits;
   GeoRect about_links[GEOMETRY_ABOUT_LINK_COUNT];
 
   GeoRect end_logo;

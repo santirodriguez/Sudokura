@@ -49,9 +49,11 @@ static void grid_gap(GeoRect area, int columns, int gap, GeoRect *items,
 }
 
 static int min_i(int a, int b) { return a < b ? a : b; }
+static int max_i(int a, int b) { return a > b ? a : b; }
 
 static void common_screens(int width, int height, bool portrait, AppGeometry *g) {
   bool xl = !portrait && width >= 1600 && height >= 900;
+  bool short_desktop = !portrait && height < 600;
   int margin = portrait ? 8 : (xl ? 18 : 12);
   int language_w = portrait ? width - margin * 2
                             : min_i(width - margin * 2, xl ? 680 : 540);
@@ -99,13 +101,13 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
              g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
   }
 
-  int info_margin = portrait ? 16 : 24;
+  int info_margin = portrait ? 16 : (short_desktop ? 20 : 24);
   int info_top = g->screen_language.y + g->screen_language.h + 16;
   int info_w = portrait ? width - info_margin * 2
                         : min_i(width - info_margin * 2, xl ? 820 : 760);
   int info_x = (width - info_w) / 2;
-  int heading_h = xl ? 60 : 48;
-  int back_h = xl ? 48 : 44;
+  int heading_h = short_desktop ? 42 : (xl ? 60 : 48);
+  int back_h = short_desktop ? 40 : (xl ? 48 : 44);
   g->info_heading = (GeoRect){info_x, info_top, info_w, heading_h};
   g->back_button = (GeoRect){info_x, height - info_margin - back_h,
                              portrait ? info_w : (xl ? 200 : 180), back_h};
@@ -114,29 +116,63 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
 
   int about_w = portrait ? info_w : min_i(info_w, xl ? 760 : 680);
   int about_x = (width - about_w) / 2;
-  int about_logo_h = portrait ? 64 : (height < 600 ? 60 : (xl ? 96 : 80));
-  g->about_logo = (GeoRect){about_x, info_top, about_w, about_logo_h};
-  int link_h = portrait ? 36 : (xl ? 46 : 42);
-  int links_h = portrait ? link_h * GEOMETRY_ABOUT_LINK_COUNT + 6 * 2 : link_h;
-  int links_y = g->back_button.y - 14 - links_h;
-  if (portrait)
-    grid_gap((GeoRect){about_x, links_y, about_w, links_h}, 1, 6,
-             g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
-  else
-    grid_gap((GeoRect){about_x, links_y, about_w, links_h}, 3, 8,
-             g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
-  int about_body_y = g->about_logo.y + g->about_logo.h + 10;
-  int about_available = links_y - about_body_y - 10;
-  int about_body_h = about_available * 3 / 5;
-  if (about_body_h < 70) about_body_h = 70;
-  int about_meta_h = about_available - about_body_h - 8;
-  if (about_meta_h < 44) {
-    about_meta_h = 44;
-    about_body_h = about_available - about_meta_h - 8;
+  int about_available_total = g->back_button.y - info_top - 10;
+  int about_stack_h = about_available_total;
+  if (!portrait) {
+    int cap = xl ? 700 : 560;
+    if (about_stack_h > cap) about_stack_h = cap;
   }
-  g->about_body = (GeoRect){about_x, about_body_y, about_w, about_body_h};
-  g->about_meta = (GeoRect){about_x, about_body_y + about_body_h + 8,
-                            about_w, about_meta_h};
+  int about_top = info_top;
+  if (about_available_total > about_stack_h)
+    about_top += (about_available_total - about_stack_h) / 3;
+
+  int about_logo_h = portrait ? 64 : (short_desktop ? 52 : (xl ? 96 : 80));
+  g->about_logo = (GeoRect){about_x, about_top, about_w, about_logo_h};
+
+  int link_h = portrait ? 36 : (short_desktop ? 34 : (xl ? 46 : 42));
+  int link_gap = portrait ? 6 : 8;
+  int link_columns = portrait ? 1 : 2;
+  int link_rows = (GEOMETRY_ABOUT_LINK_COUNT + link_columns - 1) / link_columns;
+  int links_h = link_h * link_rows + link_gap * (link_rows - 1);
+  int links_y = about_top + about_stack_h - links_h;
+  grid_gap((GeoRect){about_x, links_y, about_w, links_h}, link_columns, link_gap,
+           g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
+
+  int content_top = g->about_logo.y + g->about_logo.h + 8;
+  int content_bottom = links_y - 8;
+  int content_h = content_bottom - content_top;
+  int content_gap = short_desktop ? 4 : 6;
+  int intro_h = portrait ? 56 : (short_desktop ? 54 : (xl ? 76 : 64));
+  int credits_h = portrait ? 40 : (short_desktop ? 34 : (xl ? 48 : 40));
+  int cards_h = content_h - intro_h - credits_h - content_gap * 3;
+  if (cards_h < 96) {
+    int deficit = 96 - cards_h;
+    int intro_reduction = min_i(deficit, max_i(0, intro_h - 44));
+    intro_h -= intro_reduction;
+    deficit -= intro_reduction;
+    int credits_reduction = min_i(deficit, max_i(0, credits_h - 30));
+    credits_h -= credits_reduction;
+    cards_h = content_h - intro_h - credits_h - content_gap * 3;
+  }
+  int fact_h = cards_h / 2;
+  int study_h = cards_h - fact_h;
+
+  g->about_body = (GeoRect){about_x, content_top, about_w, intro_h};
+  int content_y = content_top + intro_h + content_gap;
+  g->about_fact = (GeoRect){about_x, content_y, about_w, fact_h};
+  content_y += fact_h + content_gap;
+  g->about_study = (GeoRect){about_x, content_y, about_w, study_h};
+  int study_link_h = min_i(28, max_i(16, study_h / 4));
+  int study_link_w = min_i(about_w / 2, portrait ? 190 : 220);
+  g->about_study_link =
+      (GeoRect){about_x + about_w - study_link_w - 10,
+                content_y + study_h - study_link_h - 4,
+                study_link_w, study_link_h};
+  content_y += study_h + content_gap;
+  g->about_credits = (GeoRect){about_x, content_y, about_w, credits_h};
+  g->about_meta = (GeoRect){about_x, g->about_fact.y, about_w,
+                            g->about_credits.y + g->about_credits.h -
+                                g->about_fact.y};
 
   int panel_w = portrait ? width - margin * 4
                          : min_i(width - margin * 4, xl ? 560 : 460);
@@ -252,7 +288,7 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
     bool compact = g->sidebar.h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
     int language_h = compact ? 34 : (xl ? 48 : 40);
-    int title_h = compact ? 26 : (xl ? 46 : 34);
+    int title_h = compact ? 52 : (xl ? 120 : 76);
     int hud_item_h = compact ? 22 : (xl ? 34 : 26);
     int hud_rows = (g->hud_count + 1) / 2;
     int hud_gap = compact ? 4 : (xl ? 8 : 5);
@@ -265,12 +301,21 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
     int palette_h = palette_item_h * 3 + palette_gap * 2;
     int palette_label_h = compact ? 16 : (xl ? 24 : 20);
     int progress_h = compact ? 22 : (xl ? 34 : 26);
-    int vertical_gap = xl ? 8 : 4;
-    int content_h = language_h + vertical_gap + title_h + vertical_gap + hud_h +
-                    vertical_gap + actions_h + vertical_gap + palette_label_h +
-                    vertical_gap + palette_h + (xl ? 10 : 6) + progress_h;
-    int sy = g->sidebar.y;
-    if (xl && content_h < g->sidebar.h) sy += (g->sidebar.h - content_h) / 2;
+
+    int fixed_h = language_h + title_h + hud_h + actions_h + palette_label_h +
+                  palette_h + progress_h;
+    int available_gap = g->sidebar.h - fixed_h;
+    int gap_count = 6;
+    int preferred_gap = compact ? 4 : (xl ? 24 : 20);
+    int vertical_gap = available_gap > 0 ? available_gap / gap_count : 0;
+    if (vertical_gap > preferred_gap) vertical_gap = preferred_gap;
+    if (vertical_gap < (compact ? 3 : 5)) vertical_gap = compact ? 3 : 5;
+    int used_h = fixed_h + vertical_gap * gap_count;
+    int edge_space = g->sidebar.h - used_h;
+    if (edge_space < 0) edge_space = 0;
+    int top_pad = edge_space / 2;
+    if (top_pad > (xl ? 36 : 24)) top_pad = xl ? 36 : 24;
+    int sy = g->sidebar.y + top_pad;
 
     g->play_language = (GeoRect){sx, sy, sw, language_h};
     sy += language_h + vertical_gap;
@@ -286,7 +331,7 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
     sy += palette_label_h + vertical_gap;
     grid_gap((GeoRect){sx, sy, sw, palette_h}, 3, palette_gap, g->palette,
              GEOMETRY_PALETTE_COUNT);
-    sy += palette_h + (xl ? 10 : 6);
+    sy += palette_h + vertical_gap;
     g->progress = (GeoRect){sx, sy, sw, progress_h};
   }
 
@@ -353,11 +398,23 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       !geometry_rect_in_bounds(g->about_logo, width, height) ||
       !geometry_rect_in_bounds(g->about_body, width, height) ||
       !geometry_rect_in_bounds(g->about_meta, width, height) ||
+      !geometry_rect_in_bounds(g->about_fact, width, height) ||
+      !geometry_rect_in_bounds(g->about_study, width, height) ||
+      !geometry_rect_in_bounds(g->about_study_link, width, height) ||
+      !geometry_rect_in_bounds(g->about_credits, width, height) ||
       !geometry_rect_in_bounds(g->end_logo, width, height) ||
       !geometry_rect_in_bounds(g->end_heading, width, height) ||
       !geometry_rect_in_bounds(g->end_summary, width, height) ||
       !geometry_rect_in_bounds(g->pause_logo, width, height) ||
       !geometry_rect_in_bounds(g->pause_heading, width, height))
+    return false;
+
+  if (!geometry_contains(g->about_study,
+                         g->about_study_link.x,
+                         g->about_study_link.y) ||
+      !geometry_contains(g->about_study,
+                         g->about_study_link.x + g->about_study_link.w - 1,
+                         g->about_study_link.y + g->about_study_link.h - 1))
     return false;
 
   for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i)
@@ -376,5 +433,9 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     if (!geometry_rect_in_bounds(g->pause_buttons[i], width, height)) return false;
 
   if (overlaps(g->screen_language, g->home_logo)) return false;
+  if (overlaps(g->about_body, g->about_fact) ||
+      overlaps(g->about_fact, g->about_study) ||
+      overlaps(g->about_study, g->about_credits))
+    return false;
   return true;
 }

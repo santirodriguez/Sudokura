@@ -17,14 +17,14 @@ A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three
 - **Dark and light themes** with responsive desktop and portrait layouts.
 - **English, Español, and Català**.
 - Optional background music, result jingles, and subtle interface feedback. Sound can be toggled with `V`.
-- Mouse and keyboard controls.
+- Mouse, keyboard, and physical numeric-keypad controls.
 
 ## Controls
 
 | Action | Control |
 |---|---|
 | Select a cell | Mouse, arrows, or WASD |
-| Place / clear a number | 1–9; 0, Backspace, or Delete |
+| Place / clear a number | 1–9 or numeric keypad; 0, Backspace, or Delete clears |
 | Notes | N, Shift+1–9, right-click, or a cell sub-position |
 | Hint | H |
 | Strict / Free | M |
@@ -57,7 +57,7 @@ make test-ui
 ./sudokura
 ```
 
-`make test` covers gameplay, deterministic generation, persistence, localization, seed handling, and geometry. `make test-ui` checks SDL_ttf text fitting and SDL2_mixer audio. CI also builds with warnings as errors and runs sanitizers on Linux.
+`make test` covers gameplay, deterministic generation, persistence, localization, seed handling, geometry, and dedicated UI geometry invariants. `make test-ui` checks SDL_ttf text fitting, SDL2_mixer audio transitions, and top-row/numeric-keypad input mapping. CI also builds with warnings as errors and runs sanitizers on Linux.
 
 For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 60 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
 

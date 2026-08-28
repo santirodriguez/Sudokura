@@ -2,6 +2,7 @@
 #include "session.c"
 #include "seed.c"
 #include "audio.h"
+#include "input.c"
 #include "assets/generated/flag_us.c"
 #include "assets/generated/flag_ar.c"
 #include "assets/generated/flag_ca.c"
@@ -30,6 +31,7 @@
 #undef app_init
 #include "src/sudokura_sdl/polish_ui.inc"
 #include "src/sudokura_sdl/audio_ui.inc"
-#define SDL_PollEvent audio_poll_event
+#include "src/sudokura_sdl/input_ui.inc"
+#define SDL_PollEvent ui_poll_event
 #include "src/sudokura_sdl/05_main.inc"
 #undef SDL_PollEvent

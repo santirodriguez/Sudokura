@@ -1,6 +1,11 @@
 /sudokura
 /tests/test_main
+/tests/test_session
+/tests/test_seed
+/tests/test_geometry_ui
 /tests/test_text_fit
+/tests/test_audio
+/tests/test_input
 /AppDir/
 /dist/
 /assets/generated/
