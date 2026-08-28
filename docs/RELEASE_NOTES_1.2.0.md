@@ -2,7 +2,7 @@
 
 Sudokura v1.2.0 is a substantial gameplay, persistence, branding, audio, and interface update while keeping the project lightweight and offline: native C11 with SDL2, SDL2_ttf, and SDL2_mixer, with no account or network-backed puzzle service.
 
-The canonical v1.2 screenshot will be added only after the final release-candidate package has been installed and manually tested.
+The final Linux release-candidate package was installed and manually tested successfully before the canonical v1.2.0 screenshot was approved and added to the repository. Windows and macOS packages were validated by the automated package pipeline; no manual launch claim is made for those platforms.
 
 ## What’s new
 
@@ -32,7 +32,7 @@ The canonical v1.2 screenshot will be added only after the final release-candida
 
 ## Audio credit
 
-The four bundled OGG tracks come from **Cozy Puzzle Jingle & Result** by **MintoDog**, published on OpenGameArt under **CC0**. The original audio payloads are shipped without recompression. Provenance and filename mapping are recorded in [`assets/audio/README.md`](../assets/audio/README.md).
+The bundled tracks are from **Cozy Puzzle Jingle & Result** by **MintoDog**, published on OpenGameArt under **CC0**. Filename mapping is recorded in [`assets/audio/README.md`](../assets/audio/README.md).
 
 Short button and input sounds are synthesized at runtime and do not add further media assets.
 
@@ -54,4 +54,6 @@ All four packages are built by the same repository automation used for release p
 
 Diagnostic UI review produces **70 non-canonical frames** across ten viewports and seven screens: Home, Play, Help, About, Result, Pause, and Audio. These frames are validation artifacts only and are never substituted for the final user-supplied release screenshot.
 
-Manual release-candidate testing and the final public screenshot remain separate gates before publication. Platform-specific manual-testing claims will be added only after those tests actually occur.
+## Manual release-candidate validation
+
+The final Linux RC application build (`7f0c6ec3ff7ceafb2a9b2cf1d0e834b344ede215`) was manually tested and approved. The approved canonical screenshot is stored at [`docs/images/sudokura-v1.2.0.png`](images/sudokura-v1.2.0.png). Subsequent Stage B changes only finalize documentation and screenshot placement; they do not alter the tested application binary.

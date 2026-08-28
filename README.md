@@ -4,7 +4,11 @@
 
 A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three game modes, three difficulty levels, Daily Puzzle, autosave, notes, hints, themes, and optional adaptive audio in a native interface for Linux, Windows, and macOS.
 
-<!-- The canonical v1.2.0 screenshot supplied after final RC testing will be inserted here. -->
+<p align="center">
+  <a href="docs/images/sudokura-v1.2.0.png">
+    <img src="docs/images/sudokura-v1.2.0.png" alt="Sudokura v1.2.0 gameplay" width="900">
+  </a>
+</p>
 
 ## Features
 
@@ -16,7 +20,7 @@ A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three
 - **Pause**, focus-safe timing, Notes, Hint, Verify, and Strict/Free input.
 - **Dark and light themes** with responsive desktop and portrait layouts.
 - **English, Español, and Català**.
-- Optional background music, result jingles, and subtle interface feedback. Sound can be toggled with `V`.
+- Optional background music, result jingles, and subtle interface feedback, with independent Music/FX levels and global mute via `V`.
 - Mouse, keyboard, and physical numeric-keypad controls.
 
 ## Controls
@@ -59,11 +63,11 @@ make test-ui
 
 `make test` covers gameplay, deterministic generation, persistence, localization, seed handling, geometry, and dedicated UI geometry invariants. `make test-ui` checks SDL_ttf text fitting, SDL2_mixer audio transitions, and top-row/numeric-keypad input mapping. CI also builds with warnings as errors and runs sanitizers on Linux.
 
-For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 60 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
+For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 70 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
 
 ## Audio credits
 
-Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from [OpenGameArt](https://opengameart.org/content/cozy-puzzle-jingle-result), licensed under **CC0**. The bundled OGG files retain their original audio data. See [`assets/audio/README.md`](assets/audio/README.md) for provenance.
+Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from [OpenGameArt](https://opengameart.org/content/cozy-puzzle-jingle-result), licensed under **CC0**. See [`assets/audio/README.md`](assets/audio/README.md) for the file mapping.
 
 Interface and input effects are generated at runtime.
 
@@ -73,4 +77,12 @@ Interface and input effects are generated at runtime.
 - [v1.2.0 implementation record](docs/V1.2.0_IMPLEMENTATION.md)
 - [documentation images](docs/images/README.md)
 
-GPLv3 — © 2025–2026 [santirodriguez](https://santiagorodriguez.com)
+## Author
+
+Sudokura is created and maintained by [Santiago Rodriguez](https://santiagorodriguez.com/).
+
+## Support Sudokura
+
+If you enjoy Sudokura and want to support its development, [support Sudokura here](https://santiagorodriguez.com/donate/).
+
+GPLv3 — © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)

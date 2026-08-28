@@ -2,6 +2,14 @@
 
 Repository screenshots used by release notes and documentation belong in this directory.
 
+## Sudokura v1.2.0
+
+<p align="center"><a href="sudokura-v1.2.0.png"><img src="sudokura-v1.2.0.png" alt="Sudokura v1.2.0 gameplay" width="900"></a></p>
+
+- File: `sudokura-v1.2.0.png`
+- Dimensions: 1542×1124
+- Status: canonical v1.2.0 screenshot, supplied after the final Linux release candidate was manually tested and approved.
+
 ## Historical interface — v1.1.0
 
 <p align="center"><img src="sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
@@ -19,12 +27,6 @@ Repository screenshots used by release notes and documentation belong in this di
 - Status: retained as the visual record of the original v1 interface.
 
 The legacy file is byte-identical to the former root-level `screenshot.png`. The duplicate root file was removed after this archival copy was confirmed.
-
-## v1.2 screenshot gate
-
-No canonical v1.2 screenshot is versioned in the release-candidate stage. The final public screenshot must be supplied after a real v1.2 package has been installed and manually tested. Automated `--render-screenshots` output is diagnostic CI material only and must not be committed or presented as the official release image.
-
-When the approved screenshot is supplied, use the stable canonical name `sudokura-v1.2.0.png` unless the final documentation explicitly requires more than one view. README and release-note references are added only after the source image exists in this directory.
 
 ## Naming policy
 
