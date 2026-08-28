@@ -174,7 +174,7 @@ int main(int argc,char**argv){
           else if(point_in(R.btn[6],x,y))open_info_from_play(&persistence,&game,&ui,SCR_HELP);
           else if(point_in(R.btn[7],x,y))open_info_from_play(&persistence,&game,&ui,SCR_ABOUT);
           else if(point_in(R.btn[8],x,y))go_home(&persistence,&game,&ui);
-          else for(int n=1;n<=9;n++)if(point_in(R.pal[n-1],x,y)){if(!palette_number_complete(&game,n)&&apply_player_input(&game,&ui,ui.sel_r,ui.sel_c,n,ui.notes_mode))(void)save_current_session(&persistence,&game,&ui);break;}
+          else for(int n=1;n<=9;n++)if(point_in(R.pal[n-1],x,y)){if(!palette_number_complete(&game,ui.mode,n)&&apply_player_input(&game,&ui,ui.sel_r,ui.sel_c,n,ui.notes_mode))(void)save_current_session(&persistence,&game,&ui);break;}
         }
       }
     }
