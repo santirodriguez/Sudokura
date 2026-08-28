@@ -57,7 +57,6 @@ static bool draw_fitted_text(Gfx*g,const char*text,SDL_Color color,SDL_Rect r,in
   }
   return false;
 }
-static void draw_centered_text(Gfx*g,TTF_Font*f,const char*text,SDL_Color color,SDL_Rect r){(void)f;(void)draw_fitted_text(g,text,color,r,20,10);}
 
 enum{
   HOME_FOCUS_LANGUAGE=0,HOME_FOCUS_MODE,HOME_FOCUS_DIFFICULTY,
