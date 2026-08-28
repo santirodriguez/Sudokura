@@ -12,9 +12,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static const int test_font_sizes[] = {
+    10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 30,
+    32, 36, 38, 42, 44, 48, 52, 56, 60, 64, 72,
+};
+
 static int fits(const char *font_path, const char *text, int preferred,
                 int minimum, int width, int height) {
-  for (int size = preferred; size >= minimum; --size) {
+  for (int i = (int)(sizeof(test_font_sizes) / sizeof(test_font_sizes[0])) - 1;
+       i >= 0; --i) {
+    int size = test_font_sizes[i];
+    if (size > preferred || size < minimum) continue;
     TTF_Font *font = TTF_OpenFont(font_path, size);
     assert(font);
     int w = 0, h = 0;
@@ -30,7 +38,10 @@ static int wrapped_fits(const char *font_path, const char *text, int preferred,
                         int minimum, int width, int height) {
   if (width <= 8 || height <= 2) return 0;
   SDL_Color color = {255, 255, 255, 255};
-  for (int size = preferred; size >= minimum; --size) {
+  for (int i = (int)(sizeof(test_font_sizes) / sizeof(test_font_sizes[0])) - 1;
+       i >= 0; --i) {
+    int size = test_font_sizes[i];
+    if (size > preferred || size < minimum) continue;
     TTF_Font *font = TTF_OpenFont(font_path, size);
     assert(font);
     SDL_Surface *surface = TTF_RenderUTF8_Blended_Wrapped(
@@ -155,8 +166,9 @@ int main(void) {
         assert(wrapped_fits(font, tr((Language)language, T_ABOUT_STUDY),
                             tier.help, 10, g.about_study.w - 18,
                             study_copy_h));
+        /* The actual button face loses 3px to the raised-state shadow. */
         assert(fits(font, tr((Language)language, T_ABOUT_STUDY_LINK), tier.help,
-                    10, g.about_study_link.w, g.about_study_link.h));
+                    10, g.about_study_link.w, g.about_study_link.h - 3));
 
         int credit_h = g.about_credits.h / 2;
         assert(fits(font, tr((Language)language, T_ABOUT_SEEDS), tier.help, 10,
@@ -168,14 +180,15 @@ int main(void) {
           char label[128];
           snprintf(label, sizeof label, "%d · %s", i + 1,
                    tr((Language)language, about_links[i]));
+          /* Footer buttons use the same raised 3px face as production. */
           assert(fits(font, label, tier.control, 10, g.about_links[i].w,
-                      g.about_links[i].h));
+                      g.about_links[i].h - 3));
         }
       }
     }
   }
 
   TTF_Quit();
-  puts("SDL_ttf text-fit tests passed for gameplay, four-link About cards and all responsive tiers");
+  puts("SDL_ttf text-fit tests passed for cached fonts, gameplay, four-link About cards and all responsive tiers");
   return 0;
 }
