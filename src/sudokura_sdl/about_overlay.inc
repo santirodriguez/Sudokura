@@ -11,6 +11,9 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
   SDL_Rect fact = sdl_rect(geometry.about_fact);
   SDL_Color fact_bg = theme.title;
   fact_bg.a = ui->dark_theme ? 38 : 26;
+  /* Clear the base pass opaquely before reapplying the translucent fact tint;
+     otherwise text from the wrapped base renderer can remain visible below. */
+  draw_round_rect(gfx->ren, fact, 10, theme.palette_bg);
   draw_round_rect(gfx->ren, fact, 10, fact_bg);
 
   int icon_w = fact.h;
