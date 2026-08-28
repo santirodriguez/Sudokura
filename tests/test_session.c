@@ -101,7 +101,11 @@ static void test_preferences(void) {
   Preferences loaded;
   preferences_defaults(&loaded);
   assert(preferences_load_file(preferences_path, &loaded) == STORE_OK);
-  assert(!memcmp(&custom, &loaded, sizeof(custom)));
+  assert(custom.language == loaded.language);
+  assert(custom.dark_theme == loaded.dark_theme);
+  assert(custom.strict_mode == loaded.strict_mode);
+  assert(custom.mode == loaded.mode);
+  assert(custom.difficulty == loaded.difficulty);
 
   custom.language = (Language)99;
   assert(!preferences_validate(&custom));
