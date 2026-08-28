@@ -141,20 +141,20 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   int content_top = g->about_logo.y + g->about_logo.h + 8;
   int content_bottom = links_y - 8;
   int content_h = content_bottom - content_top;
-  int content_gap = short_desktop ? 4 : 6;
-  int intro_h = portrait ? 56 : (short_desktop ? 54 : (xl ? 76 : 64));
-  int credits_h = portrait ? 40 : (short_desktop ? 34 : (xl ? 48 : 40));
+  int content_gap = short_desktop ? 3 : 6;
+  int intro_h = portrait ? 56 : (short_desktop ? 40 : (xl ? 76 : 64));
+  int credits_h = portrait ? 40 : (short_desktop ? 30 : (xl ? 48 : 40));
   int cards_h = content_h - intro_h - credits_h - content_gap * 3;
   if (cards_h < 96) {
     int deficit = 96 - cards_h;
-    int intro_reduction = min_i(deficit, max_i(0, intro_h - 44));
+    int intro_reduction = min_i(deficit, max_i(0, intro_h - 36));
     intro_h -= intro_reduction;
     deficit -= intro_reduction;
-    int credits_reduction = min_i(deficit, max_i(0, credits_h - 30));
+    int credits_reduction = min_i(deficit, max_i(0, credits_h - 28));
     credits_h -= credits_reduction;
     cards_h = content_h - intro_h - credits_h - content_gap * 3;
   }
-  int fact_h = cards_h / 2;
+  int fact_h = cards_h * 44 / 100;
   int study_h = cards_h - fact_h;
 
   g->about_body = (GeoRect){about_x, content_top, about_w, intro_h};
