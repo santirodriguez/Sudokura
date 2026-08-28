@@ -106,8 +106,7 @@ icns = (generated / "sudokura.icns").read_bytes()
 assert icns[:4] == b"icns" and struct.unpack(">I", icns[4:8])[0] == len(icns)
 
 icon_values = rgba_resource(generated / "window_icon.c", "sudokura_icon", (128, 128))
-icon_alpha = icon_values[3::4]
-assert min(icon_alpha) == 0 and max(icon_alpha) == 255
+assert min(icon_values[3::4]) == 255 and max(icon_values[3::4]) == 255
 head_values = rgba_resource(generated / "wordmark.c", "sudokura_wordmark", (516, 166))
 head_alpha = head_values[3::4]
 assert min(head_alpha) == 0 and max(head_alpha) == 255
@@ -121,6 +120,6 @@ for path, symbol in (
 
 print(
     "validated three direct and two packed source assets, exact MIT flag sources, 96x72 flag rasters, "
-    "8 PNG icon sizes from the transparent sudokura-icon.png master, 6-size PNG-backed ICO, ICNS, "
-    "transparent 128x128 window icon, 516x166 embedded head and three embedded flags"
+    "8 PNG icon sizes derived only from sudokura-icon.png, 6-size PNG-backed ICO, ICNS, "
+    "128x128 embedded window icon, transparent 516x166 head and three embedded flags"
 )
