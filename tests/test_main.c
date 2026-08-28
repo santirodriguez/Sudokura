@@ -222,7 +222,7 @@ static void test_window_size_normalization(void) {
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key) assert(tr((Language)language, (TextKey)key)[0]);
-  assert(!strcmp(SUDOKURA_VERSION, "1.1.0"));
+  assert(!strcmp(SUDOKURA_VERSION, "1.2.0"));
 }
 
 int main(void) {

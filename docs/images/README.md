@@ -1,6 +1,6 @@
 # Documentation images
 
-Repository screenshots used by historical release notes and documentation belong in this directory.
+Repository screenshots used by release notes and documentation belong in this directory.
 
 ## Historical interface — v1.1.0
 
@@ -20,9 +20,11 @@ Repository screenshots used by historical release notes and documentation belong
 
 The legacy file is byte-identical to the former root-level `screenshot.png`. The duplicate root file was removed after this archival copy was confirmed.
 
-## v1.2 screenshot policy
+## v1.2 screenshot gate
 
-No canonical v1.2 screenshot is versioned yet. The final public screenshot will be supplied after the real v1.2 packages have been installed and tested; automated diagnostic renders must not be committed or presented as the official screenshot.
+No canonical v1.2 screenshot is versioned in the release-candidate stage. The final public screenshot must be supplied after a real v1.2 package has been installed and manually tested. Automated `--render-screenshots` output is diagnostic CI material only and must not be committed or presented as the official release image.
+
+When the approved screenshot is supplied, use the stable canonical name `sudokura-v1.2.0.png` unless the final documentation explicitly requires more than one view. README and release-note references are added only after the source image exists in this directory.
 
 ## Naming policy
 

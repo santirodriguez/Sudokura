@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${VERSION:?}"
+SOURCE_VERSION=$(./scripts/version.sh)
+if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
+  echo "VERSION=$VERSION does not match source version $SOURCE_VERSION" >&2
+  exit 1
+fi
+VERSION=$SOURCE_VERSION
 
 font=$(pacman -Ql mingw-w64-x86_64-ttf-dejavu | awk '!found && /\/DejaVuSans.ttf$/{value=$2;found=1} END{print value}')
 test -n "$font"
@@ -103,6 +108,7 @@ headers=$(objdump -p dist/sudokura.exe)
 grep -q 'Subsystem.*Windows GUI' <<<"$headers"
 resource_dump=$(objdump -s -j .rsrc dist/sudokura.exe)
 grep -qi '89504e47' <<<"$resource_dump"
+strings -el dist/sudokura.exe | grep -Fxq "$VERSION"
 
 timeout_bin=$(command -v timeout)
 clean_path="$PWD/dist:/c/Windows/System32:/c/Windows"

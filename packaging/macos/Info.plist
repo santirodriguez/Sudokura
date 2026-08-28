@@ -5,8 +5,8 @@
 <key>CFBundleIdentifier</key><string>com.santiagorodriguez.sudokura</string>
 <key>CFBundleName</key><string>Sudokura</string>
 <key>CFBundleDisplayName</key><string>Sudokura</string>
-<key>CFBundleShortVersionString</key><string>1.1.0</string>
-<key>CFBundleVersion</key><string>1.1.0</string>
+<key>CFBundleShortVersionString</key><string>@SUDOKURA_VERSION@</string>
+<key>CFBundleVersion</key><string>@SUDOKURA_VERSION@</string>
 <key>CFBundleIconFile</key><string>sudokura.icns</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>LSApplicationCategoryType</key><string>public.app-category.puzzle-games</string>

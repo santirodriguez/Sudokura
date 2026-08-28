@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${PREFIX:?set PREFIX to the dependency prefix}"; APP="${1:-Sudokura.app}"; BIN="${2:-sudokura}"
+VERSION=$(./scripts/version.sh)
 rm -rf "$APP"; mkdir -p "$APP/Contents/"{MacOS,Frameworks,Resources}
-cp "$BIN" "$APP/Contents/MacOS/sudokura"; cp packaging/macos/Info.plist "$APP/Contents/"
+cp "$BIN" "$APP/Contents/MacOS/sudokura"
+sed "s/@SUDOKURA_VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 cp assets/generated/sudokura.icns "$APP/Contents/Resources/"
 cp "${FONT:?set FONT to redistributable fallback font}" "$APP/Contents/Resources/DejaVuSans.ttf"
 cp "${FONT_LICENSE:?set FONT_LICENSE to its license}" "$APP/Contents/Resources/DejaVu-FONT-LICENSE.txt"

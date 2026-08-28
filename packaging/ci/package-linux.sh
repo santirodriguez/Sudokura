@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${VERSION:?}" "${LINUXDEPLOY:?path to linuxdeploy}"
+: "${LINUXDEPLOY:?path to linuxdeploy}"
+SOURCE_VERSION=$(./scripts/version.sh)
+if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
+  echo "VERSION=$VERSION does not match source version $SOURCE_VERSION" >&2
+  exit 1
+fi
+VERSION=$SOURCE_VERSION
 font=$(fc-match -f '%{file}' 'DejaVu Sans'); test -f "$font"; ./scripts/validate_font.py "$font"
 rm -rf AppDir; install -Dm755 sudokura AppDir/usr/bin/sudokura
 install -Dm644 packaging/linux/sudokura.desktop AppDir/usr/share/applications/sudokura.desktop

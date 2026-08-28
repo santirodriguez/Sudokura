@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${VERSION:?}" "${ARCH:?}" "${FONT:?}"
+: "${ARCH:?}" "${FONT:?}"
+SOURCE_VERSION=$(./scripts/version.sh)
+if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
+  echo "VERSION=$VERSION does not match source version $SOURCE_VERSION" >&2
+  exit 1
+fi
+VERSION=$SOURCE_VERSION
 test -f "$FONT"; ./scripts/validate_font.py "$FONT"; export SUDOKURA_TEST_FONT="$FONT"
 make assets; make WERROR=-Werror test test-ui all
 FONT_LICENSE="$PWD/packaging/licenses/DejaVu-FONT-LICENSE.txt" PREFIX=$(brew --prefix) packaging/macos/bundle.sh Sudokura.app sudokura
+bundle_short=$(plutil -extract CFBundleShortVersionString raw Sudokura.app/Contents/Info.plist)
+bundle_build=$(plutil -extract CFBundleVersion raw Sudokura.app/Contents/Info.plist)
+test "$bundle_short" = "$VERSION"; test "$bundle_build" = "$VERSION"
 file Sudokura.app/Contents/MacOS/sudokura | tee "architecture-macos-${ARCH}.txt"; grep -q "$ARCH" "architecture-macos-${ARCH}.txt"
 for required in Contents/Info.plist Contents/Resources/sudokura.icns Contents/Resources/DejaVuSans.ttf Contents/Resources/DejaVu-FONT-LICENSE.txt; do test -s "Sudokura.app/$required"; done
 ./scripts/validate_font.py Sudokura.app/Contents/Resources/DejaVuSans.ttf
