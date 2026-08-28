@@ -38,7 +38,7 @@ These instructions apply to the entire repository.
 - Keep button and input effects subtle. Runtime-generated effects are preferred over adding more media files for simple clicks/cues.
 - Correct/incorrect audio cues must obey `game_mode_reveals_correctness()` so Classic and Daily remain neutral.
 - Audio enable/disable is a persisted preference and must remain backward compatible with existing v1.2 release-candidate preference files.
-- Preserve the established startup, win, and loss jingles. Returning to Home from unfinished gameplay must restore the normal Clear loop without adding a second Home jingle, and enabled/available audio must not remain accidentally silent after screen transitions.
+- Preserve the established startup, win, and loss jingles. Returning to Home through Menu from unfinished gameplay intentionally plays the same Home/Clear cue used at startup and then continues the normal Clear loop; Help, About, and Audio retain their prior context, and enabled/available audio must not remain accidentally silent after screen transitions.
 
 ## Localization
 
@@ -56,7 +56,7 @@ These instructions apply to the entire repository.
 - Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
-- Do not create or publish a canonical v1.2 screenshot. Only a user-supplied screenshot captured after real package testing may become the release screenshot. Automated diagnostic renders are never canonical artwork.
+- The canonical v1.2 screenshot is the user-supplied `docs/images/sudokura-v1.2.0.png`, captured after real package testing and approval. Automated diagnostic renders are never canonical artwork; do not replace the approved screenshot without explicit approval.
 
 ## Packaging
 

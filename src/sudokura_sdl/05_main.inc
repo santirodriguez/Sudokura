@@ -55,13 +55,17 @@ static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g) {
                      tr(ui->language, T_CANCEL));
 }
 
-static bool restart_current_session_confirmed(const Game *game, const UI *ui,
+static bool restart_current_session_confirmed(const Game *game, UI *ui,
                                               Gfx *g) {
   if (!game_has_meaningful_progress(game, ui->mistakes, ui->strikes))
     return true;
-  return confirm_box(g->win, tr(ui->language, T_RESTART),
-                     tr(ui->language, T_RESTART_PROMPT),
-                     tr(ui->language, T_RESTART), tr(ui->language, T_CANCEL));
+  clock_pause(ui, PAUSE_MODAL);
+  bool confirmed =
+      confirm_box(g->win, tr(ui->language, T_RESTART),
+                  tr(ui->language, T_RESTART_PROMPT),
+                  tr(ui->language, T_RESTART), tr(ui->language, T_CANCEL));
+  clock_resume(ui, PAUSE_MODAL);
+  return confirmed;
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
