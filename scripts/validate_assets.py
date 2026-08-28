@@ -22,6 +22,10 @@ def png_size(path: Path) -> tuple[int, int]:
 
 def git_blob_sha(path: Path) -> str:
     data = path.read_bytes()
+    # Git may materialize tracked text with CRLF on Windows. Normalize only
+    # line endings before comparing against the canonical upstream Git blob.
+    data = data.replace(b"\r\n", b"\n")
+    assert b"\r" not in data, path
     return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
 
