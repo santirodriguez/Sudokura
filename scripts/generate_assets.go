@@ -126,10 +126,10 @@ func writeICNS(path string, data [][]byte) {
 func main() {
 	must(os.MkdirAll("assets/generated", 0755))
 
-	iconMasterPath := "assets/branding/source/android-chrome-512x512.png"
+	iconMasterPath := "assets/branding/source/sudokura-icon.png"
 	iconMaster := readPNG(iconMasterPath)
 	if iconMaster.Bounds().Dx() != 512 || iconMaster.Bounds().Dy() != 512 {
-		panic("android-chrome-512x512.png must be 512x512")
+		panic("sudokura-icon.png must be 512x512")
 	}
 
 	iconImages := make([]*image.NRGBA, len(iconSizes))

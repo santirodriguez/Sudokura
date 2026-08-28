@@ -97,7 +97,7 @@ for name in ("us.png", "ar.png", "es-ct.png"):
 for size in (16, 32, 48, 64, 128, 256, 512, 1024):
     assert png_size(generated / f"sudokura-{size}.png") == (size, size)
 assert (generated / "sudokura-512.png").read_bytes() == (
-    source / "android-chrome-512x512.png"
+    source / "sudokura-icon.png"
 ).read_bytes()
 ico = (generated / "sudokura.ico").read_bytes()
 assert ico[:4] == b"\0\0\1\0" and struct.unpack("<H", ico[4:6])[0] == 6
@@ -121,6 +121,6 @@ for path, symbol in (
 
 print(
     "validated three direct and two packed source assets, exact MIT flag sources, 96x72 flag rasters, "
-    "8 PNG icon sizes from the transparent 512x512 application master, 6-size PNG-backed ICO, ICNS, "
+    "8 PNG icon sizes from the transparent sudokura-icon.png master, 6-size PNG-backed ICO, ICNS, "
     "transparent 128x128 window icon, 516x166 embedded head and three embedded flags"
 )

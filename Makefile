@@ -42,7 +42,7 @@ test: tests/test_main tests/test_session tests/test_seed
 assets:
 	./scripts/generate_assets.py
 	./scripts/validate_assets.py
-$(GENERATED_UI): assets/branding/source/android-chrome-512x512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
+$(GENERATED_UI): assets/branding/source/sudokura-icon.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
 	rm -f sudokura tests/test_main tests/test_session tests/test_seed tests/test_text_fit tests/test_audio

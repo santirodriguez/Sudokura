@@ -50,7 +50,7 @@ These instructions apply to the entire repository.
 ## Branding
 
 - `sudokura-head.png` is the full project identity for Home, About, Pause, result, and public documentation. Use the compact application icon in gameplay chrome.
-- `assets/branding/source/android-chrome-512x512.png` is the canonical application-icon master for generated PNG sizes, Windows ICO, macOS ICNS, and the SDL window icon.
+- `assets/branding/source/sudokura-icon.png` is the canonical transparent 512×512 application-icon master for generated PNG sizes, Windows ICO, macOS ICNS, and the SDL window icon.
 - The retired white-background `favicon-16x16.png`, `favicon-32x32.png`, and `favicon.ico` variants must not be reintroduced.
 - Other retained files under `assets/branding/source/` and `assets/branding/source-packed/` are source artwork supplied for Sudokura v1.2 and must not be reinterpreted.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
