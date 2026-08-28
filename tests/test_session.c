@@ -9,7 +9,11 @@
 static const char *session_path = ".sudokura-session-test.dat";
 static const char *preferences_path = ".sudokura-preferences-test.dat";
 
-enum { STORE_HEADER_SIZE_TEST = 18, SESSION_PAYLOAD_SIZE_TEST = 365 };
+enum {
+  STORE_HEADER_SIZE_TEST = 18,
+  SESSION_PAYLOAD_SIZE_TEST = 365,
+  LEGACY_PREFERENCES_PAYLOAD_SIZE_TEST = 5
+};
 
 static int first_playable(const Game *game) {
   for (int i = 0; i < 81; ++i) if (!game->fixed[i]) return i;
@@ -34,6 +38,11 @@ static uint32_t crc32_bytes_test(const unsigned char *data, size_t size) {
     }
   }
   return ~crc;
+}
+
+static void put_u16_test(unsigned char *data, uint16_t value) {
+  data[0] = (unsigned char)(value & 0xffu);
+  data[1] = (unsigned char)((value >> 8) & 0xffu);
 }
 
 static void put_u32_test(unsigned char *data, uint32_t value) {
@@ -86,6 +95,28 @@ static void cleanup(void) {
   remove(".sudokura-preferences-test.dat.corrupt");
 }
 
+static void write_legacy_preferences(void) {
+  unsigned char bytes[STORE_HEADER_SIZE_TEST + LEGACY_PREFERENCES_PAYLOAD_SIZE_TEST];
+  memset(bytes, 0, sizeof(bytes));
+  memcpy(bytes, "SUDOPREF", 8);
+  put_u16_test(bytes + 8, (uint16_t)SUDOKURA_SAVE_FORMAT_VERSION);
+  put_u32_test(bytes + 10, LEGACY_PREFERENCES_PAYLOAD_SIZE_TEST);
+
+  unsigned char *payload = bytes + STORE_HEADER_SIZE_TEST;
+  payload[0] = (unsigned char)LANG_ES;
+  payload[1] = 0;
+  payload[2] = 1;
+  payload[3] = (unsigned char)MODE_TIME;
+  payload[4] = (unsigned char)DIFFICULTY_HARD;
+  put_u32_test(bytes + 14,
+               crc32_bytes_test(payload, LEGACY_PREFERENCES_PAYLOAD_SIZE_TEST));
+
+  FILE *file = fopen(preferences_path, "wb");
+  assert(file);
+  assert(fwrite(bytes, 1, sizeof(bytes), file) == sizeof(bytes));
+  assert(fclose(file) == 0);
+}
+
 static void test_preferences(void) {
   Preferences defaults;
   preferences_defaults(&defaults);
@@ -94,9 +125,11 @@ static void test_preferences(void) {
   assert(!defaults.strict_mode);
   assert(defaults.mode == MODE_CLASSIC);
   assert(defaults.difficulty == DIFFICULTY_MEDIUM);
+  assert(defaults.audio_enabled);
   assert(preferences_validate(&defaults));
 
-  Preferences custom = {LANG_CA, false, true, MODE_TIME, DIFFICULTY_HARD};
+  Preferences custom = {
+      LANG_CA, false, true, MODE_TIME, DIFFICULTY_HARD, false};
   assert(preferences_save_file(preferences_path, &custom));
   Preferences loaded;
   preferences_defaults(&loaded);
@@ -106,6 +139,18 @@ static void test_preferences(void) {
   assert(custom.strict_mode == loaded.strict_mode);
   assert(custom.mode == loaded.mode);
   assert(custom.difficulty == loaded.difficulty);
+  assert(custom.audio_enabled == loaded.audio_enabled);
+
+  write_legacy_preferences();
+  preferences_defaults(&loaded);
+  loaded.audio_enabled = false;
+  assert(preferences_load_file(preferences_path, &loaded) == STORE_OK);
+  assert(loaded.language == LANG_ES);
+  assert(!loaded.dark_theme);
+  assert(loaded.strict_mode);
+  assert(loaded.mode == MODE_TIME);
+  assert(loaded.difficulty == DIFFICULTY_HARD);
+  assert(loaded.audio_enabled);
 
   custom.language = (Language)99;
   assert(!preferences_validate(&custom));

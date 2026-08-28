@@ -47,6 +47,7 @@ typedef struct {
   bool strict_mode;
   GameMode mode;
   GameDifficulty difficulty;
+  bool audio_enabled;
 } Preferences;
 
 void preferences_defaults(Preferences *preferences);

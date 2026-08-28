@@ -180,15 +180,15 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   SDL_GetMouseState(&mx,&my);
   for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);bool strict_chip=i==4,hover=strict_chip&&point_in(hr,mx,my);SDL_Color bg=strict_chip&&ui->strict_mode?th.title:(hover?th.hover:th.palette_bg);SDL_Color fg=strict_chip&&ui->strict_mode?th.bg:th.dim;draw_round_rect(g->ren,hr,hr.h/2,bg);(void)draw_fitted_text(g,hud[i],fg,hr,16,10);}
 
-  const char*labels[]={tr(ui->language,T_RESTART),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_THEME),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
-  for(int i=0;i<R.count_btn;i++){SDL_Rect rc=R.btn[i];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),active=i==3&&ui->notes_mode;SDL_Color color=active?th.title:pressed?th.sel:hover?th.hover:(i==0?th.title:th.btn);draw_round_rect(g->ren,rc,7,color);(void)draw_fitted_text(g,labels[i],active?th.bg:th.btnfg,rc,20,10);}
+  const char*labels[]={tr(ui->language,T_RESTART),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_SOUND),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
+  for(int i=0;i<R.count_btn;i++){SDL_Rect rc=R.btn[i];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),active=(i==3&&ui->notes_mode)||(i==5&&audio_is_enabled());SDL_Color color=active?th.title:pressed?th.sel:hover?th.hover:(i==0?th.title:th.btn);SDL_Rect paint=rc;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}draw_round_rect(g->ren,paint,7,color);(void)draw_fitted_text(g,labels[i],active?th.bg:th.btnfg,paint,20,10);}
 
   (void)draw_fitted_text(g,tr(ui->language,T_PALETTE),th.dim,R.palette_label,16,10);
   for(int n=1;n<=9;n++){
-    SDL_Rect rc=R.pal[n-1];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),complete=palette_number_complete(game,ui->mode,n),selected=game->puzzle[IDX(ui->sel_r,ui->sel_c)]==n;
-    SDL_Color color=complete?th.btn:(selected?th.title:(hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)))?th.sel:hover?th.hover:th.palette_bg);SDL_Color fg=complete?th.dim:th.palette_fg;
-    draw_round_rect(g->ren,rc,7,color);char nb[2]={(char)('0'+n),0};(void)draw_fitted_text(g,nb,fg,rc,24,12);
-    if(complete){int x1=rc.x+rc.w-16,y1=rc.y+rc.h-11;draw_line(g->ren,x1,y1,x1+4,y1+4,th.dim);draw_line(g->ren,x1+4,y1+4,x1+10,y1-4,th.dim);}
+    SDL_Rect rc=R.pal[n-1];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),complete=palette_number_complete(game,ui->mode,n),selected=game->puzzle[IDX(ui->sel_r,ui->sel_c)]==n;
+    SDL_Color color=complete?th.btn:(selected?th.title:pressed?th.sel:hover?th.hover:th.palette_bg);SDL_Color fg=complete?th.dim:th.palette_fg;SDL_Rect paint=rc;if(pressed&&!complete&&paint.h>4){paint.y+=2;paint.h-=2;}
+    draw_round_rect(g->ren,paint,7,color);char nb[2]={(char)('0'+n),0};(void)draw_fitted_text(g,nb,fg,paint,24,12);
+    if(complete){int x1=paint.x+paint.w-16,y1=paint.y+paint.h-11;draw_line(g->ren,x1,y1,x1+4,y1+4,th.dim);draw_line(g->ren,x1+4,y1+4,x1+10,y1-4,th.dim);}
   }
 
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;int filled=inner_w*progress/100;if(filled>0)draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);

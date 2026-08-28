@@ -26,7 +26,7 @@ int main(void){
   if(!font)font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
   assert(TTF_Init()==0);
   const int sizes[][2]={{640,480},{1024,720},{1920,1080},{3440,1440},{360,640},{390,844},{412,915}};
-  const TextKey actions[]={T_RESTART,T_MODE,T_HINT,T_NOTES,T_VERIFY,T_THEME,T_HELP,T_ABOUT,T_MENU};
+  const TextKey actions[]={T_RESTART,T_MODE,T_HINT,T_NOTES,T_VERIFY,T_SOUND,T_HELP,T_ABOUT,T_MENU};
   const TextKey modes[]={T_CLASSIC,T_STRIKES,T_TIME_ATTACK};
   const TextKey difficulties[]={T_EASY,T_MEDIUM,T_HARD};
   for(unsigned s=0;s<sizeof(sizes)/sizeof(sizes[0]);s++)for(int mode=0;mode<3;mode++){

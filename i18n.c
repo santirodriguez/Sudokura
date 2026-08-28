@@ -46,7 +46,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_CHANGE_PROMPT] = "Change mode to %s?\nThis will start a new game.",
         [T_FONT_ERROR] = "Could not find a usable TTF/OTF font.\nInstall a TrueType/OpenType font or use --font /path/to/font.ttf.",
         [T_FONT_OPEN_ERROR] = "TTF_OpenFont failed with the chosen font.",
-        [T_HELP_BODY] = "Goal: fill the 9x9 grid with 1..9 without repeats in rows, columns or boxes.\nChoose mode and difficulty on Home. Daily Puzzle is Classic / Medium.\nMouse or arrows/WASD select. 1..9 places. N or Shift adds notes.\nH hint; M strict/free; T theme; P pause; ESC returns.",
+        [T_HELP_BODY] = "Goal: fill the 9x9 grid with 1..9 without repeats in rows, columns or boxes.\nChoose mode and difficulty on Home. Daily Puzzle is Classic / Medium.\nMouse or arrows/WASD select. 1..9 places. N or Shift adds notes.\nH hint; M strict/free; T theme; V sound; P pause; ESC returns.",
         [T_ABOUT_BODY] = SUDOKURA_NAME_VERSION " — compact Sudoku in C + SDL2.\nAuthor: santirodriguez — https://santiagorodriguez.com\nGPLv3. Press ESC or Back to return.",
         [T_CONTINUE] = "Continue",
         [T_DAILY] = "Daily Puzzle",
@@ -62,6 +62,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DAILY_SHORT] = "Daily",
         [T_DARK] = "Dark",
         [T_LIGHT] = "Light",
+        [T_SOUND] = "Sound (V)",
     },
     [LANG_ES] = {
         [T_LANGUAGE] = "Idioma",
@@ -107,7 +108,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_CHANGE_PROMPT] = "¿Cambiar el modo a %s?\nSe iniciará una partida nueva.",
         [T_FONT_ERROR] = "No se encontró una fuente TTF/OTF utilizable.\nInstala una fuente o usa --font /ruta/fuente.ttf.",
         [T_FONT_OPEN_ERROR] = "No se pudo abrir la fuente elegida.",
-        [T_HELP_BODY] = "Objetivo: completa la cuadrícula 9x9 con 1..9 sin repetir en filas, columnas ni cajas.\nElige el modo y la dificultad en Inicio. El Sudoku diario usa Clásico / Media.\nEl mouse o las flechas/WASD seleccionan. 1..9 coloca. N o Mayús agrega notas.\nH da una pista; M cambia estricto/libre; T el tema; P pausa; ESC vuelve.",
+        [T_HELP_BODY] = "Objetivo: completa la cuadrícula 9x9 con 1..9 sin repetir en filas, columnas ni cajas.\nElige el modo y la dificultad en Inicio. El Sudoku diario usa Clásico / Media.\nEl mouse o las flechas/WASD seleccionan. 1..9 coloca. N o Mayús agrega notas.\nH da una pista; M cambia estricto/libre; T el tema; V el sonido; P pausa; ESC vuelve.",
         [T_ABOUT_BODY] = SUDOKURA_NAME_VERSION " — sudoku compacto en C + SDL2.\nAutor: santirodriguez — https://santiagorodriguez.com\nGPLv3. Presiona ESC o Volver para regresar.",
         [T_CONTINUE] = "Continuar",
         [T_DAILY] = "Sudoku diario",
@@ -123,6 +124,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DAILY_SHORT] = "Diario",
         [T_DARK] = "Oscuro",
         [T_LIGHT] = "Claro",
+        [T_SOUND] = "Sonido (V)",
     },
     [LANG_CA] = {
         [T_LANGUAGE] = "Llengua",
@@ -168,7 +170,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_CHANGE_PROMPT] = "Vols canviar el mode a %s?\nComençarà una partida nova.",
         [T_FONT_ERROR] = "No s'ha trobat cap lletra TTF/OTF utilitzable.\nInstal·la'n una o usa --font /camí/lletra.ttf.",
         [T_FONT_OPEN_ERROR] = "No s'ha pogut obrir la lletra triada.",
-        [T_HELP_BODY] = "Objectiu: omple la graella 9x9 amb 1..9 sense repeticions a files, columnes ni blocs.\nTria el mode i la dificultat a l'inici. El Sudoku diari usa Clàssic / Mitjana.\nEl ratolí o les fletxes/WASD seleccionen. 1..9 col·loca. N o Majús afegeix notes.\nH dona una pista; M canvia estricte/lliure; T el tema; P pausa; ESC torna.",
+        [T_HELP_BODY] = "Objectiu: omple la graella 9x9 amb 1..9 sense repeticions a files, columnes ni blocs.\nTria el mode i la dificultat a l'inici. El Sudoku diari usa Clàssic / Mitjana.\nEl ratolí o les fletxes/WASD seleccionen. 1..9 col·loca. N o Majús afegeix notes.\nH dona una pista; M canvia estricte/lliure; T el tema; V el so; P pausa; ESC torna.",
         [T_ABOUT_BODY] = SUDOKURA_NAME_VERSION " — sudoku compacte en C + SDL2.\nAutor: santirodriguez — https://santiagorodriguez.com\nGPLv3. Prem ESC o Enrere per tornar.",
         [T_CONTINUE] = "Continua",
         [T_DAILY] = "Sudoku diari",
@@ -184,6 +186,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DAILY_SHORT] = "Diari",
         [T_DARK] = "Fosc",
         [T_LIGHT] = "Clar",
+        [T_SOUND] = "So (V)",
     },
 };
 

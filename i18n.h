@@ -63,6 +63,7 @@ typedef enum {
   T_DAILY_SHORT,
   T_DARK,
   T_LIGHT,
+  T_SOUND,
   T_COUNT
 } TextKey;
 
