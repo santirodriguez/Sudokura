@@ -15,7 +15,9 @@ static void audio_apply_preferences(Persistence *persistence) {
 
 static void audio_toggle(Persistence *persistence) {
   bool enabled = !audio_is_enabled();
-  audio_set_enabled(enabled);
+  if (enabled) audio_set_enabled(true);
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  if (!enabled) audio_set_enabled(false);
   if (!persistence) return;
   persistence->preferences.audio_enabled = enabled;
   if (persistence->enabled)
@@ -36,7 +38,7 @@ static void audio_sync_ui(const UI *ui) {
   audio_set_context(ui->screen == SCR_END && ui->result == RES_LOSE
                         ? AUDIO_CONTEXT_FAIL
                         : AUDIO_CONTEXT_MAIN);
-  audio_set_focus_paused((ui->pause_reasons & PAUSE_FOCUS) != 0);
+  audio_set_focus_paused((ui->pause_reasons & (PAUSE_FOCUS | PAUSE_MANUAL)) != 0);
 
   if (entered_result) {
     audio_play_result(ui->result == RES_LOSE ? AUDIO_RESULT_FAIL

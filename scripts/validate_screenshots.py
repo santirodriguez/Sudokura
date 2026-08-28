@@ -5,7 +5,7 @@ import argparse, struct
 
 EXPECTED={(640,480),(800,600),(1024,720),(1366,768),(1920,1080),(2560,1440),(3440,1440),(360,640),(390,844),(412,915)}
 p=argparse.ArgumentParser();p.add_argument('directory',type=Path);args=p.parse_args()
-files=sorted(args.directory.glob('*.bmp'));assert len(files)==50,f"expected 50 BMPs, found {len(files)}"
+files=sorted(args.directory.glob('*.bmp'));assert len(files)==60,f"expected 60 BMPs, found {len(files)}"
 counts={size:0 for size in EXPECTED}
 for path in files:
  data=path.read_bytes();assert data[:2]==b'BM' and len(data)>=54,path
@@ -14,5 +14,5 @@ for path in files:
  pixels=data[offset:];assert len(pixels)>width*abs(height),path
  # A rendered frame must contain materially different channel values.
  assert len(set(pixels[::max(1,len(pixels)//10000)]))>=6,f"blank-looking frame: {path}"
-assert all(value==5 for value in counts.values()),counts
-print('validated 50 non-blank BMPs with exact dimensions:',', '.join(f'{w}x{h}' for w,h in sorted(EXPECTED)))
+assert all(value==6 for value in counts.values()),counts
+print('validated 60 non-blank BMPs with exact dimensions:',', '.join(f'{w}x{h}' for w,h in sorted(EXPECTED)))

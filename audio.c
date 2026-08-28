@@ -3,11 +3,12 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-enum { AUDIO_PATH_CAPACITY = 4096 };
+enum { AUDIO_PATH_CAPACITY = 4096, AUDIO_SAMPLE_RATE = 44100 };
 
 typedef struct {
   bool initialized;
@@ -24,6 +25,8 @@ typedef struct {
   Mix_Music *fail_loop;
   Mix_Chunk *win_jingle;
   Mix_Chunk *fail_jingle;
+  Mix_Chunk *effects[AUDIO_EFFECT_COUNT];
+  Uint8 *effect_buffers[AUDIO_EFFECT_COUNT];
 } AudioState;
 
 static AudioState audio_state = {.enabled = true, .pending_channel = -1};
@@ -82,6 +85,15 @@ static bool audio_resolve(char out[AUDIO_PATH_CAPACITY], const char *filename) {
   return audio_candidate(out, AUDIO_PATH_CAPACITY, "assets/audio", filename);
 }
 
+static void audio_free_effects(void) {
+  for (int i = 0; i < AUDIO_EFFECT_COUNT; ++i) {
+    if (audio_state.effects[i]) Mix_FreeChunk(audio_state.effects[i]);
+    if (audio_state.effect_buffers[i]) SDL_free(audio_state.effect_buffers[i]);
+    audio_state.effects[i] = NULL;
+    audio_state.effect_buffers[i] = NULL;
+  }
+}
+
 static void audio_free_assets(void) {
   if (audio_state.main_loop) Mix_FreeMusic(audio_state.main_loop);
   if (audio_state.fail_loop) Mix_FreeMusic(audio_state.fail_loop);
@@ -91,6 +103,61 @@ static void audio_free_assets(void) {
   audio_state.fail_loop = NULL;
   audio_state.win_jingle = NULL;
   audio_state.fail_jingle = NULL;
+  audio_free_effects();
+}
+
+static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
+                              int duration_ms, int volume_percent) {
+  if (effect < 0 || effect >= AUDIO_EFFECT_COUNT || duration_ms <= 0) return false;
+  int frames = AUDIO_SAMPLE_RATE * duration_ms / 1000;
+  if (frames < 2) frames = 2;
+  size_t samples_count = (size_t)frames * 2u;
+  size_t bytes = samples_count * sizeof(Sint16);
+  if (bytes > UINT32_MAX) return false;
+  Sint16 *samples = (Sint16 *)SDL_malloc(bytes);
+  if (!samples) return false;
+
+  double phase = 0.0;
+  const double tau = 6.28318530717958647692;
+  for (int frame = 0; frame < frames; ++frame) {
+    double position = (double)frame / (double)(frames - 1);
+    double attack = position < 0.12 ? position / 0.12 : 1.0;
+    double release = 1.0 - position;
+    double envelope = attack * release * release;
+    double frequency = start_hz + (end_hz - start_hz) * position;
+    phase += tau * frequency / AUDIO_SAMPLE_RATE;
+    Sint16 sample = (Sint16)(sin(phase) * envelope * 8192.0);
+    samples[frame * 2] = sample;
+    samples[frame * 2 + 1] = sample;
+  }
+
+  Mix_Chunk *chunk = Mix_QuickLoad_RAW((Uint8 *)samples, (Uint32)bytes);
+  if (!chunk) {
+    SDL_free(samples);
+    return false;
+  }
+  Mix_VolumeChunk(chunk, MIX_MAX_VOLUME * volume_percent / 100);
+  audio_state.effects[effect] = chunk;
+  audio_state.effect_buffers[effect] = (Uint8 *)samples;
+  return true;
+}
+
+static void audio_build_effects(void) {
+  const struct {
+    AudioEffect effect;
+    int start_hz, end_hz, duration_ms, volume_percent;
+  } specs[] = {
+      {AUDIO_EFFECT_CLICK, 560, 480, 35, 36},
+      {AUDIO_EFFECT_POSITIVE, 660, 880, 70, 34},
+      {AUDIO_EFFECT_NEGATIVE, 330, 220, 80, 34},
+      {AUDIO_EFFECT_NEUTRAL, 440, 460, 45, 28},
+      {AUDIO_EFFECT_BLOCKED, 190, 150, 55, 28},
+  };
+  for (unsigned i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {
+    if (!audio_make_effect(specs[i].effect, specs[i].start_hz, specs[i].end_hz,
+                           specs[i].duration_ms, specs[i].volume_percent))
+      fprintf(stderr, "audio effect generation failed: %s\n", Mix_GetError());
+  }
 }
 
 static Mix_Music *audio_context_music(AudioContext context) {
@@ -136,7 +203,7 @@ bool audio_init(void) {
     fprintf(stderr, "audio OGG support unavailable: %s\n", Mix_GetError());
     return false;
   }
-  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 1024) != 0) {
+  if (Mix_OpenAudio(AUDIO_SAMPLE_RATE, MIX_DEFAULT_FORMAT, 2, 1024) != 0) {
     fprintf(stderr, "audio disabled: %s\n", Mix_GetError());
     return false;
   }
@@ -166,6 +233,7 @@ bool audio_init(void) {
   Mix_VolumeMusic(MIX_MAX_VOLUME * 30 / 100);
   Mix_VolumeChunk(audio_state.win_jingle, MIX_MAX_VOLUME * 65 / 100);
   Mix_VolumeChunk(audio_state.fail_jingle, MIX_MAX_VOLUME * 65 / 100);
+  audio_build_effects();
   audio_state.available = true;
   return true;
 }
@@ -229,6 +297,14 @@ void audio_play_result(AudioResultCue cue) {
     fprintf(stderr, "audio jingle: %s\n", Mix_GetError());
     audio_start_music();
   }
+}
+
+void audio_play_effect(AudioEffect effect) {
+  if (!audio_state.available || !audio_state.enabled || audio_state.focus_paused ||
+      effect < 0 || effect >= AUDIO_EFFECT_COUNT || !audio_state.effects[effect])
+    return;
+  if (Mix_PlayChannel(-1, audio_state.effects[effect], 0) < 0)
+    fprintf(stderr, "audio effect: %s\n", Mix_GetError());
 }
 
 void audio_cancel_result(void) {

@@ -1,102 +1,372 @@
-static void draw_home_button(Gfx*g,Theme th,SDL_Rect r,const char*label,bool primary,bool disabled,bool focused){
-  int mx=0,my=0;SDL_GetMouseState(&mx,&my);bool hover=!disabled&&point_in(r,mx,my);
-  SDL_Color bg=primary?th.title:(hover?th.hover:th.btn);SDL_Color fg=primary?th.bg:(disabled?th.dim:th.btnfg);
-  if(disabled)bg=th.palette_bg;
-  draw_round_rect(g->ren,r,7,bg);
-  (void)draw_fitted_text(g,label,fg,r,20,10);
-  if(focused&&!disabled)draw_focus_ring(g->ren,r,th.sel_outline);
-}
+/*  Sudokura v1.2 — native Sudoku in C + SDL2
+    - Responsive desktop and portrait UI
+    - Help & About with localized navigation
+    - Notes, hints, verification and Strict/Free input
+    - Classic / Strikes / Time Attack plus Daily Puzzle
+    - Autosave, Continue and real pause handling
+    - Dark/Light theme and offline language selector
+    - Optional SDL2_mixer music, jingles and subtle UI feedback
+    Author: santirodriguez — https://santiagorodriguez.com
+    License: GPLv3
+    Build (Fedora/Debian/Arch package names vary):
+      install gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
+      gcc -std=c11 -O2 -Wall -Wextra \
+        sudokura_sdl.c audio.c game.c geometry.c i18n.c -o sudokura \
+        $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) \
+        -lm
+*/
 
-static void render_title(Gfx*g,UI*ui){
-  Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);
-  AppGeometry a;if(!get_geometry(g,ui,&a))return;draw_wordmark(g,sdl_rect(a.home_logo));
-  (void)draw_fitted_text(g,tr(ui->language,T_MODE),th.dim,sdl_rect(a.home_mode_label),15,10);
-  int mx=0,my=0;SDL_GetMouseState(&mx,&my);
-  for(int i=0;i<GEOMETRY_HOME_SEGMENT_COUNT;i++){
-    SDL_Rect r=sdl_rect(a.home_mode[i]);bool active=i==(int)ui->mode,hover=point_in(r,mx,my);SDL_Color bg=active?th.title:(hover?th.hover:th.btn);SDL_Color fg=active?th.bg:th.btnfg;
-    draw_round_rect(g->ren,r,7,bg);(void)draw_fitted_text(g,tr(ui->language,mode_key((Mode)i)),fg,r,18,10);
-    if(home_focus==HOME_FOCUS_MODE&&active)draw_focus_ring(g->ren,r,th.sel_outline);
-  }
-  (void)draw_fitted_text(g,tr(ui->language,T_DIFFICULTY),th.dim,sdl_rect(a.home_difficulty_label),15,10);
-  for(int i=0;i<GEOMETRY_HOME_SEGMENT_COUNT;i++){
-    SDL_Rect r=sdl_rect(a.home_difficulty[i]);bool active=i==(int)home_difficulty,hover=point_in(r,mx,my);SDL_Color bg=active?th.title:(hover?th.hover:th.btn);SDL_Color fg=active?th.bg:th.btnfg;
-    draw_round_rect(g->ren,r,7,bg);(void)draw_fitted_text(g,difficulty_name(ui->language,(GameDifficulty)i),fg,r,18,10);
-    if(home_focus==HOME_FOCUS_DIFFICULTY&&active)draw_focus_ring(g->ren,r,th.sel_outline);
-  }
-
-  draw_home_button(g,th,sdl_rect(a.home_primary[0]),tr(ui->language,T_NEW_GAME),true,false,home_focus==HOME_FOCUS_NEW);
-  draw_home_button(g,th,sdl_rect(a.home_primary[1]),tr(ui->language,T_CONTINUE),false,!ui->has_session,home_focus==HOME_FOCUS_CONTINUE);
-  SDL_Rect daily=sdl_rect(a.home_primary[2]);bool daily_focus=home_focus==HOME_FOCUS_DAILY;bool daily_hover=point_in(daily,mx,my);draw_round_rect(g->ren,daily,7,daily_hover?th.hover:th.btn);
-  SDL_Rect daily_main={daily.x,daily.y+2,daily.w,daily.h*3/5};SDL_Rect daily_sub={daily.x,daily.y+daily.h*3/5-2,daily.w,daily.h*2/5};
-  (void)draw_fitted_text(g,tr(ui->language,T_DAILY),th.btnfg,daily_main,18,10);char daily_detail[64];snprintf(daily_detail,sizeof daily_detail,"%s · %s",tr(ui->language,T_CLASSIC),tr(ui->language,T_MEDIUM));(void)draw_fitted_text(g,daily_detail,th.dim,daily_sub,12,10);if(daily_focus)draw_focus_ring(g->ren,daily,th.sel_outline);
-
-  const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT]={T_HELP,T_ABOUT,T_THEME,T_QUIT};
-  for(int i=0;i<GEOMETRY_HOME_SECONDARY_COUNT;i++){
-    char label[64];const char*text=tr(ui->language,secondary_keys[i]);
-    if(i==2){snprintf(label,sizeof label,"%s: %s",tr(ui->language,T_THEME),tr(ui->language,ui->dark_theme?T_DARK:T_LIGHT));text=label;}
-    int focus=HOME_FOCUS_HELP+i;draw_home_button(g,th,sdl_rect(a.home_secondary[i]),text,false,false,home_focus==focus);
-  }
-}
-
-static void render_pause_overlay(Gfx*g,const UI*ui){
-  Theme th=ui->dark_theme?theme_dark():theme_light();draw_rect(g->ren,0,0,g->width,g->height,th.bg);AppGeometry a;if(!get_geometry(g,ui,&a))return;
-  draw_wordmark(g,sdl_rect(a.pause_logo));(void)draw_fitted_text(g,tr(ui->language,T_PAUSED),th.title,sdl_rect(a.pause_heading),36,16);
-  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);draw_round_rect(g->ren,resume,7,th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume,22,10);draw_round_rect(g->ren,menu,7,th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu,20,10);
-}
-
-static void blit_wrapped(Gfx*g,int x,int y,int w,int max_h,const char*text,SDL_Color col){int tw,thh;SDL_Texture*t=render_text_wrapped(g,g->font_body,text,col,w,&tw,&thh);if(t){int visible=thh<max_h?thh:max_h;SDL_Rect source={0,0,tw,visible},d={x,y,tw,visible};SDL_RenderCopy(g->ren,t,&source,&d);SDL_DestroyTexture(t);}}
-static void render_help(Gfx*g,UI*ui){Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);int tw,thh;SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);if(T){SDL_Rect d={heading.x,heading.y,tw,thh};SDL_RenderCopy(g->ren,T,NULL,&d);SDL_DestroyTexture(T);}blit_wrapped(g,body.x,body.y,body.w,body.h,tr(ui->language,T_HELP_BODY),th.dim);draw_back_button(g,ui,th);}
-static void render_about(Gfx*g,UI*ui){Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);int tw,thh;SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_ABOUT),th.title,&tw,&thh);if(T){SDL_Rect d={heading.x,heading.y,tw,thh};SDL_RenderCopy(g->ren,T,NULL,&d);SDL_DestroyTexture(T);}blit_wrapped(g,body.x,body.y,body.w,body.h,tr(ui->language,T_ABOUT_BODY),th.dim);draw_back_button(g,ui,th);}
-
-static void render_end(Gfx*g,const Game*game,UI*ui){
-  Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);if(ui->result==RES_WIN)draw_victory_animation(g,th);
-  AppGeometry a;if(!get_geometry(g,ui,&a))return;draw_wordmark(g,sdl_rect(a.end_logo));SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
-  const char*title=tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);SDL_Color title_color=ui->result==RES_WIN?(SDL_Color){60,220,160,255}:(SDL_Color){220,80,80,255};(void)draw_fitted_text(g,title,title_color,heading,36,16);
-  const char*mode_name=ui->is_daily?tr(ui->language,T_DAILY_SHORT):tr(ui->language,mode_key(ui->mode));const char*diff=difficulty_name(ui->language,game->difficulty);double el=elapsed_time(ui);char lines[3][128];
-  snprintf(lines[0],sizeof lines[0],"%s · %s",mode_name,diff);snprintf(lines[1],sizeof lines[1],"%s %02d:%02d   ·   %s %d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60),tr(ui->language,T_ERRORS),ui->mistakes);snprintf(lines[2],sizeof lines[2],"%s: %d",tr(ui->language,T_HINTS),game_hint_count(game));
-  int row_h=summary.h/3;for(int i=0;i<3;i++){SDL_Rect row={summary.x,summary.y+i*row_h,summary.w,row_h};(void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,18,10);}
-  SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);draw_round_rect(g->ren,b1,7,th.title);(void)draw_fitted_text(g,tr(ui->language,ui->result==RES_WIN?T_NEXT:T_RETRY),th.bg,b1,22,10);draw_round_rect(g->ren,b2,7,th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,b2,20,10);
-}
-
-static bool confirm_box(SDL_Window*win,const char*title,const char*msg,const char*ok_label,const char*cancel_label){
-  const SDL_MessageBoxButtonData buttons[]={{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,cancel_label},{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,ok_label?ok_label:"OK"}};
-  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_INFORMATION,win,title,msg,2,buttons,&scheme};int buttonid=-1;if(SDL_ShowMessageBox(&data,&buttonid)<0)return false;return buttonid==1;
-}
-
-static void app_render(Gfx*g,const Game*game,UI*ui){update_font_tiers(g,ui);if(ui->screen==SCR_TITLE)render_title(g,ui);else if(ui->screen==SCR_HELP)render_help(g,ui);else if(ui->screen==SCR_ABOUT)render_about(g,ui);else if(ui->screen==SCR_END)render_end(g,game,ui);else render_board_and_sidebar(g,game,ui);draw_language_selector(g,ui);}
-static void app_frame(Gfx*g,const Game*game,UI*ui){app_render(g,game,ui);SDL_RenderPresent(g->ren);}
-static bool save_frame(Gfx*g,const char*path){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,g->width,g->height,32,SDL_PIXELFORMAT_ARGB8888);if(!s)return false;bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&SDL_SaveBMP(s,path)==0;SDL_FreeSurface(s);return ok;}
-
-static void app_shutdown(Gfx*g){
-  if(!g)return;
-  if(g->wordmark)SDL_DestroyTexture(g->wordmark);
-  for(int i=0;i<LANG_COUNT;i++){
-    if(language_flags[i])SDL_DestroyTexture(language_flags[i]);
-    language_flags[i]=NULL;
-  }
-  for(int i=0;i<FONT_CACHE_COUNT;i++)if(g->fonts[i])TTF_CloseFont(g->fonts[i]);
-  if(g->ren)SDL_DestroyRenderer(g->ren);
-  if(g->win)SDL_DestroyWindow(g->win);
-  memset(g,0,sizeof(*g));
-  if(TTF_WasInit())TTF_Quit();
-  SDL_Quit();
-}
-static SDL_Texture*texture_from_rgba(SDL_Renderer*renderer,const unsigned char*rgba,unsigned int width,unsigned int height){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormatFrom((void*)rgba,(int)width,(int)height,32,(int)width*4,SDL_PIXELFORMAT_RGBA32);if(!s)return NULL;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FreeSurface(s);return t;}
-static bool app_init(Gfx*g,const char*font_cli){
-  memset(g,0,sizeof(*g));g->width=1024;g->height=720;SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){fprintf(stderr,"SDL_Init: %s\n",SDL_GetError());return false;}if(TTF_Init()!=0){fprintf(stderr,"TTF_Init: %s\n",TTF_GetError());app_shutdown(g);return false;}
-  g->win=SDL_CreateWindow(SUDOKURA_NAME_VERSION,SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,g->width,g->height,SDL_WINDOW_RESIZABLE);if(!g->win){fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());app_shutdown(g);return false;}SDL_SetWindowMinimumSize(g->win,360,480);g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);if(!g->ren){fprintf(stderr,"SDL_CreateRenderer: %s\n",SDL_GetError());app_shutdown(g);return false;}
-  SDL_Surface*icon=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_icon_rgba,(int)sudokura_icon_width,(int)sudokura_icon_height,32,(int)sudokura_icon_width*4,SDL_PIXELFORMAT_RGBA32);if(icon){SDL_SetWindowIcon(g->win,icon);SDL_FreeSurface(icon);}SDL_Surface*word=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_wordmark_rgba,(int)sudokura_wordmark_width,(int)sudokura_wordmark_height,32,(int)sudokura_wordmark_width*4,SDL_PIXELFORMAT_RGBA32);if(word){g->wordmark=SDL_CreateTextureFromSurface(g->ren,word);SDL_FreeSurface(word);}if(!g->wordmark){fprintf(stderr,"wordmark texture: %s\n",SDL_GetError());app_shutdown(g);return false;}
-  language_flags[LANG_EN]=texture_from_rgba(g->ren,sudokura_flag_us_rgba,sudokura_flag_us_width,sudokura_flag_us_height);language_flags[LANG_ES]=texture_from_rgba(g->ren,sudokura_flag_ar_rgba,sudokura_flag_ar_width,sudokura_flag_ar_height);language_flags[LANG_CA]=texture_from_rgba(g->ren,sudokura_flag_ca_rgba,sudokura_flag_ca_width,sudokura_flag_ca_height);
-  char font_path[PATH_MAX]={0};const char*fpath=find_font_path_dynamic(font_path,font_cli);if(!fpath){fprintf(stderr,"%s\n",tr(LANG_EN,T_FONT_ERROR));app_shutdown(g);return false;}for(int i=0;i<FONT_CACHE_COUNT;i++){g->fonts[i]=TTF_OpenFont(fpath,font_cache_sizes[i]);if(!g->fonts[i]){fprintf(stderr,"font %d: %s\n",font_cache_sizes[i],TTF_GetError());app_shutdown(g);return false;}}
-  g->font_big=cached_font(g,44);g->font_small=cached_font(g,20);g->font_note=cached_font(g,12);g->font_cell=cached_font(g,28);g->font_body=cached_font(g,18);return true;
-}
-
-static bool make_directory(const char*path){char part[PATH_MAX];size_t length=strlen(path);if(length==0||length>=sizeof(part))return false;if(!path_copy(part,sizeof(part),path))return false;for(size_t i=1;i<=length;i++)if(part[i]=='/'||part[i]=='\\'||part[i]=='\0'){char saved=part[i];part[i]='\0';if(part[0]){
-#if defined(_WIN32)
-  if(_mkdir(part)!=0&&errno!=EEXIST)return false;
-#else
-  if(mkdir(part,0755)!=0&&errno!=EEXIST)return false;
+#if !defined(_WIN32)
+  #ifndef _POSIX_C_SOURCE
+  #define _POSIX_C_SOURCE 200809L
+  #endif
 #endif
-}part[i]=saved;}return true;}
-static void apply_window_resize(Gfx*g,int requested_width,int requested_height){int width=0,height=0;bool changed=geometry_normalize_window_size(requested_width,requested_height,&width,&height);if(changed)SDL_SetWindowSize(g->win,width,height);SDL_GetWindowSize(g->win,&g->width,&g->height);}
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <time.h>
+#include <math.h>
+#include <stdint.h>
+#include <limits.h>
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+
+#if defined(_WIN32)
+  #include <windows.h>
+  #include <io.h>
+  #include <direct.h>
+  #ifndef PATH_MAX
+  #define PATH_MAX MAX_PATH
+  #endif
+#elif defined(__APPLE__)
+  #include <dirent.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+  #include <mach-o/dyld.h>
+#else
+  #include <dirent.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+#endif
+#include <errno.h>
+
+#include "game.h"
+#include "geometry.h"
+#include "version.h"
+#include "i18n.h"
+#include "session.h"
+#include "seed.h"
+#include "assets/generated/window_icon.h"
+#include "assets/generated/wordmark.h"
+#define N 9
+#define NN 81
+#define IDX(r,c) ((r)*9+(c))
+
+/* =================== GUI & THEME =================== */
+enum { FONT_CACHE_COUNT=23 };
+static const int font_cache_sizes[FONT_CACHE_COUNT]={10,12,13,14,15,16,18,20,22,24,28,30,32,36,38,42,44,48,52,56,60,64,72};
+typedef struct { SDL_Window* win; SDL_Renderer* ren; TTF_Font* fonts[FONT_CACHE_COUNT]; TTF_Font* font_big; TTF_Font* font_small; TTF_Font* font_note; TTF_Font* font_cell; TTF_Font* font_body; SDL_Texture* wordmark; int width, height; } Gfx;
+
+typedef struct {
+  SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;
+} Theme;
+
+static Theme theme_dark(void){
+  Theme t={
+    .bg={16,18,26,255}, .board={26,30,44,255}, .thin={110,118,140,160}, .thick={150,180,255,220},
+    .hover={39,46,66,160}, .sel={60,80,130,170}, .sel_outline={180,210,255,230},
+    .text_given={245,248,252,255}, .text_edit={170,255,210,255}, .text_wrong={255,125,125,255},
+    .boxhl={40,50,70,130}, .samehl={100,140,220,70}, .shadow={0,0,0,110},
+    .btn={34,38,56,255}, .btnfg={230,230,235,255}, .dim={165,175,185,255}, .title={140,170,255,255},
+    .palette_bg={32,36,54,255}, .palette_fg={230,230,235,255}, .conflict={220,60,60,80}
+  };
+  return t;
+}
+static Theme theme_light(void){
+  Theme t={
+    .bg={245,247,252,255}, .board={236,240,248,255}, .thin={150,160,175,200}, .thick={60,80,120,255},
+    .hover={210,220,245,200}, .sel={180,200,250,160}, .sel_outline={35,55,120,230},
+    .text_given={36,41,46,255}, .text_edit={0,110,85,255}, .text_wrong={200,40,40,255},
+    .boxhl={200,210,235,160}, .samehl={60,100,200,50}, .shadow={0,0,0,60},
+    .btn={220,226,240,255}, .btnfg={36,41,46,255}, .dim={90,100,120,255}, .title={40,70,160,255},
+    .palette_bg={225,232,246,255}, .palette_fg={36,41,46,255}, .conflict={200,60,60,80}
+  };
+  return t;
+}
+
+typedef GameMode Mode;
+typedef enum {SCR_TITLE=0, SCR_PLAY=1, SCR_END=2, SCR_HELP=3, SCR_ABOUT=4} Screen;
+typedef enum {RES_NONE=0, RES_WIN=1, RES_LOSE=2} Result;
+enum {
+  PAUSE_MANUAL = 1u << 0,
+  PAUSE_FOCUS = 1u << 1,
+  PAUSE_MODAL = 1u << 2,
+  PAUSE_HOME = 1u << 3,
+  PAUSE_END = 1u << 4
+};
+
+typedef struct {
+  int sel_r, sel_c;
+  bool notes_mode, strict_mode, dark_theme;
+  Language language;
+
+  int mistakes, strikes, strikes_max;
+  double elapsed_base, running_since;
+  double time_limit_s;
+  unsigned pause_reasons;
+
+  bool session_open, has_session, is_daily;
+  int daily_year, daily_month, daily_day;
+
+  char toast[96]; double toast_t0; bool toast_on;
+
+  Screen screen; Screen prev_screen; Mode mode; Result result;
+} UI;
+
+typedef struct {
+  bool enabled;
+  Preferences preferences;
+  SessionState saved;
+  char session_path[PATH_MAX];
+  char preferences_path[PATH_MAX];
+  double last_checkpoint;
+} Persistence;
+
+static double now_s(void){ return SDL_GetTicks()*0.001; }
+static bool clock_running(const UI*ui){
+  return ui&&ui->session_open&&ui->screen==SCR_PLAY&&ui->pause_reasons==0;
+}
+static double elapsed_time(const UI*ui){
+  if(!ui)return 0;
+  double elapsed=ui->elapsed_base;
+  if(clock_running(ui))elapsed+=now_s()-ui->running_since;
+  return elapsed<0?0:elapsed;
+}
+static void clock_pause(UI*ui,unsigned reason){
+  if(!ui||!reason)return;
+  if(clock_running(ui))ui->elapsed_base+=now_s()-ui->running_since;
+  ui->pause_reasons|=reason;
+}
+static void clock_resume(UI*ui,unsigned reason){
+  if(!ui||!reason)return;
+  ui->pause_reasons&=~reason;
+  if(clock_running(ui))ui->running_since=now_s();
+}
+static void clock_reset(UI*ui){
+  if(!ui)return;
+  ui->elapsed_base=0;
+  ui->pause_reasons=0;
+  ui->running_since=now_s();
+}
+static void show_toast(UI*ui,const char*msg){ snprintf(ui->toast,sizeof(ui->toast),"%s",msg); ui->toast_t0=now_s(); ui->toast_on=true; }
+static void set_mode_params(UI*ui){
+  ui->strikes_max=3;
+  ui->time_limit_s = (ui->mode==MODE_TIME ? 10*60 : 0);
+}
+static void begin_fresh_play(UI*ui){
+  ui->screen=SCR_PLAY; ui->prev_screen=SCR_PLAY; ui->result=RES_NONE;
+  ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
+  set_mode_params(ui); clock_reset(ui);
+}
+static void play_input_effect(GameInputResult result,Mode mode){
+  AudioEffect effect=AUDIO_EFFECT_NEUTRAL;
+  if(result==GAME_INPUT_NO_CHANGE)return;
+  if(result==GAME_INPUT_LOCKED||result==GAME_INPUT_STRICT_REJECTED)effect=AUDIO_EFFECT_BLOCKED;
+  else if(result==GAME_INPUT_CORRECT)effect=game_mode_reveals_correctness(mode)?AUDIO_EFFECT_POSITIVE:AUDIO_EFFECT_NEUTRAL;
+  else if(result==GAME_INPUT_WRONG)effect=game_mode_reveals_correctness(mode)?AUDIO_EFFECT_NEGATIVE:AUDIO_EFFECT_NEUTRAL;
+  audio_play_effect(effect);
+}
+static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
+  GameInputResult result=game_apply_input(game,row,column,value,notes_mode,ui->strict_mode);
+  play_input_effect(result,ui->mode);
+  if(result==GAME_INPUT_WRONG&&game_mode_reveals_correctness(ui->mode)){
+    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_WRONG));
+  }else if(result==GAME_INPUT_STRICT_REJECTED){
+    show_toast(ui,tr(ui->language,T_ILLEGAL));
+  }
+  return result!=GAME_INPUT_NO_CHANGE&&result!=GAME_INPUT_LOCKED;
+}
+
+/* ===== Font discovery (robust, cross-platform) ===== */
+static bool path_copy(char*destination,size_t destination_size,const char*source){
+  if(!destination||destination_size==0||!source)return false;
+  size_t source_size=strlen(source)+1;
+  if(source_size>destination_size){destination[0]='\0';return false;}
+  memcpy(destination,source,source_size);
+  return true;
+}
+
+static bool path_join(char*destination,size_t destination_size,const char*directory,const char*component,char separator){
+  if(!destination||destination_size==0||!directory||!component)return false;
+  size_t directory_length=strlen(directory),component_length=strlen(component);
+  bool needs_separator=directory_length>0&&directory[directory_length-1]!=separator;
+  if(directory_length>=destination_size){destination[0]='\0';return false;}
+  size_t available=destination_size-directory_length-1;
+  if((needs_separator&&available==0)||component_length>available-(needs_separator?1u:0u)){
+    destination[0]='\0';return false;
+  }
+  memcpy(destination,directory,directory_length);
+  size_t offset=directory_length;
+  if(needs_separator)destination[offset++]=separator;
+  memcpy(destination+offset,component,component_length+1);
+  return true;
+}
+
+static bool path_append(char*destination,size_t destination_size,const char*component,char separator){
+  char original[PATH_MAX];
+  if(!path_copy(original,sizeof(original),destination))return false;
+  return path_join(destination,destination_size,original,component,separator);
+}
+
+static uint64_t next_seed(void){
+  return seed_random_u64();
+}
+
+static bool local_date(int*year,int*month,int*day){
+  if(!year||!month||!day)return false;
+  time_t current=time(NULL);struct tm*local=localtime(&current);if(!local)return false;
+  *year=local->tm_year+1900;*month=local->tm_mon+1;*day=local->tm_mday;return true;
+}
+
+static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
+  if(!out||!base||!leaf)return false;
+  int n=snprintf(out,PATH_MAX,"%s%s",base,leaf);
+  return n>=0&&n<PATH_MAX;
+}
+
+static void persistence_init(Persistence*p){
+  if(!p)return;
+  memset(p,0,sizeof(*p));preferences_defaults(&p->preferences);
+  char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
+  if(!base)return;
+  bool paths_ok=pref_path(p->session_path,base,"session.dat")&&
+                pref_path(p->preferences_path,base,"preferences.dat");
+  SDL_free(base);if(!paths_ok)return;p->enabled=true;
+  StoreStatus pref_status=preferences_load_file(p->preferences_path,&p->preferences);
+  if(pref_status==STORE_CORRUPT){
+    (void)store_quarantine_corrupt(p->preferences_path);preferences_defaults(&p->preferences);
+  }else if(pref_status==STORE_IO_ERROR){
+    preferences_defaults(&p->preferences);
+  }
+  StoreStatus session_status=session_load_file(p->session_path,&p->saved);
+  if(session_status==STORE_CORRUPT)(void)store_quarantine_corrupt(p->session_path);
+  else if(session_status==STORE_INCOMPATIBLE)(void)remove(p->session_path);
+  if(session_status!=STORE_OK)memset(&p->saved,0,sizeof(p->saved));
+  p->last_checkpoint=now_s();
+}
+
+static bool save_preferences(Persistence*p,const UI*ui){
+  if(!p||!p->enabled||!ui)return false;
+  p->preferences.language=ui->language;
+  p->preferences.dark_theme=ui->dark_theme;
+  p->preferences.strict_mode=ui->strict_mode;
+  return preferences_save_file(p->preferences_path,&p->preferences);
+}
+
+static SessionStatus runtime_session_status(const Game*game,const UI*ui){
+  if(game_is_solved(game))return SESSION_WON;
+  if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,elapsed_time(ui),ui->time_limit_s))return SESSION_LOST;
+  return SESSION_ACTIVE;
+}
+
+static void capture_session(SessionState*out,const Game*game,const UI*ui){
+  if(!out||!game||!ui)return;
+  memset(out,0,sizeof(*out));out->game=*game;
+  out->mode=ui->mode;out->selected_row=ui->sel_r;out->selected_column=ui->sel_c;
+  out->notes_mode=ui->notes_mode;out->strict_mode=ui->strict_mode;
+  out->manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
+  out->status=runtime_session_status(game,ui);out->mistakes=ui->mistakes;out->strikes=ui->strikes;
+  double elapsed=elapsed_time(ui);if(elapsed<0)elapsed=0;
+  out->elapsed_ms=(uint64_t)(elapsed*1000.0+0.5);
+  out->is_daily=ui->is_daily;out->daily_year=ui->daily_year;
+  out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
+}
+
+static bool save_current_session(Persistence*p,const Game*game,UI*ui){
+  if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
+  SessionState state;capture_session(&state,game,ui);
+  if(!session_save_file(p->session_path,&state))return false;
+  p->saved=state;ui->has_session=true;p->last_checkpoint=now_s();return true;
+}
+
+static bool saved_has_progress(const SessionState*state){
+  if(!state||!session_validate(state))return false;
+  if(state->status!=SESSION_ACTIVE||state->elapsed_ms||state->mistakes||state->strikes)return true;
+  for(int i=0;i<81;i++)if(state->game.puzzle[i]!=state->game.initial[i]||state->game.hinted[i]||state->game.notes[i])return true;
+  return false;
+}
+
+static void restore_saved_session(Persistence*p,Game*game,UI*ui){
+  if(!p||!game||!ui||!session_validate(&p->saved))return;
+  const SessionState*s=&p->saved;*game=s->game;ui->mode=s->mode;set_mode_params(ui);
+  ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
+  ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
+  ui->elapsed_base=(double)s->elapsed_ms/1000.0;ui->running_since=now_s();
+  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=true;ui->has_session=true;
+  ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
+  if(s->status==SESSION_WON){ui->result=RES_WIN;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
+  else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
+  else{ui->result=RES_NONE;ui->screen=SCR_PLAY;}
+  ui->prev_screen=ui->screen;p->last_checkpoint=now_s();
+}
+
+static void start_new_session(Persistence*p,Game*game,UI*ui){
+  ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
+  game_new_difficulty(game,next_seed(),p->preferences.difficulty);
+  ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
+  begin_fresh_play(ui);(void)save_current_session(p,game,ui);
+}
+
+static bool start_daily_session(Persistence*p,Game*game,UI*ui,int year,int month,int day){
+  if(!game_new_daily(game,year,month,day))return false;
+  ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
+  ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
+  begin_fresh_play(ui);(void)save_current_session(p,game,ui);return true;
+}
+
+static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
+  return p&&session_validate(&p->saved)&&p->saved.is_daily&&
+         p->saved.daily_year==year&&p->saved.daily_month==month&&p->saved.daily_day==day;
+}
+
+static void restart_current_session(Persistence*p,Game*game,UI*ui){
+  game_restart(game);ui->sel_r=4;ui->sel_c=4;begin_fresh_play(ui);
+  (void)save_current_session(p,game,ui);
+}
+
+static void go_home(Persistence*p,const Game*game,UI*ui){
+  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)save_current_session(p,game,ui);}
+  ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
+  ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
+  ui->notes_mode=false;set_mode_params(ui);
+}
+
+static void open_info_from_play(Persistence*p,const Game*game,UI*ui,Screen screen){
+  clock_pause(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);
+  ui->prev_screen=SCR_PLAY;ui->screen=screen;
+}
+
+static void return_from_info(Persistence*p,const Game*game,UI*ui){
+  if(ui->prev_screen==SCR_PLAY){ui->screen=SCR_PLAY;clock_resume(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);}
+  else ui->screen=ui->prev_screen;
+}
+
+static bool ends_withi(const char* s, const char* suf){
+  size_t ns=strlen(s), ms=strlen(suf); if(ms>ns) return false;
+  for(size_t i=0;i<ms;i++){
+    char a=s[ns-ms+i], b=suf[i];
+    if(a>='A'&&a<='Z') a=(char)(a-'A'+'a');
+    if(b>='A'&&b<='Z') b=(char)(b-'A'+'a');
+    if(a!=b) return false;
+  }
+  return true;
+}
+static bool try_open_font_path(const char* path){
+  if(!path) return false;
+  TTF_Font* tmp = TTF_OpenFont(path, 18);
+  if(tmp){ TTF_CloseFont(tmp); return true; }
+  return false;
+}

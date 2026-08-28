@@ -31,7 +31,7 @@ tests/test_seed: tests/test_seed.c seed.c seed.h
 tests/test_text_fit: tests/test_text_fit.c geometry.c i18n.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_text_fit.c geometry.c i18n.c -o $@ $(SDL_TEST_LIBS)
 tests/test_audio: tests/test_audio.c audio.c audio.h $(AUDIO_ASSETS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS) -lm
 test-ui: tests/test_text_fit tests/test_audio
 	./tests/test_text_fit
 	./tests/test_audio

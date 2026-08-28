@@ -223,6 +223,8 @@ static void assert_screen_geometry(const AppGeometry *g, int width, int height) 
   for (int i = 0; i < GEOMETRY_HOME_PRIMARY_COUNT; ++i) assert(geometry_rect_in_bounds(g->home_primary[i], width, height));
   for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) assert(geometry_rect_in_bounds(g->home_secondary[i], width, height));
   assert(geometry_rect_in_bounds(g->info_heading, width, height)); assert(geometry_rect_in_bounds(g->info_body, width, height)); assert(geometry_rect_in_bounds(g->back_button, width, height));
+  assert(geometry_rect_in_bounds(g->about_logo, width, height)); assert(geometry_rect_in_bounds(g->about_body, width, height)); assert(geometry_rect_in_bounds(g->about_meta, width, height));
+  for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i) assert(geometry_rect_in_bounds(g->about_links[i], width, height));
   assert(geometry_rect_in_bounds(g->end_logo, width, height)); assert(geometry_rect_in_bounds(g->end_heading, width, height)); assert(geometry_rect_in_bounds(g->end_summary, width, height));
   for (int i = 0; i < GEOMETRY_END_BUTTON_COUNT; ++i) assert(geometry_rect_in_bounds(g->end_buttons[i], width, height));
   assert(geometry_rect_in_bounds(g->pause_logo, width, height)); assert(geometry_rect_in_bounds(g->pause_heading, width, height));
@@ -244,6 +246,16 @@ static void test_geometry(void) {
       if (portrait) for (int i = 1; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].y == g.palette[0].y);
       assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 16);
       assert_screen_geometry(&g, width, height);
+      if (!portrait && width <= 1366) assert(g.board.w <= 720);
+      if (!portrait && width >= 1920 && height >= 1080) {
+        GeometryFonts fonts = geometry_font_sizes(&g, width, height);
+        assert(g.board.w > 720);
+        assert(g.sidebar.h == g.board.h);
+        assert(g.info_body.w <= 820);
+        assert(fonts.heading >= 52 && fonts.cell >= 60 && fonts.control >= 24);
+      }
+      if (width == 1920 && height == 1080) assert(g.board.w == 900);
+      if (width >= 2560 && height >= 1440) assert(g.board.w >= 1000);
     }
   }
   AppGeometry invalid; assert(!geometry_compute(359, 640, GEOMETRY_MODE_CLASSIC, &invalid)); assert(!geometry_compute(640, 479, GEOMETRY_MODE_CLASSIC, &invalid));
@@ -267,6 +279,6 @@ static void test_i18n(void) {
 
 int main(void) {
   test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
-  puts("all tests passed (generator v2, 1200-seed stress, Daily, restart/progress/hints, responsive geometry, API bounds)");
+  puts("all tests passed (generator v2, 1200-seed stress, Daily, restart/progress/hints, responsive XL geometry, API bounds)");
   return 0;
 }

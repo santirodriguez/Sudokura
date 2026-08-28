@@ -51,27 +51,31 @@ static void grid_gap(GeoRect area, int columns, int gap, GeoRect *items,
 static int min_i(int a, int b) { return a < b ? a : b; }
 
 static void common_screens(int width, int height, bool portrait, AppGeometry *g) {
-  int margin = portrait ? 8 : 12;
-  int language_w = portrait ? width - margin * 2 : min_i(width - margin * 2, 540);
-  int language_h = portrait ? 40 : 38;
+  bool xl = !portrait && width >= 1600 && height >= 900;
+  int margin = portrait ? 8 : (xl ? 18 : 12);
+  int language_w = portrait ? width - margin * 2
+                            : min_i(width - margin * 2, xl ? 680 : 540);
+  int language_h = portrait ? 40 : (xl ? 44 : 38);
   g->screen_language =
       (GeoRect){(width - language_w) / 2, margin, language_w, language_h};
 
-  int home_w = portrait ? width - margin * 2 : min_i(width - margin * 2, 560);
+  int home_w = portrait ? width - margin * 2
+                        : min_i(width - margin * 2, xl ? 700 : 560);
   int home_x = (width - home_w) / 2;
-  int logo_h = portrait ? 64 : (height < 600 ? 68 : 96);
+  int logo_h = portrait ? 64 : (height < 600 ? 68 : (xl ? 112 : 96));
   int y = g->screen_language.y + g->screen_language.h + 8;
   g->home_logo = (GeoRect){home_x, y, home_w, logo_h};
   y += logo_h + 8;
 
-  g->home_mode_label = (GeoRect){home_x, y, home_w, 16};
-  y += 18;
-  int segment_h = portrait ? 36 : 34;
+  int label_h = xl ? 18 : 16;
+  g->home_mode_label = (GeoRect){home_x, y, home_w, label_h};
+  y += label_h + 2;
+  int segment_h = portrait ? 36 : (xl ? 42 : 34);
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6, g->home_mode,
            GEOMETRY_HOME_SEGMENT_COUNT);
   y += segment_h + 6;
-  g->home_difficulty_label = (GeoRect){home_x, y, home_w, 16};
-  y += 18;
+  g->home_difficulty_label = (GeoRect){home_x, y, home_w, label_h};
+  y += label_h + 2;
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6,
            g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
   y += segment_h + 12;
@@ -86,42 +90,76 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
     grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 2, 8,
              g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
   } else {
-    grid_gap((GeoRect){home_x, y, home_w, 48}, 3, 8, g->home_primary,
+    int primary_h = xl ? 54 : 48;
+    int secondary_h = xl ? 44 : 38;
+    grid_gap((GeoRect){home_x, y, home_w, primary_h}, 3, 8, g->home_primary,
              GEOMETRY_HOME_PRIMARY_COUNT);
-    y += 58;
-    grid_gap((GeoRect){home_x, y, home_w, 38}, 4, 8, g->home_secondary,
-             GEOMETRY_HOME_SECONDARY_COUNT);
+    y += primary_h + 10;
+    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 4, 8,
+             g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
   }
 
   int info_margin = portrait ? 16 : 24;
   int info_top = g->screen_language.y + g->screen_language.h + 16;
-  g->info_heading =
-      (GeoRect){info_margin, info_top, width - info_margin * 2, 48};
-  g->back_button = (GeoRect){info_margin, height - info_margin - 44,
-                             portrait ? width - info_margin * 2 : 180, 44};
-  g->info_body = (GeoRect){info_margin, g->info_heading.y + 58,
-                           width - info_margin * 2,
-                           g->back_button.y - g->info_heading.y - 68};
+  int info_w = portrait ? width - info_margin * 2
+                        : min_i(width - info_margin * 2, xl ? 820 : 760);
+  int info_x = (width - info_w) / 2;
+  int heading_h = xl ? 60 : 48;
+  int back_h = xl ? 48 : 44;
+  g->info_heading = (GeoRect){info_x, info_top, info_w, heading_h};
+  g->back_button = (GeoRect){info_x, height - info_margin - back_h,
+                             portrait ? info_w : (xl ? 200 : 180), back_h};
+  g->info_body = (GeoRect){info_x, g->info_heading.y + heading_h + 10, info_w,
+                           g->back_button.y - g->info_heading.y - heading_h - 20};
 
-  int panel_w = portrait ? width - margin * 4 : min_i(width - margin * 4, 460);
+  int about_w = portrait ? info_w : min_i(info_w, xl ? 760 : 680);
+  int about_x = (width - about_w) / 2;
+  int about_logo_h = portrait ? 64 : (height < 600 ? 60 : (xl ? 96 : 80));
+  g->about_logo = (GeoRect){about_x, info_top, about_w, about_logo_h};
+  int link_h = portrait ? 36 : (xl ? 46 : 42);
+  int links_h = portrait ? link_h * GEOMETRY_ABOUT_LINK_COUNT + 6 * 2 : link_h;
+  int links_y = g->back_button.y - 14 - links_h;
+  if (portrait)
+    grid_gap((GeoRect){about_x, links_y, about_w, links_h}, 1, 6,
+             g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
+  else
+    grid_gap((GeoRect){about_x, links_y, about_w, links_h}, 3, 8,
+             g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
+  int about_body_y = g->about_logo.y + g->about_logo.h + 10;
+  int about_available = links_y - about_body_y - 10;
+  int about_body_h = about_available * 3 / 5;
+  if (about_body_h < 70) about_body_h = 70;
+  int about_meta_h = about_available - about_body_h - 8;
+  if (about_meta_h < 44) {
+    about_meta_h = 44;
+    about_body_h = about_available - about_meta_h - 8;
+  }
+  g->about_body = (GeoRect){about_x, about_body_y, about_w, about_body_h};
+  g->about_meta = (GeoRect){about_x, about_body_y + about_body_h + 8,
+                            about_w, about_meta_h};
+
+  int panel_w = portrait ? width - margin * 4
+                         : min_i(width - margin * 4, xl ? 560 : 460);
   int panel_x = (width - panel_w) / 2;
   int end_y = g->screen_language.y + g->screen_language.h + 10;
-  g->end_logo = (GeoRect){panel_x, end_y, panel_w, portrait ? 70 : 72};
+  g->end_logo = (GeoRect){panel_x, end_y, panel_w, portrait ? 70 : (xl ? 90 : 72)};
   end_y += g->end_logo.h + 8;
-  g->end_heading = (GeoRect){panel_x, end_y, panel_w, 46};
-  end_y += 54;
-  g->end_summary = (GeoRect){panel_x, end_y, panel_w, portrait ? 128 : 118};
+  g->end_heading = (GeoRect){panel_x, end_y, panel_w, xl ? 60 : 46};
+  end_y += g->end_heading.h + 8;
+  g->end_summary = (GeoRect){panel_x, end_y, panel_w,
+                             portrait ? 128 : (xl ? 140 : 118)};
   end_y += g->end_summary.h + 14;
-  grid_gap((GeoRect){panel_x, end_y, panel_w, 94}, 1, 6, g->end_buttons,
-           GEOMETRY_END_BUTTON_COUNT);
+  grid_gap((GeoRect){panel_x, end_y, panel_w, xl ? 110 : 94}, 1, 6,
+           g->end_buttons, GEOMETRY_END_BUTTON_COUNT);
 
   int pause_y = g->screen_language.y + g->screen_language.h + 18;
-  g->pause_logo = (GeoRect){panel_x, pause_y, panel_w, portrait ? 72 : 76};
+  g->pause_logo = (GeoRect){panel_x, pause_y, panel_w,
+                            portrait ? 72 : (xl ? 96 : 76)};
   pause_y += g->pause_logo.h + 12;
-  g->pause_heading = (GeoRect){panel_x, pause_y, panel_w, 44};
-  pause_y += 58;
-  grid_gap((GeoRect){panel_x, pause_y, panel_w, 102}, 1, 6, g->pause_buttons,
-           GEOMETRY_PAUSE_BUTTON_COUNT);
+  g->pause_heading = (GeoRect){panel_x, pause_y, panel_w, xl ? 60 : 44};
+  pause_y += g->pause_heading.h + 14;
+  grid_gap((GeoRect){panel_x, pause_y, panel_w, xl ? 116 : 102}, 1, 6,
+           g->pause_buttons, GEOMETRY_PAUSE_BUTTON_COUNT);
 }
 
 static void set_compatibility_aliases(AppGeometry *g) {
@@ -184,57 +222,71 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
                            g->progress.y + g->progress.h -
                                (g->board.y + board + 4)};
   } else {
-    int margin = 16;
-    int max_shell_w = 1180, max_shell_h = 900;
+    bool xl = width >= 1600 && height >= 900;
+    int margin = xl ? 24 : 16;
+    int max_shell_w = xl ? 1640 : 1180;
+    int max_shell_h = xl ? 1200 : 900;
     int shell_w = width - margin * 2;
     if (shell_w > max_shell_w) shell_w = max_shell_w;
     int shell_h = height - margin * 2;
     if (shell_h > max_shell_h) shell_h = max_shell_h;
     int shell_x = (width - shell_w) / 2;
     int shell_y = (height - shell_h) / 2;
-    int sidebar_w = shell_w < 900 ? 264 : 300;
+    int gap = xl ? 20 : 16;
+    int sidebar_w = xl ? (width >= 2400 ? 400 : 360)
+                       : (shell_w < 900 ? 264 : 300);
     int board = shell_h - 8;
-    int limit = shell_w - sidebar_w - 16;
+    int limit = shell_w - sidebar_w - gap;
     if (board > limit) board = limit;
-    if (board > 720) board = 720;
+    int board_cap = xl ? (height >= 1300 ? 1080 : 900) : 720;
+    if (board > board_cap) board = board_cap;
     board -= board % 9;
     if (board < 288) return false;
-    int composition_w = board + 16 + sidebar_w;
+    int composition_w = board + gap + sidebar_w;
     int x = shell_x + (shell_w - composition_w) / 2;
-    g->board = (GeoRect){x, shell_y + (shell_h - board) / 2, board, board};
-    g->sidebar = (GeoRect){x + board + 16, shell_y, sidebar_w, shell_h};
+    int board_y = shell_y + (shell_h - board) / 2;
+    g->board = (GeoRect){x, board_y, board, board};
+    g->sidebar = xl ? (GeoRect){x + board + gap, board_y, sidebar_w, board}
+                    : (GeoRect){x + board + gap, shell_y, sidebar_w, shell_h};
 
-    bool compact = shell_h < 600;
-    int sx = g->sidebar.x, sy = g->sidebar.y, sw = g->sidebar.w;
-    int language_h = compact ? 34 : 40;
-    int title_h = compact ? 26 : 34;
-    int hud_item_h = compact ? 22 : 26;
+    bool compact = g->sidebar.h < 600;
+    int sx = g->sidebar.x, sw = g->sidebar.w;
+    int language_h = compact ? 34 : (xl ? 48 : 40);
+    int title_h = compact ? 26 : (xl ? 46 : 34);
+    int hud_item_h = compact ? 22 : (xl ? 34 : 26);
     int hud_rows = (g->hud_count + 1) / 2;
-    int hud_gap = compact ? 4 : 5;
+    int hud_gap = compact ? 4 : (xl ? 8 : 5);
     int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
-    int action_item_h = compact ? 40 : 44;
-    int action_gap = compact ? 4 : 6;
+    int action_item_h = compact ? 40 : (xl ? 56 : 44);
+    int action_gap = compact ? 4 : (xl ? 8 : 6);
     int actions_h = action_item_h * 3 + action_gap * 2;
-    int palette_item_h = compact ? 30 : 38;
-    int palette_gap = compact ? 4 : 6;
+    int palette_item_h = compact ? 30 : (xl ? 48 : 38);
+    int palette_gap = compact ? 4 : (xl ? 8 : 6);
     int palette_h = palette_item_h * 3 + palette_gap * 2;
-    int progress_h = compact ? 22 : 26;
+    int palette_label_h = compact ? 16 : (xl ? 24 : 20);
+    int progress_h = compact ? 22 : (xl ? 34 : 26);
+    int vertical_gap = xl ? 8 : 4;
+    int content_h = language_h + vertical_gap + title_h + vertical_gap + hud_h +
+                    vertical_gap + actions_h + vertical_gap + palette_label_h +
+                    vertical_gap + palette_h + (xl ? 10 : 6) + progress_h;
+    int sy = g->sidebar.y;
+    if (xl && content_h < g->sidebar.h) sy += (g->sidebar.h - content_h) / 2;
 
     g->play_language = (GeoRect){sx, sy, sw, language_h};
-    sy += language_h + 4;
+    sy += language_h + vertical_gap;
     g->play_title = (GeoRect){sx, sy, sw, title_h};
-    sy += title_h + 4;
+    sy += title_h + vertical_gap;
     grid_gap((GeoRect){sx, sy, sw, hud_h}, 2, hud_gap, g->hud,
              g->hud_count);
-    sy += hud_h + 4;
+    sy += hud_h + vertical_gap;
     grid_gap((GeoRect){sx, sy, sw, actions_h}, 3, action_gap, g->actions,
              GEOMETRY_ACTION_COUNT);
-    sy += actions_h + 4;
-    g->palette_label = (GeoRect){sx, sy, sw, compact ? 16 : 20};
-    sy += g->palette_label.h + 4;
+    sy += actions_h + vertical_gap;
+    g->palette_label = (GeoRect){sx, sy, sw, palette_label_h};
+    sy += palette_label_h + vertical_gap;
     grid_gap((GeoRect){sx, sy, sw, palette_h}, 3, palette_gap, g->palette,
              GEOMETRY_PALETTE_COUNT);
-    sy += palette_h + 6;
+    sy += palette_h + (xl ? 10 : 6);
     g->progress = (GeoRect){sx, sy, sw, progress_h};
   }
 
@@ -249,16 +301,19 @@ GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
   int cell = g->board.w / 9;
   f.cell = cell * 3 / 5;
   if (f.cell < 16) f.cell = 16;
-  if (f.cell > 48) f.cell = 48;
+  if (f.cell > 72) f.cell = 72;
   f.note = f.cell / 3;
   if (f.note < 10) f.note = 10;
-  if (f.note > 16) f.note = 16;
-  int scale = width < 640 ? 0 : (g->board.w >= 630 ? 2 : g->board.w >= 450 ? 1 : 0);
-  f.control = scale == 2 ? 20 : scale == 1 ? 18 : 15;
-  f.hud = scale == 2 ? 18 : scale == 1 ? 16 : 13;
-  f.body = scale == 2 ? 20 : scale == 1 ? 18 : 15;
-  f.help = scale == 2 ? 18 : scale == 1 ? 16 : 14;
-  f.heading = scale == 2 ? 44 : scale == 1 ? 38 : 30;
+  if (f.note > 20) f.note = 20;
+  int scale = width < 640 ? 0
+                          : (g->board.w >= 810 ? 3
+                                              : g->board.w >= 630 ? 2
+                                                                  : g->board.w >= 450 ? 1 : 0);
+  f.control = scale == 3 ? 24 : scale == 2 ? 20 : scale == 1 ? 18 : 15;
+  f.hud = scale == 3 ? 20 : scale == 2 ? 18 : scale == 1 ? 16 : 13;
+  f.body = scale == 3 ? 22 : scale == 2 ? 20 : scale == 1 ? 18 : 15;
+  f.help = scale == 3 ? 20 : scale == 2 ? 18 : scale == 1 ? 16 : 14;
+  f.heading = scale == 3 ? 52 : scale == 2 ? 44 : scale == 1 ? 38 : 30;
   if (height < 600 && f.heading > 32) f.heading = 32;
   return f;
 }
@@ -295,6 +350,9 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       !geometry_rect_in_bounds(g->info_heading, width, height) ||
       !geometry_rect_in_bounds(g->info_body, width, height) ||
       !geometry_rect_in_bounds(g->back_button, width, height) ||
+      !geometry_rect_in_bounds(g->about_logo, width, height) ||
+      !geometry_rect_in_bounds(g->about_body, width, height) ||
+      !geometry_rect_in_bounds(g->about_meta, width, height) ||
       !geometry_rect_in_bounds(g->end_logo, width, height) ||
       !geometry_rect_in_bounds(g->end_heading, width, height) ||
       !geometry_rect_in_bounds(g->end_summary, width, height) ||
@@ -310,6 +368,8 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     if (!geometry_rect_in_bounds(g->home_primary[i], width, height)) return false;
   for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
     if (!geometry_rect_in_bounds(g->home_secondary[i], width, height)) return false;
+  for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
+    if (!geometry_rect_in_bounds(g->about_links[i], width, height)) return false;
   for (int i = 0; i < GEOMETRY_END_BUTTON_COUNT; ++i)
     if (!geometry_rect_in_bounds(g->end_buttons[i], width, height)) return false;
   for (int i = 0; i < GEOMETRY_PAUSE_BUTTON_COUNT; ++i)

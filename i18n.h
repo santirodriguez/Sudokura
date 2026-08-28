@@ -64,6 +64,13 @@ typedef enum {
   T_DARK,
   T_LIGHT,
   T_SOUND,
+  T_ABOUT_SEEDS,
+  T_ABOUT_STACK,
+  T_ABOUT_MUSIC,
+  T_GITHUB,
+  T_REPOSITORY,
+  T_WEBSITE,
+  T_LINK_ERROR,
   T_COUNT
 } TextKey;
 
