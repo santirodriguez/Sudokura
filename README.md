@@ -1,80 +1,84 @@
-# Sudokura v1.1.0
+# Sudokura v1.2.0
 
-<p align="center"><img src="assets/branding/source/Sudokura03.png" alt="Sudokura" width="520"></p>
+<p align="center"><img src="assets/branding/source/sudokura-head.png" alt="Sudokura" width="520"></p>
 
-A lightweight desktop Sudoku written in **C11 with SDL2 and SDL2_ttf**. Sudokura keeps its dark/light visual identity, notes, hints, verification, strict mode and three game modes while fitting every control into compact windows.
+A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three game modes, three difficulty levels, Daily Puzzle, autosave, notes, hints, themes, and optional adaptive audio in a native interface for Linux, Windows, and macOS.
 
-<p align="center"><img src="docs/images/sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
+<p align="center">
+  <a href="docs/images/sudokura-v1.2.0.png">
+    <img src="docs/images/sudokura-v1.2.0.png" alt="Sudokura v1.2.0 gameplay" width="900">
+  </a>
+</p>
 
-## Features and languages
+## Features
 
-- Classic, Strikes (three wrong moves), and 10-minute Time Attack modes.
-- English, natural Argentine **Español**, and **Català**; press **L** to cycle the visible language selector.
-- A responsive board, compact action grid and 3×3 numeric palette. The supported minimum is 640×480 and the same geometry drives drawing and pointer hit-testing.
-- Dark/light themes, notes, conflict verification, hints, pause, and keyboard or mouse play.
+- **Classic, Strikes, and Time Attack** game modes.
+- **Easy, Medium, and Hard** puzzles with a unique solution.
+- Deterministic generator revision 2 with a 64-bit seed space.
+- **Daily Puzzle**, plus exact-puzzle Restart and Retry.
+- **Continue and autosave** for the current board, notes, hints, timer, and game state.
+- **Pause**, focus-safe timing, Notes, Hint, Verify, and Strict/Free input.
+- **Dark and light themes** with responsive desktop and portrait layouts.
+- **English, Español, and Català**.
+- Optional background music, result jingles, and subtle interface feedback, with independent Music/FX levels and global mute via `V`.
+- Mouse, keyboard, and physical numeric-keypad controls.
 
 ## Controls
 
 | Action | Control |
 |---|---|
-| Select | Mouse, arrows, or WASD |
-| Place / clear | 1–9; 0, Backspace, or Delete |
+| Select a cell | Mouse, arrows, or WASD |
+| Place / clear a number | 1–9 or numeric keypad; 0, Backspace, or Delete clears |
 | Notes | N, Shift+1–9, right-click, or a cell sub-position |
-| Hint / strict mode | H / M |
-| Theme / pause / language | T / P / L |
-| Help / about / back | F1 / F2 / Escape |
+| Hint | H |
+| Strict / Free | M |
+| Pause | P or the Pause button |
+| Theme / language / sound | T / L / V |
+| Continue / Daily from Home | C / D |
+| Help / About / back | F1 / F2 / Escape |
 
 ## Downloads
 
-Ready-to-play packages are published in [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). Sudokura v1.1.0 uses these exact filenames:
+Published builds are distributed through [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). The v1.2.0 package names are:
 
-- `Sudokura-v1.1.0-linux-x86_64.AppImage` — Linux x86_64.
-- `Sudokura-v1.1.0-windows-x86_64.zip` — Windows x86_64.
-- `Sudokura-v1.1.0-macos-x86_64-unsigned.zip` — macOS Intel.
-- `Sudokura-v1.1.0-macos-arm64-unsigned.zip` — macOS Apple Silicon.
-- `SHA256SUMS.txt` — SHA-256 checksums for all four packages.
+- `Sudokura-v1.2.0-linux-x86_64.AppImage`
+- `Sudokura-v1.2.0-windows-x86_64.zip`
+- `Sudokura-v1.2.0-macos-x86_64-unsigned.zip`
+- `Sudokura-v1.2.0-macos-arm64-unsigned.zip`
+- `SHA256SUMS.txt`
 
-The Linux AppImage and Windows ZIP were tested manually. The macOS builds passed automated packaging checks but were not tested on real Macs; feedback is welcome.
+The macOS packages are unsigned.
 
 ## Build and test
 
-Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, Python 3, and Go. Python and Go provide reproducible asset generation and validation.
+Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
 
 ```sh
-make assets       # regenerate and validate derived branding assets
-make              # build ./sudokura with C11 warnings enabled
-make test         # deterministic gameplay, generator, i18n, and geometry tests
-make test-ui      # SDL_ttf measurements for every language and viewport tier
-make clean
-./sudokura [--font /path/to/font.ttf]
+make assets
+make
+make test
+make test-ui
+./sudokura
 ```
 
-The bounded desktop shell is tested from 640×480 through 3440×1440, and the portrait stacked shell is tested at 360×640, 390×844, and 412×915. Runtime packages bundle a UTF-8-capable fallback font. The English, Español, and Català segments use the same geometry for rendering and pointer hit-testing.
+`make test` covers gameplay, deterministic generation, persistence, localization, seed handling, geometry, and dedicated UI geometry invariants. `make test-ui` checks SDL_ttf text fitting, SDL2_mixer audio transitions, and top-row/numeric-keypad input mapping. CI also builds with warnings as errors and runs sanitizers on Linux.
 
-`./sudokura --smoke-test` renders deterministic title and play frames without interaction. `./sudokura --render-screenshots DIR` writes 40 dependency-free BMP reviews covering ten viewports, four screens, all languages, and both themes. `./scripts/validate_screenshots.py DIR` verifies every BMP's exact dimensions and rejects missing or blank-looking frames. Fonts come from a 17-entry cache (10–48 px); geometry selects separate note, body, control, cell, HUD, and heading tiers without reopening fonts during frames.
+For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 70 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
 
-## Package details
+## Audio credits
 
-The packaging workflows build consistently named v1.1.0 artifacts, checksums, and diagnostic reports.
+Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from [OpenGameArt](https://opengameart.org/content/cozy-puzzle-jingle-result), licensed under **CC0**. See [`assets/audio/README.md`](assets/audio/README.md) for the file mapping.
 
-- **Linux:** executable x86_64 AppImage with the derived application icon and desktop entry.
-- **Windows:** portable x86_64 ZIP with an embedded icon, SDL runtime, recursively collected non-system DLLs, DejaVu Sans, and its license.
-- **macOS:** separate x86_64 and arm64 ZIPs containing a real `Sudokura.app`. They are unsigned and were not manually tested on real Mac hardware for v1.1.0.
+Interface and input effects are generated at runtime.
 
-On macOS, unzip and drag `Sudokura.app` to Applications. Use Finder's **Open** context action if macOS asks for confirmation.
+## Documentation
 
-## Visual and technical history
+- [v1.2.0 release notes](docs/RELEASE_NOTES_1.2.0.md)
+- [v1.2.0 implementation record](docs/V1.2.0_IMPLEMENTATION.md)
+- [documentation images](docs/images/README.md)
 
-The current screenshot is stored at [`docs/images/sudokura-v1.1.0.png`](docs/images/sudokura-v1.1.0.png). The original v1 interface remains preserved at [`docs/images/sudokura-v1.png`](docs/images/sudokura-v1.png); it is historical documentation and is no longer the current UI.
+## Support Sudokura
 
-See the [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md), the [technical implementation record](docs/V1.1.0_IMPLEMENTATION.md), and the [documentation image archive](docs/images/README.md).
+If you enjoy Sudokura and want to support its development, [support Sudokura here](https://santiagorodriguez.com/donate/).
 
-## Branding assets
-
-The logo artwork added for v1.1.0 lives in `assets/branding/source/`. `Sudokura03.png` is used for project presentation, `Sudokura02.png` supplies the in-game wordmark, and `Sudokura05.png` supplies reproducible application icons. Generated packages include only the required derived assets.
-
-## Project scope
-
-Sudokura remains a lightweight desktop game focused on Linux, Windows, and macOS.
-
-GPLv3 — © 2025–2026 [santirodriguez](https://santiagorodriguez.com)
+GPLv3 — © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)

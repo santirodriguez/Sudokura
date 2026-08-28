@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${VERSION:?}"
+SOURCE_VERSION=$(./scripts/version.sh)
+if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
+  echo "VERSION=$VERSION does not match source version $SOURCE_VERSION" >&2
+  exit 1
+fi
+VERSION=$SOURCE_VERSION
 
 font=$(pacman -Ql mingw-w64-x86_64-ttf-dejavu | awk '!found && /\/DejaVuSans.ttf$/{value=$2;found=1} END{print value}')
 test -n "$font"
@@ -13,9 +18,9 @@ make WERROR=-Werror test test-ui
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
-  sudokura_sdl.c game.c geometry.c i18n.c \
+  sudokura_sdl.c audio.c game.c geometry.c i18n.c \
   assets/generated/window_icon.c assets/generated/wordmark.c icon.o \
-  -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf) -lm -mwindows
+  -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) -lm -mwindows
 
 rm -rf dist zipcheck
 mkdir dist
@@ -94,8 +99,15 @@ if grep -Ei '=>[[:space:]]+[^[:space:]]*[/\\]mingw64[/\\]' dependencies-windows.
 fi
 PATH="$PWD/dist:$PATH" ntldd -R "${files[@]}" > dependencies-windows-recursive.txt
 
+grep -qi 'SDL2_mixer' dependencies-windows.txt
 cp "$font" dist/
 cp packaging/licenses/DejaVu-FONT-LICENSE.txt dist/
+mkdir dist/audio
+cp assets/audio/music-main.ogg dist/audio/
+cp assets/audio/music-fail.ogg dist/audio/
+cp assets/audio/jingle-win.ogg dist/audio/
+cp assets/audio/jingle-fail.ogg dist/audio/
+for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do test -s "dist/audio/$audio"; done
 
 sections=$(objdump -h dist/sudokura.exe)
 grep -Eq '[[:space:]]\.rsrc[[:space:]]' <<<"$sections"
@@ -103,6 +115,7 @@ headers=$(objdump -p dist/sudokura.exe)
 grep -q 'Subsystem.*Windows GUI' <<<"$headers"
 resource_dump=$(objdump -s -j .rsrc dist/sudokura.exe)
 grep -qi '89504e47' <<<"$resource_dump"
+strings -el dist/sudokura.exe | grep -Fxq "$VERSION"
 
 timeout_bin=$(command -v timeout)
 clean_path="$PWD/dist:/c/Windows/System32:/c/Windows"
@@ -110,12 +123,14 @@ env PATH="$clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$PWD/dist/sudokura.exe" --smoke-test
 
-find dist -type f -printf '%f\n' | sort | tee inventory-windows.txt
+find dist -type f -printf '%P\n' | sort | tee inventory-windows.txt
+for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "audio/$audio" inventory-windows.txt; done
 archive="Sudokura-v${VERSION}-windows-x86_64.zip"
-(cd dist && zip -9 "../$archive" ./*)
+(cd dist && zip -9 -r "../$archive" ./*)
 unzip -t "$archive"
 zip_inventory=$(unzip -Z1 "$archive")
 grep -q '^sudokura.exe$' <<<"$zip_inventory"
+for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "audio/$audio" <<<"$zip_inventory"; done
 
 mkdir zipcheck
 unzip -q "$archive" -d zipcheck

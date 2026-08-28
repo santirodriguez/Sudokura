@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${PREFIX:?set PREFIX to the dependency prefix}"; APP="${1:-Sudokura.app}"; BIN="${2:-sudokura}"
-rm -rf "$APP"; mkdir -p "$APP/Contents/"{MacOS,Frameworks,Resources}
-cp "$BIN" "$APP/Contents/MacOS/sudokura"; cp packaging/macos/Info.plist "$APP/Contents/"
+VERSION=$(./scripts/version.sh)
+rm -rf "$APP"; mkdir -p "$APP/Contents/"{MacOS,Frameworks,Resources/audio}
+cp "$BIN" "$APP/Contents/MacOS/sudokura"
+sed "s/@SUDOKURA_VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 cp assets/generated/sudokura.icns "$APP/Contents/Resources/"
 cp "${FONT:?set FONT to redistributable fallback font}" "$APP/Contents/Resources/DejaVuSans.ttf"
 cp "${FONT_LICENSE:?set FONT_LICENSE to its license}" "$APP/Contents/Resources/DejaVu-FONT-LICENSE.txt"
-queue=("$PREFIX/lib/libSDL2-2.0.0.dylib" "$PREFIX/lib/libSDL2_ttf-2.0.0.dylib")
+cp assets/audio/music-main.ogg "$APP/Contents/Resources/audio/"
+cp assets/audio/music-fail.ogg "$APP/Contents/Resources/audio/"
+cp assets/audio/jingle-win.ogg "$APP/Contents/Resources/audio/"
+cp assets/audio/jingle-fail.ogg "$APP/Contents/Resources/audio/"
+queue=("$PREFIX/lib/libSDL2-2.0.0.dylib" "$PREFIX/lib/libSDL2_ttf-2.0.0.dylib" "$PREFIX/lib/libSDL2_mixer-2.0.0.dylib")
 index=0
 while (( index < ${#queue[@]} )); do
  src=${queue[$index]}; ((index+=1))
@@ -32,5 +38,6 @@ dependencies=$(otool -L "$APP/Contents/MacOS/sudokura" "${frameworks[@]}")
 load_commands=$(otool -l "$APP/Contents/MacOS/sudokura" "${frameworks[@]}")
 if grep -E '/opt/homebrew|/usr/local|/Users/|/private/var/folders' <<<"$dependencies$load_commands"; then echo 'build-host dependency or rpath detected' >&2; exit 1; fi
 if awk '/^[[:space:]]+\//{print $1}' <<<"$dependencies" | grep -Ev '^(/usr/lib/|/System/Library/)'; then echo 'unbundled non-system dependency detected' >&2; exit 1; fi
+for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do test -s "$APP/Contents/Resources/audio/$audio"; done
 find "$APP" -type f -print0|sort -z|xargs -0 shasum -a 256
 du -sh "$APP"

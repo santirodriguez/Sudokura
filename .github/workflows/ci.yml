@@ -1,18 +1,41 @@
 name: CI
-on: [push, pull_request]
-permissions: {contents: read}
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
-        with: {go-version: '1.24.x', cache: false}
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev
       - run: make assets
       - run: make WERROR=-Werror test test-ui
+      - name: Run ASan and UBSan core tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_main.c game.c geometry.c i18n.c -o tests/test_main_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_session.c game.c session.c -o tests/test_session_san
+          ./tests/test_main_san
+          ./tests/test_session_san
+          rm -f tests/test_main_san tests/test_session_san
       - run: make WERROR=-Werror
       - run: ldd sudokura && size sudokura && du -h sudokura
+
   windows:
     runs-on: windows-latest
     defaults:
@@ -39,8 +62,9 @@ jobs:
             mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-SDL2
             mingw-w64-x86_64-SDL2_ttf
+            mingw-w64-x86_64-SDL2_mixer
             mingw-w64-x86_64-ntldd-git
             mingw-w64-x86_64-ttf-dejavu
             make zip unzip
       - name: Build and validate Windows package
-        run: VERSION=1.1.0 packaging/ci/package-windows.sh
+        run: packaging/ci/package-windows.sh
