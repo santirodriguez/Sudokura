@@ -122,6 +122,19 @@ static void set_mode_params(UI*ui){
   ui->strikes=0; ui->strikes_max=3;
   ui->time_limit_s = (ui->mode==MODE_TIME ? 10*60 : 0);
 }
+static void begin_play(UI*ui){
+  ui->screen=SCR_PLAY; ui->start_t=now_s(); ui->paused=false; ui->paused_accum=0;
+  ui->mistakes=0; ui->strikes=0; ui->result=RES_NONE;
+}
+static void apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
+  int i=IDX(row,column);
+  GameInputResult result=game_apply_input(game,row,column,value,notes_mode,ui->strict_mode);
+  if(result==GAME_INPUT_WRONG){
+    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_WRONG));
+  }else if(result==GAME_INPUT_STRICT_REJECTED && value>=1 && value<=9 && value!=game->solution[i]){
+    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_ILLEGAL));
+  }
+}
 
 /* ===== Font discovery (robust, cross-platform) ===== */
 static bool path_copy(char*destination,size_t destination_size,const char*source){
@@ -533,8 +546,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game, UI*ui){
   }
 
   /* bottom info */
-  int filled=0; for(int i=0;i<81;i++) if(game->puzzle[i]) filled++;
-  snprintf(buf,sizeof(buf),tr(ui->language,T_PROGRESS),(filled*100)/81,ui->mistakes);
+  snprintf(buf,sizeof(buf),tr(ui->language,T_PROGRESS),game_progress_percent(game),ui->mistakes);
   (void)sw;(void)draw_fitted_text(g,buf,th.dim,R.progress,16,10);
 
   /* toast */
@@ -717,7 +729,7 @@ int main(int argc,char**argv){
   Gfx g;
   if(!app_init(&g,font_cli))return 1;
 
-  Game game; game_new(&game,(unsigned)time(NULL));
+  Game game; game_new(&game,(uint64_t)time(NULL));
 
   UI ui; memset(&ui,0,sizeof(ui));
   ui.sel_r=4; ui.sel_c=4; ui.language=LANG_EN; ui.dark_theme=true; ui.mode=MODE_CLASSIC; ui.screen=SCR_TITLE; ui.prev_screen=SCR_TITLE;
@@ -755,7 +767,7 @@ int main(int argc,char**argv){
         if(k==SDLK_l){ ui.language=(Language)((ui.language+1)%LANG_COUNT); continue; }
         if(ui.screen==SCR_TITLE){
           if(k==SDLK_ESCAPE) running=false;
-          else if(k==SDLK_RETURN){ ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
+          else if(k==SDLK_RETURN){ begin_play(&ui); }
           else if(k==SDLK_t) ui.dark_theme=!ui.dark_theme;
           else if(k==SDLK_F1){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_HELP; }
           else if(k==SDLK_F2){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_ABOUT; }
@@ -765,12 +777,12 @@ int main(int argc,char**argv){
         } else if(ui.screen==SCR_END){
           if(k==SDLK_ESCAPE) ui.screen=SCR_TITLE;
           else if(k==SDLK_RETURN){
-            game_new(&game,(unsigned)time(NULL));
-            ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
+            if(ui.result==RES_WIN)game_new(&game,(uint64_t)time(NULL));else game_restart(&game);
+            begin_play(&ui);
           }
         } else { /* PLAY */
           bool shifted=(SDL_GetModState()&KMOD_SHIFT)!=0;
-          int r=ui.sel_r, c=ui.sel_c, i=IDX(r,c);
+          int r=ui.sel_r, c=ui.sel_c;
           if(k==SDLK_ESCAPE) ui.screen=SCR_TITLE;
           else if(k==SDLK_UP||k==SDLK_w) ui.sel_r=(ui.sel_r+8)%9;
           else if(k==SDLK_DOWN||k==SDLK_s) ui.sel_r=(ui.sel_r+1)%9;
@@ -782,19 +794,10 @@ int main(int argc,char**argv){
           else if(k==SDLK_m){ ui.strict_mode=!ui.strict_mode; show_toast(&ui, tr(ui.language,ui.strict_mode?T_STRICT:T_FREE)); }
           else if(k==SDLK_h){ if(game_hint(&game,r,c)) show_toast(&ui,tr(ui.language,T_HINT_USED)); }
           else if(k==SDLK_DELETE || k==SDLK_BACKSPACE || k==SDLK_0 || k==SDLK_KP_0){
-            if(!game.fixed[i]){ game.puzzle[i]=0; game.notes[i]=0; }
+            apply_player_input(&game,&ui,r,c,0,false);
           } else {
             int v=0; if(k>=SDLK_1 && k<=SDLK_9) v=(k-SDLK_0); else if(k>=SDLK_KP_1 && k<=SDLK_KP_9) v=(k-SDLK_KP_0);
-            if(v>=1 && v<=9){
-              if(ui.notes_mode || shifted){ game_toggle_note(&game,r,c,v); }
-              else{
-                if(game_place(&game,r,c,v, ui.strict_mode)){
-                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_WRONG)); }
-                } else {
-                  if(v!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_ILLEGAL)); }
-                }
-              }
-            }
+            if(v>=1 && v<=9) apply_player_input(&game,&ui,r,c,v,ui.notes_mode||shifted);
           }
         }
       }
@@ -805,13 +808,13 @@ int main(int argc,char**argv){
         if(ui.screen==SCR_TITLE){
           AppGeometry a;if(!get_geometry(&g,&ui,&a))continue;SDL_Rect r_mode=sdl_rect(a.title_buttons[0]),r_start=sdl_rect(a.title_buttons[1]),r_help=sdl_rect(a.title_buttons[2]),r_about=sdl_rect(a.title_buttons[3]),r_quit=sdl_rect(a.title_buttons[4]);
           if(point_in(r_mode,x,y)){ ui.mode=(ui.mode+1)%3; set_mode_params(&ui); }
-          else if(point_in(r_start,x,y)){ ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
+          else if(point_in(r_start,x,y)){ begin_play(&ui); }
           else if(point_in(r_help,x,y)){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_HELP; }
           else if(point_in(r_about,x,y)){ ui.prev_screen=SCR_TITLE; ui.screen=SCR_ABOUT; }
           else if(point_in(r_quit,x,y)) running=false;
         } else if(ui.screen==SCR_END){
           AppGeometry a;if(!get_geometry(&g,&ui,&a))continue;SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
-          if(point_in(b1,x,y)){ game_new(&game,(unsigned)time(NULL)); ui.screen=SCR_PLAY; ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0; }
+          if(point_in(b1,x,y)){ if(ui.result==RES_WIN)game_new(&game,(uint64_t)time(NULL));else game_restart(&game); begin_play(&ui); }
           else if(point_in(b2,x,y)) ui.screen=SCR_TITLE;
         } else if(ui.screen==SCR_HELP || ui.screen==SCR_ABOUT){
           Theme th = ui.dark_theme?theme_dark():theme_light();
@@ -829,14 +832,14 @@ int main(int argc,char**argv){
               int lx=x-(gx+c*cs), ly=y-(gy+r*cs);
               int sub=cs/3;if(sub<=0)continue;int qq=lx/sub,q=ly/sub;if(qq<0)qq=0;if(q<0)q=0;if(qq>2)qq=2;if(q>2)q=2;
               int vv=q*3+qq+1;
-              if(right || ui.notes_mode){ game_toggle_note(&game,r,c,vv); }
+              if(right || ui.notes_mode) apply_player_input(&game,&ui,r,c,vv,true);
             }
           }else{
             SidebarRects R; compute_sidebar_rects(&L,&R);
 
             if(point_in(R.btn[0],x,y)){ /* New */
               if(confirm_box(g.win,tr(ui.language,T_NEW_GAME),tr(ui.language,T_NEW_PROMPT),tr(ui.language,T_NEW),tr(ui.language,T_CANCEL))){
-                game_new(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
+                game_new(&game,(uint64_t)time(NULL)); begin_play(&ui);
               }
             }
             else if(point_in(R.btn[1],x,y)){ /* Mode */
@@ -844,7 +847,7 @@ int main(int argc,char**argv){
               char msg[128]; snprintf(msg,sizeof(msg),tr(ui.language,T_CHANGE_PROMPT),next);
               if(confirm_box(g.win,tr(ui.language,T_CHANGE_MODE),msg,tr(ui.language,T_CHANGE),tr(ui.language,T_CANCEL))){
                 ui.mode = (ui.mode+1)%3; set_mode_params(&ui);
-                game_new(&game,(unsigned)time(NULL)); ui.start_t=now_s(); ui.paused=false; ui.paused_accum=0; ui.mistakes=0; ui.strikes=0;
+                game_new(&game,(uint64_t)time(NULL)); begin_play(&ui);
               }
             }
             else if(point_in(R.btn[2],x,y)){ if(game_hint(&game,ui.sel_r,ui.sel_c)) show_toast(&ui,tr(ui.language,T_HINT_USED)); } /* Hint */
@@ -855,19 +858,7 @@ int main(int argc,char**argv){
             else if(point_in(R.btn[7],x,y)){ ui.prev_screen=SCR_PLAY; ui.screen=SCR_ABOUT; }
             else if(point_in(R.btn[8],x,y)){ ui.screen=SCR_TITLE; }
             else{
-              for(int n=1;n<=9;n++) if(point_in(R.pal[n-1],x,y)){
-                int i=IDX(ui.sel_r,ui.sel_c);
-                if(!game.fixed[i]){
-                  if(ui.notes_mode){ game_toggle_note(&game,ui.sel_r,ui.sel_c,n); }
-                  else{
-                    if(game_place(&game,ui.sel_r,ui.sel_c,n, ui.strict_mode)){
-                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_WRONG)); }
-                    }else{
-                      if(n!=game.solution[i]){ ui.mistakes++; if(ui.mode==MODE_STRIKES) ui.strikes++; show_toast(&ui,tr(ui.language,T_ILLEGAL)); }
-                    }
-                  }
-                }
-              }
+              for(int n=1;n<=9;n++) if(point_in(R.pal[n-1],x,y)) apply_player_input(&game,&ui,ui.sel_r,ui.sel_c,n,ui.notes_mode);
             }
           }
         }

@@ -4,6 +4,7 @@
 #include "version.h"
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -12,23 +13,98 @@ static bool rects_overlap(GeoRect a, GeoRect b) {
          a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-static void test_generation(void) {
-  for (unsigned seed = 1; seed <= 12; ++seed) {
-    Game game;
-    game_new(&game, seed);
-    assert(game_board_valid(game.solution));
-    assert(game_solution_count(game.puzzle, 2) == 1);
-    assert(game_clue_count(&game) >= 32 && game_clue_count(&game) <= 38);
-    for (int i = 0; i < 81; ++i)
-      assert((game.fixed[i] != 0) == (game.puzzle[i] != 0));
+static void puzzle_text(const Game *game, char output[82]) {
+  for (int i = 0; i < 81; ++i) {
+    output[i] = game->initial[i] ? (char)('0' + game->initial[i]) : '.';
   }
+  output[81] = '\0';
+}
+
+static int first_playable(const Game *game) {
+  for (int i = 0; i < 81; ++i) {
+    if (!game->fixed[i]) return i;
+  }
+  return -1;
+}
+
+static void test_generation(void) {
+  for (uint64_t seed = 1; seed <= 24; ++seed) {
+    int previous_clues = 82;
+    int previous_score = -1;
+    for (int difficulty = DIFFICULTY_EASY;
+         difficulty < DIFFICULTY_COUNT; ++difficulty) {
+      Game game, duplicate;
+      game_new_difficulty(&game, seed, (GameDifficulty)difficulty);
+      game_new_difficulty(&duplicate, seed, (GameDifficulty)difficulty);
+      assert(!memcmp(&game, &duplicate, sizeof(game)));
+      assert(game.seed == seed);
+      assert(game.generator_revision == SUDOKURA_GENERATOR_REVISION);
+      assert(game.difficulty == (GameDifficulty)difficulty);
+      assert(game_board_valid(game.solution));
+      assert(game_solution_count(game.initial, 2) == 1);
+      assert(game.difficulty_score == game_difficulty_score(game.initial));
+      assert(game.difficulty_score > previous_score);
+      int clues = game_clue_count(&game);
+      assert(clues < previous_clues);
+      if (difficulty == DIFFICULTY_EASY)
+        assert(clues >= 42 && clues <= 46);
+      else if (difficulty == DIFFICULTY_MEDIUM)
+        assert(clues >= 34 && clues <= 38);
+      else
+        assert(clues >= 28 && clues <= 32);
+      for (int i = 0; i < 81; ++i) {
+        assert((game.fixed[i] != 0) == (game.initial[i] != 0));
+        assert(game.puzzle[i] == game.initial[i]);
+        assert(!game.hinted[i]);
+        assert(!game.notes[i]);
+      }
+      previous_clues = clues;
+      previous_score = game.difficulty_score;
+    }
+  }
+}
+
+static void test_generator_golden(void) {
+  static const char *expected[DIFFICULTY_COUNT] = {
+      "4..2..631.....1.9.16348.25...87.5.6.316...725.2..6...96..89..7..94..231..72316948",
+      "..8..4...65.7...93.3456.8...651.73....368..41...9...86.......7.5..8..13.7.64..952",
+      "...2.6319..9578..2....1.....4..3.75.3......6..78.....146.3.1..59...57.....5..4...",
+  };
+  for (int difficulty = DIFFICULTY_EASY;
+       difficulty < DIFFICULTY_COUNT; ++difficulty) {
+    Game game;
+    char actual[82];
+    game_new_difficulty(&game, 42, (GameDifficulty)difficulty);
+    puzzle_text(&game, actual);
+    assert(!strcmp(actual, expected[difficulty]));
+  }
+}
+
+static void test_daily(void) {
+  uint64_t seed_a = 0, seed_b = 0, seed_next = 0;
+  assert(game_daily_seed(2026, 8, 28, &seed_a));
+  assert(game_daily_seed(2026, 8, 28, &seed_b));
+  assert(game_daily_seed(2026, 8, 29, &seed_next));
+  assert(seed_a == UINT64_C(17236981323489437412));
+  assert(seed_a == seed_b && seed_a != seed_next);
+  assert(!game_daily_seed(2026, 2, 29, &seed_a));
+  assert(game_daily_seed(2024, 2, 29, &seed_a));
+  assert(!game_daily_seed(2026, 13, 1, &seed_a));
+  assert(!game_daily_seed(2026, 8, 28, NULL));
+
+  Game first, second;
+  assert(game_new_daily(&first, 2026, 8, 28));
+  assert(game_new_daily(&second, 2026, 8, 28));
+  assert(!memcmp(&first, &second, sizeof(first)));
+  assert(first.difficulty == DIFFICULTY_MEDIUM);
+  assert(!game_new_daily(&first, 2026, 2, 29));
 }
 
 static void test_actions(void) {
   Game game;
   game_new(&game, 42);
-  int i = 0;
-  while (game.fixed[i]) ++i;
+  int i = first_playable(&game);
+  assert(i >= 0);
   int row = i / 9, column = i % 9, value = game.solution[i];
   assert(game_toggle_note(&game, row, column, value));
   assert(game.notes[i] & (1u << value));
@@ -37,7 +113,109 @@ static void test_actions(void) {
   assert(game_place(&game, row, column, 0, false));
   assert(game_hint(&game, row, column));
   assert(game.puzzle[i] == value);
+  assert(game.hinted[i]);
+  assert(game_cell_locked(&game, row, column));
+  assert(!game_place(&game, row, column, 0, false));
+  assert(!game_toggle_note(&game, row, column, 1));
   assert(!game_hint(&game, row, column));
+}
+
+static void test_player_input(void) {
+  Game game;
+  game_new(&game, 99);
+  int i = first_playable(&game);
+  assert(i >= 0);
+  int row = i / 9, column = i % 9, value = game.solution[i];
+  assert(game_apply_input(&game, row, column, value, true, false) ==
+         GAME_INPUT_NOTE_ADDED);
+  assert(game_apply_input(&game, row, column, value, true, false) ==
+         GAME_INPUT_NOTE_REMOVED);
+  assert(game_apply_input(&game, row, column, value, false, false) ==
+         GAME_INPUT_CORRECT);
+  assert(game_apply_input(&game, row, column, 0, false, false) ==
+         GAME_INPUT_CLEARED);
+
+  int conflicting = 0;
+  for (int x = 0; x < 9 && !conflicting; ++x)
+    if (game.puzzle[row * 9 + x]) conflicting = game.puzzle[row * 9 + x];
+  assert(conflicting);
+  assert(game_apply_input(&game, row, column, conflicting, false, true) ==
+         GAME_INPUT_STRICT_REJECTED);
+
+  int wrong = game.solution[i] % 9 + 1;
+  assert(wrong != game.solution[i]);
+  assert(game_apply_input(&game, row, column, wrong, false, false) ==
+         GAME_INPUT_WRONG);
+  assert(game_apply_input(&game, row, column, 0, false, false) ==
+         GAME_INPUT_CLEARED);
+  assert(game_apply_input(NULL, row, column, value, false, false) ==
+         GAME_INPUT_NO_CHANGE);
+}
+
+static void test_progress_restart(void) {
+  Game game;
+  game_new(&game, 314159);
+  assert(game_progress_percent(&game) == 0);
+  int original[81];
+  memcpy(original, game.initial, sizeof(original));
+  uint64_t seed = game.seed;
+  GameDifficulty difficulty = game.difficulty;
+  int difficulty_score = game.difficulty_score;
+
+  int correct_cell = first_playable(&game);
+  assert(correct_cell >= 0);
+  assert(game_apply_input(&game, correct_cell / 9, correct_cell % 9,
+                          game.solution[correct_cell], false, false) ==
+         GAME_INPUT_CORRECT);
+  int progress = game_progress_percent(&game);
+  assert(progress > 0);
+
+  int wrong_cell = correct_cell + 1;
+  while (wrong_cell < 81 && game.fixed[wrong_cell]) ++wrong_cell;
+  if (wrong_cell == 81) {
+    wrong_cell = 0;
+    while (wrong_cell < correct_cell && game.fixed[wrong_cell]) ++wrong_cell;
+  }
+  assert(wrong_cell != correct_cell);
+  int wrong = game.solution[wrong_cell] % 9 + 1;
+  assert(game_apply_input(&game, wrong_cell / 9, wrong_cell % 9, wrong,
+                          false, false) == GAME_INPUT_WRONG);
+  assert(game_progress_percent(&game) == progress);
+
+  int hint_cell = wrong_cell + 1;
+  while (hint_cell < 81 && game.fixed[hint_cell]) ++hint_cell;
+  if (hint_cell == 81) {
+    hint_cell = 0;
+    while (hint_cell < 81 &&
+           (game.fixed[hint_cell] || hint_cell == correct_cell ||
+            hint_cell == wrong_cell))
+      ++hint_cell;
+  }
+  assert(hint_cell < 81);
+  assert(game_hint(&game, hint_cell / 9, hint_cell % 9));
+  assert(game.hinted[hint_cell]);
+  assert(game_progress_percent(&game) > progress);
+  assert(game_apply_input(&game, hint_cell / 9, hint_cell % 9, 0, false,
+                          false) == GAME_INPUT_LOCKED);
+
+  game_restart(&game);
+  assert(game.seed == seed);
+  assert(game.difficulty == difficulty);
+  assert(game.difficulty_score == difficulty_score);
+  assert(!memcmp(game.puzzle, original, sizeof(original)));
+  assert(game_progress_percent(&game) == 0);
+  for (int i = 0; i < 81; ++i) {
+    assert(!game.hinted[i]);
+    assert(!game.notes[i]);
+  }
+
+  for (int i = 0; i < 81; ++i) {
+    if (!game.fixed[i])
+      assert(game_apply_input(&game, i / 9, i % 9, game.solution[i], false,
+                              false) == GAME_INPUT_CORRECT);
+  }
+  assert(game_progress_percent(&game) == 100);
+  assert(game_is_solved(&game));
 }
 
 static void test_bounds(void) {
@@ -49,14 +227,19 @@ static void test_bounds(void) {
   assert(!game_toggle_note(&game, 9, 0, 1));
   assert(!game_toggle_note(&game, 0, -1, 1));
   assert(!game_hint(&game, -1, -1));
+  assert(!game_cell_locked(&game, 9, 9));
   assert(!game_has_conflict(&game, 9, 9));
   assert(!game_has_conflict(NULL, 0, 0));
   assert(game_conflict_count(NULL) == 0);
   assert(game_clue_count(NULL) == 0);
+  assert(game_progress_percent(NULL) == 0);
+  assert(game_difficulty_score(NULL) == -1);
   assert(!game_is_solved(NULL));
   assert(game_solution_count(NULL, 2) == 0);
-  int invalid[81] = {0}; invalid[0] = invalid[1] = 1;
+  int invalid[81] = {0};
+  invalid[0] = invalid[1] = 1;
   assert(game_solution_count(invalid, 2) == 0);
+  assert(game_difficulty_score(invalid) == -1);
 }
 
 static void test_conflicts_and_end(void) {
@@ -66,8 +249,12 @@ static void test_conflicts_and_end(void) {
   for (int row = 0; row < 9 && a < 0; ++row)
     for (int column = 0; column < 9; ++column)
       if (!game.fixed[row * 9 + column]) {
-        if (a < 0) a = row * 9 + column;
-        else if (a / 9 == row) { b = row * 9 + column; break; }
+        if (a < 0)
+          a = row * 9 + column;
+        else if (a / 9 == row) {
+          b = row * 9 + column;
+          break;
+        }
       }
   assert(a >= 0 && b >= 0);
   game.puzzle[a] = game.puzzle[b] = 1;
@@ -158,12 +345,16 @@ static void test_i18n(void) {
 
 int main(void) {
   test_generation();
+  test_generator_golden();
+  test_daily();
   test_actions();
+  test_player_input();
+  test_progress_restart();
   test_bounds();
   test_conflicts_and_end();
   test_geometry();
   test_window_size_normalization();
   test_i18n();
-  puts("all tests passed (12 seeds; 33 mode/viewports including portrait and ultrawide; all screens; API bounds)");
+  puts("all tests passed (deterministic Easy/Medium/Hard generation, Daily seeds, restart/progress/hints, 33 mode/viewports, all screens, API bounds)");
   return 0;
 }
