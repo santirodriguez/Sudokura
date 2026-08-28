@@ -8,6 +8,9 @@
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <stdlib.h>
+/* The SDL translation unit enables a strict POSIX feature set before this
+   file is included, which hides Apple's otherwise available declaration. */
+extern void arc4random_buf(void *buffer, size_t size);
 #else
 #include <errno.h>
 #include <sys/random.h>
