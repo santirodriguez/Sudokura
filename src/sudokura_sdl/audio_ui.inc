@@ -25,7 +25,24 @@ static void audio_toggle(Persistence *persistence) {
                                 &persistence->preferences);
 }
 
-static void audio_sync_ui(const UI *ui) {
+static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
+  if (!ui) return AUDIO_CONTEXT_MAIN;
+  if (ui->screen == SCR_END && ui->result == RES_LOSE)
+    return AUDIO_CONTEXT_FAIL;
+  if (ui->screen != SCR_PLAY || !game || ui->result != RES_NONE)
+    return AUDIO_CONTEXT_MAIN;
+  if (game->difficulty == DIFFICULTY_HARD)
+    return AUDIO_CONTEXT_FAIL;
+  if (ui->mode == MODE_STRIKES && ui->strikes_max > 0 &&
+      ui->strikes >= ui->strikes_max - 1)
+    return AUDIO_CONTEXT_FAIL;
+  if (ui->mode == MODE_TIME && ui->time_limit_s > 0 &&
+      elapsed_time(ui) >= ui->time_limit_s * 0.75)
+    return AUDIO_CONTEXT_FAIL;
+  return AUDIO_CONTEXT_MAIN;
+}
+
+static void audio_sync_ui(const Game *game, const UI *ui) {
   if (!ui) return;
 
   bool entered_result =
@@ -33,16 +50,20 @@ static void audio_sync_ui(const UI *ui) {
       (audio_previous_screen != SCR_END || audio_previous_result != ui->result);
   bool left_result =
       audio_ui_seen && audio_previous_screen == SCR_END && ui->screen != SCR_END;
+  bool opening_home = !audio_ui_seen && ui->screen == SCR_TITLE;
+  bool returned_home =
+      audio_ui_seen && ui->screen == SCR_TITLE &&
+      (audio_previous_screen == SCR_PLAY || audio_previous_screen == SCR_END);
 
   if (left_result) audio_cancel_result();
-  audio_set_context(ui->screen == SCR_END && ui->result == RES_LOSE
-                        ? AUDIO_CONTEXT_FAIL
-                        : AUDIO_CONTEXT_MAIN);
+  audio_set_context(audio_context_for_game(game, ui));
   audio_set_focus_paused((ui->pause_reasons & (PAUSE_FOCUS | PAUSE_MANUAL)) != 0);
 
   if (entered_result) {
     audio_play_result(ui->result == RES_LOSE ? AUDIO_RESULT_FAIL
                                              : AUDIO_RESULT_WIN);
+  } else if (opening_home || returned_home) {
+    audio_play_result(AUDIO_RESULT_WIN);
   }
   audio_update();
 
@@ -76,7 +97,7 @@ static void app_shutdown(Gfx *gfx) {
 static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_ui = ui;
-  audio_sync_ui(ui);
+  audio_sync_ui(game, ui);
   app_frame_base(gfx, game, ui);
 }
 
