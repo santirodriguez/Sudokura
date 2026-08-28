@@ -1,5 +1,27 @@
 /* Desktop About cards redraw their copy with measured wrapping so the minimum
    640x480 layout keeps full context instead of falling back to cryptic text. */
+static bool about_draw_single_line_left(Gfx *gfx, const char *text,
+                                        SDL_Color color, SDL_Rect rect,
+                                        int preferred, int minimum) {
+  if (!gfx || !text || !text[0] || rect.w <= 2 || rect.h <= 2) return false;
+  for (int i = FONT_CACHE_COUNT - 1; i >= 0; --i) {
+    int size = font_cache_sizes[i];
+    if (size > preferred || size < minimum) continue;
+    int width = 0, height = 0;
+    if (TTF_SizeUTF8(gfx->fonts[i], text, &width, &height) != 0 ||
+        width > rect.w || height > rect.h)
+      continue;
+    SDL_Texture *texture =
+        render_text(gfx, gfx->fonts[i], text, color, &width, &height);
+    if (!texture) continue;
+    SDL_Rect destination = {rect.x, rect.y + (rect.h - height) / 2, width, height};
+    SDL_RenderCopy(gfx->ren, texture, NULL, &destination);
+    SDL_DestroyTexture(texture);
+    return true;
+  }
+  return false;
+}
+
 static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
   if (!gfx || !ui || ui->screen != SCR_ABOUT || gfx->width < 640) return;
 
@@ -44,9 +66,15 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
                          study_link.y - (study.y + 2 + study_title_h) - 2};
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_TITLE), theme.title,
                          study_title, fonts.help, 10);
-  if (study_copy.h > 3)
-    (void)polish_draw_wrapped_fit(gfx, tr(ui->language, T_ABOUT_STUDY),
-                                  theme.dim, study_copy, fonts.help, 10, false);
+  if (study_copy.h > 3) {
+    bool rendered = polish_draw_wrapped_fit(
+        gfx, tr(ui->language, T_ABOUT_STUDY), theme.dim, study_copy, fonts.help,
+        10, false);
+    if (!rendered)
+      (void)about_draw_single_line_left(
+          gfx, tr(ui->language, T_ABOUT_STUDY), theme.dim, study_copy,
+          fonts.help, 10);
+  }
 
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
