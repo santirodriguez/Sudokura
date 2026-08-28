@@ -17,6 +17,19 @@ int main(void) {
   assert(audio_init());
   assert(audio_is_available());
   assert(audio_is_enabled());
+  assert(audio_music_volume() == AUDIO_DEFAULT_MUSIC_VOLUME);
+  assert(audio_fx_volume() == AUDIO_DEFAULT_FX_VOLUME);
+
+  audio_set_music_volume(35);
+  audio_set_fx_volume(80);
+  assert(audio_music_volume() == 35);
+  assert(audio_fx_volume() == 80);
+  audio_set_music_volume(-5);
+  audio_set_fx_volume(130);
+  assert(audio_music_volume() == 0);
+  assert(audio_fx_volume() == 100);
+  audio_set_music_volume(AUDIO_DEFAULT_MUSIC_VOLUME);
+  audio_set_fx_volume(AUDIO_DEFAULT_FX_VOLUME);
 
   audio_set_context(AUDIO_CONTEXT_MAIN);
   audio_update();
@@ -32,8 +45,6 @@ int main(void) {
   audio_cancel_result();
   assert(Mix_PlayingMusic());
 
-  /* Returning to Home changes the context to the Clear loop and must not
-     leave enabled audio without background music. */
   audio_set_context(AUDIO_CONTEXT_MAIN);
   audio_update();
   assert(Mix_PlayingMusic());
@@ -59,6 +70,6 @@ int main(void) {
 
   audio_shutdown();
   SDL_Quit();
-  puts("SDL_mixer audio tests passed for result cues, Home context, pause and mute recovery");
+  puts("SDL_mixer audio tests passed for volumes, result cues, contexts, pause and mute recovery");
   return 0;
 }

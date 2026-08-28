@@ -21,6 +21,8 @@ typedef struct {
   AudioContext playing_context;
   bool playing_context_valid;
   int pending_channel;
+  int music_volume;
+  int fx_volume;
   Mix_Music *main_loop;
   Mix_Music *fail_loop;
   Mix_Chunk *win_jingle;
@@ -29,7 +31,24 @@ typedef struct {
   Uint8 *effect_buffers[AUDIO_EFFECT_COUNT];
 } AudioState;
 
-static AudioState audio_state = {.enabled = true, .pending_channel = -1};
+static AudioState audio_state = {
+    .enabled = true,
+    .pending_channel = -1,
+    .music_volume = AUDIO_DEFAULT_MUSIC_VOLUME,
+    .fx_volume = AUDIO_DEFAULT_FX_VOLUME,
+};
+
+static int audio_clamp_percent(int value) {
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
+}
+
+static void audio_apply_volumes(void) {
+  if (!audio_state.mixer_open) return;
+  Mix_VolumeMusic(MIX_MAX_VOLUME * audio_state.music_volume / 100);
+  Mix_Volume(-1, MIX_MAX_VOLUME * audio_state.fx_volume / 100);
+}
 
 static bool audio_file_exists(const char *path) {
   SDL_RWops *file = SDL_RWFromFile(path, "rb");
@@ -107,7 +126,7 @@ static void audio_free_assets(void) {
 }
 
 static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
-                              int duration_ms, int volume_percent) {
+                              int duration_ms, int relative_volume) {
   if (effect < 0 || effect >= AUDIO_EFFECT_COUNT || duration_ms <= 0) return false;
   int frames = AUDIO_SAMPLE_RATE * duration_ms / 1000;
   if (frames < 2) frames = 2;
@@ -126,7 +145,7 @@ static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
     double envelope = attack * release * release;
     double frequency = start_hz + (end_hz - start_hz) * position;
     phase += tau * frequency / AUDIO_SAMPLE_RATE;
-    Sint16 sample = (Sint16)(sin(phase) * envelope * 8192.0);
+    Sint16 sample = (Sint16)(sin(phase) * envelope * 12000.0);
     samples[frame * 2] = sample;
     samples[frame * 2 + 1] = sample;
   }
@@ -136,7 +155,8 @@ static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
     SDL_free(samples);
     return false;
   }
-  Mix_VolumeChunk(chunk, MIX_MAX_VOLUME * volume_percent / 100);
+  Mix_VolumeChunk(chunk,
+                  MIX_MAX_VOLUME * audio_clamp_percent(relative_volume) / 100);
   audio_state.effects[effect] = chunk;
   audio_state.effect_buffers[effect] = (Uint8 *)samples;
   return true;
@@ -145,19 +165,19 @@ static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
 static void audio_build_effects(void) {
   const struct {
     AudioEffect effect;
-    int start_hz, end_hz, duration_ms, volume_percent;
+    int start_hz, end_hz, duration_ms, relative_volume;
   } specs[] = {
-      {AUDIO_EFFECT_CLICK, 560, 480, 35, 36},
-      {AUDIO_EFFECT_POSITIVE, 660, 880, 70, 34},
-      {AUDIO_EFFECT_NEGATIVE, 330, 220, 80, 34},
-      {AUDIO_EFFECT_NEUTRAL, 440, 460, 45, 28},
-      {AUDIO_EFFECT_BLOCKED, 190, 150, 55, 28},
-      {AUDIO_EFFECT_START, 520, 820, 95, 30},
-      {AUDIO_EFFECT_LEAVE, 520, 300, 85, 28},
+      {AUDIO_EFFECT_CLICK, 560, 480, 35, 85},
+      {AUDIO_EFFECT_POSITIVE, 660, 880, 70, 95},
+      {AUDIO_EFFECT_NEGATIVE, 330, 220, 80, 95},
+      {AUDIO_EFFECT_NEUTRAL, 440, 460, 45, 80},
+      {AUDIO_EFFECT_BLOCKED, 190, 150, 55, 85},
+      {AUDIO_EFFECT_START, 520, 820, 95, 90},
+      {AUDIO_EFFECT_LEAVE, 520, 300, 85, 80},
   };
   for (unsigned i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {
     if (!audio_make_effect(specs[i].effect, specs[i].start_hz, specs[i].end_hz,
-                           specs[i].duration_ms, specs[i].volume_percent))
+                           specs[i].duration_ms, specs[i].relative_volume))
       fprintf(stderr, "audio effect generation failed: %s\n", Mix_GetError());
   }
 }
@@ -194,6 +214,8 @@ bool audio_init(void) {
   audio_state.enabled = true;
   audio_state.context = AUDIO_CONTEXT_MAIN;
   audio_state.pending_channel = -1;
+  audio_state.music_volume = AUDIO_DEFAULT_MUSIC_VOLUME;
+  audio_state.fx_volume = AUDIO_DEFAULT_FX_VOLUME;
 
   if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
     fprintf(stderr, "audio disabled: %s\n", SDL_GetError());
@@ -232,11 +254,11 @@ bool audio_init(void) {
     return false;
   }
 
-  Mix_VolumeMusic(MIX_MAX_VOLUME * 30 / 100);
-  Mix_VolumeChunk(audio_state.win_jingle, MIX_MAX_VOLUME * 65 / 100);
-  Mix_VolumeChunk(audio_state.fail_jingle, MIX_MAX_VOLUME * 65 / 100);
+  Mix_VolumeChunk(audio_state.win_jingle, MIX_MAX_VOLUME);
+  Mix_VolumeChunk(audio_state.fail_jingle, MIX_MAX_VOLUME);
   audio_build_effects();
   audio_state.available = true;
+  audio_apply_volumes();
   return true;
 }
 
@@ -253,11 +275,27 @@ void audio_shutdown(void) {
   memset(&audio_state, 0, sizeof(audio_state));
   audio_state.enabled = true;
   audio_state.pending_channel = -1;
+  audio_state.music_volume = AUDIO_DEFAULT_MUSIC_VOLUME;
+  audio_state.fx_volume = AUDIO_DEFAULT_FX_VOLUME;
 }
 
 bool audio_is_available(void) { return audio_state.available; }
 
 bool audio_is_enabled(void) { return audio_state.enabled; }
+
+int audio_music_volume(void) { return audio_state.music_volume; }
+
+int audio_fx_volume(void) { return audio_state.fx_volume; }
+
+void audio_set_music_volume(int percent) {
+  audio_state.music_volume = audio_clamp_percent(percent);
+  audio_apply_volumes();
+}
+
+void audio_set_fx_volume(int percent) {
+  audio_state.fx_volume = audio_clamp_percent(percent);
+  audio_apply_volumes();
+}
 
 void audio_set_enabled(bool enabled) {
   if (audio_state.enabled == enabled) return;

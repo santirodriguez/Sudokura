@@ -24,6 +24,19 @@ typedef enum {
   GEOMETRY_MODE_TIME = 2
 } GeometryMode;
 
+typedef enum {
+  PLAY_ACTION_MENU = 0,
+  PLAY_ACTION_PAUSE,
+  PLAY_ACTION_RESTART,
+  PLAY_ACTION_HINT,
+  PLAY_ACTION_NOTES,
+  PLAY_ACTION_VERIFY,
+  PLAY_ACTION_AUDIO,
+  PLAY_ACTION_HELP,
+  PLAY_ACTION_ABOUT,
+  PLAY_ACTION_COUNT
+} PlayAction;
+
 typedef struct {
   GeoRect board;
   GeoRect sidebar;

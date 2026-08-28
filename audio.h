@@ -3,6 +3,9 @@
 
 #include <stdbool.h>
 
+#define AUDIO_DEFAULT_MUSIC_VOLUME 20
+#define AUDIO_DEFAULT_FX_VOLUME 65
+
 typedef enum {
   AUDIO_CONTEXT_MAIN = 0,
   AUDIO_CONTEXT_FAIL = 1
@@ -35,5 +38,9 @@ void audio_play_effect(AudioEffect effect);
 void audio_cancel_result(void);
 void audio_set_focus_paused(bool paused);
 void audio_update(void);
+int audio_music_volume(void);
+int audio_fx_volume(void);
+void audio_set_music_volume(int percent);
+void audio_set_fx_volume(int percent);
 
 #endif

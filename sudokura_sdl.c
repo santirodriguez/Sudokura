@@ -3,6 +3,7 @@
 #include "seed.c"
 #include "audio.h"
 #include "input.c"
+#include "progress.c"
 #include "assets/generated/flag_us.c"
 #include "assets/generated/flag_ar.c"
 #include "assets/generated/flag_ca.c"
@@ -30,9 +31,14 @@
 #undef app_shutdown
 #undef app_init
 #define app_render app_render_polish_base
+#define go_home go_home_polish_base
 #include "src/sudokura_sdl/polish_ui.inc"
+#undef go_home
 #undef app_render
+#define app_render app_render_about_base
 #include "src/sudokura_sdl/about_overlay.inc"
+#undef app_render
+#include "src/sudokura_sdl/rc2_ui.inc"
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
 #define SDL_PollEvent ui_poll_event

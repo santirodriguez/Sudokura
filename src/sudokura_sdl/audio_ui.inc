@@ -56,27 +56,21 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
   bool left_result =
       audio_ui_seen && audio_previous_screen == SCR_END && ui->screen != SCR_END;
   bool opening_home = !audio_ui_seen && ui->screen == SCR_TITLE;
-  bool returned_home_from_result =
-      audio_ui_seen && ui->screen == SCR_TITLE && audio_previous_screen == SCR_END;
+  bool requested_home_cue = ui_home_cue_requested && ui->screen == SCR_TITLE;
 
   if (left_result) audio_cancel_result();
 
-  /* Screen/game state owns the background context. In particular, returning
-     to Home from an unfinished game always restores the Clear loop without
-     inserting a second jingle. */
   audio_set_context(audio_context_for_game(game, ui));
   audio_set_focus_paused((ui->pause_reasons & (PAUSE_FOCUS | PAUSE_MANUAL)) != 0);
 
   if (entered_result) {
     audio_play_result(ui->result == RES_LOSE ? AUDIO_RESULT_FAIL
                                              : AUDIO_RESULT_WIN);
-  } else if (opening_home || returned_home_from_result) {
-    /* Preserve the established startup/result-to-Home Clear jingle. */
+  } else if (opening_home || requested_home_cue) {
     audio_play_result(AUDIO_RESULT_WIN);
   }
+  if (requested_home_cue) ui_home_cue_requested = false;
 
-  /* Guarantees that an enabled/available context cannot remain accidentally
-     silent after a transition once no result jingle is pending. */
   audio_update();
 
   audio_previous_screen = ui->screen;
@@ -87,6 +81,7 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
 static void persistence_init(Persistence *persistence) {
   persistence_init_base(persistence);
   audio_persistence = persistence;
+  ui_audio_levels_load();
   audio_apply_preferences(persistence);
 }
 
@@ -110,6 +105,8 @@ static void app_shutdown(Gfx *gfx) {
   audio_gfx = NULL;
   audio_ui = NULL;
   audio_ui_seen = false;
+  audio_settings_open = false;
+  ui_home_cue_requested = false;
   app_shutdown_base(gfx);
 }
 

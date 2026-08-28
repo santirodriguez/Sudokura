@@ -1,5 +1,5 @@
-/* Desktop About cards use single-line fitted copy so the minimum 640x480
-   layout never drops body text when SDL_ttf wrapped metrics are tight. */
+/* Desktop About cards redraw their copy with measured wrapping so the minimum
+   640x480 layout keeps full context instead of falling back to cryptic text. */
 static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
   if (!gfx || !ui || ui->screen != SCR_ABOUT || gfx->width < 640) return;
 
@@ -11,8 +11,6 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
   SDL_Rect fact = sdl_rect(geometry.about_fact);
   SDL_Color fact_bg = theme.title;
   fact_bg.a = ui->dark_theme ? 38 : 26;
-  /* Clear the base pass opaquely before reapplying the translucent fact tint;
-     otherwise text from the wrapped base renderer can remain visible below. */
   draw_round_rect(gfx->ren, fact, 10, theme.palette_bg);
   draw_round_rect(gfx->ren, fact, 10, fact_bg);
 
@@ -30,8 +28,8 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
                         fact_text.w, fact_text.h - fact_title_h};
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_FACT_TITLE), theme.title,
                          fact_title, fonts.help, 10);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_FACT), theme.btnfg,
-                         fact_copy, fonts.body, 10);
+  (void)polish_draw_wrapped_fit(gfx, tr(ui->language, T_ABOUT_FACT),
+                                theme.btnfg, fact_copy, fonts.body, 10, true);
 
   SDL_Rect study = sdl_rect(geometry.about_study);
   SDL_Rect study_link = sdl_rect(geometry.about_study_link);
@@ -47,8 +45,8 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_TITLE), theme.title,
                          study_title, fonts.help, 10);
   if (study_copy.h > 3)
-    (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY), theme.dim,
-                           study_copy, fonts.help, 10);
+    (void)polish_draw_wrapped_fit(gfx, tr(ui->language, T_ABOUT_STUDY),
+                                  theme.dim, study_copy, fonts.help, 10, false);
 
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);

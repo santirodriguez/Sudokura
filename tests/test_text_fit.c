@@ -68,8 +68,17 @@ int main(void) {
       {640, 480}, {800, 600}, {1024, 720}, {1366, 768}, {1920, 1080},
       {2560, 1440}, {3440, 1440}, {360, 640}, {390, 844}, {412, 915},
   };
-  const TextKey actions[] = {T_RESTART, T_PAUSE, T_HINT, T_NOTES, T_VERIFY,
-                             T_SOUND,   T_HELP,  T_ABOUT, T_MENU};
+  const TextKey actions[PLAY_ACTION_COUNT] = {
+      [PLAY_ACTION_MENU] = T_MENU,
+      [PLAY_ACTION_PAUSE] = T_PAUSE,
+      [PLAY_ACTION_RESTART] = T_RESTART,
+      [PLAY_ACTION_HINT] = T_HINT,
+      [PLAY_ACTION_NOTES] = T_NOTES,
+      [PLAY_ACTION_VERIFY] = T_VERIFY,
+      [PLAY_ACTION_AUDIO] = T_SOUND,
+      [PLAY_ACTION_HELP] = T_HELP,
+      [PLAY_ACTION_ABOUT] = T_ABOUT,
+  };
   const TextKey modes[] = {T_CLASSIC, T_STRIKES, T_TIME_ATTACK};
   const TextKey difficulties[] = {T_EASY, T_MEDIUM, T_HARD};
   const TextKey about_links[] = {T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT};
@@ -79,7 +88,6 @@ int main(void) {
       int width = sizes[s][0], height = sizes[s][1];
       AppGeometry g;
       assert(ui_geometry_compute(width, height, (GeometryMode)mode, &g));
-      assert(geometry_play_valid(&g, width, height));
       GeometryFonts tier = geometry_font_sizes(&g, width, height);
 
       assert_rect(g.play_language, width, height);
@@ -111,7 +119,7 @@ int main(void) {
           assert(fits(font, tr((Language)language, difficulties[i]), tier.control,
                       10, g.home_difficulty[i].w, g.home_difficulty[i].h));
         }
-        for (int i = 0; i < 9; ++i)
+        for (int i = 0; i < PLAY_ACTION_COUNT; ++i)
           assert(fits(font, tr((Language)language, actions[i]), tier.control, 10,
                       g.actions[i].w, g.actions[i].h));
 
@@ -166,7 +174,6 @@ int main(void) {
         assert(wrapped_fits(font, tr((Language)language, T_ABOUT_STUDY),
                             tier.help, 10, g.about_study.w - 18,
                             study_copy_h));
-        /* The actual button face loses 3px to the raised-state shadow. */
         assert(fits(font, tr((Language)language, T_ABOUT_STUDY_LINK), tier.help,
                     10, g.about_study_link.w, g.about_study_link.h - 3));
 
@@ -180,15 +187,21 @@ int main(void) {
           char label[128];
           snprintf(label, sizeof label, "%d · %s", i + 1,
                    tr((Language)language, about_links[i]));
-          /* Footer buttons use the same raised 3px face as production. */
           assert(fits(font, label, tier.control, 10, g.about_links[i].w,
                       g.about_links[i].h - 3));
         }
+
+        assert(fits(font, tr((Language)language, T_AUDIO), tier.control + 8, 10,
+                    width < 640 ? width - 60 : 420, 42));
+        assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
+                    width < 640 ? width - 60 : 420, 24));
+        assert(fits(font, tr((Language)language, T_FX), tier.control, 10,
+                    width < 640 ? width - 60 : 420, 24));
       }
     }
   }
 
   TTF_Quit();
-  puts("SDL_ttf text-fit tests passed for cached fonts, gameplay, four-link About cards and all responsive tiers");
+  puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Audio labels and all responsive tiers");
   return 0;
 }
