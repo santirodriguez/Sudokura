@@ -3,7 +3,6 @@
 #include "seed.c"
 #include "audio.h"
 #include "input.c"
-#include "progress.c"
 #include "assets/generated/flag_us.c"
 #include "assets/generated/flag_ar.c"
 #include "assets/generated/flag_ca.c"
@@ -16,6 +15,9 @@
 #undef start_daily_session
 #undef start_new_session
 #undef persistence_init
+#define SUDOKURA_RUNTIME_LEGACY_PROGRESS 1
+#include "progress.c"
+#undef SUDOKURA_RUNTIME_LEGACY_PROGRESS
 #include "src/sudokura_sdl/02_font_discovery.inc"
 #include "src/sudokura_sdl/ui_geometry.inc"
 #define geometry_compute ui_geometry_compute
@@ -38,7 +40,9 @@
 #define app_render app_render_about_base
 #include "src/sudokura_sdl/about_overlay.inc"
 #undef app_render
+#define go_home_base go_home_polish_base
 #include "src/sudokura_sdl/rc2_ui.inc"
+#undef go_home_base
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
 #define SDL_PollEvent ui_poll_event
