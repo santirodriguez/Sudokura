@@ -29,7 +29,10 @@
 #undef app_frame
 #undef app_shutdown
 #undef app_init
+#define app_render app_render_polish_base
 #include "src/sudokura_sdl/polish_ui.inc"
+#undef app_render
+#include "src/sudokura_sdl/about_overlay.inc"
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
 #define SDL_PollEvent ui_poll_event
