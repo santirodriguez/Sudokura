@@ -27,7 +27,7 @@ test: tests/test_main
 assets:
 	./scripts/generate_assets.py
 	./scripts/validate_assets.py
-assets/generated/window_icon.c assets/generated/window_icon.h assets/generated/wordmark.c assets/generated/wordmark.h: assets/branding/source/Sudokura05.png assets/branding/source/Sudokura02.png scripts/generate_assets.py
+assets/generated/window_icon.c assets/generated/window_icon.h assets/generated/wordmark.c assets/generated/wordmark.h: assets/branding/source/sudokura-icon.png assets/branding/source/sudokura-head.png assets/branding/source/favicon-16x16.png assets/branding/source/favicon-32x32.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
 	rm -f sudokura tests/test_main tests/test_text_fit

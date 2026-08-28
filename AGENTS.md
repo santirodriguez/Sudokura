@@ -30,12 +30,12 @@ These instructions apply to the entire repository.
 
 ## Branding
 
-- Files under `assets/branding/source/` are immutable source artwork.
-- Use `Sudokura03.png` for README/release presentation.
-- Use `Sudokura02.png` for a compact horizontal in-app logo when appropriate.
-- Use `Sudokura05.png` as the master source for application icons.
-- Generate derived PNG, ICO, ICNS, and SDL window-icon resources reproducibly.
-- Do not package all five source images with the application.
+- Files under `assets/branding/source/` and `assets/branding/source-packed/` are the source artwork supplied for Sudokura v1.2 and must be preserved without reinterpretation.
+- Use `sudokura-head.png` as the primary project and in-app visual identity.
+- Use `sudokura-icon.png` and the supplied icon-size variants as the source for platform-appropriate application icons.
+- Keep the vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
+- Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
+- Do not create or publish a canonical v1.2 screenshot until the user supplies the final screenshot after package testing.
 
 ## Packaging
 

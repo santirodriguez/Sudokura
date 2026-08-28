@@ -1,14 +1,14 @@
 # Documentation images
 
-Repository screenshots used by the README, release notes, and historical documentation belong in this directory.
+Repository screenshots used by historical release notes and documentation belong in this directory.
 
-## Current interface — v1.1.0
+## Historical interface — v1.1.0
 
 <p align="center"><img src="sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
 
 - File: `sudokura-v1.1.0.png`
 - Dimensions: 1112×944
-- Status: current interface shown by the main README and v1.1.0 release notes
+- Status: historical v1.1.0 interface; it is not the canonical v1.2 screenshot.
 
 ## Historical interface — v1
 
@@ -16,9 +16,13 @@ Repository screenshots used by the README, release notes, and historical documen
 
 - File: `sudokura-v1.png`
 - Dimensions: 1713×1383
-- Status: retained as the visual record of the original v1 interface; it is no longer the current UI
+- Status: retained as the visual record of the original v1 interface.
 
 The legacy file is byte-identical to the former root-level `screenshot.png`. The duplicate root file was removed after this archival copy was confirmed.
+
+## v1.2 screenshot policy
+
+No canonical v1.2 screenshot is versioned yet. The final public screenshot will be supplied after the real v1.2 packages have been installed and tested; automated diagnostic renders must not be committed or presented as the official screenshot.
 
 ## Naming policy
 

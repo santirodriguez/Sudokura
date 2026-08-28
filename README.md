@@ -1,10 +1,8 @@
 # Sudokura v1.1.0
 
-<p align="center"><img src="assets/branding/source/Sudokura03.png" alt="Sudokura" width="520"></p>
+<p align="center"><img src="assets/branding/source/sudokura-head.png" alt="Sudokura" width="520"></p>
 
 A lightweight desktop Sudoku written in **C11 with SDL2 and SDL2_ttf**. Sudokura keeps its dark/light visual identity, notes, hints, verification, strict mode and three game modes while fitting every control into compact windows.
-
-<p align="center"><img src="docs/images/sudokura-v1.1.0.png" alt="Sudokura v1.1.0 game interface" width="900"></p>
 
 ## Features and languages
 
@@ -65,13 +63,13 @@ On macOS, unzip and drag `Sudokura.app` to Applications. Use Finder's **Open** c
 
 ## Visual and technical history
 
-The current screenshot is stored at [`docs/images/sudokura-v1.1.0.png`](docs/images/sudokura-v1.1.0.png). The original v1 interface remains preserved at [`docs/images/sudokura-v1.png`](docs/images/sudokura-v1.png); it is historical documentation and is no longer the current UI.
+The screenshots under [`docs/images/`](docs/images/) are historical records of earlier releases. No canonical v1.2 screenshot is versioned yet; the final public screenshot will be supplied after the real v1.2 packages have been tested.
 
 See the [v1.1.0 release notes](docs/RELEASE_NOTES_1.1.0.md), the [technical implementation record](docs/V1.1.0_IMPLEMENTATION.md), and the [documentation image archive](docs/images/README.md).
 
 ## Branding assets
 
-The logo artwork added for v1.1.0 lives in `assets/branding/source/`. `Sudokura03.png` is used for project presentation, `Sudokura02.png` supplies the in-game wordmark, and `Sudokura05.png` supplies reproducible application icons. Generated packages include only the required derived assets.
+The v1.2 source artwork lives in `assets/branding/source/`, with two additional exact web-icon variants preserved in chunked Base64 under `assets/branding/source-packed/`. `sudokura-head.png` is the primary Sudokura identity, while the supplied icon variants remain preserved for platform-appropriate derived resources. Language flags are vendored under `assets/flags/` with their upstream source and license so runtime stays fully offline. The former v1.1 artwork is retained under `assets/branding/history/v1.1/`. Generated packages include only the derived resources they require.
 
 ## Project scope
 
