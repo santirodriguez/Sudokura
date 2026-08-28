@@ -58,6 +58,7 @@
 #include "version.h"
 #include "i18n.h"
 #include "session.h"
+#include "seed.h"
 #include "assets/generated/window_icon.h"
 #include "assets/generated/wordmark.h"
 #define N 9
@@ -171,12 +172,11 @@ static void begin_fresh_play(UI*ui){
   set_mode_params(ui); clock_reset(ui);
 }
 static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
-  int i=IDX(row,column);
   GameInputResult result=game_apply_input(game,row,column,value,notes_mode,ui->strict_mode);
-  if(result==GAME_INPUT_WRONG){
+  if(result==GAME_INPUT_WRONG&&game_mode_reveals_correctness(ui->mode)){
     ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_WRONG));
-  }else if(result==GAME_INPUT_STRICT_REJECTED && value>=1 && value<=9 && value!=game->solution[i]){
-    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_ILLEGAL));
+  }else if(result==GAME_INPUT_STRICT_REJECTED){
+    show_toast(ui,tr(ui->language,T_ILLEGAL));
   }
   return result!=GAME_INPUT_NO_CHANGE&&result!=GAME_INPUT_LOCKED;
 }
@@ -214,11 +214,7 @@ static bool path_append(char*destination,size_t destination_size,const char*comp
 
 
 static uint64_t next_seed(void){
-  static uint64_t sequence=UINT64_C(0x9e3779b97f4a7c15);
-  sequence+=UINT64_C(0x9e3779b97f4a7c15);
-  uint64_t wall=(uint64_t)time(NULL);
-  uint64_t perf=(uint64_t)SDL_GetPerformanceCounter();
-  return (wall<<32)^perf^sequence^(perf>>17);
+  return seed_random_u64();
 }
 
 static bool local_date(int*year,int*month,int*day){
@@ -249,6 +245,7 @@ static void persistence_init(Persistence*p){
   }
   StoreStatus session_status=session_load_file(p->session_path,&p->saved);
   if(session_status==STORE_CORRUPT)(void)store_quarantine_corrupt(p->session_path);
+  else if(session_status==STORE_INCOMPATIBLE)(void)remove(p->session_path);
   if(session_status!=STORE_OK)memset(&p->saved,0,sizeof(p->saved));
   p->last_checkpoint=now_s();
 }

@@ -210,36 +210,57 @@ int game_difficulty_score(const int puzzle[81]) {
   return (81 - clues) * 100 + complexity;
 }
 
-static void axis_order(GameRng *rng, int output[9]) {
-  int groups[3] = {0, 1, 2};
-  shuffle(rng, groups, 3);
-  int offset = 0;
-  for (int group = 0; group < 3; ++group) {
-    int within[3] = {0, 1, 2};
-    shuffle(rng, within, 3);
-    for (int i = 0; i < 3; ++i) {
-      output[offset++] = groups[group] * 3 + within[i];
+static bool fill_random_solution(GameRng *rng, int board[81]) {
+  int best_count = 10;
+  int tied_cells[81];
+  int tied_count = 0;
+
+  for (int index = 0; index < 81; ++index) {
+    if (board[index]) {
+      continue;
+    }
+    int count = 0;
+    for (int value = 1; value <= 9; ++value) {
+      count += allowed(board, index / 9, index % 9, value);
+    }
+    if (count == 0) {
+      return false;
+    }
+    if (count < best_count) {
+      best_count = count;
+      tied_count = 0;
+    }
+    if (count == best_count) {
+      tied_cells[tied_count++] = index;
     }
   }
+
+  if (tied_count == 0) {
+    return true;
+  }
+  int index = tied_cells[rng_bounded(rng, (uint32_t)tied_count)];
+  int values[9];
+  int value_count = 0;
+  for (int value = 1; value <= 9; ++value) {
+    if (allowed(board, index / 9, index % 9, value)) {
+      values[value_count++] = value;
+    }
+  }
+  shuffle(rng, values, value_count);
+
+  for (int i = 0; i < value_count; ++i) {
+    board[index] = values[i];
+    if (fill_random_solution(rng, board)) {
+      return true;
+    }
+    board[index] = 0;
+  }
+  return false;
 }
 
-static void make_solution(GameRng *rng, int solution[81]) {
-  int rows[9];
-  int columns[9];
-  int numbers[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-  axis_order(rng, rows);
-  axis_order(rng, columns);
-  shuffle(rng, numbers, 9);
-  bool transpose = (rng_next(rng) & 1u) != 0;
-
-  for (int row = 0; row < 9; ++row) {
-    for (int column = 0; column < 9; ++column) {
-      int source_row = transpose ? columns[column] : rows[row];
-      int source_column = transpose ? rows[row] : columns[column];
-      solution[IDX(row, column)] =
-          numbers[(source_row * 3 + source_row / 3 + source_column) % 9];
-    }
-  }
+static bool make_solution(GameRng *rng, int solution[81]) {
+  memset(solution, 0, sizeof(int) * 81);
+  return fill_random_solution(rng, solution);
 }
 
 static int target_clues(GameDifficulty difficulty) {
@@ -259,10 +280,12 @@ static bool difficulty_clues_ok(GameDifficulty difficulty, int clues) {
 
 static bool generate_candidate(Game *game, uint64_t internal_seed,
                                GameDifficulty difficulty) {
-  GameRng rng = {internal_seed ^
-                 ((uint64_t)SUDOKURA_GENERATOR_REVISION << 56) ^
-                 ((uint64_t)difficulty << 48)};
-  make_solution(&rng, game->solution);
+  GameRng rng = {mix64(internal_seed ^
+                       ((uint64_t)SUDOKURA_GENERATOR_REVISION << 56) ^
+                       ((uint64_t)difficulty << 48))};
+  if (!make_solution(&rng, game->solution)) {
+    return false;
+  }
   memcpy(game->puzzle, game->solution, sizeof(game->puzzle));
 
   int positions[81];
@@ -300,17 +323,13 @@ void game_new_difficulty(Game *game, uint64_t seed,
   game->generator_revision = SUDOKURA_GENERATOR_REVISION;
   game->difficulty = difficulty;
 
-  bool generated = false;
-  for (unsigned attempt = 0; attempt < 64 && !generated; ++attempt) {
+  for (uint64_t attempt = 0;; ++attempt) {
     uint64_t attempt_seed =
-        seed + UINT64_C(0x9e3779b97f4a7c15) * (uint64_t)attempt;
-    generated = generate_candidate(game, attempt_seed, difficulty);
-  }
-
-  if (!generated) {
-    GameRng rng = {seed};
-    make_solution(&rng, game->solution);
-    memcpy(game->puzzle, game->solution, sizeof(game->puzzle));
+        mix64(seed ^ (UINT64_C(0x9e3779b97f4a7c15) *
+                      (attempt + UINT64_C(1))));
+    if (generate_candidate(game, attempt_seed, difficulty)) {
+      break;
+    }
   }
 
   memcpy(game->initial, game->puzzle, sizeof(game->initial));
@@ -397,6 +416,25 @@ int game_progress_percent(const Game *game) {
     }
   }
   return total ? correct * 100 / total : 100;
+}
+
+int game_fill_percent(const Game *game) {
+  if (!game) {
+    return 0;
+  }
+  int total = 0;
+  int filled = 0;
+  for (int i = 0; i < 81; ++i) {
+    if (game->initial[i] == 0) {
+      ++total;
+      filled += game->puzzle[i] != 0;
+    }
+  }
+  return total ? filled * 100 / total : 100;
+}
+
+bool game_mode_reveals_correctness(GameMode mode) {
+  return mode == MODE_STRIKES || mode == MODE_TIME;
 }
 
 bool game_cell_locked(const Game *game, int row, int column) {

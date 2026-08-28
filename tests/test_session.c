@@ -2,11 +2,14 @@
 #include "session.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 static const char *session_path = ".sudokura-session-test.dat";
 static const char *preferences_path = ".sudokura-preferences-test.dat";
+
+enum { STORE_HEADER_SIZE_TEST = 18, SESSION_PAYLOAD_SIZE_TEST = 365 };
 
 static int first_playable(const Game *game) {
   for (int i = 0; i < 81; ++i) if (!game->fixed[i]) return i;
@@ -19,6 +22,23 @@ static int next_playable(const Game *game, int after) {
     if (!game->fixed[i]) return i;
   }
   return -1;
+}
+
+static uint32_t crc32_bytes_test(const unsigned char *data, size_t size) {
+  uint32_t crc = UINT32_C(0xffffffff);
+  for (size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      uint32_t mask = (uint32_t)(0u - (crc & 1u));
+      crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & mask);
+    }
+  }
+  return ~crc;
+}
+
+static void put_u32_test(unsigned char *data, uint32_t value) {
+  for (unsigned shift = 0; shift < 32; shift += 8)
+    data[shift / 8] = (unsigned char)((value >> shift) & 0xffu);
 }
 
 static SessionState make_state(void) {
@@ -173,6 +193,34 @@ static void test_semantic_rejections(void) {
   assert(!session_validate(&state));
 }
 
+static void test_incompatible_generator_revision(void) {
+  SessionState state = make_state();
+  assert(session_save_file(session_path, &state));
+
+  unsigned char bytes[STORE_HEADER_SIZE_TEST + SESSION_PAYLOAD_SIZE_TEST];
+  FILE *file = fopen(session_path, "rb");
+  assert(file);
+  assert(fread(bytes, 1, sizeof(bytes), file) == sizeof(bytes));
+  assert(fclose(file) == 0);
+
+  put_u32_test(bytes + STORE_HEADER_SIZE_TEST,
+               SUDOKURA_GENERATOR_REVISION - 1u);
+  uint32_t crc = crc32_bytes_test(bytes + STORE_HEADER_SIZE_TEST,
+                                  SESSION_PAYLOAD_SIZE_TEST);
+  put_u32_test(bytes + 14, crc);
+
+  file = fopen(session_path, "wb");
+  assert(file);
+  assert(fwrite(bytes, 1, sizeof(bytes), file) == sizeof(bytes));
+  assert(fclose(file) == 0);
+
+  SessionState loaded;
+  assert(session_load_file(session_path, &loaded) == STORE_INCOMPATIBLE);
+  file = fopen(session_path, "rb");
+  assert(file);
+  assert(fclose(file) == 0);
+}
+
 static void test_corruption_and_quarantine(void) {
   SessionState state = make_state();
   assert(session_save_file(session_path, &state));
@@ -212,6 +260,7 @@ int main(void) {
   test_session_roundtrip();
   test_daily_and_results();
   test_semantic_rejections();
+  test_incompatible_generator_revision();
   test_corruption_and_quarantine();
   cleanup();
   puts("session persistence tests passed");

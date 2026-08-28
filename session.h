@@ -13,6 +13,7 @@ typedef enum {
   STORE_OK = 0,
   STORE_NOT_FOUND,
   STORE_CORRUPT,
+  STORE_INCOMPATIBLE,
   STORE_IO_ERROR
 } StoreStatus;
 

@@ -447,8 +447,13 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
   int daily_month = reader_u8(&reader);
   int daily_day = reader_u8(&reader);
 
-  if (!reader.ok || generator_revision != SUDOKURA_GENERATOR_REVISION ||
-      !valid_difficulty(difficulty) || !valid_mode(mode) ||
+  if (!reader.ok) {
+    return STORE_CORRUPT;
+  }
+  if (generator_revision != SUDOKURA_GENERATOR_REVISION) {
+    return STORE_INCOMPATIBLE;
+  }
+  if (!valid_difficulty(difficulty) || !valid_mode(mode) ||
       notes_mode > 1 || strict_mode > 1 || manual_paused > 1 ||
       is_daily > 1 || mistakes > SESSION_MAX_COUNTER ||
       strikes > SESSION_MAX_COUNTER) {

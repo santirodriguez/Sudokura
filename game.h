@@ -4,7 +4,7 @@
 #include <stdint.h>
 #define SUDOKU_N 9
 #define SUDOKU_CELLS 81
-#define SUDOKURA_GENERATOR_REVISION 1u
+#define SUDOKURA_GENERATOR_REVISION 2u
 
 typedef enum { MODE_CLASSIC=0, MODE_STRIKES=1, MODE_TIME=2 } GameMode;
 typedef enum { DIFFICULTY_EASY=0, DIFFICULTY_MEDIUM=1, DIFFICULTY_HARD=2, DIFFICULTY_COUNT=3 } GameDifficulty;
@@ -39,6 +39,8 @@ int game_solution_count(const int puzzle[81], int limit);
 int game_clue_count(const Game *game);
 int game_difficulty_score(const int puzzle[81]);
 int game_progress_percent(const Game *game);
+int game_fill_percent(const Game *game);
+bool game_mode_reveals_correctness(GameMode mode);
 bool game_cell_locked(const Game *game,int row,int col);
 GameInputResult game_apply_input(Game *game,int row,int col,int value,bool notes_mode,bool strict);
 bool game_place(Game *game,int row,int col,int value,bool strict);

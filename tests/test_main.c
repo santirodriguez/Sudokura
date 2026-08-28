@@ -25,7 +25,14 @@ static int first_playable(const Game *game) {
   return -1;
 }
 
+static void assert_clue_range(GameDifficulty difficulty, int clues) {
+  if (difficulty == DIFFICULTY_EASY) assert(clues >= 42 && clues <= 46);
+  else if (difficulty == DIFFICULTY_MEDIUM) assert(clues >= 34 && clues <= 38);
+  else assert(clues >= 28 && clues <= 32);
+}
+
 static void test_generation(void) {
+  assert(SUDOKURA_GENERATOR_REVISION == 2u);
   for (uint64_t seed = 1; seed <= 24; ++seed) {
     int previous_clues = 82, previous_score = -1;
     for (int difficulty = DIFFICULTY_EASY; difficulty < DIFFICULTY_COUNT; ++difficulty) {
@@ -41,10 +48,9 @@ static void test_generation(void) {
       assert(game.difficulty_score == game_difficulty_score(game.initial));
       assert(game.difficulty_score > previous_score);
       int clues = game_clue_count(&game);
+      assert(clues > 0 && clues < 81);
       assert(clues < previous_clues);
-      if (difficulty == DIFFICULTY_EASY) assert(clues >= 42 && clues <= 46);
-      else if (difficulty == DIFFICULTY_MEDIUM) assert(clues >= 34 && clues <= 38);
-      else assert(clues >= 28 && clues <= 32);
+      assert_clue_range((GameDifficulty)difficulty, clues);
       for (int i = 0; i < 81; ++i) {
         assert((game.fixed[i] != 0) == (game.initial[i] != 0));
         assert(game.puzzle[i] == game.initial[i]);
@@ -57,11 +63,30 @@ static void test_generation(void) {
   }
 }
 
+static void test_generator_stress(void) {
+  for (uint64_t seed = 1; seed <= 1200; ++seed) {
+    GameDifficulty difficulty = (GameDifficulty)((seed - 1) % DIFFICULTY_COUNT);
+    Game game;
+    game_new_difficulty(&game, seed, difficulty);
+    assert(game.seed == seed);
+    assert(game.generator_revision == 2u);
+    assert(game_board_valid(game.solution));
+    assert(game_solution_count(game.initial, 2) == 1);
+    assert_clue_range(difficulty, game_clue_count(&game));
+    assert(game_clue_count(&game) < 81);
+    if (seed % 97 == 0) {
+      Game duplicate;
+      game_new_difficulty(&duplicate, seed, difficulty);
+      assert(!memcmp(&game, &duplicate, sizeof(game)));
+    }
+  }
+}
+
 static void test_generator_golden(void) {
   static const char *expected[DIFFICULTY_COUNT] = {
-      "4..2..631.....1.9.16348.25...87.5.6.316...725.2..6...96..89..7..94..231..72316948",
-      "..8..4...65.7...93.3456.8...651.73....368..41...9...86.......7.5..8..13.7.64..952",
-      "...2.6319..9578..2....1.....4..3.75.3......6..78.....146.3.1..59...57.....5..4...",
+      "1.6.452..57.9281...3...6.8...35...68.5746..12.9.2.3...3.985.471.2819....715..482.",
+      ".7.....6.5....1..96..4972.3963.7........13.....7.4.3.5.9178.43...4.395...561..9.8",
+      "...7..1..........9.235.4....8.3....4.52.....1741..568...546.8..4.6..15...9.2....6",
   };
   for (int difficulty = DIFFICULTY_EASY; difficulty < DIFFICULTY_COUNT; ++difficulty) {
     Game game; char actual[82];
@@ -76,17 +101,20 @@ static void test_daily(void) {
   assert(game_daily_seed(2026, 8, 28, &seed_a));
   assert(game_daily_seed(2026, 8, 28, &seed_b));
   assert(game_daily_seed(2026, 8, 29, &seed_next));
-  assert(seed_a == UINT64_C(17236981323489437412));
+  assert(seed_a == UINT64_C(14342674931506954150));
   assert(seed_a == seed_b && seed_a != seed_next);
   assert(!game_daily_seed(2026, 2, 29, &seed_a));
   assert(game_daily_seed(2024, 2, 29, &seed_a));
   assert(!game_daily_seed(2026, 13, 1, &seed_a));
   assert(!game_daily_seed(2026, 8, 28, NULL));
-  Game first, second;
+  Game first, second; char actual[82];
   assert(game_new_daily(&first, 2026, 8, 28));
   assert(game_new_daily(&second, 2026, 8, 28));
   assert(!memcmp(&first, &second, sizeof(first)));
   assert(first.difficulty == DIFFICULTY_MEDIUM);
+  puzzle_text(&first, actual);
+  assert(!strcmp(actual,
+      "145..3.7.8..14.23........5.9.....3...2..3..1443..81692..4.5.1.3...3.6..7.8371.5.."));
   assert(!game_new_daily(&first, 2026, 2, 29));
 }
 
@@ -126,13 +154,23 @@ static void test_player_input(void) {
   assert(game_apply_input(NULL, row, column, value, false, false) == GAME_INPUT_NO_CHANGE);
 }
 
+static void test_mode_visibility_policy(void) {
+  assert(!game_mode_reveals_correctness(MODE_CLASSIC));
+  assert(game_mode_reveals_correctness(MODE_STRIKES));
+  assert(game_mode_reveals_correctness(MODE_TIME));
+  assert(!game_mode_reveals_correctness((GameMode)99));
+}
+
 static void test_progress_restart(void) {
-  Game game; game_new(&game, 314159); assert(game_progress_percent(&game) == 0);
+  Game game; game_new(&game, 314159);
+  assert(game_progress_percent(&game) == 0);
+  assert(game_fill_percent(&game) == 0);
   int original[81]; memcpy(original, game.initial, sizeof(original));
   uint64_t seed = game.seed; GameDifficulty difficulty = game.difficulty; int difficulty_score = game.difficulty_score;
   int correct_cell = first_playable(&game); assert(correct_cell >= 0);
   assert(game_apply_input(&game, correct_cell / 9, correct_cell % 9, game.solution[correct_cell], false, false) == GAME_INPUT_CORRECT);
   int progress = game_progress_percent(&game); assert(progress > 0);
+  int fill = game_fill_percent(&game); assert(fill > 0);
   int wrong_cell = correct_cell + 1;
   while (wrong_cell < 81 && game.fixed[wrong_cell]) ++wrong_cell;
   if (wrong_cell == 81) { wrong_cell = 0; while (wrong_cell < correct_cell && game.fixed[wrong_cell]) ++wrong_cell; }
@@ -140,6 +178,7 @@ static void test_progress_restart(void) {
   int wrong = game.solution[wrong_cell] % 9 + 1;
   assert(game_apply_input(&game, wrong_cell / 9, wrong_cell % 9, wrong, false, false) == GAME_INPUT_WRONG);
   assert(game_progress_percent(&game) == progress);
+  assert(game_fill_percent(&game) > fill);
   int hint_cell = wrong_cell + 1;
   while (hint_cell < 81 && game.fixed[hint_cell]) ++hint_cell;
   if (hint_cell == 81) { hint_cell = 0; while (hint_cell < 81 && (game.fixed[hint_cell] || hint_cell == correct_cell || hint_cell == wrong_cell)) ++hint_cell; }
@@ -149,9 +188,10 @@ static void test_progress_restart(void) {
   game_restart(&game);
   assert(game.seed == seed && game.difficulty == difficulty && game.difficulty_score == difficulty_score);
   assert(!memcmp(game.puzzle, original, sizeof(original)) && game_progress_percent(&game) == 0);
+  assert(game_fill_percent(&game) == 0);
   for (int i = 0; i < 81; ++i) assert(!game.hinted[i] && !game.notes[i]);
   for (int i = 0; i < 81; ++i) if (!game.fixed[i]) assert(game_apply_input(&game, i / 9, i % 9, game.solution[i], false, false) == GAME_INPUT_CORRECT);
-  assert(game_progress_percent(&game) == 100 && game_is_solved(&game));
+  assert(game_progress_percent(&game) == 100 && game_fill_percent(&game) == 100 && game_is_solved(&game));
 }
 
 static void test_bounds(void) {
@@ -159,7 +199,7 @@ static void test_bounds(void) {
   assert(!game_place(NULL, 0, 0, 1, false)); assert(!game_place(&game, -1, 0, 1, false)); assert(!game_place(&game, 0, 9, 1, false));
   assert(!game_toggle_note(&game, 9, 0, 1)); assert(!game_toggle_note(&game, 0, -1, 1)); assert(!game_hint(&game, -1, -1));
   assert(!game_cell_locked(&game, 9, 9)); assert(!game_has_conflict(&game, 9, 9)); assert(!game_has_conflict(NULL, 0, 0));
-  assert(game_conflict_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
+  assert(game_conflict_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_fill_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
   assert(game_solution_count(NULL, 2) == 0); int invalid[81] = {0}; invalid[0] = invalid[1] = 1; assert(game_solution_count(invalid, 2) == 0); assert(game_difficulty_score(invalid) == -1);
 }
 
@@ -226,7 +266,7 @@ static void test_i18n(void) {
 }
 
 int main(void) {
-  test_generation(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
-  puts("all tests passed (deterministic generation, Daily, restart/progress/hints, modern responsive geometry, all screens, API bounds)");
+  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
+  puts("all tests passed (generator v2, 1200-seed stress, Daily, restart/progress/hints, responsive geometry, API bounds)");
   return 0;
 }
