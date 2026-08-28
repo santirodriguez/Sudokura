@@ -73,9 +73,9 @@ assert ico.count(b"\x89PNG\r\n\x1a\n") == 6
 icns = (generated / "sudokura.icns").read_bytes()
 assert icns[:4] == b"icns" and struct.unpack(">I", icns[4:8])[0] == len(icns)
 
-icon_values = rgba_resource(generated / "window_icon.c", "sudokura_icon", (128, 128))
-icon_alpha = icon_values[3::4]
-assert min(icon_alpha) < 255 and max(icon_alpha) == 255
+# The application icon follows the user-supplied canonical master exactly;
+# opacity/transparency is artwork, not a validator policy.
+rgba_resource(generated / "window_icon.c", "sudokura_icon", (128, 128))
 head_values = rgba_resource(generated / "wordmark.c", "sudokura_wordmark", (516, 166))
 head_alpha = head_values[3::4]
 assert min(head_alpha) == 0 and max(head_alpha) == 255
@@ -89,6 +89,6 @@ for path, symbol in (
 
 print(
     "validated exactly two branding masters, eight icon sizes derived only from "
-    "sudokura-512.png, PNG-backed ICO/ICNS, transparent embedded icon/head, "
+    "sudokura-512.png, PNG-backed ICO/ICNS, embedded icon, transparent head, "
     "and the three licensed offline language flags"
 )
