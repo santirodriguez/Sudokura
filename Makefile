@@ -12,9 +12,14 @@ SDL_LIBS := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 SDL_TEST_CFLAGS := $(filter-out -Dmain=SDL_main,$(SDL_CFLAGS))
 SDL_TEST_LIBS := $(filter-out -lmingw32 -lSDL2main -mwindows,$(SDL_LIBS))
 CORE = game.c geometry.c i18n.c
+GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
+	assets/generated/wordmark.c assets/generated/wordmark.h \
+	assets/generated/flag_us.c assets/generated/flag_us.h \
+	assets/generated/flag_ar.c assets/generated/flag_ar.h \
+	assets/generated/flag_ca.c assets/generated/flag_ca.h
 .PHONY: all test test-ui clean assets
 all: sudokura
-sudokura: sudokura_sdl.c src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc $(CORE) version.h game.h geometry.h i18n.h session.h session.c assets/generated/window_icon.c assets/generated/wordmark.c
+sudokura: sudokura_sdl.c src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc $(CORE) version.h game.h geometry.h i18n.h session.h session.c $(GENERATED_UI)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) sudokura_sdl.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c -o $@ $(SDL_LIBS) -lm
 tests/test_main: tests/test_main.c $(CORE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_main.c $(CORE) -o $@
@@ -30,7 +35,7 @@ test: tests/test_main tests/test_session
 assets:
 	./scripts/generate_assets.py
 	./scripts/validate_assets.py
-assets/generated/window_icon.c assets/generated/window_icon.h assets/generated/wordmark.c assets/generated/wordmark.h: assets/branding/source/sudokura-icon.png assets/branding/source/sudokura-head.png assets/branding/source/favicon-16x16.png assets/branding/source/favicon-32x32.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
+$(GENERATED_UI): assets/branding/source/sudokura-icon.png assets/branding/source/sudokura-head.png assets/branding/source/favicon-16x16.png assets/branding/source/favicon-32x32.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
 	rm -f sudokura tests/test_main tests/test_session tests/test_text_fit

@@ -5,9 +5,13 @@
 
 #define GEOMETRY_ACTION_COUNT 9
 #define GEOMETRY_PALETTE_COUNT 9
-#define GEOMETRY_HUD_COUNT 4
+#define GEOMETRY_HUD_COUNT 6
+#define GEOMETRY_HOME_SEGMENT_COUNT 3
+#define GEOMETRY_HOME_PRIMARY_COUNT 3
+#define GEOMETRY_HOME_SECONDARY_COUNT 4
 #define GEOMETRY_TITLE_BUTTON_COUNT 7
 #define GEOMETRY_END_BUTTON_COUNT 2
+#define GEOMETRY_PAUSE_BUTTON_COUNT 2
 
 typedef struct {
   int x, y, w, h;
@@ -29,17 +33,34 @@ typedef struct {
   GeoRect palette_label;
   GeoRect palette[GEOMETRY_PALETTE_COUNT];
   GeoRect progress;
-  GeoRect language;
+  GeoRect play_language;
 
-  GeoRect title_heading;
-  GeoRect title_buttons[GEOMETRY_TITLE_BUTTON_COUNT];
+  GeoRect screen_language;
+  GeoRect home_logo;
+  GeoRect home_mode_label;
+  GeoRect home_mode[GEOMETRY_HOME_SEGMENT_COUNT];
+  GeoRect home_difficulty_label;
+  GeoRect home_difficulty[GEOMETRY_HOME_SEGMENT_COUNT];
+  GeoRect home_primary[GEOMETRY_HOME_PRIMARY_COUNT];
+  GeoRect home_secondary[GEOMETRY_HOME_SECONDARY_COUNT];
+
   GeoRect info_heading;
   GeoRect info_body;
   GeoRect back_button;
+
+  GeoRect end_logo;
   GeoRect end_heading;
   GeoRect end_summary;
   GeoRect end_buttons[GEOMETRY_END_BUTTON_COUNT];
+
+  GeoRect pause_logo;
   GeoRect pause_heading;
+  GeoRect pause_buttons[GEOMETRY_PAUSE_BUTTON_COUNT];
+
+  /* Compatibility aliases retained through the staged v1.2 upgrade. */
+  GeoRect language;
+  GeoRect title_heading;
+  GeoRect title_buttons[GEOMETRY_TITLE_BUTTON_COUNT];
   GeoRect pause_button;
 } AppGeometry;
 

@@ -1,5 +1,8 @@
 /* Sudokura SDL application is kept as one C translation unit. */
 #include "session.c"
+#include "assets/generated/flag_us.c"
+#include "assets/generated/flag_ar.c"
+#include "assets/generated/flag_ca.c"
 #include "src/sudokura_sdl/01_runtime.inc"
 #include "src/sudokura_sdl/02_font_discovery.inc"
 #include "src/sudokura_sdl/03_board_render.inc"
