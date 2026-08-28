@@ -3,6 +3,7 @@
 static Persistence *audio_persistence = NULL;
 static Gfx *audio_gfx = NULL;
 static UI *audio_ui = NULL;
+static const Game *audio_game = NULL;
 static Screen audio_previous_screen = SCR_TITLE;
 static Result audio_previous_result = RES_NONE;
 static bool audio_ui_seen = false;
@@ -51,9 +52,10 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
   bool left_result =
       audio_ui_seen && audio_previous_screen == SCR_END && ui->screen != SCR_END;
   bool opening_home = !audio_ui_seen && ui->screen == SCR_TITLE;
-  bool returned_home =
-      audio_ui_seen && ui->screen == SCR_TITLE &&
-      (audio_previous_screen == SCR_PLAY || audio_previous_screen == SCR_END);
+  bool returned_home_from_play =
+      audio_ui_seen && ui->screen == SCR_TITLE && audio_previous_screen == SCR_PLAY;
+  bool returned_home_from_result =
+      audio_ui_seen && ui->screen == SCR_TITLE && audio_previous_screen == SCR_END;
 
   if (left_result) audio_cancel_result();
   audio_set_context(audio_context_for_game(game, ui));
@@ -62,8 +64,11 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
   if (entered_result) {
     audio_play_result(ui->result == RES_LOSE ? AUDIO_RESULT_FAIL
                                              : AUDIO_RESULT_WIN);
-  } else if (opening_home || returned_home) {
+  } else if (opening_home || returned_home_from_result) {
     audio_play_result(AUDIO_RESULT_WIN);
+  } else if (returned_home_from_play) {
+    /* The dedicated leave cue was started before the screen transition. */
+    audio_set_context(AUDIO_CONTEXT_MAIN);
   }
   audio_update();
 
@@ -81,15 +86,23 @@ static void persistence_init(Persistence *persistence) {
 static bool app_init(Gfx *gfx, const char *font_cli) {
   if (!app_init_base(gfx, font_cli)) return false;
   audio_gfx = gfx;
+  app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
+                                       sudokura_icon_width,
+                                       sudokura_icon_height);
+  if (!app_icon_texture)
+    fprintf(stderr, "compact icon texture: %s\n", SDL_GetError());
   (void)audio_init();
   return true;
 }
 
 static void app_shutdown(Gfx *gfx) {
   audio_shutdown();
+  if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
+  app_icon_texture = NULL;
   audio_persistence = NULL;
   audio_gfx = NULL;
   audio_ui = NULL;
+  audio_game = NULL;
   audio_ui_seen = false;
   app_shutdown_base(gfx);
 }
@@ -97,8 +110,11 @@ static void app_shutdown(Gfx *gfx) {
 static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_ui = ui;
+  audio_game = game;
   audio_sync_ui(game, ui);
-  app_frame_base(gfx, game, ui);
+  (void)app_frame_base;
+  app_render(gfx, game, ui);
+  SDL_RenderPresent(gfx->ren);
 }
 
 static int audio_poll_event(SDL_Event *event) {
@@ -108,14 +124,25 @@ static int audio_poll_event(SDL_Event *event) {
       continue;
     }
 
-    if (event->type == SDL_MOUSEBUTTONDOWN &&
-        event->button.button == SDL_BUTTON_LEFT && audio_gfx && audio_ui &&
+    if (event->type == SDL_MOUSEBUTTONDOWN && audio_gfx && audio_ui &&
         audio_ui->screen == SCR_PLAY && audio_ui->pause_reasons == 0) {
       Layout layout = compute_layout(audio_gfx->width, audio_gfx->height,
                                      audio_ui->mode);
       SidebarRects controls;
       compute_sidebar_rects(&layout, &controls);
-      if (point_in(controls.btn[5], event->button.x, event->button.y)) {
+
+      if (point_in(controls.btn[1], event->button.x, event->button.y)) {
+        if (event->button.button == SDL_BUTTON_LEFT) {
+          audio_play_effect(AUDIO_EFFECT_CLICK);
+          clock_pause(audio_ui, PAUSE_MANUAL);
+          if (audio_persistence && audio_game)
+            (void)save_current_session(audio_persistence, audio_game, audio_ui);
+        }
+        continue;
+      }
+
+      if (event->button.button == SDL_BUTTON_LEFT &&
+          point_in(controls.btn[5], event->button.x, event->button.y)) {
         audio_toggle(audio_persistence);
         continue;
       }

@@ -152,6 +152,8 @@ static void audio_build_effects(void) {
       {AUDIO_EFFECT_NEGATIVE, 330, 220, 80, 34},
       {AUDIO_EFFECT_NEUTRAL, 440, 460, 45, 28},
       {AUDIO_EFFECT_BLOCKED, 190, 150, 55, 28},
+      {AUDIO_EFFECT_START, 520, 820, 95, 30},
+      {AUDIO_EFFECT_LEAVE, 520, 300, 85, 28},
   };
   for (unsigned i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {
     if (!audio_make_effect(specs[i].effect, specs[i].start_hz, specs[i].end_hz,

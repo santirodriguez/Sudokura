@@ -53,6 +53,7 @@ typedef enum {
   T_DAILY,
   T_RESUME,
   T_PAUSED,
+  T_PAUSE,
   T_RESTART,
   T_RESTART_PROMPT,
   T_DIFFICULTY,

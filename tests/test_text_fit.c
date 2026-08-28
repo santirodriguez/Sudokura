@@ -1,5 +1,6 @@
 #include "geometry.h"
 #include "i18n.h"
+#include "src/sudokura_sdl/ui_geometry.inc"
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL_ttf.h>
 #ifdef main
@@ -30,13 +31,13 @@ int main(void){
   if(!font)font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
   assert(TTF_Init()==0);
   const int sizes[][2]={{640,480},{1024,720},{1920,1080},{2560,1440},{3440,1440},{360,640},{390,844},{412,915}};
-  const TextKey actions[]={T_RESTART,T_MODE,T_HINT,T_NOTES,T_VERIFY,T_SOUND,T_HELP,T_ABOUT,T_MENU};
+  const TextKey actions[]={T_RESTART,T_PAUSE,T_HINT,T_NOTES,T_VERIFY,T_SOUND,T_HELP,T_ABOUT,T_MENU};
   const TextKey modes[]={T_CLASSIC,T_STRIKES,T_TIME_ATTACK};
   const TextKey difficulties[]={T_EASY,T_MEDIUM,T_HARD};
   const TextKey about_meta[]={T_ABOUT_SEEDS,T_ABOUT_STACK,T_ABOUT_MUSIC};
   const TextKey about_links[]={T_GITHUB,T_REPOSITORY,T_WEBSITE};
   for(unsigned s=0;s<sizeof(sizes)/sizeof(sizes[0]);s++)for(int mode=0;mode<3;mode++){
-    int width=sizes[s][0],height=sizes[s][1];AppGeometry g;assert(geometry_compute(width,height,(GeometryMode)mode,&g));assert(geometry_play_valid(&g,width,height));
+    int width=sizes[s][0],height=sizes[s][1];AppGeometry g;assert(ui_geometry_compute(width,height,(GeometryMode)mode,&g));assert(geometry_play_valid(&g,width,height));
     GeometryFonts tier=geometry_font_sizes(&g,width,height);assert(tier.note>=10&&tier.control>=15&&tier.cell>=16&&tier.heading>=30);
     assert_rect(g.play_language,width,height);assert_rect(g.screen_language,width,height);assert_rect(g.home_logo,width,height);assert_rect(g.home_mode_label,width,height);assert_rect(g.home_difficulty_label,width,height);
     for(int i=0;i<3;i++){assert_rect(g.home_mode[i],width,height);assert_rect(g.home_difficulty[i],width,height);}
@@ -49,6 +50,7 @@ int main(void){
     assert_rect(g.end_summary,width,height);assert_rect(g.progress,width,height);
     for(int i=0;i<9;i++){assert_rect(g.actions[i],width,height);assert_rect(g.palette[i],width,height);assert(g.actions[i].h>=40);assert(g.palette[i].h>=28);}
     if(width<640)for(int i=1;i<9;i++)assert(g.palette[i].y==g.palette[0].y);
+    if(width>=640){int home_bottom=g.home_secondary[0].y+g.home_secondary[0].h;assert(g.home_logo.y>g.screen_language.y+g.screen_language.h);assert(home_bottom<height);}
 
     for(int language=0;language<LANG_COUNT;language++){
       int play_segment=g.play_language.w/3-40,screen_segment=g.screen_language.w/3-40;
@@ -88,5 +90,5 @@ int main(void){
       for(int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;i++){char label[96];snprintf(label,sizeof label,"%d · %s",i+1,tr((Language)language,about_links[i]));assert(fits(font,label,tier.control,10,g.about_links[i].w,g.about_links[i].h));}
     }
   }
-  TTF_Quit();puts("SDL_ttf text-fit tests passed for flags, Home, HUD, Help, About, pause, result and responsive XL tiers");return 0;
+  TTF_Quit();puts("SDL_ttf text-fit tests passed for flags, balanced Home, HUD, Help, About, pause, result and responsive XL tiers");return 0;
 }

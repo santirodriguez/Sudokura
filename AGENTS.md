@@ -14,7 +14,7 @@ These instructions apply to the entire repository.
 
 - Add or update automated tests alongside behavior changes.
 - Keep game rules, persistence, localization, audio state, and responsive geometry testable without unnecessary architecture changes.
-- Use one shared geometry source for rendering and pointer hit-testing.
+- Use one shared geometry result for rendering and pointer hit-testing, including presentation-only Home positioning.
 - All visible controls must remain inside the usable window at supported sizes. Large desktop windows must use the XL geometry tier rather than merely centering the regular 720-pixel board in unused space.
 - Compile as C11 with `-Wall -Wextra -Wpedantic`; CI treats warnings as errors.
 - Treat regressions, sanitizer findings, missing package dependencies/assets, corrupted persistence behavior, and silent CI failures as blockers.
@@ -49,9 +49,10 @@ These instructions apply to the entire repository.
 
 ## Branding
 
-- Files under `assets/branding/source/` and `assets/branding/source-packed/` are the source artwork supplied for Sudokura v1.2 and must be preserved without reinterpretation.
-- Use `sudokura-head.png` as the primary project and in-app identity.
-- Use `sudokura-icon.png` and supplied icon-size variants as sources for platform application icons.
+- `sudokura-head.png` is the full project identity for Home, About, Pause, result, and public documentation. Use the compact application icon in gameplay chrome.
+- `assets/branding/source/android-chrome-512x512.png` is the canonical application-icon master for generated PNG sizes, Windows ICO, macOS ICNS, and the SDL window icon.
+- The retired white-background `favicon-16x16.png`, `favicon-32x32.png`, and `favicon.ico` variants must not be reintroduced.
+- Other retained files under `assets/branding/source/` and `assets/branding/source-packed/` are source artwork supplied for Sudokura v1.2 and must not be reinterpreted.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
 - Do not create or publish a canonical v1.2 screenshot. Only a user-supplied screenshot captured after real package testing may become the release screenshot. Automated diagnostic renders are never canonical artwork.

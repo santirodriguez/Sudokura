@@ -19,7 +19,9 @@ typedef enum {
   AUDIO_EFFECT_NEGATIVE = 2,
   AUDIO_EFFECT_NEUTRAL = 3,
   AUDIO_EFFECT_BLOCKED = 4,
-  AUDIO_EFFECT_COUNT = 5
+  AUDIO_EFFECT_START = 5,
+  AUDIO_EFFECT_LEAVE = 6,
+  AUDIO_EFFECT_COUNT = 7
 } AudioEffect;
 
 bool audio_init(void);

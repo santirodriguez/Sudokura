@@ -47,14 +47,9 @@ direct_source_sizes = {
     "sudokura-head.png": (516, 166),
     "sudokura-icon.png": (512, 512),
     "android-chrome-512x512.png": (512, 512),
-    "favicon-32x32.png": (32, 32),
-    "favicon-16x16.png": (16, 16),
 }
 direct_source_sha256 = {
     "android-chrome-512x512.png": "921633c7e39bf09cf72c1b29499f5f5a889a44f90f059eba8f151cb91136d0ad",
-    "favicon-16x16.png": "33ec2314d6101d95f8139aa4df652dc9c1644f911317208a2d2290d7c9d3ebd6",
-    "favicon-32x32.png": "3de63377286f309fbb54e2618defe92af0e8d5cd0ac84930d4dcc6f513426503",
-    "favicon.ico": "f34cb333f8df7675408f97ac91020a774380fe8d98cf967bf1f69b466224ef65",
     "sudokura-head.png": "e4a12a3465cfa01ea6821e1ceb52c003e87c5db287a571cbc5e67715475a44db",
     "sudokura-icon.png": "6a7ac18b749a60b8d76a04023d0c97a74e3208cefac985a5ad7c8cc122f72f19",
 }
@@ -63,7 +58,6 @@ for name, expected in direct_source_sizes.items():
     assert png_size(source / name) == expected, name
 for name, expected in direct_source_sha256.items():
     assert hashlib.sha256((source / name).read_bytes()).hexdigest() == expected, name
-assert (source / "favicon.ico").read_bytes()[:4] == b"\0\0\1\0"
 
 packed_assets = {
     "apple-touch-icon": (
@@ -102,16 +96,18 @@ for name in ("us.png", "ar.png", "es-ct.png"):
 
 for size in (16, 32, 48, 64, 128, 256, 512, 1024):
     assert png_size(generated / f"sudokura-{size}.png") == (size, size)
-assert (generated / "sudokura-16.png").read_bytes() == (source / "favicon-16x16.png").read_bytes()
-assert (generated / "sudokura-32.png").read_bytes() == (source / "favicon-32x32.png").read_bytes()
-assert (generated / "sudokura-512.png").read_bytes() == (source / "sudokura-icon.png").read_bytes()
+assert (generated / "sudokura-512.png").read_bytes() == (
+    source / "android-chrome-512x512.png"
+).read_bytes()
 ico = (generated / "sudokura.ico").read_bytes()
 assert ico[:4] == b"\0\0\1\0" and struct.unpack("<H", ico[4:6])[0] == 6
 assert ico.count(b"\x89PNG\r\n\x1a\n") == 6
 icns = (generated / "sudokura.icns").read_bytes()
 assert icns[:4] == b"icns" and struct.unpack(">I", icns[4:8])[0] == len(icns)
 
-rgba_resource(generated / "window_icon.c", "sudokura_icon", (128, 128))
+icon_values = rgba_resource(generated / "window_icon.c", "sudokura_icon", (128, 128))
+icon_alpha = icon_values[3::4]
+assert min(icon_alpha) == 0 and max(icon_alpha) == 255
 head_values = rgba_resource(generated / "wordmark.c", "sudokura_wordmark", (516, 166))
 head_alpha = head_values[3::4]
 assert min(head_alpha) == 0 and max(head_alpha) == 255
@@ -124,7 +120,7 @@ for path, symbol in (
     assert min(values[3::4]) == 255
 
 print(
-    "validated six direct and two packed source assets, exact MIT flag sources, 96x72 flag rasters, "
-    "8 PNG icon sizes, 6-size PNG-backed ICO, ICNS, 128x128 window icon, "
-    "516x166 embedded head and three embedded flags"
+    "validated three direct and two packed source assets, exact MIT flag sources, 96x72 flag rasters, "
+    "8 PNG icon sizes from the transparent 512x512 application master, 6-size PNG-backed ICO, ICNS, "
+    "transparent 128x128 window icon, 516x166 embedded head and three embedded flags"
 )
