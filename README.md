@@ -77,10 +77,6 @@ Interface and input effects are generated at runtime.
 - [v1.2.0 implementation record](docs/V1.2.0_IMPLEMENTATION.md)
 - [documentation images](docs/images/README.md)
 
-## Author
-
-Sudokura is created and maintained by [Santiago Rodriguez](https://santiagorodriguez.com/).
-
 ## Support Sudokura
 
 If you enjoy Sudokura and want to support its development, [support Sudokura here](https://santiagorodriguez.com/donate/).
