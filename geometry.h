@@ -6,7 +6,7 @@
 #define GEOMETRY_ACTION_COUNT 9
 #define GEOMETRY_PALETTE_COUNT 9
 #define GEOMETRY_HUD_COUNT 4
-#define GEOMETRY_TITLE_BUTTON_COUNT 5
+#define GEOMETRY_TITLE_BUTTON_COUNT 7
 #define GEOMETRY_END_BUTTON_COUNT 2
 
 typedef struct {
@@ -39,6 +39,8 @@ typedef struct {
   GeoRect end_heading;
   GeoRect end_summary;
   GeoRect end_buttons[GEOMETRY_END_BUTTON_COUNT];
+  GeoRect pause_heading;
+  GeoRect pause_button;
 } AppGeometry;
 
 typedef struct {

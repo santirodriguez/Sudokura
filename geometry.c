@@ -46,11 +46,13 @@ static void grid(GeoRect area, int columns, GeoRect *items, int count) {
 static void common_screens(int width, int height, int margin, AppGeometry *g) {
   int menu_w = width < 520 ? width - margin * 2 : 440;
   int button_h = height < 700 ? 40 : 48;
-  int menu_h = 5 * button_h + 4 * 8;
+  int menu_h = GEOMETRY_TITLE_BUTTON_COUNT * button_h +
+               (GEOMETRY_TITLE_BUTTON_COUNT - 1) * 8;
   int top = (height - menu_h - 96) / 2;
-  if (top < margin + 52) top = margin + 52;
+  if (top < margin + 110) top = margin + 110;
   g->title_heading = (GeoRect){(width-menu_w)/2, top-64, menu_w, 54};
-  grid((GeoRect){(width-menu_w)/2,top,menu_w,menu_h},1,g->title_buttons,5);
+  grid((GeoRect){(width-menu_w)/2,top,menu_w,menu_h},1,g->title_buttons,
+       GEOMETRY_TITLE_BUTTON_COUNT);
   g->info_heading=(GeoRect){margin*2,margin+42,width-margin*4,48};
   g->back_button=(GeoRect){margin*2,height-margin-44,width < 520 ? width-margin*4 : 180,44};
   g->info_body=(GeoRect){margin*2,g->info_heading.y+58,width-margin*4,
@@ -59,6 +61,9 @@ static void common_screens(int width, int height, int margin, AppGeometry *g) {
   g->end_summary=(GeoRect){margin*2,g->end_heading.y+66,width-margin*4,32};
   int end_w=width < 520 ? width-margin*4 : 360;
   grid((GeoRect){(width-end_w)/2,g->end_summary.y+54,end_w,96},1,g->end_buttons,2);
+  int pause_w=width < 520 ? width-margin*4 : 320;
+  g->pause_heading=(GeoRect){(width-pause_w)/2,height/2-50,pause_w,40};
+  g->pause_button=(GeoRect){(width-pause_w)/2,height/2+4,pause_w,48};
 }
 
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) {
@@ -156,8 +161,12 @@ bool geometry_play_valid(const AppGeometry *g,int width,int height) {
   }
   if(!geometry_rect_in_bounds(g->title_heading,width,height)||!geometry_rect_in_bounds(g->info_heading,width,height)||
      !geometry_rect_in_bounds(g->info_body,width,height)||!geometry_rect_in_bounds(g->back_button,width,height)||
-     !geometry_rect_in_bounds(g->end_heading,width,height)||!geometry_rect_in_bounds(g->end_summary,width,height))return false;
-  for(int i=0;i<5;i++)if(!geometry_rect_in_bounds(g->title_buttons[i],width,height))return false;
+     !geometry_rect_in_bounds(g->end_heading,width,height)||!geometry_rect_in_bounds(g->end_summary,width,height)||
+     !geometry_rect_in_bounds(g->pause_heading,width,height)||!geometry_rect_in_bounds(g->pause_button,width,height))return false;
+  if(overlaps(g->language,g->title_heading))return false;
+  for(int i=0;i<GEOMETRY_TITLE_BUTTON_COUNT;i++){
+    if(!geometry_rect_in_bounds(g->title_buttons[i],width,height)||overlaps(g->language,g->title_buttons[i]))return false;
+  }
   for(int i=0;i<2;i++)if(!geometry_rect_in_bounds(g->end_buttons[i],width,height))return false;
   return true;
 }

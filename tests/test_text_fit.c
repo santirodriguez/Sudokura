@@ -23,8 +23,8 @@ int main(void){
   if(!font)font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
   assert(TTF_Init()==0);
   const int sizes[][2]={{640,480},{1024,720},{1920,1080},{3440,1440},{360,640},{390,844},{412,915}};
-  const TextKey actions[]={T_NEW,T_MODE,T_HINT,T_NOTES,T_VERIFY,T_THEME,T_HELP,T_ABOUT,T_MENU};
-  const TextKey primary[]={T_START,T_CLASSIC,T_STRIKES,T_TIME_ATTACK,T_NEXT,T_RETRY,T_BACK};
+  const TextKey actions[]={T_RESTART,T_MODE,T_HINT,T_NOTES,T_VERIFY,T_THEME,T_HELP,T_ABOUT,T_MENU};
+  const TextKey primary[]={T_NEW_GAME,T_CONTINUE,T_DAILY,T_HELP,T_ABOUT,T_QUIT,T_CLASSIC,T_STRIKES,T_TIME_ATTACK,T_NEXT,T_RETRY,T_BACK,T_RESUME,T_PAUSED};
   for(unsigned s=0;s<sizeof(sizes)/sizeof(sizes[0]);s++)for(int mode=0;mode<3;mode++){
     AppGeometry g;assert(geometry_compute(sizes[s][0],sizes[s][1],(GeometryMode)mode,&g));
     GeometryFonts tier=geometry_font_sizes(&g,sizes[s][0],sizes[s][1]);
@@ -34,6 +34,8 @@ int main(void){
       assert(fits(font,language_name((Language)language),20,12,segment,g.language.h));
       for(int i=0;i<9;i++)assert(fits(font,tr((Language)language,actions[i]),tier.control,10,g.actions[i].w,g.actions[i].h));
       for(unsigned i=0;i<sizeof(primary)/sizeof(primary[0]);i++)assert(fits(font,tr((Language)language,primary[i]),tier.control,10,g.title_buttons[0].w,g.title_buttons[0].h));
+      assert(fits(font,tr((Language)language,T_RESUME),tier.control,10,g.pause_button.w,g.pause_button.h));
+      assert(fits(font,tr((Language)language,T_PAUSED),tier.heading,18,g.pause_heading.w,g.pause_heading.h));
       assert(fits(font,tr((Language)language,T_PALETTE),tier.control,10,g.palette_label.w,g.palette_label.h));
     }
   }
