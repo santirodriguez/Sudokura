@@ -280,7 +280,7 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
   out->manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
   out->status=runtime_session_status(game,ui);out->mistakes=ui->mistakes;out->strikes=ui->strikes;
   double elapsed=elapsed_time(ui);if(elapsed<0)elapsed=0;
-  out->elapsed_ms=(uint64_t)(elapsed*1000.0+0.5);
+  out->elapsed_ms=(uint64_t)ceil(elapsed*1000.0);
   out->is_daily=ui->is_daily;out->daily_year=ui->daily_year;
   out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
 }

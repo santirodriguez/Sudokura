@@ -218,6 +218,30 @@ static void test_daily_and_results(void) {
   assert(!session_validate(&lost));
 }
 
+static void test_time_attack_loss_boundary(void) {
+  SessionState timed = make_state();
+  timed.mode = MODE_TIME;
+  timed.strikes = 0;
+  timed.elapsed_ms = UINT64_C(600000);
+  timed.status = SESSION_ACTIVE;
+  assert(session_validate(&timed));
+
+  timed.status = SESSION_LOST;
+  assert(!session_validate(&timed));
+
+  /* capture_session() rounds upward, so any runtime loss just over 600 s
+     serializes beyond the strict > 600 s validation boundary. */
+  timed.elapsed_ms = UINT64_C(600001);
+  assert(session_validate(&timed));
+  assert(session_save_file(session_path, &timed));
+
+  SessionState loaded;
+  memset(&loaded, 0, sizeof(loaded));
+  assert(session_load_file(session_path, &loaded) == STORE_OK);
+  assert(loaded.status == SESSION_LOST);
+  assert(loaded.elapsed_ms == UINT64_C(600001));
+}
+
 static void test_semantic_rejections(void) {
   SessionState state = make_state();
   int first = first_playable(&state.game);
@@ -308,6 +332,7 @@ int main(void) {
   test_preferences();
   test_session_roundtrip();
   test_daily_and_results();
+  test_time_attack_loss_boundary();
   test_semantic_rejections();
   test_incompatible_generator_revision();
   test_corruption_and_quarantine();
