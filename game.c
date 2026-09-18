@@ -499,8 +499,8 @@ bool game_new_difficulty(Game *game, uint64_t seed,
                                       SUDOKURA_GENERATOR_REVISION);
 }
 
-void game_new(Game *game, uint64_t seed) {
-  (void)game_new_difficulty(game, seed, DIFFICULTY_MEDIUM);
+bool game_new(Game *game, uint64_t seed) {
+  return game_new_difficulty(game, seed, DIFFICULTY_MEDIUM);
 }
 
 static bool leap_year(int year) {
