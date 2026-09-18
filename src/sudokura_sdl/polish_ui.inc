@@ -89,16 +89,19 @@ static void polish_home_button(Gfx *gfx, Theme theme, SDL_Rect rect,
 
 static void polish_home_context_button(
     Gfx *gfx, Theme theme, SDL_Rect rect, const char *label,
-    const char *detail, bool disabled, bool focused, int preferred) {
+    const char *detail, bool primary, bool disabled, bool focused,
+    int preferred) {
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
   bool hover = !disabled && point_in(rect, mx, my);
   bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
   SDL_Color background =
-      disabled ? theme.palette_bg : (hover ? theme.hover : theme.btn);
+      disabled ? theme.palette_bg
+               : (primary ? theme.title : (hover ? theme.hover : theme.btn));
   SDL_Rect face =
       polish_button_face(gfx, theme, rect, background, pressed, disabled);
-  SDL_Color main_color = disabled ? theme.dim : theme.btnfg;
+  SDL_Color main_color =
+      disabled ? theme.dim : (primary ? theme.bg : theme.btnfg);
   SDL_Rect main = {face.x + 2, face.y + 1, face.w - 4,
                    face.h * 3 / 5};
   SDL_Rect sub = {face.x + 2, face.y + face.h * 3 / 5 - 2,
@@ -178,12 +181,10 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
              total_s / 60u, total_s % 60u);
   }
   SDL_Rect continue_rect = sdl_rect(geometry.home_primary[1]);
-  if (normal_resumable)
-    draw_round_rect(gfx->ren, continue_rect, 7, theme.title);
   polish_home_context_button(
       gfx, theme, continue_rect,
       tr(ui->language, T_CONTINUE_NORMAL), normal_detail,
-      !normal_resumable,
+      normal_resumable, !normal_resumable,
       home_focus == HOME_FOCUS_CONTINUE, fonts.control);
 
   const char *daily_label = tr(ui->language, T_DAILY);
@@ -212,7 +213,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   }
   polish_home_context_button(
       gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
-      false, home_focus == HOME_FOCUS_DAILY, fonts.control);
+      false, false, home_focus == HOME_FOCUS_DAILY, fonts.control);
 
   const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT] = {
       T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
