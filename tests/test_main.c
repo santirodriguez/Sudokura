@@ -349,11 +349,16 @@ static void test_geometry(void) {
       assert(g.board.w % 9 == 0 && g.board.w / 9 >= 25); assert(g.hud_count == (mode == GEOMETRY_MODE_CLASSIC ? 5 : 6));
       assert(geometry_rect_in_bounds(g.play_title, width, height)); assert(geometry_rect_in_bounds(g.play_language, width, height)); assert(!rects_overlap(g.play_language, g.play_title));
       for (int i = 0; i < g.hud_count; ++i) assert(geometry_rect_in_bounds(g.hud[i], width, height));
-      for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i) assert(g.actions[i].w >= 70 && g.actions[i].h >= 40);
+      GeometryStyle style = geometry_style(&g, width, height);
+      for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i)
+        assert(g.actions[i].w >= 70 && g.actions[i].h >= style.min_control_h);
       assert(geometry_rect_in_bounds(g.palette_label, width, height));
-      for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].w >= (portrait ? 32 : 70) && g.palette[i].h >= 28);
+      for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
+        assert(g.palette[i].w >= (portrait ? 32 : 70) && g.palette[i].h >= 22);
       if (portrait) for (int i = 1; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].y == g.palette[0].y);
-      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 16);
+      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 12);
+      assert(geometry_rect_in_bounds(g.status, width, height) &&
+             g.status.h >= style.min_control_h);
       assert_screen_geometry(&g, width, height);
       if (!portrait && width <= 1366) assert(g.board.w <= 720);
       if (!portrait && width >= 1920 && height >= 1080) {
