@@ -441,11 +441,10 @@ static StoreStatus decode_result(ProfileReader *reader, ProfileResult *result) {
   loaded.daily_day = reader_u8(reader);
   loaded.assisted = assisted != 0;
   loaded.is_daily = is_daily != 0;
-  if (!reader->ok || assisted > 1 || is_daily > 1 ||
-      loaded.generator_revision != SUDOKURA_GENERATOR_REVISION)
-    return loaded.generator_revision != SUDOKURA_GENERATOR_REVISION
-               ? STORE_INCOMPATIBLE
-               : STORE_CORRUPT;
+  if (!reader->ok || assisted > 1 || is_daily > 1)
+    return STORE_CORRUPT;
+  if (loaded.generator_revision != SUDOKURA_GENERATOR_REVISION)
+    return STORE_INCOMPATIBLE;
   if (!valid_result(&loaded)) return STORE_CORRUPT;
   *result = loaded;
   return STORE_OK;
@@ -642,45 +641,6 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   profile_defaults(&candidate);
   bool imported_any = false;
 
-  if (legacy && legacy->preferences_path &&
-      store_file_exists(legacy->preferences_path)) {
-    Preferences preferences;
-    preferences_defaults(&preferences);
-    status = preferences_load_file(legacy->preferences_path, &preferences);
-    if (status == STORE_INCOMPATIBLE) return status;
-    if (status == STORE_IO_ERROR) return status;
-    if (status == STORE_OK) {
-      candidate.preferences = preferences;
-      imported_any = true;
-    }
-  }
-
-  if (legacy && legacy->audio_levels_path &&
-      store_file_exists(legacy->audio_levels_path)) {
-    uint8_t music = candidate.preferences.music_volume;
-    uint8_t fx = candidate.preferences.fx_volume;
-    if (parse_legacy_audio_levels(legacy->audio_levels_path, &music, &fx)) {
-      candidate.preferences.music_volume = music;
-      candidate.preferences.fx_volume = fx;
-      imported_any = true;
-    }
-  }
-
-  if (legacy && legacy->session_path && store_file_exists(legacy->session_path)) {
-    SessionState session;
-    memset(&session, 0, sizeof(session));
-    status = session_load_file(legacy->session_path, &session);
-    if (status == STORE_INCOMPATIBLE || status == STORE_IO_ERROR) return status;
-    if (status == STORE_CORRUPT) return status;
-    if (status == STORE_OK) {
-      ProfileSlot *slot = session.is_daily ? &candidate.daily : &candidate.normal;
-      if (!profile_slot_set(slot, &session, false)) return STORE_CORRUPT;
-      imported_any = true;
-    }
-  }
-
-  if (!profile_validate(&candidate)) return STORE_CORRUPT;
-
   if (legacy) {
     status = backup_legacy_file(legacy->session_path,
                                 legacy->session_backup_path);
@@ -692,6 +652,60 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
                                 legacy->audio_levels_backup_path);
     if (status != STORE_OK) return status;
   }
+
+  const char *preferences_source =
+      legacy && legacy->preferences_backup_path &&
+              store_file_exists(legacy->preferences_backup_path)
+          ? legacy->preferences_backup_path
+          : legacy ? legacy->preferences_path : NULL;
+  if (preferences_source && store_file_exists(preferences_source)) {
+    Preferences preferences;
+    preferences_defaults(&preferences);
+    status = preferences_load_file(preferences_source, &preferences);
+    if (status == STORE_INCOMPATIBLE || status == STORE_IO_ERROR)
+      return status;
+    if (status == STORE_OK) {
+      candidate.preferences = preferences;
+      imported_any = true;
+    }
+  }
+
+  const char *audio_source =
+      legacy && legacy->audio_levels_backup_path &&
+              store_file_exists(legacy->audio_levels_backup_path)
+          ? legacy->audio_levels_backup_path
+          : legacy ? legacy->audio_levels_path : NULL;
+  if (audio_source && store_file_exists(audio_source)) {
+    uint8_t music = candidate.preferences.music_volume;
+    uint8_t fx = candidate.preferences.fx_volume;
+    if (parse_legacy_audio_levels(audio_source, &music, &fx)) {
+      candidate.preferences.music_volume = music;
+      candidate.preferences.fx_volume = fx;
+      imported_any = true;
+    }
+  }
+
+  const char *session_source =
+      legacy && legacy->session_backup_path &&
+              store_file_exists(legacy->session_backup_path)
+          ? legacy->session_backup_path
+          : legacy ? legacy->session_path : NULL;
+  if (session_source && store_file_exists(session_source)) {
+    SessionState session;
+    memset(&session, 0, sizeof(session));
+    status = session_load_file(session_source, &session);
+    if (status == STORE_INCOMPATIBLE || status == STORE_IO_ERROR)
+      return status;
+    if (status == STORE_CORRUPT) return status;
+    if (status == STORE_OK) {
+      ProfileSlot *slot =
+          session.is_daily ? &candidate.daily : &candidate.normal;
+      if (!profile_slot_set(slot, &session, false)) return STORE_CORRUPT;
+      imported_any = true;
+    }
+  }
+
+  if (!profile_validate(&candidate)) return STORE_CORRUPT;
 
   status = profile_save_file(profile_path, profile_backup_path, &candidate);
   if (status != STORE_OK) return status;
