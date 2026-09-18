@@ -170,7 +170,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
     }
   }
 
-  SidebarRects R;compute_sidebar_rects(&L,&R);int tw,thh;SDL_Rect title_rect=sdl_rect(L.model.play_title);draw_wordmark(g,title_rect);
+  SidebarRects R;compute_sidebar_rects(&L,&R);int tw,thh;
   char hud[GEOMETRY_HUD_COUNT][80]={{0}};double el=elapsed_time(ui);const char*mode_name=tr(ui->language,mode_key(ui->mode));
   if(ui->is_daily)snprintf(hud[0],sizeof hud[0],"%s",tr(ui->language,T_DAILY_SHORT));else snprintf(hud[0],sizeof hud[0],"%s: %s",tr(ui->language,T_MODE),mode_name);
   snprintf(hud[1],sizeof hud[1],"%s: %s",tr(ui->language,T_DIFFICULTY),difficulty_name(ui->language,game->difficulty));
@@ -180,17 +180,6 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   if(ui->mode==MODE_TIME){int rem=(int)(ui->time_limit_s-el);if(rem<0)rem=0;snprintf(hud[5],sizeof hud[5],"%s: %02d:%02d",tr(ui->language,T_TARGET),rem/60,rem%60);}else if(ui->mode==MODE_STRIKES){int left=ui->strikes_max-ui->strikes;if(left<0)left=0;snprintf(hud[5],sizeof hud[5],"%s: %d/%d",tr(ui->language,T_STRIKES_LEFT),left,ui->strikes_max);}
   SDL_GetMouseState(&mx,&my);
   for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);bool strict_chip=i==4,hover=strict_chip&&point_in(hr,mx,my);SDL_Color bg=strict_chip&&ui->strict_mode?th.title:(hover?th.hover:th.palette_bg);SDL_Color fg=strict_chip&&ui->strict_mode?th.bg:th.dim;draw_round_rect(g->ren,hr,hr.h/2,bg);(void)draw_fitted_text(g,hud[i],fg,hr,fonts.hud,10);}
-
-  const char*labels[]={tr(ui->language,T_RESTART),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_SOUND),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
-  for(int i=0;i<R.count_btn;i++){SDL_Rect rc=R.btn[i];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),active=(i==3&&ui->notes_mode)||(i==5&&audio_is_enabled());SDL_Color color=active?th.title:pressed?th.sel:hover?th.hover:(i==0?th.title:th.btn);SDL_Rect paint=rc;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}draw_round_rect(g->ren,paint,7,color);(void)draw_fitted_text(g,labels[i],active?th.bg:th.btnfg,paint,fonts.control,10);}
-
-  (void)draw_fitted_text(g,tr(ui->language,T_PALETTE),th.dim,R.palette_label,fonts.help,10);
-  for(int n=1;n<=9;n++){
-    SDL_Rect rc=R.pal[n-1];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),complete=palette_number_complete(game,ui->mode,n),selected=game->puzzle[IDX(ui->sel_r,ui->sel_c)]==n;
-    SDL_Color color=complete?th.btn:(selected?th.title:pressed?th.sel:hover?th.hover:th.palette_bg);SDL_Color fg=complete?th.dim:th.palette_fg;SDL_Rect paint=rc;if(pressed&&!complete&&paint.h>4){paint.y+=2;paint.h-=2;}
-    draw_round_rect(g->ren,paint,7,color);char nb[2]={(char)('0'+n),0};(void)draw_fitted_text(g,nb,fg,paint,fonts.control+4,12);
-    if(complete){int x1=paint.x+paint.w-16,y1=paint.y+paint.h-11;draw_line(g->ren,x1,y1,x1+4,y1+4,th.dim);draw_line(g->ren,x1+4,y1+4,x1+10,y1-4,th.dim);}
-  }
 
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;int filled=inner_w*progress/100;if(filled>0)draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);
   char progress_text[64];snprintf(progress_text,sizeof progress_text,"%s %d%%",tr(ui->language,T_PROGRESS),progress);(void)draw_fitted_text(g,progress_text,progress>52?th.bg:th.dim,R.progress,fonts.hud,10);
