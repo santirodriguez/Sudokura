@@ -499,6 +499,10 @@ GameInputResult game_apply_input(Game *game, int row, int column, int value,
                                                    : GAME_INPUT_NO_CHANGE;
   }
 
+  if (game->puzzle[index] == value) {
+    return GAME_INPUT_NO_CHANGE;
+  }
+
   if (strict && !allowed(game->puzzle, row, column, value)) {
     return GAME_INPUT_STRICT_REJECTED;
   }
