@@ -277,8 +277,8 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
               controls.btn[PLAY_ACTION_ABOUT].y - 4, separator);
 }
 
-static void app_render(Gfx *gfx, const Game *game, UI *ui) {
-  app_render_about_base(gfx, game, ui);
+static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
+  app_render_polish(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
   rc2_render_audio_panel(gfx, ui);
 }
@@ -286,7 +286,7 @@ static void app_render(Gfx *gfx, const Game *game, UI *ui) {
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
   bool entering_home = ui && ui->screen != SCR_TITLE;
   audio_settings_open = false;
-  go_home_base(persistence, game, ui);
+  go_home_polish(persistence, game, ui);
   if (persistence && ui)
     ui->has_session = persistence->enabled && session_can_continue(&persistence->saved);
   if (entering_home) ui_home_cue_requested = true;
