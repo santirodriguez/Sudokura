@@ -573,7 +573,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       [PLAY_ACTION_HINT] = T_HINT,
       [PLAY_ACTION_NOTES] = T_NOTES,
       [PLAY_ACTION_VERIFY] = T_VERIFY,
-      [PLAY_ACTION_AUDIO] = T_SOUND,
+      [PLAY_ACTION_AUDIO] = T_SETTINGS,
       [PLAY_ACTION_HELP] = T_HELP,
       [PLAY_ACTION_ABOUT] = T_ABOUT,
   };
