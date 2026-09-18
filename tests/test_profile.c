@@ -192,6 +192,17 @@ static void test_bounds_and_future_container(void) {
   assert(!profile_validate(&profile));
 
   profile_defaults(&profile);
+  profile.result_count = 1;
+  profile.results[0] = (ProfileResult){
+      .seed = UINT64_C(1),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM,
+      .mode = MODE_CLASSIC,
+      .status = (SessionStatus)-1,
+  };
+  assert(!profile_validate(&profile));
+
+  profile_defaults(&profile);
   assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
          STORE_OK);
 
