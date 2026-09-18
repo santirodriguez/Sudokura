@@ -93,8 +93,15 @@ static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
                      tr(ui->language, T_CANCEL));
 }
 
-static bool restart_current_session_confirmed(const Game *game, UI *ui,
+static bool restart_current_session_confirmed(Persistence *p,
+                                              const Game *game, UI *ui,
                                               Gfx *g) {
+  if (!p || !game || !ui || !g) return false;
+  unsigned dirty_bit = ui->is_daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
+  SaveGateResult gate =
+      resolve_unsaved(p, g, ui, dirty_bit, T_UNSAVED_REPLACE);
+  if (gate == SAVE_GATE_BACK) return false;
+
   if (!game_has_meaningful_progress(game, ui->mistakes, ui->strikes))
     return true;
   clock_pause(ui, PAUSE_MODAL);
@@ -542,10 +549,13 @@ int main(int argc, char **argv) {
           } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
             ui_button_click();
             victory_animation_reset();
-            if (ui.result == RES_WIN)
-              start_new_session(&persistence, &game, &ui);
-            else
+            if (ui.result == RES_WIN) {
+              if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
+                start_new_session(&persistence, &game, &ui);
+            } else if (restart_current_session_confirmed(
+                           &persistence, &game, &ui, &g)) {
               restart_current_session(&persistence, &game, &ui);
+            }
           }
           continue;
         }
@@ -703,10 +713,13 @@ int main(int argc, char **argv) {
           if (point_in(sdl_rect(a.end_buttons[0]), x, y)) {
             ui_button_click();
             victory_animation_reset();
-            if (ui.result == RES_WIN)
-              start_new_session(&persistence, &game, &ui);
-            else
+            if (ui.result == RES_WIN) {
+              if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
+                start_new_session(&persistence, &game, &ui);
+            } else if (restart_current_session_confirmed(
+                           &persistence, &game, &ui, &g)) {
               restart_current_session(&persistence, &game, &ui);
+            }
           } else if (point_in(sdl_rect(a.end_buttons[1]), x, y)) {
             ui_button_click();
             victory_animation_reset();
@@ -796,7 +809,7 @@ int main(int argc, char **argv) {
             (void)checkpoint_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_RESTART], x, y)) {
             ui_button_click();
-            if (restart_current_session_confirmed(&game, &ui, &g)) {
+            if (restart_current_session_confirmed(&persistence, &game, &ui, &g)) {
               victory_animation_reset();
               restart_current_session(&persistence, &game, &ui);
             }
