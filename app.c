@@ -195,8 +195,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     return outcome;
   }
 
-  /* Undo/redo are Phase 4 features. Continue requires a loaded SessionState
-     from the storage boundary. Their semantic identities live here now, but
-     no empty UI controls are exposed before those implementations exist. */
+  /* Undo/redo are Phase 4 features. Their semantic identities live here
+     now, but no empty UI controls are exposed before those implementations
+     exist. */
   return outcome;
 }
