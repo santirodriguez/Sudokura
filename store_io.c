@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -189,16 +190,24 @@ StoreStatus store_read_file(const char *path, unsigned char *data,
 
   errno = 0;
 #if defined(_WIN32)
+  wchar_t wide_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(path, wide_path,
+                    sizeof(wide_path) / sizeof(wide_path[0])))
+    return STORE_IO_ERROR;
+  DWORD attributes = GetFileAttributesW(wide_path);
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+               ? STORE_NOT_FOUND
+               : STORE_IO_ERROR;
+  }
   FILE *file = store_fopen(path, L"rb");
 #else
   FILE *file = store_fopen(path, "rb");
 #endif
   if (!file) {
 #if defined(_WIN32)
-    DWORD error = GetLastError();
-    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
-               ? STORE_NOT_FOUND
-               : STORE_IO_ERROR;
+    return STORE_IO_ERROR;
 #else
     return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
 #endif
@@ -329,15 +338,11 @@ StoreLockStatus store_writer_lock_acquire(const char *directory,
 #else
   int fd = open(path, O_RDWR | O_CREAT, 0600);
   if (fd < 0) return STORE_LOCK_ERROR;
-  struct flock guard;
-  memset(&guard, 0, sizeof(guard));
-  guard.l_type = F_WRLCK;
-  guard.l_whence = SEEK_SET;
-  if (fcntl(fd, F_SETLK, &guard) != 0) {
+  if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
     int error = errno;
     close(fd);
-    return error == EACCES || error == EAGAIN ? STORE_LOCK_BUSY
-                                              : STORE_LOCK_ERROR;
+    return error == EWOULDBLOCK || error == EAGAIN ? STORE_LOCK_BUSY
+                                                    : STORE_LOCK_ERROR;
   }
   lock->native_handle = (intptr_t)fd;
 #endif
