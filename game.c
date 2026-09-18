@@ -645,60 +645,202 @@ bool game_toggle_note(Game *game, int row, int column, int value) {
   return true;
 }
 
-GameInputResult game_apply_input(Game *game, int row, int column, int value,
-                                 bool notes_mode, bool strict) {
-  if (!game || !valid_cell(row, column) || value < 0 || value > 9) {
+static int collect_peer_indices(int row, int column, int peers[20]) {
+  bool seen[SUDOKU_CELLS] = {false};
+  int count = 0;
+  int target = IDX(row, column);
+  seen[target] = true;
+  for (int c = 0; c < 9; ++c) {
+    int index = IDX(row, c);
+    if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+  }
+  for (int r = 0; r < 9; ++r) {
+    int index = IDX(r, column);
+    if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+  }
+  int box_row = row - row % 3;
+  int box_column = column - column % 3;
+  for (int r = box_row; r < box_row + 3; ++r) {
+    for (int c = box_column; c < box_column + 3; ++c) {
+      int index = IDX(r, c);
+      if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+    }
+  }
+  return count;
+}
+
+bool game_edit_valid(const GameEdit *edit) {
+  const uint16_t valid_notes = UINT16_C(0x03fe);
+  if (!edit || edit->row >= 9 || edit->column >= 9 ||
+      edit->before_value > 9 || edit->after_value > 9 ||
+      (edit->before_notes & (uint16_t)~valid_notes) != 0 ||
+      (edit->after_notes & (uint16_t)~valid_notes) != 0 ||
+      edit->before_hinted > 1 || edit->after_hinted > 1 ||
+      edit->peer_note_value > 9)
+    return false;
+  int peers[20];
+  int peer_count = collect_peer_indices(edit->row, edit->column, peers);
+  uint32_t valid_mask = (UINT32_C(1) << peer_count) - UINT32_C(1);
+  if ((edit->peer_notes_removed & ~valid_mask) != 0) return false;
+  if (edit->peer_notes_removed != 0 &&
+      (edit->peer_note_value < 1 || edit->peer_note_value > 9))
+    return false;
+  return true;
+}
+
+static GameInputResult game_apply_input_core(Game *game, int row, int column,
+                                             int value, bool notes_mode,
+                                             bool strict) {
+  if (!game || !valid_cell(row, column) || value < 0 || value > 9)
     return GAME_INPUT_NO_CHANGE;
-  }
   int index = IDX(row, column);
-  if (game_cell_locked(game, row, column)) {
-    return GAME_INPUT_LOCKED;
-  }
+  if (game_cell_locked(game, row, column)) return GAME_INPUT_LOCKED;
 
   if (notes_mode) {
-    if (value < 1 || value > 9 || game->puzzle[index]) {
+    if (value < 1 || value > 9 || game->puzzle[index])
       return GAME_INPUT_NO_CHANGE;
-    }
     bool had_note = (game->notes[index] & (1u << value)) != 0;
-    if (!game_toggle_note(game, row, column, value)) {
+    if (!game_toggle_note(game, row, column, value))
       return GAME_INPUT_NO_CHANGE;
-    }
     return had_note ? GAME_INPUT_NOTE_REMOVED : GAME_INPUT_NOTE_ADDED;
   }
 
   if (value == 0) {
-    if (game->puzzle[index] == 0 && game->notes[index] == 0) {
+    if (game->puzzle[index] == 0 && game->notes[index] == 0)
       return GAME_INPUT_NO_CHANGE;
-    }
     return game_place(game, row, column, 0, false) ? GAME_INPUT_CLEARED
                                                    : GAME_INPUT_NO_CHANGE;
   }
 
-  if (game->puzzle[index] == value) {
-    return GAME_INPUT_NO_CHANGE;
-  }
-
-  if (strict && !allowed(game->puzzle, row, column, value)) {
+  if (game->puzzle[index] == value) return GAME_INPUT_NO_CHANGE;
+  if (strict && !allowed(game->puzzle, row, column, value))
     return GAME_INPUT_STRICT_REJECTED;
-  }
-  if (!game_place(game, row, column, value, false)) {
+  if (!game_place(game, row, column, value, false))
     return GAME_INPUT_NO_CHANGE;
-  }
   return value == game->solution[index] ? GAME_INPUT_CORRECT : GAME_INPUT_WRONG;
 }
 
-bool game_hint(Game *game, int row, int column) {
-  if (!game || !valid_cell(row, column)) {
-    return false;
+GameInputResult game_apply_input(Game *game, int row, int column, int value,
+                                 bool notes_mode, bool strict) {
+  return game_apply_input_core(game, row, column, value, notes_mode, strict);
+}
+
+GameInputResult game_apply_input_recorded(Game *game, int row, int column,
+                                          int value, bool notes_mode,
+                                          bool strict, bool remove_peer_notes,
+                                          GameEdit *edit) {
+  if (edit) memset(edit, 0, sizeof(*edit));
+  if (!game || !valid_cell(row, column)) return GAME_INPUT_NO_CHANGE;
+  int index = IDX(row, column);
+  GameEdit staged = {
+      .row = (uint8_t)row,
+      .column = (uint8_t)column,
+      .before_value = (uint8_t)game->puzzle[index],
+      .before_notes = game->notes[index],
+      .before_hinted = game->hinted[index],
+  };
+
+  GameInputResult result =
+      game_apply_input_core(game, row, column, value, notes_mode, strict);
+  bool changed = result == GAME_INPUT_CORRECT || result == GAME_INPUT_WRONG ||
+                 result == GAME_INPUT_CLEARED ||
+                 result == GAME_INPUT_NOTE_ADDED ||
+                 result == GAME_INPUT_NOTE_REMOVED;
+  if (!changed) return result;
+
+  staged.after_value = (uint8_t)game->puzzle[index];
+  staged.after_notes = game->notes[index];
+  staged.after_hinted = game->hinted[index];
+
+  if (remove_peer_notes && !notes_mode && value >= 1 && value <= 9 &&
+      (result == GAME_INPUT_CORRECT || result == GAME_INPUT_WRONG)) {
+    int peers[20];
+    int peer_count = collect_peer_indices(row, column, peers);
+    uint16_t bit = (uint16_t)(1u << value);
+    staged.peer_note_value = (uint8_t)value;
+    for (int p = 0; p < peer_count; ++p) {
+      int peer = peers[p];
+      if (game->puzzle[peer] == 0 && (game->notes[peer] & bit) != 0) {
+        game->notes[peer] &= (uint16_t)~bit;
+        staged.peer_notes_removed |= UINT32_C(1) << p;
+      }
+    }
   }
+
+  if (edit) *edit = staged;
+  return result;
+}
+
+bool game_apply_edit(Game *game, const GameEdit *edit, bool forward) {
+  if (!game || !game_edit_valid(edit)) return false;
+  int index = IDX(edit->row, edit->column);
+  if (game->fixed[index]) return false;
+
+  int expected_value = forward ? edit->before_value : edit->after_value;
+  uint16_t expected_notes = forward ? edit->before_notes : edit->after_notes;
+  unsigned char expected_hinted =
+      forward ? edit->before_hinted : edit->after_hinted;
+  if (game->puzzle[index] != expected_value ||
+      game->notes[index] != expected_notes ||
+      game->hinted[index] != expected_hinted)
+    return false;
+
+  int peers[20];
+  int peer_count = collect_peer_indices(edit->row, edit->column, peers);
+  uint16_t bit = edit->peer_note_value
+                     ? (uint16_t)(1u << edit->peer_note_value)
+                     : 0;
+  for (int p = 0; p < peer_count; ++p) {
+    if ((edit->peer_notes_removed & (UINT32_C(1) << p)) == 0) continue;
+    int peer = peers[p];
+    if (game->puzzle[peer] != 0 || game->fixed[peer] || game->hinted[peer])
+      return false;
+    bool has_note = (game->notes[peer] & bit) != 0;
+    if ((forward && !has_note) || (!forward && has_note)) return false;
+  }
+
+  game->puzzle[index] = forward ? edit->after_value : edit->before_value;
+  game->notes[index] = forward ? edit->after_notes : edit->before_notes;
+  game->hinted[index] = forward ? edit->after_hinted : edit->before_hinted;
+  for (int p = 0; p < peer_count; ++p) {
+    if ((edit->peer_notes_removed & (UINT32_C(1) << p)) == 0) continue;
+    int peer = peers[p];
+    if (forward)
+      game->notes[peer] &= (uint16_t)~bit;
+    else
+      game->notes[peer] |= bit;
+  }
+  return true;
+}
+
+bool game_hint(Game *game, int row, int column) {
+  if (!game || !valid_cell(row, column)) return false;
   int index = IDX(row, column);
   if (game_cell_locked(game, row, column) ||
-      game->puzzle[index] == game->solution[index]) {
+      game->puzzle[index] == game->solution[index])
     return false;
-  }
   game->puzzle[index] = game->solution[index];
   game->notes[index] = 0;
   game->hinted[index] = 1;
+  return true;
+}
+
+bool game_hint_recorded(Game *game, int row, int column, GameEdit *edit) {
+  if (edit) memset(edit, 0, sizeof(*edit));
+  if (!game || !valid_cell(row, column)) return false;
+  int index = IDX(row, column);
+  GameEdit staged = {
+      .row = (uint8_t)row,
+      .column = (uint8_t)column,
+      .before_value = (uint8_t)game->puzzle[index],
+      .before_notes = game->notes[index],
+      .before_hinted = game->hinted[index],
+  };
+  if (!game_hint(game, row, column)) return false;
+  staged.after_value = (uint8_t)game->puzzle[index];
+  staged.after_notes = game->notes[index];
+  staged.after_hinted = game->hinted[index];
+  if (edit) *edit = staged;
   return true;
 }
 
