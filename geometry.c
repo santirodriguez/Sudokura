@@ -365,7 +365,7 @@ GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
 
 GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
   (void)height;
-  GeometryStyle style = {4, 6, 10, 16, 7, 14, 28, 1, 3};
+  GeometryStyle style = {4, 6, 10, 16, 7, 14, 26, 1, 3};
   if (!g) return style;
   bool portrait = width < 640;
   bool xl = width >= 1600 && g->board.w >= 810;
@@ -413,7 +413,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
   }
   for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) {
     if (!geometry_rect_in_bounds(g->palette[i], width, height) ||
-        g->palette[i].h < 28 || g->palette[i].w < (portrait ? 32 : 70))
+        g->palette[i].h < 22 || g->palette[i].w < (portrait ? 32 : 70))
       return false;
   }
 
