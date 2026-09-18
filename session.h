@@ -57,6 +57,7 @@ typedef struct {
 void preferences_defaults(Preferences *preferences);
 bool preferences_validate(const Preferences *preferences);
 bool session_validate(const SessionState *session);
+bool session_validate_runtime(const SessionState *session);
 
 bool preferences_save_file(const char *path, const Preferences *preferences);
 StoreStatus preferences_load_file(const char *path, Preferences *preferences);
