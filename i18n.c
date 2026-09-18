@@ -82,6 +82,11 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_WEBSITE] = "Website",
         [T_SUPPORT] = "Support Sudokura",
         [T_LINK_ERROR] = "Could not open the link.",
+        [T_STORAGE_ERROR] = "Storage error",
+        [T_PROFILE_IN_USE] = "Sudokura is already using this profile in another instance. Close the other instance before opening this one.",
+        [T_PROFILE_CORRUPT] = "The saved profile is damaged. It was left untouched so it can be recovered.",
+        [T_PROFILE_INCOMPATIBLE] = "This profile was created by an incompatible Sudokura version. It was left untouched.",
+        [T_PROFILE_IO_ERROR] = "Sudokura could not safely open its profile storage. No saved data was replaced.",
     },
     [LANG_ES] = {
         [T_LANGUAGE] = "Idioma",
@@ -163,6 +168,11 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_WEBSITE] = "Sitio web",
         [T_SUPPORT] = "Apoyar Sudokura",
         [T_LINK_ERROR] = "No se pudo abrir el enlace.",
+        [T_STORAGE_ERROR] = "Error de almacenamiento",
+        [T_PROFILE_IN_USE] = "Sudokura ya está usando este perfil en otra instancia. Cierra la otra instancia antes de abrir esta.",
+        [T_PROFILE_CORRUPT] = "El perfil guardado está dañado. Se dejó intacto para que pueda recuperarse.",
+        [T_PROFILE_INCOMPATIBLE] = "Este perfil fue creado por una versión incompatible de Sudokura. Se dejó intacto.",
+        [T_PROFILE_IO_ERROR] = "Sudokura no pudo abrir de forma segura el almacenamiento del perfil. No se reemplazaron datos guardados.",
     },
     [LANG_CA] = {
         [T_LANGUAGE] = "Llengua",
@@ -244,6 +254,11 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_WEBSITE] = "Lloc web",
         [T_SUPPORT] = "Donar suport a Sudokura",
         [T_LINK_ERROR] = "No s'ha pogut obrir l'enllaç.",
+        [T_STORAGE_ERROR] = "Error d'emmagatzematge",
+        [T_PROFILE_IN_USE] = "Sudokura ja està utilitzant aquest perfil en una altra instància. Tanca l'altra instància abans d'obrir aquesta.",
+        [T_PROFILE_CORRUPT] = "El perfil desat està malmès. S'ha deixat intacte perquè es pugui recuperar.",
+        [T_PROFILE_INCOMPATIBLE] = "Aquest perfil va ser creat per una versió incompatible de Sudokura. S'ha deixat intacte.",
+        [T_PROFILE_IO_ERROR] = "Sudokura no ha pogut obrir de manera segura l'emmagatzematge del perfil. No s'han substituït dades desades.",
     },
 };
 
