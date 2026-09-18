@@ -45,6 +45,7 @@ typedef struct {
   int source_cells[HUMAN_STEP_SOURCE_MAX];
   int affected_count;
   int affected_cells[HUMAN_STEP_AFFECTED_MAX];
+  uint16_t affected_masks[HUMAN_STEP_AFFECTED_MAX];
   char explanation[HUMAN_EXPLANATION_CAPACITY];
 } HumanStep;
 
@@ -76,8 +77,13 @@ typedef struct {
   int contradiction_cell;
 } HumanHint;
 
+typedef bool (*HumanStepObserver)(const HumanStep *step, void *userdata);
+
 const char *human_technique_name(HumanTechnique technique);
 bool human_evaluate(const int puzzle[HUMAN_CELL_COUNT], HumanEvaluation *out);
+bool human_evaluate_trace(const int puzzle[HUMAN_CELL_COUNT],
+                          HumanEvaluation *out,
+                          HumanStepObserver observer, void *userdata);
 bool human_hint_analyze(const int puzzle[HUMAN_CELL_COUNT], HumanHint *out);
 bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
                                    HumanEvaluation *out,
