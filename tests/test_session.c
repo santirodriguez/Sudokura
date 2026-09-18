@@ -378,6 +378,7 @@ int main(void) {
   assert(session_load_file(session_path, &missing) == STORE_NOT_FOUND);
   test_preferences();
   test_session_roundtrip();
+  test_revision2_session_compatibility();
   test_daily_and_results();
   test_time_attack_loss_boundary();
   test_semantic_rejections();
