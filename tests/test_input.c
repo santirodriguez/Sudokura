@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 int main(void) {
   for (int value = 0; value <= 9; ++value)
@@ -52,6 +53,24 @@ int main(void) {
   assert(input_info_shortcut(SDLK_F1) == INPUT_INFO_HELP);
   assert(input_info_shortcut(SDLK_F2) == INPUT_INFO_ABOUT);
   assert(input_info_shortcut(SDLK_ESCAPE) == INPUT_INFO_NONE);
+
+#if defined(__APPLE__)
+  SDL_Keymod primary = KMOD_GUI;
+  SDL_Keymod other = KMOD_CTRL;
+  assert(strcmp(input_primary_modifier_label(), "Cmd") == 0);
+#else
+  SDL_Keymod primary = KMOD_CTRL;
+  SDL_Keymod other = KMOD_GUI;
+  assert(strcmp(input_primary_modifier_label(), "Ctrl") == 0);
+#endif
+  assert(input_play_shortcut(SDLK_z, primary) == INPUT_PLAY_UNDO);
+  assert(input_play_shortcut(SDLK_z, (SDL_Keymod)(primary | KMOD_SHIFT)) ==
+         INPUT_PLAY_REDO);
+  assert(input_play_shortcut(SDLK_y, primary) == INPUT_PLAY_REDO);
+  assert(input_play_shortcut(SDLK_RETURN, primary) == INPUT_PLAY_VERIFY);
+  assert(input_play_shortcut(SDLK_KP_ENTER, primary) == INPUT_PLAY_VERIFY);
+  assert(input_play_shortcut(SDLK_z, KMOD_NONE) == INPUT_PLAY_NONE);
+  assert(input_play_shortcut(SDLK_z, other) == INPUT_PLAY_NONE);
 
   puts("keyboard digit, repeat, mouse-button, and info-shortcut policies passed");
   return 0;
