@@ -109,7 +109,7 @@ static void app_shutdown(Gfx *gfx) {
   audio_gfx = NULL;
   audio_ui = NULL;
   audio_ui_seen = false;
-  audio_settings_open = false;
+  settings_open = false;
   ui_home_cue_requested = false;
   app_shutdown_base(gfx);
 }
