@@ -826,7 +826,7 @@ int main(int argc, char **argv) {
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
         if (!left && !right) continue;
-        if (left && storage_retry_hit(&g, x, y)) {
+        if (left && storage_retry_hit(&g, &ui, x, y)) {
           ui_button_click();
           (void)persistence_flush(&persistence);
           continue;
@@ -1085,9 +1085,6 @@ int main(int argc, char **argv) {
           } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
             ui_button_click();
             open_info_from_play(&persistence, &game, &ui, SCR_HELP);
-          } else if (point_in(controls.btn[PLAY_ACTION_ABOUT], x, y)) {
-            ui_button_click();
-            open_info_from_play(&persistence, &game, &ui, SCR_ABOUT);
           } else {
             for (int number = 1; number <= 9; ++number) {
               if (point_in(controls.pal[number - 1], x, y)) {
