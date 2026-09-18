@@ -238,7 +238,14 @@ static bool game_matches_canonical(const Game *game, const Game *canonical) {
 
 bool session_validate_runtime(const SessionState *session) {
   if (!session || !valid_mode(session->mode) ||
-      !valid_difficulty(session->game.difficulty))
+      !valid_difficulty(session->game.difficulty) ||
+      !valid_status(session->status) || session->selected_row < 0 ||
+      session->selected_row >= 9 || session->selected_column < 0 ||
+      session->selected_column >= 9 || session->mistakes < 0 ||
+      session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
+      session->strikes > SESSION_MAX_COUNTER ||
+      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
+      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
     return false;
 
   for (int i = 0; i < 81; ++i) {
@@ -281,16 +288,6 @@ bool session_validate_runtime(const SessionState *session) {
 
 bool session_validate(const SessionState *session) {
   if (!session_validate_runtime(session)) return false;
-  if (!valid_mode(session->mode) ||
-      !valid_difficulty(session->game.difficulty) ||
-      !valid_status(session->status) || session->selected_row < 0 ||
-      session->selected_row >= 9 || session->selected_column < 0 ||
-      session->selected_column >= 9 || session->mistakes < 0 ||
-      session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
-      session->strikes > SESSION_MAX_COUNTER ||
-      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
-      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
-    return false;
 
   Game canonical;
   game_new_difficulty(&canonical, session->game.seed, session->game.difficulty);
