@@ -541,10 +541,27 @@ bool human_hint_analyze(const int puzzle[HUMAN_CELL_COUNT],
   memset(out, 0, sizeof(*out));
   step_reset(&out->reasoning, HUMAN_TECHNIQUE_NONE);
   step_reset(&out->placement, HUMAN_TECHNIQUE_NONE);
+  out->contradiction_cell = -1;
 
   HumanState state;
   if (!state_init(&state, puzzle)) {
     out->status = HUMAN_HINT_INVALID;
+    for (int cell = 0; cell < HUMAN_CELL_COUNT; ++cell) {
+      if (puzzle[cell] < 0 || puzzle[cell] > 9) {
+        out->contradiction_cell = cell;
+        break;
+      }
+      if (puzzle[cell]) {
+        for (int other = 0; other < cell; ++other)
+          if (puzzle[other] == puzzle[cell] && peer(cell, other)) {
+            out->contradiction_cell = cell;
+            break;
+          }
+      } else if ((state.candidates[cell] & HUMAN_FULL_MASK) == 0) {
+        out->contradiction_cell = cell;
+      }
+      if (out->contradiction_cell >= 0) break;
+    }
     return true;
   }
   if (state_solved(&state)) {
