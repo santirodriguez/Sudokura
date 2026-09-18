@@ -34,10 +34,30 @@ typedef struct {
   SDL_Rect retry;
 } StorageBannerLayout;
 
-static StorageBannerLayout storage_banner_layout(const Gfx *gfx) {
+static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
+                                                const UI *ui) {
   StorageBannerLayout layout;
   memset(&layout, 0, sizeof(layout));
   if (!gfx) return layout;
+
+  AppGeometry geometry;
+  bool play_surface =
+      ui && (ui->screen == SCR_PLAY ||
+             (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY));
+  if (play_surface && get_geometry(gfx, ui, &geometry)) {
+    layout.banner = sdl_rect(geometry.status);
+    int inset = layout.banner.h <= 28 ? 2 : 4;
+    int retry_w = layout.banner.w < 300 ? 88 : 118;
+    layout.retry = (SDL_Rect){
+        layout.banner.x + layout.banner.w - retry_w - inset,
+        layout.banner.y + inset, retry_w, layout.banner.h - inset * 2};
+    layout.message = (SDL_Rect){
+        layout.banner.x + inset + 4, layout.banner.y + inset,
+        layout.retry.x - layout.banner.x - inset * 2 - 4,
+        layout.banner.h - inset * 2};
+    return layout;
+  }
+
   int margin = gfx->width < 640 ? 8 : 14;
   int height = gfx->width < 640 ? 64 : 52;
   int width = gfx->width - margin * 2;
@@ -54,10 +74,10 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx) {
   return layout;
 }
 
-static bool storage_retry_hit(const Gfx *gfx, int x, int y) {
+static bool storage_retry_hit(const Gfx *gfx, const UI *ui, int x, int y) {
   if (!audio_persistence || !persistence_has_save_error(audio_persistence))
     return false;
-  StorageBannerLayout layout = storage_banner_layout(gfx);
+  StorageBannerLayout layout = storage_banner_layout(gfx, ui);
   return point_in(layout.retry, x, y);
 }
 
@@ -493,6 +513,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
   for (int action = 0; action < PLAY_ACTION_COUNT; ++action) {
+    if (action == PLAY_ACTION_ABOUT) continue;
     SDL_Rect rect = controls.btn[action];
     if (action == PLAY_ACTION_MENU) {
       SDL_Rect menu_rect, pause_rect;
@@ -578,11 +599,6 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
     draw_line(gfx->ren, layout.side.x + 12, controls.palette_label.y - 4,
               layout.side.x + layout.side.w - 13, controls.palette_label.y - 4,
               separator);
-  if (controls.btn[PLAY_ACTION_ABOUT].y > controls.progress.y)
-    draw_line(gfx->ren, layout.side.x + 12,
-              controls.btn[PLAY_ACTION_ABOUT].y - 4,
-              layout.side.x + layout.side.w - 13,
-              controls.btn[PLAY_ACTION_ABOUT].y - 4, separator);
 }
 
 static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
@@ -590,7 +606,7 @@ static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
       !persistence_has_save_error(audio_persistence))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  StorageBannerLayout layout = storage_banner_layout(gfx);
+  StorageBannerLayout layout = storage_banner_layout(gfx, ui);
   SDL_Color background = theme.palette_bg;
   SDL_Color outline = theme.text_wrong;
   draw_round_rect(gfx->ren, layout.banner, 10, background);
