@@ -13,7 +13,8 @@ enum {
   SAVE_DIRTY_NONE = 0u,
   SAVE_DIRTY_PREFERENCES = 1u << 0,
   SAVE_DIRTY_NORMAL = 1u << 1,
-  SAVE_DIRTY_DAILY = 1u << 2
+  SAVE_DIRTY_DAILY = 1u << 2,
+  SAVE_DIRTY_RESULTS = 1u << 3
 };
 
 typedef struct {
