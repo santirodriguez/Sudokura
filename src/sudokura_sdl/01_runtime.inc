@@ -287,8 +287,8 @@ static void persistence_refresh_normal(Persistence*p){
 static bool persistence_write_profile(Persistence*p){
   if(!p||!p->enabled)return false;
   p->profile.preferences=p->preferences;
-  StoreStatus status=profile_save_file(p->profile_path,p->profile_backup_path,
-                                       &p->profile);
+  StoreStatus status=profile_save_runtime_file(
+      p->profile_path,p->profile_backup_path,&p->profile);
   uint64_t written_at=now_ms();
   save_policy_record_result(&p->save_policy,status,written_at);
   if(status==STORE_OK)p->last_periodic_checkpoint_ms=written_at;
