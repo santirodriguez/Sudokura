@@ -1,6 +1,5 @@
 #include "geometry.h"
 #include "i18n.h"
-#include "src/sudokura_sdl/ui_geometry.inc"
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL_ttf.h>
