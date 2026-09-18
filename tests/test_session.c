@@ -128,8 +128,14 @@ static void test_preferences(void) {
   assert(defaults.audio_enabled);
   assert(preferences_validate(&defaults));
 
-  Preferences custom = {
-      LANG_CA, false, true, MODE_TIME, DIFFICULTY_HARD, false};
+  Preferences custom;
+  preferences_defaults(&custom);
+  custom.language = LANG_CA;
+  custom.dark_theme = false;
+  custom.strict_mode = true;
+  custom.mode = MODE_TIME;
+  custom.difficulty = DIFFICULTY_HARD;
+  custom.audio_enabled = false;
   assert(preferences_save_file(preferences_path, &custom));
   Preferences loaded;
   preferences_defaults(&loaded);
