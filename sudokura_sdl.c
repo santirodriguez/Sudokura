@@ -13,7 +13,6 @@
 
 #include "src/sudokura_sdl/01_runtime.inc"
 #include "src/sudokura_sdl/02_font_discovery.inc"
-#include "src/sudokura_sdl/ui_geometry.inc"
 #include "src/sudokura_sdl/03_board_render.inc"
 #include "src/sudokura_sdl/04_screens.inc"
 #include "src/sudokura_sdl/polish_ui.inc"
