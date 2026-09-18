@@ -236,21 +236,10 @@ static bool game_matches_canonical(const Game *game, const Game *canonical) {
          memcmp(game->fixed, canonical->fixed, sizeof(game->fixed)) == 0;
 }
 
-bool session_validate(const SessionState *session) {
+bool session_validate_runtime(const SessionState *session) {
   if (!session || !valid_mode(session->mode) ||
-      !valid_difficulty(session->game.difficulty) ||
-      !valid_status(session->status) || session->selected_row < 0 ||
-      session->selected_row >= 9 || session->selected_column < 0 ||
-      session->selected_column >= 9 || session->mistakes < 0 ||
-      session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
-      session->strikes > SESSION_MAX_COUNTER ||
-      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
-      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
+      !valid_difficulty(session->game.difficulty))
     return false;
-
-  Game canonical;
-  game_new_difficulty(&canonical, session->game.seed, session->game.difficulty);
-  if (!game_matches_canonical(&session->game, &canonical)) return false;
 
   for (int i = 0; i < 81; ++i) {
     int value = session->game.puzzle[i];
@@ -258,11 +247,11 @@ bool session_validate(const SessionState *session) {
     if (value < 0 || value > 9 || session->game.hinted[i] > 1 ||
         (notes & (uint16_t)~NOTES_VALID_MASK) != 0)
       return false;
-    if (canonical.fixed[i]) {
-      if (value != canonical.initial[i] || session->game.hinted[i] || notes)
+    if (session->game.fixed[i]) {
+      if (value != session->game.initial[i] || session->game.hinted[i] || notes)
         return false;
     } else if (session->game.hinted[i]) {
-      if (value != canonical.solution[i] || notes) return false;
+      if (value != session->game.solution[i] || notes) return false;
     } else if (value != 0 && notes != 0) {
       return false;
     }
@@ -288,6 +277,26 @@ bool session_validate(const SessionState *session) {
   if (session->status == SESSION_ACTIVE) return !solved && !lost;
   if (session->status == SESSION_WON) return solved && !lost;
   return !solved && lost;
+}
+
+bool session_validate(const SessionState *session) {
+  if (!session_validate_runtime(session)) return false;
+  if (!valid_mode(session->mode) ||
+      !valid_difficulty(session->game.difficulty) ||
+      !valid_status(session->status) || session->selected_row < 0 ||
+      session->selected_row >= 9 || session->selected_column < 0 ||
+      session->selected_column >= 9 || session->mistakes < 0 ||
+      session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
+      session->strikes > SESSION_MAX_COUNTER ||
+      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
+      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
+    return false;
+
+  Game canonical;
+  game_new_difficulty(&canonical, session->game.seed, session->game.difficulty);
+  if (!game_matches_canonical(&session->game, &canonical)) return false;
+
+  return true;
 }
 
 bool preferences_save_file(const char *path, const Preferences *preferences) {
