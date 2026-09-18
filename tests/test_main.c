@@ -219,6 +219,47 @@ static void test_player_input(void) {
   assert(game_apply_input(NULL, row, column, value, false, false) == GAME_INPUT_NO_CHANGE);
 }
 
+static void test_recorded_compound_edits(void) {
+  Game game;
+  fixture_game_new(&game, 2026);
+  int target = -1, peer = -1;
+  for (int a = 0; a < 81 && target < 0; ++a) {
+    if (game.fixed[a]) continue;
+    for (int b = 0; b < 81; ++b) {
+      if (a == b || game.fixed[b]) continue;
+      bool related = a / 9 == b / 9 || a % 9 == b % 9 ||
+                     (a / 27 == b / 27 &&
+                      (a % 9) / 3 == (b % 9) / 3);
+      if (related) {
+        target = a;
+        peer = b;
+        break;
+      }
+    }
+  }
+  assert(target >= 0 && peer >= 0);
+
+  int value = game.solution[target];
+  assert(game_toggle_note(&game, peer / 9, peer % 9, value));
+  uint16_t peer_before = game.notes[peer];
+
+  GameEdit edit;
+  assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
+                                   false, false, true, &edit) ==
+         GAME_INPUT_CORRECT);
+  assert(game_edit_valid(&edit));
+  assert(edit.peer_notes_removed != 0);
+  assert((game.notes[peer] & (1u << value)) == 0);
+
+  assert(game_apply_edit(&game, &edit, false));
+  assert(game.puzzle[target] == 0);
+  assert(game.notes[peer] == peer_before);
+
+  assert(game_apply_edit(&game, &edit, true));
+  assert(game.puzzle[target] == value);
+  assert((game.notes[peer] & (1u << value)) == 0);
+}
+
 static void test_mode_visibility_policy(void) {
   assert(!game_mode_reveals_correctness(MODE_CLASSIC));
   assert(game_mode_reveals_correctness(MODE_STRIKES));
@@ -346,7 +387,7 @@ static void test_i18n(void) {
 }
 
 int main(void) {
-  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
+  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_recorded_compound_edits(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
   puts("all tests passed (generator v2 golden + bounded human-rated v3, Daily identity, restart/progress/hints, responsive XL geometry, API bounds)");
   return 0;
 }
