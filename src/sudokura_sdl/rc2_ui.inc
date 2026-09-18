@@ -76,12 +76,17 @@ static void ui_audio_open(Persistence *persistence, const Game *game, UI *ui) {
   if (!ui || audio_settings_open || ui->screen != SCR_PLAY) return;
   clock_pause(ui, PAUSE_MODAL);
   if (persistence && game) (void)save_current_session(persistence, game, ui);
+  if (!app_open_aux(ui, APP_SCREEN_SETTINGS)) {
+    clock_resume(ui, PAUSE_MODAL);
+    return;
+  }
   audio_settings_open = true;
 }
 
 static void ui_audio_close(Persistence *persistence, const Game *game, UI *ui) {
   if (!ui || !audio_settings_open) return;
   audio_settings_open = false;
+  (void)app_return_aux(ui);
   clock_resume(ui, PAUSE_MODAL);
   if (persistence && game) (void)save_current_session(persistence, game, ui);
 }
