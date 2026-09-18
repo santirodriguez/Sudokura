@@ -161,7 +161,7 @@ static bool valid_profile_session_runtime(const ProfileSession *slot,
 }
 
 static bool valid_result(const ProfileResult *result) {
-  if (!result || result->generator_revision != SUDOKURA_GENERATOR_REVISION ||
+  if (!result || !game_generator_revision_supported(result->generator_revision) ||
       result->difficulty < DIFFICULTY_EASY ||
       result->difficulty >= DIFFICULTY_COUNT ||
       result->mode < MODE_CLASSIC || result->mode > MODE_TIME ||
@@ -174,8 +174,9 @@ static bool valid_result(const ProfileResult *result) {
     uint64_t seed = 0;
     if (result->mode != MODE_CLASSIC ||
         result->difficulty != DIFFICULTY_MEDIUM ||
-        !game_daily_seed(result->daily_year, result->daily_month,
-                         result->daily_day, &seed) ||
+        !game_daily_seed_revision(result->daily_year, result->daily_month,
+                                  result->daily_day,
+                                  result->generator_revision, &seed) ||
         seed != result->seed)
       return false;
   } else if (result->daily_year || result->daily_month || result->daily_day) {
@@ -384,7 +385,7 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   uint8_t assisted = reader_u8(reader);
 
   if (!reader->ok) return STORE_CORRUPT;
-  if (generator_revision != SUDOKURA_GENERATOR_REVISION)
+  if (!game_generator_revision_supported(generator_revision))
     return STORE_INCOMPATIBLE;
   if (difficulty < DIFFICULTY_EASY || difficulty >= DIFFICULTY_COUNT ||
       mode < MODE_CLASSIC || mode > MODE_TIME || notes_mode > 1 ||
@@ -397,7 +398,9 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
 
   ProfileSession loaded;
   memset(&loaded, 0, sizeof(loaded));
-  game_new_difficulty(&loaded.session.game, seed, difficulty);
+  if (!game_new_difficulty_revision(&loaded.session.game, seed, difficulty,
+                                    generator_revision))
+    return STORE_CORRUPT;
   loaded.session.mode = mode;
   loaded.session.selected_row = selected_row;
   loaded.session.selected_column = selected_column;
@@ -475,7 +478,7 @@ static StoreStatus decode_result(ProfileReader *reader, ProfileResult *result) {
   loaded.is_daily = is_daily != 0;
   if (!reader->ok || assisted > 1 || is_daily > 1)
     return STORE_CORRUPT;
-  if (loaded.generator_revision != SUDOKURA_GENERATOR_REVISION)
+  if (!game_generator_revision_supported(loaded.generator_revision))
     return STORE_INCOMPATIBLE;
   if (!valid_result(&loaded)) return STORE_CORRUPT;
   *result = loaded;
