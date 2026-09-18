@@ -61,6 +61,42 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
                          shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT);
       return true;
     }
+    if (key == SDLK_TAB || key == SDLK_UP || key == SDLK_DOWN) {
+      int direction =
+          key == SDLK_UP || (key == SDLK_TAB &&
+                             (event->key.keysym.mod & KMOD_SHIFT) != 0)
+              ? -1
+              : 1;
+      audio_keyboard_focus =
+          (AudioKeyboardFocus)(((int)audio_keyboard_focus + direction +
+                                AUDIO_FOCUS_COUNT) %
+                               AUDIO_FOCUS_COUNT);
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      return true;
+    }
+    if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+      int delta = key == SDLK_LEFT ? -5 : 5;
+      if (audio_keyboard_focus == AUDIO_FOCUS_MUSIC) {
+        ui_audio_set_music_level(audio_music_volume() + delta);
+      } else if (audio_keyboard_focus == AUDIO_FOCUS_FX) {
+        ui_audio_set_fx_level(audio_fx_volume() + delta);
+        audio_play_effect(AUDIO_EFFECT_POSITIVE);
+      } else if (audio_keyboard_focus == AUDIO_FOCUS_TOGGLE) {
+        bool enabled = audio_is_enabled();
+        if ((key == SDLK_LEFT && enabled) ||
+            (key == SDLK_RIGHT && !enabled))
+          audio_toggle(audio_persistence);
+      }
+      return true;
+    }
+    if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) {
+      if (audio_keyboard_focus == AUDIO_FOCUS_TOGGLE) {
+        audio_toggle(audio_persistence);
+      } else if (audio_keyboard_focus == AUDIO_FOCUS_BACK) {
+        ui_audio_close(audio_persistence, NULL, audio_ui);
+      }
+      return true;
+    }
     if (key == SDLK_v) {
       audio_toggle(audio_persistence);
       return true;
