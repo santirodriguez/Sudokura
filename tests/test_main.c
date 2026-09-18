@@ -209,7 +209,10 @@ static void test_conflicts_and_end(void) {
   for (int row = 0; row < 9 && a < 0; ++row) for (int column = 0; column < 9; ++column) if (!game.fixed[row * 9 + column]) { if (a < 0) a = row * 9 + column; else if (a / 9 == row) { b = row * 9 + column; break; } }
   assert(a >= 0 && b >= 0); game.puzzle[a] = game.puzzle[b] = 1; assert(game_has_conflict(&game, a / 9, a % 9)); assert(game_conflict_count(&game) >= 2);
   memcpy(game.puzzle, game.solution, sizeof(game.puzzle)); assert(game_is_solved(&game));
-  assert(!game_mode_lost(MODE_CLASSIC, 99, 3, 999, 10)); assert(game_mode_lost(MODE_STRIKES, 3, 3, 0, 0)); assert(game_mode_lost(MODE_TIME, 0, 3, 601, 600));
+  assert(!game_mode_lost(MODE_CLASSIC, 99, 3, 999, 10));
+  assert(game_mode_lost(MODE_STRIKES, 3, 3, 0, 0));
+  assert(!game_mode_lost(MODE_TIME, 0, 3, 599.999, 600));
+  assert(game_mode_lost(MODE_TIME, 0, 3, 600, 600));
 }
 
 static void assert_screen_geometry(const AppGeometry *g, int width, int height) {
