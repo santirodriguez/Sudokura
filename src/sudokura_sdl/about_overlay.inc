@@ -87,7 +87,3 @@ static void about_redraw_desktop_cards(Gfx *gfx, UI *ui) {
                          study_face, fonts.help, 10);
 }
 
-static void app_render(Gfx *gfx, const Game *game, UI *ui) {
-  app_render_polish_base(gfx, game, ui);
-  about_redraw_desktop_cards(gfx, ui);
-}
