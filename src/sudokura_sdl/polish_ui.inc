@@ -182,7 +182,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
 }
 
 static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
-  if (!game || (ui->pause_reasons & PAUSE_USER_VISIBLE)) return;
+  if (!game || app_pause_hides_play(ui)) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
   SidebarRects controls;
