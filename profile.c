@@ -246,6 +246,66 @@ const SessionState *profile_slot_session(const ProfileSlot *slot) {
   return slot && slot->present ? &slot->value.session : NULL;
 }
 
+static bool same_result_event(const ProfileResult *a,
+                              const ProfileResult *b) {
+  return a && b && a->seed == b->seed &&
+         a->generator_revision == b->generator_revision &&
+         a->difficulty == b->difficulty && a->mode == b->mode &&
+         a->status == b->status && a->assisted == b->assisted &&
+         a->is_daily == b->is_daily && a->elapsed_ms == b->elapsed_ms &&
+         a->mistakes == b->mistakes && a->strikes == b->strikes &&
+         a->daily_year == b->daily_year &&
+         a->daily_month == b->daily_month &&
+         a->daily_day == b->daily_day;
+}
+
+bool profile_record_result(ProfileData *profile, const ProfileResult *result,
+                           bool *inserted) {
+  if (inserted) *inserted = false;
+  if (!profile || !valid_result(result)) return false;
+
+  for (uint16_t i = 0; i < profile->result_count; ++i)
+    if (same_result_event(&profile->results[i], result)) return true;
+
+  if (profile->result_count == SUDOKURA_RESULT_LIMIT) {
+    memmove(profile->results, profile->results + 1,
+            (SUDOKURA_RESULT_LIMIT - 1u) * sizeof(profile->results[0]));
+    --profile->result_count;
+  }
+  profile->results[profile->result_count++] = *result;
+  if (inserted) *inserted = true;
+  return true;
+}
+
+ProfileResultSummary profile_result_summary(const ProfileData *profile,
+                                            const ProfileResult *reference) {
+  ProfileResultSummary summary;
+  memset(&summary, 0, sizeof(summary));
+  if (!profile || !reference || !valid_result(reference)) return summary;
+
+  for (uint16_t i = 0; i < profile->result_count; ++i) {
+    const ProfileResult *result = &profile->results[i];
+    if (result->mode == reference->mode &&
+        result->difficulty == reference->difficulty)
+      ++summary.finished;
+
+    bool comparable =
+        result->status == SESSION_WON &&
+        result->mode == reference->mode &&
+        result->difficulty == reference->difficulty &&
+        result->generator_revision == reference->generator_revision &&
+        result->is_daily == reference->is_daily &&
+        result->assisted == reference->assisted;
+    if (!comparable) continue;
+    if (!summary.best_time_available ||
+        result->elapsed_ms < summary.best_time_ms) {
+      summary.best_time_available = true;
+      summary.best_time_ms = result->elapsed_ms;
+    }
+  }
+  return summary;
+}
+
 static void encode_preferences(ProfileWriter *writer,
                                const Preferences *preferences) {
   writer_u16(writer, SUDOKURA_PREFERENCES_CONTENT_VERSION);
