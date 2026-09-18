@@ -42,7 +42,7 @@ static SDL_Texture*render_text_wrapped(Gfx*g,TTF_Font*f,const char*txt,SDL_Color
 }
 static bool point_in(SDL_Rect r,int x,int y){return x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h;}
 static GeometryMode geometry_mode(Mode mode){return(GeometryMode)mode;}
-static bool get_geometry(const Gfx*g,const UI*ui,AppGeometry*out){return geometry_compute(g->width,g->height,geometry_mode(ui->mode),out);}
+static bool get_geometry(const Gfx*g,const UI*ui,AppGeometry*out){return ui_geometry_compute(g->width,g->height,geometry_mode(ui->mode),out);}
 static SDL_Rect sdl_rect(GeoRect r){return(SDL_Rect){r.x,r.y,r.w,r.h};}
 static TTF_Font*cached_font(Gfx*g,int requested){int best=0;for(int i=1;i<FONT_CACHE_COUNT;i++)if(abs(font_cache_sizes[i]-requested)<abs(font_cache_sizes[best]-requested))best=i;return g->fonts[best];}
 static void update_font_tiers(Gfx*g,const UI*ui){AppGeometry a;if(!get_geometry(g,ui,&a))return;GeometryFonts f=geometry_font_sizes(&a,g->width,g->height);g->font_big=cached_font(g,f.heading);g->font_small=cached_font(g,f.control);g->font_note=cached_font(g,f.note);g->font_cell=cached_font(g,f.cell);g->font_body=cached_font(g,f.body);}
@@ -134,7 +134,7 @@ static void draw_wordmark(Gfx*g,SDL_Rect box){
 
 typedef struct{SDL_Rect board,side;AppGeometry model;}Layout;
 typedef struct{SDL_Rect btn[9],pal[9],palette_label,progress;int count_btn,count_pal;}SidebarRects;
-static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_compute(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
+static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(ui_geometry_compute(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
 static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,sizeof*r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
 static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
 static void draw_back_button(Gfx*g,const UI*ui,Theme th){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);}
