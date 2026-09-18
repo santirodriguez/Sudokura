@@ -396,6 +396,25 @@ static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
                     false);
 }
 
+static void restart_clear_rects(SDL_Rect combined, SDL_Rect *restart,
+                                SDL_Rect *clear) {
+  int gap = combined.w >= 180 ? 6 : 4;
+  int restart_w = (combined.w - gap) / 2;
+  if (restart)
+    *restart = (SDL_Rect){combined.x, combined.y, restart_w, combined.h};
+  if (clear)
+    *clear = (SDL_Rect){combined.x + restart_w + gap, combined.y,
+                        combined.w - restart_w - gap, combined.h};
+}
+
+static bool clear_selected_available(const Game *game, const UI *ui) {
+  if (!game || !ui || !ui->session_open || ui->result != RES_NONE ||
+      game_cell_locked(game, ui->sel_r, ui->sel_c))
+    return false;
+  int index = IDX(ui->sel_r, ui->sel_c);
+  return game->puzzle[index] != 0 || game->notes[index] != 0;
+}
+
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   bool play_surface =
       ui && (ui->screen == SCR_PLAY ||
@@ -423,6 +442,32 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
   for (int action = 0; action < PLAY_ACTION_COUNT; ++action) {
     SDL_Rect rect = controls.btn[action];
+    if (action == PLAY_ACTION_RESTART) {
+      SDL_Rect restart_rect, clear_rect;
+      restart_clear_rects(rect, &restart_rect, &clear_rect);
+      bool restart_hover = point_in(restart_rect, mx, my);
+      bool restart_pressed =
+          restart_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+      SDL_Rect restart_face = polish_button_face(
+          gfx, theme, restart_rect,
+          restart_hover ? theme.hover : theme.palette_bg, restart_pressed,
+          false);
+      (void)draw_fitted_text(gfx, tr(ui->language, T_RESTART), theme.btnfg,
+                             restart_face, fonts.control, 9);
+
+      bool clear_enabled = clear_selected_available(game, ui);
+      bool clear_hover = clear_enabled && point_in(clear_rect, mx, my);
+      bool clear_pressed =
+          clear_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+      SDL_Rect clear_face = polish_button_face(
+          gfx, theme, clear_rect,
+          clear_hover ? theme.hover : theme.palette_bg, clear_pressed, false);
+      (void)draw_fitted_text(gfx, tr(ui->language, T_CLEAR),
+                             clear_enabled ? theme.btnfg : theme.dim,
+                             clear_face, fonts.control, 9);
+      continue;
+    }
+
     bool hover = point_in(rect, mx, my);
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
     bool active = (action == PLAY_ACTION_NOTES && ui->notes_mode) ||
