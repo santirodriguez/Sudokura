@@ -49,6 +49,10 @@ int main(void) {
   assert(!input_mouse_button_is_primary(SDL_BUTTON_RIGHT));
   assert(!input_mouse_button_is_primary(SDL_BUTTON_MIDDLE));
 
-  puts("keyboard digit, repeat, and mouse-button input policies passed");
+  assert(input_info_shortcut(SDLK_F1) == INPUT_INFO_HELP);
+  assert(input_info_shortcut(SDLK_F2) == INPUT_INFO_ABOUT);
+  assert(input_info_shortcut(SDLK_ESCAPE) == INPUT_INFO_NONE);
+
+  puts("keyboard digit, repeat, mouse-button, and info-shortcut policies passed");
   return 0;
 }
