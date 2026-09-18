@@ -306,9 +306,8 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
     case HOME_FOCUS_ABOUT:
       (void)app_open_aux(ui, SCR_ABOUT);
       break;
-    case HOME_FOCUS_THEME:
-      ui->dark_theme = !ui->dark_theme;
-      (void)save_preferences(p, ui);
+    case HOME_FOCUS_SETTINGS:
+      ui_settings_open(p, game, ui);
       break;
     case HOME_FOCUS_QUIT:
       if (request_exit(p, game, ui, g)) *running = false;
@@ -460,7 +459,7 @@ int main(int argc, char **argv) {
                               {3440, 1440}, {360, 640}, {390, 844},
                               {412, 915}};
       const char *names[] = {"title", "play", "help", "about",
-                             "result", "pause", "audio"};
+                             "result", "pause", "settings"};
       if (!make_directory(screenshot_dir)) {
         fprintf(stderr, "cannot create screenshot directory: %s\n",
                 screenshot_dir);
@@ -484,7 +483,7 @@ int main(int argc, char **argv) {
           ui.result = RES_NONE;
           ui.pause_reasons = 0;
           ui.is_daily = false;
-          audio_settings_open = false;
+          settings_open = false;
           victory_animation_reset();
           if (variant == 0)
             ui.screen = SCR_TITLE;
@@ -504,7 +503,7 @@ int main(int argc, char **argv) {
             ui.screen = APP_SCREEN_SETTINGS;
             ui.prev_screen = SCR_PLAY;
             ui.pause_reasons = PAUSE_MODAL;
-            audio_settings_open = true;
+            settings_open = true;
           }
           app_render_ui(&g, &game, &ui);
           char path[PATH_MAX], filename[160];
@@ -527,7 +526,7 @@ int main(int argc, char **argv) {
           }
         }
       }
-      audio_settings_open = false;
+      settings_open = false;
       printf("rendered 70 UI review screenshots to %s\n", screenshot_dir);
     }
     app_shutdown(&g);
@@ -917,9 +916,8 @@ int main(int argc, char **argv) {
             (void)app_open_aux(&ui, SCR_ABOUT);
           } else if (point_in(sdl_rect(a.home_secondary[2]), x, y)) {
             ui_button_click();
-            home_focus = HOME_FOCUS_THEME;
-            ui.dark_theme = !ui.dark_theme;
-            (void)save_preferences(&persistence, &ui);
+            home_focus = HOME_FOCUS_SETTINGS;
+            ui_settings_open(&persistence, &game, &ui);
           } else if (point_in(sdl_rect(a.home_secondary[3]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_QUIT;
@@ -1082,7 +1080,7 @@ int main(int argc, char **argv) {
             verify_current_entries(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_AUDIO], x, y)) {
             ui_button_click();
-            ui_audio_open(&persistence, &game, &ui);
+            ui_settings_open(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
             ui_button_click();
             open_info_from_play(&persistence, &game, &ui, SCR_HELP);
