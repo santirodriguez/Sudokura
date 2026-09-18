@@ -196,9 +196,13 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   if (ui->mode == MODE_CLASSIC && layout.model.hud_count > 3) {
     SDL_Rect hints = sdl_rect(layout.model.hud[3]);
     draw_round_rect(gfx->ren, hints, hints.h / 2, theme.palette_bg);
-    char label[64];
-    snprintf(label, sizeof label, "%s: %d", tr(ui->language, T_HINTS),
-             game_hint_count(game));
+    char label[96];
+    if (ui->assisted)
+      snprintf(label, sizeof label, "%s: %d · %s", tr(ui->language, T_HINTS),
+               game_hint_count(game), tr(ui->language, T_ASSISTED));
+    else
+      snprintf(label, sizeof label, "%s: %d", tr(ui->language, T_HINTS),
+               game_hint_count(game));
     (void)draw_fitted_text(gfx, label, theme.dim, hints, fonts.hud, 10);
   }
 
