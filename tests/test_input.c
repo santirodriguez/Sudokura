@@ -50,6 +50,16 @@ int main(void) {
   assert(!input_mouse_button_is_primary(SDL_BUTTON_RIGHT));
   assert(!input_mouse_button_is_primary(SDL_BUTTON_MIDDLE));
 
+  assert(input_activation_key(SDLK_RETURN));
+  assert(input_activation_key(SDLK_KP_ENTER));
+  assert(input_activation_key(SDLK_SPACE));
+  assert(!input_activation_key(SDLK_ESCAPE));
+  assert(input_focus_step(-1,4,1)==0);
+  assert(input_focus_step(-1,4,-1)==3);
+  assert(input_focus_step(3,4,1)==0);
+  assert(input_focus_step(0,4,-1)==3);
+  assert(input_focus_step(1,0,1)==-1);
+
   assert(input_info_shortcut(SDLK_F1) == INPUT_INFO_HELP);
   assert(input_info_shortcut(SDLK_F2) == INPUT_INFO_ABOUT);
   assert(input_info_shortcut(SDLK_ESCAPE) == INPUT_INFO_NONE);
@@ -72,6 +82,6 @@ int main(void) {
   assert(input_play_shortcut(SDLK_z, KMOD_NONE) == INPUT_PLAY_NONE);
   assert(input_play_shortcut(SDLK_z, other) == INPUT_PLAY_NONE);
 
-  puts("keyboard digit, repeat, mouse-button, and info-shortcut policies passed");
+  puts("keyboard digit, repeat, focus, activation, mouse-button, and info-shortcut policies passed");
   return 0;
 }

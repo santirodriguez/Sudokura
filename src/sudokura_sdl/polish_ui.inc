@@ -409,6 +409,8 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
       study_pressed, false);
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_LINK), theme.btnfg,
                          study_face, fonts.help, 10);
+  if(info_keyboard_focus==INFO_FOCUS_STUDY)
+    draw_focus_ring(gfx->ren,study_link,theme.sel_outline);
 
   SDL_Rect credits = sdl_rect(geometry.about_credits);
   int credit_h = credits.h / 2;
@@ -432,9 +434,11 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
     snprintf(label, sizeof label, "%d · %s", i + 1,
              tr(ui->language, link_keys[i]));
     (void)draw_fitted_text(gfx, label, theme.btnfg, face, fonts.control, 10);
+    if(info_keyboard_focus==INFO_FOCUS_LINK_0+i)
+      draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
 
-  draw_back_button(gfx, ui, theme);
+  draw_back_button(gfx, ui, theme, info_keyboard_focus==INFO_FOCUS_BACK);
 }
 
 static void app_render_polish(Gfx *gfx, const Game *game, UI *ui) {

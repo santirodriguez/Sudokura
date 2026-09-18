@@ -32,6 +32,8 @@ typedef enum {
   SETTINGS_FOCUS_COUNT
 } SettingsKeyboardFocus;
 static SettingsKeyboardFocus settings_keyboard_focus = SETTINGS_FOCUS_THEME;
+typedef enum{SETTINGS_DRAG_NONE=0,SETTINGS_DRAG_MUSIC,SETTINGS_DRAG_FX}SettingsSliderDrag;
+static SettingsSliderDrag settings_slider_drag=SETTINGS_DRAG_NONE;
 static bool ui_home_cue_requested = false;
 
 typedef struct {
@@ -142,6 +144,7 @@ static void ui_settings_open(Persistence *persistence, const Game *game, UI *ui)
     return;
   bool from_play = ui->screen == SCR_PLAY;
   settings_keyboard_focus = SETTINGS_FOCUS_THEME;
+  settings_slider_drag = SETTINGS_DRAG_NONE;
   if (from_play) {
     clock_pause(ui, PAUSE_MODAL);
     if (persistence && game)
@@ -159,6 +162,7 @@ static void ui_settings_close(Persistence *persistence, const Game *game,
   if (!ui || !settings_open) return;
   bool returns_to_play = ui->prev_screen == SCR_PLAY;
   settings_open = false;
+  settings_slider_drag = SETTINGS_DRAG_NONE;
   (void)app_return_aux(ui);
   if (returns_to_play) {
     clock_resume(ui, PAUSE_MODAL);
@@ -214,8 +218,8 @@ static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   int row_h = layout.card.h < 470 ? 30 : 34;
   int gap = layout.card.h < 470 ? 4 : 6;
   int label_h = layout.card.h < 470 ? 16 : 18;
-  int slider_h = layout.card.h < 470 ? 28 : 30;
-  int button_w = layout.card.w < 400 ? 38 : 42;
+  int slider_h = layout.card.h < 470 ? 32 : 34;
+  int button_w = layout.card.w < 400 ? 42 : 44;
   int control_gap = 7;
 
   layout.title = (SDL_Rect){x, y, w, row_h + 4};
@@ -404,6 +408,31 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
   return panel;
 }
 
+typedef enum{HINT_FOCUS_PRIMARY=0,HINT_FOCUS_REVEAL,HINT_FOCUS_CANCEL,HINT_FOCUS_COUNT}HintKeyboardFocus;
+static HintKeyboardFocus hint_keyboard_focus=HINT_FOCUS_PRIMARY;
+static bool hint_focus_enabled(const UI*ui,HintKeyboardFocus focus){
+  if(!ui||!ui->hint_preview_active)return false;
+  if(focus==HINT_FOCUS_REVEAL)return ui->hint_preview.status!=HUMAN_HINT_INVALID;
+  return focus>=HINT_FOCUS_PRIMARY&&focus<HINT_FOCUS_COUNT;
+}
+static void hint_focus_reset(const UI*ui){
+  hint_keyboard_focus=HINT_FOCUS_PRIMARY;
+  if(!hint_focus_enabled(ui,hint_keyboard_focus))hint_keyboard_focus=HINT_FOCUS_CANCEL;
+}
+static void hint_move_focus(const UI*ui,int direction){
+  int next=hint_keyboard_focus;
+  for(int i=0;i<HINT_FOCUS_COUNT;i++){
+    next=input_focus_step(next,HINT_FOCUS_COUNT,direction);
+    if(hint_focus_enabled(ui,(HintKeyboardFocus)next)){hint_keyboard_focus=(HintKeyboardFocus)next;return;}
+  }
+}
+static SDL_Rect hint_focus_rect(const Gfx*gfx,const UI*ui,HintKeyboardFocus focus){
+  HintPanelLayout panel=hint_panel_layout(gfx,ui);
+  if(focus==HINT_FOCUS_PRIMARY)return ui&&ui->hint_preview.status==HUMAN_HINT_LOGICAL?panel.primary:panel.verify;
+  if(focus==HINT_FOCUS_REVEAL)return panel.reveal;
+  return panel.cancel;
+}
+
 static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
                            int x, int y) {
   (void)gfx;
@@ -517,6 +546,8 @@ static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
                       tr(ui->language, T_REVEAL_CELL), false);
   hint_panel_button(gfx, theme, panel.cancel, tr(ui->language, T_CANCEL),
                     false);
+  if(hint_focus_enabled(ui,hint_keyboard_focus))
+    draw_focus_ring(gfx->ren,hint_focus_rect(gfx,ui,hint_keyboard_focus),theme.sel_outline);
 }
 
 static void split_control_rects(SDL_Rect combined, SDL_Rect *left,
@@ -551,6 +582,51 @@ static bool clear_selected_available(const Game *game, const UI *ui) {
     return false;
   int index = IDX(ui->sel_r, ui->sel_c);
   return game->puzzle[index] != 0 || game->notes[index] != 0;
+}
+
+typedef enum{
+  PLAY_FOCUS_MENU=0,PLAY_FOCUS_PAUSE,PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,
+  PLAY_FOCUS_RESTART,PLAY_FOCUS_CLEAR,PLAY_FOCUS_HINT,PLAY_FOCUS_NOTES,
+  PLAY_FOCUS_VERIFY,PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_STRICT,
+  PLAY_FOCUS_NUMBER_1,PLAY_FOCUS_NUMBER_2,PLAY_FOCUS_NUMBER_3,
+  PLAY_FOCUS_NUMBER_4,PLAY_FOCUS_NUMBER_5,PLAY_FOCUS_NUMBER_6,
+  PLAY_FOCUS_NUMBER_7,PLAY_FOCUS_NUMBER_8,PLAY_FOCUS_NUMBER_9,
+  PLAY_FOCUS_COUNT
+}PlayKeyboardFocus;
+static int play_keyboard_focus=-1;
+static bool play_focus_enabled(const Game*game,const UI*ui,int focus){
+  if(!game||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return false;
+  if(focus==PLAY_FOCUS_UNDO)return ui->undo_count>0;
+  if(focus==PLAY_FOCUS_REDO)return ui->redo_count>0;
+  if(focus==PLAY_FOCUS_CLEAR)return clear_selected_available(game,ui);
+  if(focus>=PLAY_FOCUS_NUMBER_1){
+    int number=focus-PLAY_FOCUS_NUMBER_1+1;
+    return !palette_number_complete(game,ui->mode,number);
+  }
+  return true;
+}
+static void play_move_focus(const Game*game,const UI*ui,int direction){
+  int next=play_keyboard_focus;
+  for(int i=0;i<PLAY_FOCUS_COUNT;i++){
+    next=input_focus_step(next,PLAY_FOCUS_COUNT,direction);
+    if(play_focus_enabled(game,ui,next)){play_keyboard_focus=next;return;}
+  }
+  play_keyboard_focus=-1;
+}
+static SDL_Rect play_focus_rect(const Gfx*gfx,const UI*ui,int focus){
+  if(!gfx||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return(SDL_Rect){0,0,0,0};
+  Layout layout=compute_layout(gfx->width,gfx->height,ui->mode);SidebarRects controls;compute_sidebar_rects(&layout,&controls);SDL_Rect left,right;
+  if(focus==PLAY_FOCUS_MENU||focus==PLAY_FOCUS_PAUSE){menu_pause_rects(controls.btn[PLAY_ACTION_MENU],&left,&right);return focus==PLAY_FOCUS_MENU?left:right;}
+  if(focus==PLAY_FOCUS_UNDO||focus==PLAY_FOCUS_REDO){undo_redo_rects(controls.btn[PLAY_ACTION_PAUSE],&left,&right);return focus==PLAY_FOCUS_UNDO?left:right;}
+  if(focus==PLAY_FOCUS_RESTART||focus==PLAY_FOCUS_CLEAR){restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],&left,&right);return focus==PLAY_FOCUS_RESTART?left:right;}
+  if(focus==PLAY_FOCUS_HINT)return controls.btn[PLAY_ACTION_HINT];
+  if(focus==PLAY_FOCUS_NOTES)return controls.btn[PLAY_ACTION_NOTES];
+  if(focus==PLAY_FOCUS_VERIFY)return controls.btn[PLAY_ACTION_VERIFY];
+  if(focus==PLAY_FOCUS_SETTINGS)return controls.btn[PLAY_ACTION_AUDIO];
+  if(focus==PLAY_FOCUS_HELP)return controls.btn[PLAY_ACTION_HELP];
+  if(focus==PLAY_FOCUS_STRICT&&layout.model.hud_count>4)return sdl_rect(layout.model.hud[4]);
+  if(focus>=PLAY_FOCUS_NUMBER_1)return controls.pal[focus-PLAY_FOCUS_NUMBER_1];
+  return(SDL_Rect){0,0,0,0};
 }
 
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
@@ -655,6 +731,11 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
         polish_button_face(gfx, theme, rect, background, pressed, false);
     (void)draw_fitted_text(gfx, tr(ui->language, keys[action]), foreground,
                            face, fonts.control, 10);
+  }
+
+  if(play_focus_enabled(game,ui,play_keyboard_focus)){
+    SDL_Rect focus_rect=play_focus_rect(gfx,ui,play_keyboard_focus);
+    if(focus_rect.w>0&&focus_rect.h>0)draw_focus_ring(gfx->ren,focus_rect,theme.sel_outline);
   }
 
   SDL_Color separator = theme.dim;

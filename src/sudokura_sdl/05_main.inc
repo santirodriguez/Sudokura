@@ -336,6 +336,62 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
                                    tr(ui->language, T_LINK_ERROR), g->win);
 }
 
+static void info_focus_reset(void){info_keyboard_focus=INFO_FOCUS_BACK;}
+static void info_move_focus(const UI*ui,int direction){
+  int count=ui&&ui->screen==SCR_ABOUT?INFO_FOCUS_COUNT:1;
+  info_keyboard_focus=input_focus_step(info_keyboard_focus,count,direction);
+}
+static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
+  if(!ui||!g)return false;
+  if(info_keyboard_focus==INFO_FOCUS_BACK){ui_button_click();return_from_info(p,game,ui);return true;}
+  if(ui->screen!=SCR_ABOUT)return false;
+  if(info_keyboard_focus==INFO_FOCUS_STUDY){ui_open_url("https://doi.org/10.1002/gps.5085");return true;}
+  int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
+  if(link>=0&&link<3){open_about_url(g,ui,link);return true;}
+  if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
+  return false;
+}
+static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
+  ui_button_click();victory_animation_reset();
+  if(result_keyboard_focus==1){go_home(p,game,ui);return;}
+  if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
+  else if(restart_current_session_confirmed(p,game,ui,g))restart_current_session(p,game,ui);
+}
+static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
+  ui_button_click();
+  if(pause_keyboard_focus==0){if(resume_user_pause(ui))(void)checkpoint_current_session(p,game,ui);}
+  else go_home(p,game,ui);
+}
+static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
+  if(!ui||!ui->hint_preview_active)return false;
+  if(hint_keyboard_focus==HINT_FOCUS_CANCEL){ui_button_click();clear_hint_preview(ui);return true;}
+  if(hint_keyboard_focus==HINT_FOCUS_REVEAL){ui_button_click();(void)reveal_selected_cell(p,game,ui);return true;}
+  ui_button_click();
+  if(ui->hint_preview.status==HUMAN_HINT_LOGICAL)(void)apply_current_logic_hint(p,game,ui);
+  else verify_current_entries(p,game,ui);
+  return true;
+}
+static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
+  if(!play_focus_enabled(game,ui,play_keyboard_focus))return false;
+  switch(play_keyboard_focus){
+    case PLAY_FOCUS_MENU:ui_button_click();go_home(p,game,ui);return true;
+    case PLAY_FOCUS_PAUSE:ui_button_click();pause_keyboard_focus=0;clock_pause(ui,PAUSE_MANUAL);(void)checkpoint_current_session(p,game,ui);return true;
+    case PLAY_FOCUS_UNDO:
+    case PLAY_FOCUS_REDO:{AppActionKind kind=play_keyboard_focus==PLAY_FOCUS_REDO?APP_ACTION_REDO:APP_ACTION_UNDO;ui_button_click();if(apply_history_action(game,ui,kind)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
+    case PLAY_FOCUS_RESTART:ui_button_click();if(restart_current_session_confirmed(p,game,ui,g)){victory_animation_reset();restart_current_session(p,game,ui);}return true;
+    case PLAY_FOCUS_CLEAR:ui_button_click();if(clear_selected_available(game,ui)&&apply_player_input(game,ui,ui->sel_r,ui->sel_c,0,false)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;
+    case PLAY_FOCUS_HINT:ui_button_click();(void)prepare_hint_preview(game,ui);if(ui->hint_preview_active)hint_focus_reset(ui);return true;
+    case PLAY_FOCUS_NOTES:ui_button_click();ui->notes_mode=!ui->notes_mode;show_toast(ui,tr(ui->language,ui->notes_mode?T_NOTES_ON:T_NOTES_OFF));(void)stage_current_session(p,game,ui);return true;
+    case PLAY_FOCUS_VERIFY:ui_button_click();verify_current_entries(p,game,ui);return true;
+    case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
+    case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
+    case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
+    default:
+      if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
+      return false;
+  }
+}
+
 static bool open_global_info_key(Persistence *persistence, const Game *game,
                                  UI *ui, SDL_Keycode key) {
   InputInfoShortcut shortcut = input_info_shortcut(key);
@@ -344,6 +400,7 @@ static bool open_global_info_key(Persistence *persistence, const Game *game,
       shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT;
 
   ui_button_click();
+  info_focus_reset();
   if (ui->screen == target) return true;
   if (ui->screen == SCR_PLAY)
     open_info_from_play(persistence, game, ui, target);
@@ -359,6 +416,7 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   AppActionOutcome outcome = app_check_terminal(game, ui, elapsed_time(ui));
   if (!outcome.terminal) return false;
   finish_terminal_action(ui);
+  result_keyboard_focus=0;
   (void)checkpoint_current_session(persistence, game, ui);
   return true;
 }
@@ -659,7 +717,7 @@ int main(int argc, char **argv) {
             home_move_focus(&ui, -1);
           else if (k == SDLK_DOWN)
             home_move_focus(&ui, 1);
-          else if (k == SDLK_RETURN || k == SDLK_KP_ENTER)
+          else if (input_activation_key(k))
             home_activate(&persistence, &game, &ui, &g, &running);
           else if (k == SDLK_c && ui.has_session) {
             ui_button_click();
@@ -682,6 +740,12 @@ int main(int argc, char **argv) {
           if (k == SDLK_ESCAPE) {
             ui_button_click();
             return_from_info(&persistence, &game, &ui);
+          } else if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
+                     k == SDLK_UP || k == SDLK_DOWN) {
+            int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
+            info_move_focus(&ui,direction);
+          } else if (input_activation_key(k)) {
+            (void)activate_info_focus(&persistence,&game,&ui,&g);
           } else if (ui.screen == SCR_ABOUT) {
             if (k == SDLK_1 || k == SDLK_KP_1)
               open_about_url(&g, &ui, 0);
@@ -694,31 +758,28 @@ int main(int argc, char **argv) {
         }
         if (ui.screen == SCR_END) {
           if (k == SDLK_ESCAPE) {
-            ui_button_click();
-            victory_animation_reset();
-            go_home(&persistence, &game, &ui);
-          } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
-            ui_button_click();
-            victory_animation_reset();
-            if (ui.result == RES_WIN) {
-              if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
-                (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
-            } else if (restart_current_session_confirmed(
-                           &persistence, &game, &ui, &g)) {
-              restart_current_session(&persistence, &game, &ui);
-            }
+            ui_button_click();victory_animation_reset();go_home(&persistence,&game,&ui);
+          } else if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
+                     k == SDLK_UP || k == SDLK_DOWN) {
+            int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
+            result_keyboard_focus=input_focus_step(result_keyboard_focus,2,direction);
+          } else if (input_activation_key(k)) {
+            activate_result_focus(&persistence,&game,&ui,&g);
           }
           continue;
         }
         if (ui.pause_reasons) {
           if ((ui.pause_reasons & PAUSE_USER_VISIBLE) &&
-              (k == SDLK_p || k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
-            ui_button_click();
-            if (resume_user_pause(&ui))
-              (void)checkpoint_current_session(&persistence, &game, &ui);
+              (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
+               k == SDLK_UP || k == SDLK_DOWN)) {
+            int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
+            pause_keyboard_focus=input_focus_step(pause_keyboard_focus,2,direction);
+          } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && input_activation_key(k)) {
+            activate_pause_focus(&persistence,&game,&ui);
+          } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && k == SDLK_p) {
+            pause_keyboard_focus=0;activate_pause_focus(&persistence,&game,&ui);
           } else if (k == SDLK_ESCAPE) {
-            ui_button_click();
-            go_home(&persistence, &game, &ui);
+            ui_button_click();go_home(&persistence,&game,&ui);
           }
           continue;
         }
@@ -744,7 +805,22 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.hint_preview_active) {
-          if (k == SDLK_ESCAPE) {
+          if (k == SDLK_TAB) {
+            hint_move_focus(&ui,(mod&KMOD_SHIFT)?-1:1);
+            continue;
+          }
+          if (input_activation_key(k)) {
+            (void)activate_hint_focus(&persistence,&game,&ui);
+            continue;
+          }
+          if (k == SDLK_TAB) {
+          play_move_focus(&game,&ui,shifted?-1:1);
+          continue;
+        }
+        if (input_activation_key(k) && play_keyboard_focus >= 0) {
+          if (activate_play_focus(&persistence,&game,&ui,&g)) continue;
+        }
+        if (k == SDLK_ESCAPE) {
             ui_button_click();
             clear_hint_preview(&ui);
             continue;
@@ -754,8 +830,7 @@ int main(int argc, char **argv) {
             (void)reveal_selected_cell(&persistence, &game, &ui);
             continue;
           }
-          if (k == SDLK_h ||
-              k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+          if (k == SDLK_h) {
             ui_button_click();
             if (ui.hint_preview.status == HUMAN_HINT_LOGICAL)
               (void)apply_current_logic_hint(&persistence, &game, &ui);
@@ -807,6 +882,7 @@ int main(int argc, char **argv) {
         } else if (k == SDLK_h) {
           ui_button_click();
           (void)prepare_hint_preview(&game, &ui);
+          if(ui.hint_preview_active)hint_focus_reset(&ui);
         } else {
           int value = input_digit_value(k, e.key.keysym.scancode);
           if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
@@ -912,10 +988,12 @@ int main(int argc, char **argv) {
           } else if (point_in(sdl_rect(a.home_secondary[0]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_HELP;
+            info_focus_reset();
             (void)app_open_aux(&ui, SCR_HELP);
           } else if (point_in(sdl_rect(a.home_secondary[1]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_ABOUT;
+            info_focus_reset();
             (void)app_open_aux(&ui, SCR_ABOUT);
           } else if (point_in(sdl_rect(a.home_secondary[2]), x, y)) {
             ui_button_click();
@@ -934,6 +1012,7 @@ int main(int argc, char **argv) {
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
           if (point_in(sdl_rect(a.end_buttons[0]), x, y)) {
+            result_keyboard_focus=0;
             ui_button_click();
             victory_animation_reset();
             if (ui.result == RES_WIN) {
@@ -944,6 +1023,7 @@ int main(int argc, char **argv) {
               restart_current_session(&persistence, &game, &ui);
             }
           } else if (point_in(sdl_rect(a.end_buttons[1]), x, y)) {
+            result_keyboard_focus=1;
             ui_button_click();
             victory_animation_reset();
             go_home(&persistence, &game, &ui);
@@ -958,6 +1038,7 @@ int main(int argc, char **argv) {
             bool opened = false;
             for (int i = 0; i < 3; ++i) {
               if (point_in(sdl_rect(a.about_links[i]), x, y)) {
+                info_keyboard_focus=INFO_FOCUS_LINK_0+i;
                 open_about_url(&g, &ui, i);
                 opened = true;
                 break;
@@ -966,6 +1047,7 @@ int main(int argc, char **argv) {
             if (opened) continue;
           }
           if (point_in(back_rect(&g, &ui), x, y)) {
+            info_keyboard_focus=INFO_FOCUS_BACK;
             ui_button_click();
             return_from_info(&persistence, &game, &ui);
           }
@@ -976,10 +1058,12 @@ int main(int argc, char **argv) {
             AppGeometry a;
             if (get_geometry(&g, &ui, &a)) {
               if (point_in(sdl_rect(a.pause_buttons[0]), x, y)) {
+                pause_keyboard_focus=0;
                 ui_button_click();
                 if (resume_user_pause(&ui))
                   (void)checkpoint_current_session(&persistence, &game, &ui);
               } else if (point_in(sdl_rect(a.pause_buttons[1]), x, y)) {
+                pause_keyboard_focus=1;
                 ui_button_click();
                 go_home(&persistence, &game, &ui);
               }
@@ -1033,6 +1117,7 @@ int main(int argc, char **argv) {
             if (point_in(menu_rect, x, y)) {
               go_home(&persistence, &game, &ui);
             } else if (point_in(pause_rect, x, y)) {
+              pause_keyboard_focus=0;
               clock_pause(&ui, PAUSE_MANUAL);
               (void)checkpoint_current_session(&persistence, &game, &ui);
             }
@@ -1072,6 +1157,7 @@ int main(int argc, char **argv) {
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
             ui_button_click();
             (void)prepare_hint_preview(&game, &ui);
+            if(ui.hint_preview_active)hint_focus_reset(&ui);
           } else if (point_in(controls.btn[PLAY_ACTION_NOTES], x, y)) {
             ui_button_click();
             ui.notes_mode = !ui.notes_mode;
@@ -1086,6 +1172,7 @@ int main(int argc, char **argv) {
             ui_settings_open(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
             ui_button_click();
+            info_focus_reset();
             open_info_from_play(&persistence, &game, &ui, SCR_HELP);
           } else {
             for (int number = 1; number <= 9; ++number) {

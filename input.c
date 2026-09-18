@@ -65,6 +65,18 @@ bool input_mouse_button_is_primary(Uint8 button) {
   return button == SDL_BUTTON_LEFT;
 }
 
+bool input_activation_key(SDL_Keycode key) {
+  return key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE;
+}
+
+int input_focus_step(int current, int count, int direction) {
+  if (count <= 0) return -1;
+  int step = direction < 0 ? -1 : 1;
+  if (current < 0 || current >= count)
+    return step < 0 ? count - 1 : 0;
+  return (current + step + count) % count;
+}
+
 InputInfoShortcut input_info_shortcut(SDL_Keycode key) {
   if (key == SDLK_F1) return INPUT_INFO_HELP;
   if (key == SDLK_F2) return INPUT_INFO_ABOUT;

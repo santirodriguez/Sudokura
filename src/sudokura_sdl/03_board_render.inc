@@ -65,6 +65,14 @@ enum{
   HOME_FOCUS_COUNT
 };
 static int home_focus=HOME_FOCUS_NEW;
+enum{
+  INFO_FOCUS_BACK=0,INFO_FOCUS_STUDY,INFO_FOCUS_LINK_0,
+  INFO_FOCUS_LINK_1,INFO_FOCUS_LINK_2,INFO_FOCUS_LINK_3,
+  INFO_FOCUS_COUNT
+};
+static int info_keyboard_focus=INFO_FOCUS_BACK;
+static int result_keyboard_focus=0;
+static int pause_keyboard_focus=0;
 static GameDifficulty home_difficulty=DIFFICULTY_MEDIUM;
 static SDL_Texture*language_flags[LANG_COUNT]={NULL,NULL,NULL};
 static bool victory_animation_active=false;
@@ -137,7 +145,7 @@ typedef struct{SDL_Rect btn[9],pal[9],palette_label,progress;int count_btn,count
 static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_compute(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
 static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,sizeof*r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
 static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
-static void draw_back_button(Gfx*g,const UI*ui,Theme th){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);}
+static void draw_back_button(Gfx*g,const UI*ui,Theme th,bool focused){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);if(focused)draw_focus_ring(g->ren,r,th.sel_outline);}
 
 static bool hint_step_has_cell(const int *cells, int count, int cell) {
   if (!cells || count <= 0) return false;
@@ -259,7 +267,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
       draw_line(g->ren,x+4,y+4,x+cs-5,y+4,match);
       draw_line(g->ren,x+4,y+cs-5,x+cs-5,y+cs-5,match);
     }
-    if(sel){double t=now_s(),p=0.65+0.35*(0.5*(1.0+sin(t*4.0)));draw_rect(g->ren,x+2,y+2,cs-4,cs-4,(SDL_Color){(Uint8)(th.sel.r*p),(Uint8)(th.sel.g*p),(Uint8)(th.sel.b*p),190});SDL_Color o=th.sel_outline;draw_line(g->ren,x+1,y+1,x+cs-2,y+1,o);draw_line(g->ren,x+cs-2,y+1,x+cs-2,y+cs-2,o);draw_line(g->ren,x+cs-2,y+cs-2,x+1,y+cs-2,o);draw_line(g->ren,x+1,y+cs-2,x+1,y+1,o);}else if(hover)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.hover);
+    if(sel){double p=1.0;if(!ui->reduced_motion){double t=now_s();p=0.65+0.35*(0.5*(1.0+sin(t*4.0)));}draw_rect(g->ren,x+2,y+2,cs-4,cs-4,(SDL_Color){(Uint8)(th.sel.r*p),(Uint8)(th.sel.g*p),(Uint8)(th.sel.b*p),190});SDL_Color o=th.sel_outline;draw_line(g->ren,x+1,y+1,x+cs-2,y+1,o);draw_line(g->ren,x+cs-2,y+1,x+cs-2,y+cs-2,o);draw_line(g->ren,x+cs-2,y+cs-2,x+1,y+cs-2,o);draw_line(g->ren,x+1,y+cs-2,x+1,y+1,o);}else if(hover)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.hover);
     if(v&&game_has_conflict(game,r,c)){
       draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.conflict);
       SDL_Color conflict_mark=th.text_wrong;
