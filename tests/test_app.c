@@ -265,6 +265,97 @@ static void test_hint_verify_and_restart(void) {
   assert(game.puzzle[index] == game.initial[index]);
 }
 
+static void test_undo_redo_contract(void) {
+  Game game;
+  fixture_game_new(&game, 4242);
+  AppState state = playing_state(MODE_STRIKES);
+  int index = first_playable(&game);
+  assert(index >= 0);
+  int wrong = wrong_value(&game, index);
+
+  AppAction place = {
+      .kind = APP_ACTION_PLACE,
+      .row = index / 9,
+      .column = index % 9,
+      .value = wrong,
+  };
+  AppActionOutcome placed = app_apply_action(&game, &state, place, 5.0);
+  assert(placed.changed && state.undo_count == 1 && state.redo_count == 0);
+  assert(state.mistakes == 1 && state.strikes == 1);
+
+  AppAction undo = {.kind = APP_ACTION_UNDO};
+  AppActionOutcome undone = app_apply_action(&game, &state, undo, 6.0);
+  assert(undone.changed && game.puzzle[index] == 0);
+  assert(state.undo_count == 0 && state.redo_count == 1);
+  assert(state.mistakes == 1 && state.strikes == 1);
+
+  AppAction redo = {.kind = APP_ACTION_REDO};
+  AppActionOutcome redone = app_apply_action(&game, &state, redo, 7.0);
+  assert(redone.changed && game.puzzle[index] == wrong);
+  assert(state.undo_count == 1 && state.redo_count == 0);
+  assert(state.mistakes == 1 && state.strikes == 1);
+
+  assert(app_apply_action(&game, &state, undo, 8.0).changed);
+  AppAction replacement = place;
+  replacement.value = game.solution[index];
+  assert(app_apply_action(&game, &state, replacement, 9.0).changed);
+  assert(state.redo_count == 0);
+  AppActionOutcome stale_redo = app_apply_action(&game, &state, redo, 10.0);
+  assert(stale_redo.blocked && !stale_redo.changed);
+
+  AppAction restart = {.kind = APP_ACTION_RESTART};
+  assert(app_apply_action(&game, &state, restart, 11.0).changed);
+  assert(state.undo_count == 0 && state.redo_count == 0);
+}
+
+static void test_undo_keeps_assisted_state(void) {
+  Game game;
+  fixture_game_new(&game, 5150);
+  AppState state = playing_state(MODE_CLASSIC);
+  int index = first_playable(&game);
+  assert(index >= 0);
+
+  AppAction hint = {
+      .kind = APP_ACTION_HINT,
+      .row = index / 9,
+      .column = index % 9,
+  };
+  assert(app_apply_action(&game, &state, hint, 1.0).changed);
+  state.assisted = true;
+
+  AppAction undo = {.kind = APP_ACTION_UNDO};
+  assert(app_apply_action(&game, &state, undo, 2.0).changed);
+  assert(state.assisted);
+  assert(!game.hinted[index] && game.puzzle[index] == 0);
+}
+
+static void test_history_blocked_after_terminal(void) {
+  Game game;
+  fixture_game_new(&game, 6161);
+  AppState state = playing_state(MODE_STRIKES);
+  int index = first_playable(&game);
+  assert(index >= 0);
+  state.strikes = 2;
+  state.mistakes = 2;
+
+  AppAction wrong = {
+      .kind = APP_ACTION_PLACE,
+      .row = index / 9,
+      .column = index % 9,
+      .value = wrong_value(&game, index),
+  };
+  AppActionOutcome loss = app_apply_action(&game, &state, wrong, 1.0);
+  assert(loss.terminal && loss.result == APP_RESULT_LOSE);
+  int after_loss = game.puzzle[index];
+  uint16_t undo_count = state.undo_count;
+
+  AppAction undo = {.kind = APP_ACTION_UNDO};
+  AppActionOutcome blocked = app_apply_action(&game, &state, undo, 2.0);
+  assert(blocked.terminal && !blocked.changed);
+  assert(game.puzzle[index] == after_loss);
+  assert(state.undo_count == undo_count);
+}
+
 static int session_save_calls = 0;
 static int preferences_save_calls = 0;
 
@@ -311,6 +402,9 @@ int main(void) {
   test_time_limit_preempts_input();
   test_continue_action();
   test_hint_verify_and_restart();
+  test_undo_redo_contract();
+  test_undo_keeps_assisted_state();
+  test_history_blocked_after_terminal();
   test_storage_is_substitutable();
   puts("application action sequencing, terminality, navigation, and storage substitution passed");
   return 0;
