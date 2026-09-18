@@ -403,7 +403,11 @@ int main(int argc, char **argv) {
   home_difficulty = DIFFICULTY_MEDIUM;
 
   if (smoke_test || screenshot_dir) {
-    game_new(&game, 110u);
+    if (!game_new(&game, 110u)) {
+      fprintf(stderr, "smoke fixture generation failed\n");
+      app_shutdown(&g);
+      return 1;
+    }
     ui.has_session = true;
     ui.screen = SCR_TITLE;
     app_frame(&g, &game, &ui);
