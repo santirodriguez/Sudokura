@@ -466,18 +466,37 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   ui->has_session=normal_continue;
 }
 
-static void start_new_session_base(Persistence*p,Game*game,UI*ui){
+static GameGenerationResult start_new_session_base(
+    Persistence*p,Game*game,UI*ui,const GameGenerationControl*control){
+  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  Game generated;
+  GameGenerationResult result=game_generate_difficulty(
+      &generated,next_seed(),p->preferences.difficulty,
+      SUDOKURA_GENERATOR_REVISION,control);
+  if(result!=GAME_GENERATION_OK)return result;
+  *game=generated;
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
-  game_new_difficulty(game,next_seed(),p->preferences.difficulty);
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
   begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
+  return GAME_GENERATION_OK;
 }
 
-static bool start_daily_session_base(Persistence*p,Game*game,UI*ui,int year,int month,int day){
-  if(!game_new_daily(game,year,month,day))return false;
+static GameGenerationResult start_daily_session_base(
+    Persistence*p,Game*game,UI*ui,int year,int month,int day,
+    const GameGenerationControl*control){
+  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  uint64_t seed=0;
+  if(!game_daily_seed_revision(year,month,day,SUDOKURA_GENERATOR_REVISION,&seed))
+    return GAME_GENERATION_INVALID;
+  Game generated;
+  GameGenerationResult result=game_generate_difficulty(
+      &generated,seed,DIFFICULTY_MEDIUM,SUDOKURA_GENERATOR_REVISION,control);
+  if(result!=GAME_GENERATION_OK)return result;
+  *game=generated;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
-  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);return true;
+  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
+  return GAME_GENERATION_OK;
 }
 
 static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
