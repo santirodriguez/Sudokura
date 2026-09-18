@@ -333,6 +333,89 @@ static bool local_date(int*year,int*month,int*day){
   *year=local->tm_year+1900;*month=local->tm_mon+1;*day=local->tm_mday;return true;
 }
 
+static void resume_info_from_slot(AppResumeInfo*out,const ProfileSlot*slot,
+                                  bool daily){
+  if(!out)return;
+  memset(out,0,sizeof(*out));
+  const SessionState*session=profile_slot_session(slot);
+  if(!session||!session_validate_runtime(session))return;
+  out->present=true;
+  out->can_continue=session_can_continue(session);
+  out->completed=session->status!=SESSION_ACTIVE;
+  out->assisted=slot->value.assisted;
+  out->mode=session->mode;
+  out->difficulty=session->game.difficulty;
+  out->elapsed_ms=session->elapsed_ms;
+  out->year=session->daily_year;
+  out->month=session->daily_month;
+  out->day=session->daily_day;
+  if(daily){
+    int year=0,month=0,day=0;
+    out->today=local_date(&year,&month,&day)&&year==out->year&&
+               month==out->month&&day==out->day;
+  }
+}
+
+static void refresh_resume_info(Persistence*p,UI*ui){
+  if(!ui)return;
+  memset(&ui->normal_resume,0,sizeof(ui->normal_resume));
+  memset(&ui->daily_resume,0,sizeof(ui->daily_resume));
+  if(p&&p->enabled){
+    resume_info_from_slot(&ui->normal_resume,&p->profile.normal,false);
+    resume_info_from_slot(&ui->daily_resume,&p->profile.daily,true);
+  }
+  ui->has_session=ui->normal_resume.can_continue;
+}
+
+static bool profile_result_from_session_state(const SessionState*session,
+                                              bool assisted,
+                                              ProfileResult*out){
+  if(!session||!out||session->status==SESSION_ACTIVE)return false;
+  memset(out,0,sizeof(*out));
+  out->seed=session->game.seed;
+  out->generator_revision=session->game.generator_revision;
+  out->difficulty=session->game.difficulty;
+  out->mode=session->mode;
+  out->status=session->status;
+  out->assisted=assisted;
+  out->is_daily=session->is_daily;
+  out->elapsed_ms=session->elapsed_ms;
+  out->mistakes=(uint32_t)session->mistakes;
+  out->strikes=(uint32_t)session->strikes;
+  out->daily_year=(uint16_t)session->daily_year;
+  out->daily_month=(uint8_t)session->daily_month;
+  out->daily_day=(uint8_t)session->daily_day;
+  return true;
+}
+
+static void refresh_result_summary(Persistence*p,const SessionState*session,
+                                   bool assisted,UI*ui){
+  if(!ui)return;
+  ui->result_finished_count=0;
+  ui->result_best_time_available=false;
+  ui->result_best_time_ms=0;
+  if(!p||!p->enabled)return;
+  ProfileResult reference;
+  if(!profile_result_from_session_state(session,assisted,&reference))return;
+  ProfileResultSummary summary=profile_result_summary(&p->profile,&reference);
+  ui->result_finished_count=summary.finished;
+  ui->result_best_time_available=summary.best_time_available;
+  ui->result_best_time_ms=summary.best_time_ms;
+}
+
+static bool record_terminal_result(Persistence*p,const SessionState*session,
+                                   bool assisted,UI*ui){
+  if(!p||!p->enabled||!session||session->status==SESSION_ACTIVE)return false;
+  ProfileResult result;
+  if(!profile_result_from_session_state(session,assisted,&result))return false;
+  bool inserted=false;
+  if(!profile_record_result(&p->profile,&result,&inserted))return false;
+  if(inserted)
+    save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
+  refresh_result_summary(p,session,assisted,ui);
+  return inserted;
+}
+
 static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
   if(!out||!base||!leaf)return false;
   size_t base_length=strlen(base),leaf_length=strlen(leaf);
@@ -503,7 +586,9 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
   memcpy(slot->value.redo,ui->redo,sizeof(ui->redo));
   if(!state.is_daily)p->saved=state;
-  ui->has_session=session_can_continue(&p->saved);
+  if(state.status!=SESSION_ACTIVE)
+    (void)record_terminal_result(p,&state,assisted,ui);
+  refresh_resume_info(p,ui);
   save_policy_mark(&p->save_policy,
                    state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
                    now_ms());
@@ -539,6 +624,9 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   else ui->result=RES_NONE;
   AppAction continue_action={.kind=APP_ACTION_CONTINUE};
   (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
+  if(s->status!=SESSION_ACTIVE)
+    (void)record_terminal_result(p,s,slot->value.assisted,ui);
+  refresh_resume_info(p,ui);
   ui->has_session=normal_continue;
 }
 
