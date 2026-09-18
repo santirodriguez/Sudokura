@@ -22,6 +22,4 @@
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
 
-#define SDL_PollEvent ui_poll_event
 #include "src/sudokura_sdl/05_main.inc"
-#undef SDL_PollEvent
