@@ -87,21 +87,29 @@ int main(void) {
   assert(fclose(file) == 0);
   assert(rows >= 100);
 
+  assert(metrics[HUMAN_RATING_EASY].count >= 100);
+  assert(metrics[HUMAN_RATING_MEDIUM].count >= 5);
+  assert(metrics[HUMAN_RATING_HARD].count >= 1);
+
+  double dto_medians[HUMAN_RATING_HARD + 1] = {0};
+  double dtr_medians[HUMAN_RATING_HARD + 1] = {0};
   printf("human-calibration rows=%d unsupported=%d\n", rows, unsupported);
   for (int rating = HUMAN_RATING_EASY; rating <= HUMAN_RATING_HARD;
        ++rating) {
     RatingMetrics *group = &metrics[rating];
-    if (group->count == 0) {
-      printf("human-calibration rating=%s count=0\n", rating_name(rating));
-      continue;
-    }
-    double dto_median = median(group->dto, group->count);
-    double dtr_median = median(group->dtr, group->count);
+    dto_medians[rating] = median(group->dto, group->count);
+    dtr_medians[rating] = median(group->dtr, group->count);
     printf("human-calibration rating=%s count=%d dto_median=%.4f"
            " dtr_median=%.4f\n",
-           rating_name(rating), group->count, dto_median, dtr_median);
+           rating_name(rating), group->count, dto_medians[rating],
+           dtr_medians[rating]);
   }
 
-  puts("human-player calibration dataset evaluated");
+  assert(dto_medians[HUMAN_RATING_MEDIUM] >
+         dto_medians[HUMAN_RATING_EASY]);
+  assert(dtr_medians[HUMAN_RATING_MEDIUM] >
+         dtr_medians[HUMAN_RATING_EASY]);
+
+  puts("human-player calibration supports Easy < Medium; Hard remains observational because the supported sample is small");
   return 0;
 }

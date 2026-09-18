@@ -225,11 +225,6 @@ static bool prepare_hint_preview(const Game*game,UI*ui){
   if(!human_hint_analyze(game->puzzle,&hint))return false;
   if(hint.status==HUMAN_HINT_SOLVED)return false;
   ui->hint_verify_required=false;
-  if(hint.status==HUMAN_HINT_LOGICAL&&
-     game_wrong_entry_count(game)>0){
-    hint.status=HUMAN_HINT_STALLED;
-    ui->hint_verify_required=true;
-  }
   ui->hint_preview=hint;
   ui->hint_preview_active=true;
   if(hint.status==HUMAN_HINT_LOGICAL&&hint.placement.placement_cell>=0){
@@ -248,6 +243,12 @@ static bool apply_logical_hint_action(Game*game,UI*ui){
   HumanStep placement=ui->hint_preview.placement;
   if(placement.placement_cell<0||placement.placement_value<1||
      placement.placement_value>9)return false;
+  if(game->solution[placement.placement_cell]!=placement.placement_value){
+    ui->hint_preview.status=HUMAN_HINT_STALLED;
+    ui->hint_verify_required=true;
+    ui->assisted=true;
+    return true;
+  }
   AppAction action={
     .kind=APP_ACTION_PLACE,
     .row=placement.placement_cell/9,

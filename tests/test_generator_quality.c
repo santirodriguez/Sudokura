@@ -365,15 +365,15 @@ int main(void) {
   assert(medium_failures == 0);
   assert(hard_failures == 0);
 
-  /* Locked after the first cross-platform corpus run. */
-  const uint64_t expected_legacy = UINT64_C(0);
-  const uint64_t expected_easy = UINT64_C(0);
-  const uint64_t expected_medium = UINT64_C(0);
-  const uint64_t expected_hard = UINT64_C(0);
-  if (expected_legacy) assert(legacy == expected_legacy);
-  if (expected_easy) assert(easy == expected_easy);
-  if (expected_medium) assert(medium == expected_medium);
-  if (expected_hard) assert(hard == expected_hard);
+  /* Locked from the first green Linux/Windows 1,000-per-difficulty run. */
+  const uint64_t expected_legacy = UINT64_C(0x5072a1de5f9435df);
+  const uint64_t expected_easy = UINT64_C(0x5ccc476e403d0761);
+  const uint64_t expected_medium = UINT64_C(0x1cfda8df90ebfdb3);
+  const uint64_t expected_hard = UINT64_C(0x3f3e198efc172cd1);
+  assert(legacy == expected_legacy);
+  assert(easy == expected_easy);
+  assert(medium == expected_medium);
+  assert(hard == expected_hard);
 
   puts("generator quality corpus passed independent uniqueness and elimination oracle checks");
   return 0;
