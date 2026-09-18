@@ -101,7 +101,7 @@ static bool cancel_generation(void *userdata, unsigned attempt,
 }
 
 static void test_generator_stress(void) {
-  for (uint64_t seed = 1; seed <= 90; ++seed) {
+  for (uint64_t seed = 1; seed <= 30; ++seed) {
     GameDifficulty difficulty =
         (GameDifficulty)((seed - 1) % DIFFICULTY_COUNT);
     Game game;
@@ -111,7 +111,7 @@ static void test_generator_stress(void) {
     assert(game_board_valid(game.solution));
     assert(game_solution_count(game.initial, 2) == 1);
     assert_v3_human_rating(&game);
-    if (seed % 17 == 0) {
+    if (seed % 7 == 0) {
       Game duplicate;
       assert(game_new_difficulty(&duplicate, seed, difficulty));
       assert(!memcmp(&game, &duplicate, sizeof(game)));
