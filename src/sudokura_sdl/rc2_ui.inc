@@ -18,6 +18,14 @@ static Persistence *audio_persistence = NULL;
 static Gfx *audio_gfx = NULL;
 static UI *audio_ui = NULL;
 static bool audio_settings_open = false;
+typedef enum {
+  AUDIO_FOCUS_TOGGLE = 0,
+  AUDIO_FOCUS_MUSIC,
+  AUDIO_FOCUS_FX,
+  AUDIO_FOCUS_BACK,
+  AUDIO_FOCUS_COUNT
+} AudioKeyboardFocus;
+static AudioKeyboardFocus audio_keyboard_focus = AUDIO_FOCUS_TOGGLE;
 static bool ui_home_cue_requested = false;
 
 typedef struct {
@@ -81,6 +89,7 @@ static void ui_audio_set_fx_level(int value) {
 
 static void ui_audio_open(Persistence *persistence, const Game *game, UI *ui) {
   if (!ui || audio_settings_open || ui->screen != SCR_PLAY) return;
+  audio_keyboard_focus = AUDIO_FOCUS_TOGGLE;
   clock_pause(ui, PAUSE_MODAL);
   if (persistence && game) (void)checkpoint_current_session(persistence, game, ui);
   if (!app_open_aux(ui, APP_SCREEN_SETTINGS)) {
@@ -96,6 +105,29 @@ static void ui_audio_close(Persistence *persistence, const Game *game, UI *ui) {
   (void)app_return_aux(ui);
   clock_resume(ui, PAUSE_MODAL);
   if (persistence && game) (void)checkpoint_current_session(persistence, game, ui);
+}
+
+static SDL_Rect ui_audio_focus_rect(AudioPanelLayout layout,
+                                    AudioKeyboardFocus focus) {
+  switch (focus) {
+    case AUDIO_FOCUS_TOGGLE:
+      return layout.toggle;
+    case AUDIO_FOCUS_MUSIC:
+      return (SDL_Rect){
+          layout.music_minus.x, layout.music_minus.y,
+          layout.music_plus.x + layout.music_plus.w - layout.music_minus.x,
+          layout.music_minus.h};
+    case AUDIO_FOCUS_FX:
+      return (SDL_Rect){
+          layout.fx_minus.x, layout.fx_minus.y,
+          layout.fx_plus.x + layout.fx_plus.w - layout.fx_minus.x,
+          layout.fx_minus.h};
+    case AUDIO_FOCUS_BACK:
+      return layout.back;
+    case AUDIO_FOCUS_COUNT:
+    default:
+      return (SDL_Rect){0, 0, 0, 0};
+  }
 }
 
 static AudioPanelLayout ui_audio_panel_layout(const Gfx *gfx) {
@@ -226,6 +258,11 @@ static void rc2_render_audio_panel(Gfx *gfx, UI *ui) {
       back_pressed, false);
   (void)draw_fitted_text(gfx, tr(ui->language, T_BACK), theme.btnfg, back_face,
                          preferred, 10);
+
+  SDL_Rect focus_rect =
+      ui_audio_focus_rect(layout, audio_keyboard_focus);
+  if (focus_rect.w > 0 && focus_rect.h > 0)
+    draw_focus_ring(gfx->ren, focus_rect, theme.sel_outline);
 }
 
 typedef struct {
