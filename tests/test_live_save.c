@@ -58,7 +58,8 @@ int main(void) {
   save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 100);
 
   store_test_set_fault(STORE_TEST_FAULT_REPLACE);
-  StoreStatus failed = profile_save_file(active_path, backup_path, &live);
+  StoreStatus failed =
+      profile_save_runtime_file(active_path, backup_path, &live);
   assert(failed == STORE_IO_ERROR);
   save_policy_record_result(&policy, failed, 200);
   assert(save_policy_has_error(&policy));
@@ -76,7 +77,8 @@ int main(void) {
   assert(disk_session->elapsed_ms == UINT64_C(10000));
 
   store_test_set_fault(STORE_TEST_FAULT_NONE);
-  StoreStatus retried = profile_save_file(active_path, backup_path, &live);
+  StoreStatus retried =
+      profile_save_runtime_file(active_path, backup_path, &live);
   assert(retried == STORE_OK);
   save_policy_record_result(&policy, retried, 300);
   assert(!save_policy_dirty(&policy));
