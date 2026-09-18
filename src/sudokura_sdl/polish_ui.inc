@@ -1,5 +1,6 @@
-/* Final v1.2 presentation polish kept separate from game rules. */
+/* Presentation helpers used by the single explicit SDL render pipeline. */
 static SDL_Texture *app_icon_texture = NULL;
+static void about_redraw_desktop_cards(Gfx *gfx, UI *ui);
 
 static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
                                    SDL_Color background, bool pressed,
@@ -212,24 +213,8 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
               layout.side.x + layout.side.w - 13, controls.palette_label.y - 6,
               separator);
 
-  const TextKey action_keys[GEOMETRY_ACTION_COUNT] = {
-      T_RESTART, T_PAUSE, T_HINT, T_NOTES, T_VERIFY,
-      T_SOUND,   T_HELP,  T_ABOUT, T_MENU};
-  int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
-  for (int i = 0; i < controls.count_btn; ++i) {
-    SDL_Rect rect = controls.btn[i];
-    bool hover = point_in(rect, mx, my);
-    bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-    bool active = (i == 3 && ui->notes_mode) || (i == 5 && audio_is_enabled());
-    SDL_Color background =
-        active ? theme.title : (hover ? theme.hover : theme.palette_bg);
-    SDL_Color foreground = active ? theme.bg : theme.btnfg;
-    SDL_Rect face =
-        polish_button_face(gfx, theme, rect, background, pressed, false);
-    (void)draw_fitted_text(gfx, tr(ui->language, action_keys[i]), foreground,
-                           face, fonts.control, 10);
-  }
+  (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
+                         controls.palette_label, fonts.help, 10);
 
   for (int number = 1; number <= 9; ++number) {
     SDL_Rect rect = controls.pal[number - 1];
@@ -382,15 +367,18 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
   draw_language_selector(gfx, ui);
 }
 
-static void app_render(Gfx *gfx, const Game *game, UI *ui) {
+static void app_render_polish(Gfx *gfx, const Game *game, UI *ui) {
   app_render_base(gfx, game, ui);
-  if (ui->screen == SCR_TITLE)
+  if (ui->screen == SCR_TITLE) {
     polish_render_home(gfx, ui);
-  else if (ui->screen == SCR_PLAY ||
-           (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY))
+  } else if (ui->screen == SCR_PLAY ||
+             (ui->screen == APP_SCREEN_SETTINGS &&
+              ui->prev_screen == SCR_PLAY)) {
     polish_render_play(gfx, game, ui);
-  else if (ui->screen == SCR_ABOUT)
+  } else if (ui->screen == SCR_ABOUT) {
     polish_render_about(gfx, ui);
+    about_redraw_desktop_cards(gfx, ui);
+  }
 }
 
 static void start_new_session(Persistence *persistence, Game *game, UI *ui) {
@@ -406,7 +394,8 @@ static bool start_daily_session(Persistence *persistence, Game *game, UI *ui,
   return started;
 }
 
-static void go_home(Persistence *persistence, const Game *game, UI *ui) {
+static void go_home_polish(Persistence *persistence, const Game *game,
+                           UI *ui) {
   bool leaving_play = ui && ui->screen == SCR_PLAY && ui->result == RES_NONE;
   if (leaving_play) audio_play_effect(AUDIO_EFFECT_LEAVE);
   go_home_base(persistence, game, ui);
