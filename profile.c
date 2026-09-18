@@ -663,12 +663,9 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
     Preferences preferences;
     preferences_defaults(&preferences);
     status = preferences_load_file(preferences_source, &preferences);
-    if (status == STORE_INCOMPATIBLE || status == STORE_IO_ERROR)
-      return status;
-    if (status == STORE_OK) {
-      candidate.preferences = preferences;
-      imported_any = true;
-    }
+    if (status != STORE_OK) return status;
+    candidate.preferences = preferences;
+    imported_any = true;
   }
 
   const char *audio_source =
@@ -679,11 +676,11 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   if (audio_source && store_file_exists(audio_source)) {
     uint8_t music = candidate.preferences.music_volume;
     uint8_t fx = candidate.preferences.fx_volume;
-    if (parse_legacy_audio_levels(audio_source, &music, &fx)) {
-      candidate.preferences.music_volume = music;
-      candidate.preferences.fx_volume = fx;
-      imported_any = true;
-    }
+    if (!parse_legacy_audio_levels(audio_source, &music, &fx))
+      return STORE_CORRUPT;
+    candidate.preferences.music_volume = music;
+    candidate.preferences.fx_volume = fx;
+    imported_any = true;
   }
 
   const char *session_source =
