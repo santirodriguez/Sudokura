@@ -527,7 +527,8 @@ StoreStatus profile_save_file(const char *path, const char *backup_path,
   unsigned char *payload = data + PROFILE_HEADER_SIZE;
   size_t payload_capacity = sizeof(data) - PROFILE_HEADER_SIZE;
   size_t payload_size = 0;
-  if (!encode_profile_payload(payload, payload_capacity, &payload_size))
+  if (!encode_profile_payload(payload, payload_capacity, &payload_size,
+                              profile))
     return STORE_IO_ERROR;
 
   memcpy(data, profile_magic, sizeof(profile_magic));
