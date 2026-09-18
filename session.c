@@ -306,7 +306,7 @@ bool session_validate(const SessionState *session) {
                              (double)session->elapsed_ms / 1000.0,
                              session->mode == MODE_TIME ? 600.0 : 0.0);
   if (session->status == SESSION_ACTIVE) return !solved && !lost;
-  if (session->status == SESSION_WON) return solved;
+  if (session->status == SESSION_WON) return solved && !lost;
   return !solved && lost;
 }
 
