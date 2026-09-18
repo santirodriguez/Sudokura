@@ -308,6 +308,25 @@ static void test_undo_redo_contract(void) {
   assert(state.undo_count == 0 && state.redo_count == 0);
 }
 
+static void test_history_bound(void) {
+  Game game;
+  fixture_game_new(&game, 4747);
+  AppState state = playing_state(MODE_CLASSIC);
+  int index = first_playable(&game);
+  assert(index >= 0);
+
+  AppAction note = {
+      .kind = APP_ACTION_NOTE,
+      .row = index / 9,
+      .column = index % 9,
+      .value = 1,
+  };
+  for (unsigned i = 0; i < SUDOKURA_HISTORY_LIMIT + 5u; ++i)
+    assert(app_apply_action(&game, &state, note, (double)i).changed);
+  assert(state.undo_count == SUDOKURA_HISTORY_LIMIT);
+  assert(state.redo_count == 0);
+}
+
 static void test_undo_keeps_assisted_state(void) {
   Game game;
   fixture_game_new(&game, 5150);
@@ -403,6 +422,7 @@ int main(void) {
   test_continue_action();
   test_hint_verify_and_restart();
   test_undo_redo_contract();
+  test_history_bound();
   test_undo_keeps_assisted_state();
   test_history_blocked_after_terminal();
   test_storage_is_substitutable();
