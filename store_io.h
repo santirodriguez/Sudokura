@@ -36,9 +36,12 @@ void store_writer_lock_release(StoreWriterLock *lock);
 #ifdef SUDOKURA_STORE_TESTING
 typedef enum {
   STORE_TEST_FAULT_NONE = 0,
+  STORE_TEST_FAULT_OPEN,
   STORE_TEST_FAULT_DURING_WRITE,
+  STORE_TEST_FAULT_NO_SPACE,
   STORE_TEST_FAULT_SYNC,
-  STORE_TEST_FAULT_REPLACE
+  STORE_TEST_FAULT_REPLACE,
+  STORE_TEST_FAULT_CRASH_AFTER_SYNC
 } StoreTestFault;
 
 void store_test_set_fault(StoreTestFault fault);
