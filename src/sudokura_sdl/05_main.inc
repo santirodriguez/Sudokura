@@ -473,20 +473,16 @@ int main(int argc, char **argv) {
           ui_button_click();
           if (apply_hint_action(&game, &ui, r, c))
             (void)save_current_session(&persistence, &game, &ui);
-        } else if (k == SDLK_DELETE || k == SDLK_BACKSPACE || k == SDLK_0 ||
-                   k == SDLK_KP_0) {
-          if (apply_player_input(&game, &ui, r, c, 0, false))
-            (void)save_current_session(&persistence, &game, &ui);
         } else {
-          int value = 0;
-          if (k >= SDLK_1 && k <= SDLK_9)
-            value = k - SDLK_0;
-          else if (k >= SDLK_KP_1 && k <= SDLK_KP_9)
-            value = k - SDLK_KP_0;
-          if (value >= 1 && value <= 9 &&
-              apply_player_input(&game, &ui, r, c, value,
-                                 ui.notes_mode || shifted))
+          int value = input_digit_value(k, e.key.keysym.scancode);
+          if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
+            if (apply_player_input(&game, &ui, r, c, 0, false))
+              (void)save_current_session(&persistence, &game, &ui);
+          } else if (value >= 1 && value <= 9 &&
+                     apply_player_input(&game, &ui, r, c, value,
+                                        ui.notes_mode || shifted)) {
             (void)save_current_session(&persistence, &game, &ui);
+          }
         }
         continue;
       }
