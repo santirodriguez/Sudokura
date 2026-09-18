@@ -45,7 +45,7 @@ typedef struct {
   int difficulty_score;
 } Game;
 
-void game_new(Game *game, uint64_t seed);
+bool game_new(Game *game, uint64_t seed);
 bool game_generator_revision_supported(uint32_t revision);
 unsigned game_generation_attempt_budget(GameDifficulty difficulty);
 GameGenerationResult game_generate_difficulty(
