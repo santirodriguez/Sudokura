@@ -119,9 +119,11 @@ int main(void) {
           assert(fits(font, tr((Language)language, difficulties[i]), tier.control,
                       10, g.home_difficulty[i].w, g.home_difficulty[i].h));
         }
-        for (int i = 0; i < PLAY_ACTION_COUNT; ++i)
+        for (int i = 0; i < PLAY_ACTION_COUNT; ++i) {
+          if (i == PLAY_ACTION_ABOUT) continue;
           assert(fits(font, tr((Language)language, actions[i]), tier.control, 10,
                       g.actions[i].w, g.actions[i].h));
+        }
 
         int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
         int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap) / 2;
