@@ -16,4 +16,12 @@ bool input_key_repeat_allowed(SDL_Keycode key, SDL_Scancode scancode);
    available only for the documented board-note gesture. */
 bool input_mouse_button_is_primary(Uint8 button);
 
+typedef enum {
+  INPUT_INFO_NONE = 0,
+  INPUT_INFO_HELP,
+  INPUT_INFO_ABOUT
+} InputInfoShortcut;
+
+InputInfoShortcut input_info_shortcut(SDL_Keycode key);
+
 #endif
