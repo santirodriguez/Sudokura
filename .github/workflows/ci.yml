@@ -35,6 +35,9 @@ jobs:
             tests/test_clock.c app_clock.c app.c game.c -o tests/test_clock_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_save_policy.c save_policy.c -o tests/test_save_policy_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_session.c game.c session.c store_io.c -o tests/test_session_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -42,9 +45,10 @@ jobs:
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san
+          ./tests/test_save_policy_san
           ./tests/test_session_san
           ./tests/test_profile_san
-          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_session_san tests/test_profile_san
+          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_session_san tests/test_profile_san
       - run: make WERROR=-Werror
       - run: ldd sudokura && size sudokura && du -h sudokura
 
