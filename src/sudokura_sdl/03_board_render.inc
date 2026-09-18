@@ -277,7 +277,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
     draw_hint_cell_marker(g,ui,th,i,(SDL_Rect){x,y,cs,cs});
   }
 
-  SidebarRects R;compute_sidebar_rects(&L,&R);int tw,thh;
+  SidebarRects R;compute_sidebar_rects(&L,&R);
   char hud[GEOMETRY_HUD_COUNT][80]={{0}};double el=elapsed_time(ui);const char*mode_name=tr(ui->language,mode_key(ui->mode));
   if(ui->is_daily)snprintf(hud[0],sizeof hud[0],"%s",tr(ui->language,T_DAILY_SHORT));else snprintf(hud[0],sizeof hud[0],"%s: %s",tr(ui->language,T_MODE),mode_name);
   snprintf(hud[1],sizeof hud[1],"%s: %s",tr(ui->language,T_DIFFICULTY),difficulty_name(ui->language,game->difficulty));
