@@ -20,10 +20,12 @@ GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
 	assets/generated/flag_ca.c assets/generated/flag_ca.h
 .PHONY: all test test-ui clean assets
 all: sudokura
-sudokura: sudokura_sdl.c src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_geometry.inc src/sudokura_sdl/polish_ui.inc src/sudokura_sdl/about_overlay.inc src/sudokura_sdl/rc2_ui.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) audio.c audio.h input.c input.h progress.c progress.h version.h game.h geometry.h i18n.h session.h session.c seed.h seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) sudokura_sdl.c audio.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c -o $@ $(SDL_LIBS) -lm
+sudokura: sudokura_sdl.c app.c app.h storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_geometry.inc src/sudokura_sdl/polish_ui.inc src/sudokura_sdl/about_overlay.inc src/sudokura_sdl/rc2_ui.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) audio.c audio.h input.c input.h progress.c progress.h version.h game.h geometry.h i18n.h session.h session.c seed.h seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) sudokura_sdl.c app.c audio.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c -o $@ $(SDL_LIBS) -lm
 tests/test_main: tests/test_main.c $(CORE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_main.c $(CORE) -o $@
+tests/test_app: tests/test_app.c app.c app.h storage.h game.c game.h session.h i18n.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_app.c app.c game.c -o $@
 tests/test_session: tests/test_session.c game.c session.c session.h game.h i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_session.c game.c session.c -o $@
 tests/test_seed: tests/test_seed.c seed.c seed.h
@@ -42,8 +44,9 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input
 	./tests/test_text_fit
 	./tests/test_audio
 	./tests/test_input
-test: tests/test_main tests/test_session tests/test_seed tests/test_progress tests/test_geometry_ui
+test: tests/test_main tests/test_app tests/test_session tests/test_seed tests/test_progress tests/test_geometry_ui
 	./tests/test_main
+	./tests/test_app
 	./tests/test_session
 	./tests/test_seed
 	./tests/test_progress
@@ -54,4 +57,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_main tests/test_session tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input
+	rm -f sudokura tests/test_main tests/test_app tests/test_session tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input
