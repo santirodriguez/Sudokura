@@ -61,8 +61,23 @@ typedef struct {
   int technique_steps[HUMAN_TECHNIQUE_COUNT];
 } HumanEvaluation;
 
+typedef enum {
+  HUMAN_HINT_INVALID = 0,
+  HUMAN_HINT_SOLVED,
+  HUMAN_HINT_LOGICAL,
+  HUMAN_HINT_STALLED
+} HumanHintStatus;
+
+typedef struct {
+  HumanHintStatus status;
+  HumanStep reasoning;
+  HumanStep placement;
+  int reasoning_steps;
+} HumanHint;
+
 const char *human_technique_name(HumanTechnique technique);
 bool human_evaluate(const int puzzle[HUMAN_CELL_COUNT], HumanEvaluation *out);
+bool human_hint_analyze(const int puzzle[HUMAN_CELL_COUNT], HumanHint *out);
 bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
                                    HumanEvaluation *out,
                                    HumanStep *last_step);
