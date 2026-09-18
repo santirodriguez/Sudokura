@@ -45,64 +45,108 @@ static int ui_slider_value(SDL_Rect track, int x) {
   return ui_clamp_percent((x - rail_x) * 100 / rail_w);
 }
 
-static bool ui_handle_audio_panel_event(SDL_Event *event) {
-  if (!audio_settings_open || !audio_gfx || !audio_ui) return false;
+static bool ui_handle_settings_panel_event(SDL_Event *event) {
+  if (!settings_open || !audio_gfx || !audio_ui) return false;
 
   if (event->type == SDL_KEYDOWN) {
     SDL_Keycode key = event->key.keysym.sym;
     if (event->key.repeat &&
         !input_key_repeat_allowed(key, event->key.keysym.scancode))
       return true;
+
     InputInfoShortcut shortcut = input_info_shortcut(key);
     if (shortcut != INPUT_INFO_NONE) {
       audio_play_effect(AUDIO_EFFECT_CLICK);
-      audio_settings_open = false;
+      settings_open = false;
       (void)app_open_aux(audio_ui,
                          shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT);
       return true;
     }
+
     if (key == SDLK_TAB || key == SDLK_UP || key == SDLK_DOWN) {
       int direction =
           key == SDLK_UP || (key == SDLK_TAB &&
                              (event->key.keysym.mod & KMOD_SHIFT) != 0)
               ? -1
               : 1;
-      audio_keyboard_focus =
-          (AudioKeyboardFocus)(((int)audio_keyboard_focus + direction +
-                                AUDIO_FOCUS_COUNT) %
-                               AUDIO_FOCUS_COUNT);
+      settings_keyboard_focus =
+          (SettingsKeyboardFocus)(((int)settings_keyboard_focus + direction +
+                                   SETTINGS_FOCUS_COUNT) %
+                                  SETTINGS_FOCUS_COUNT);
       audio_play_effect(AUDIO_EFFECT_CLICK);
       return true;
     }
+
     if (key == SDLK_LEFT || key == SDLK_RIGHT) {
-      int delta = key == SDLK_LEFT ? -5 : 5;
-      if (audio_keyboard_focus == AUDIO_FOCUS_MUSIC) {
-        ui_audio_set_music_level(audio_music_volume() + delta);
-      } else if (audio_keyboard_focus == AUDIO_FOCUS_FX) {
-        ui_audio_set_fx_level(audio_fx_volume() + delta);
-        audio_play_effect(AUDIO_EFFECT_POSITIVE);
-      } else if (audio_keyboard_focus == AUDIO_FOCUS_TOGGLE) {
-        bool enabled = audio_is_enabled();
-        if ((key == SDLK_LEFT && enabled) ||
-            (key == SDLK_RIGHT && !enabled))
-          audio_toggle(audio_persistence);
+      int direction = key == SDLK_LEFT ? -1 : 1;
+      switch (settings_keyboard_focus) {
+        case SETTINGS_FOCUS_THEME:
+          if ((key == SDLK_LEFT && audio_ui->dark_theme) ||
+              (key == SDLK_RIGHT && !audio_ui->dark_theme))
+            ui_settings_toggle_theme();
+          break;
+        case SETTINGS_FOCUS_LANGUAGE:
+          ui_settings_cycle_language(direction);
+          break;
+        case SETTINGS_FOCUS_SOUND: {
+          bool enabled = audio_is_enabled();
+          if ((key == SDLK_LEFT && enabled) ||
+              (key == SDLK_RIGHT && !enabled))
+            audio_toggle(audio_persistence);
+          break;
+        }
+        case SETTINGS_FOCUS_MUSIC:
+          ui_audio_set_music_level(audio_music_volume() + direction * 5);
+          break;
+        case SETTINGS_FOCUS_FX:
+          ui_audio_set_fx_level(audio_fx_volume() + direction * 5);
+          audio_play_effect(AUDIO_EFFECT_POSITIVE);
+          break;
+        case SETTINGS_FOCUS_REDUCED_MOTION:
+          if ((key == SDLK_LEFT && audio_ui->reduced_motion) ||
+              (key == SDLK_RIGHT && !audio_ui->reduced_motion))
+            ui_settings_toggle_reduced_motion();
+          break;
+        case SETTINGS_FOCUS_BACK:
+        case SETTINGS_FOCUS_COUNT:
+        default:
+          break;
       }
       return true;
     }
+
     if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) {
-      if (audio_keyboard_focus == AUDIO_FOCUS_TOGGLE) {
-        audio_toggle(audio_persistence);
-      } else if (audio_keyboard_focus == AUDIO_FOCUS_BACK) {
-        ui_audio_close(audio_persistence, NULL, audio_ui);
+      switch (settings_keyboard_focus) {
+        case SETTINGS_FOCUS_THEME:
+          ui_settings_toggle_theme();
+          break;
+        case SETTINGS_FOCUS_LANGUAGE:
+          ui_settings_cycle_language(1);
+          break;
+        case SETTINGS_FOCUS_SOUND:
+          audio_toggle(audio_persistence);
+          break;
+        case SETTINGS_FOCUS_REDUCED_MOTION:
+          ui_settings_toggle_reduced_motion();
+          break;
+        case SETTINGS_FOCUS_BACK:
+          ui_settings_close(audio_persistence, NULL, audio_ui);
+          break;
+        case SETTINGS_FOCUS_MUSIC:
+        case SETTINGS_FOCUS_FX:
+        case SETTINGS_FOCUS_COUNT:
+        default:
+          break;
       }
       return true;
     }
+
     if (key == SDLK_v) {
       audio_toggle(audio_persistence);
       return true;
     }
     if (key == SDLK_ESCAPE) {
-      ui_audio_close(audio_persistence, NULL, audio_ui);
+      ui_settings_close(audio_persistence, NULL, audio_ui);
       return true;
     }
     return true;
@@ -110,9 +154,15 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
 
   if (event->type == SDL_MOUSEBUTTONDOWN) {
     if (event->button.button != SDL_BUTTON_LEFT) return true;
-    AudioPanelLayout layout = ui_audio_panel_layout(audio_gfx);
+    SettingsPanelLayout layout = ui_settings_panel_layout(audio_gfx);
     int x = event->button.x, y = event->button.y;
-    if (point_in(layout.toggle, x, y)) {
+    if (point_in(layout.theme, x, y)) {
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      ui_settings_toggle_theme();
+    } else if (point_in(layout.language, x, y)) {
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      ui_settings_cycle_language(1);
+    } else if (point_in(layout.sound, x, y)) {
       audio_toggle(audio_persistence);
     } else if (point_in(layout.music_minus, x, y)) {
       audio_play_effect(AUDIO_EFFECT_CLICK);
@@ -131,9 +181,12 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
     } else if (point_in(layout.fx_track, x, y)) {
       ui_audio_set_fx_level(ui_slider_value(layout.fx_track, x));
       audio_play_effect(AUDIO_EFFECT_POSITIVE);
+    } else if (point_in(layout.reduced_motion, x, y)) {
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      ui_settings_toggle_reduced_motion();
     } else if (point_in(layout.back, x, y)) {
       audio_play_effect(AUDIO_EFFECT_CLICK);
-      ui_audio_close(audio_persistence, NULL, audio_ui);
+      ui_settings_close(audio_persistence, NULL, audio_ui);
     }
     return true;
   }
@@ -144,7 +197,7 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
 
 static int ui_poll_event(SDL_Event *event) {
   while (SDL_PollEvent(event)) {
-    if (ui_handle_audio_panel_event(event)) continue;
+    if (ui_handle_settings_panel_event(event)) continue;
 
     if (event->type == SDL_KEYDOWN) {
       SDL_Keycode key = event->key.keysym.sym;
