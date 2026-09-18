@@ -228,6 +228,162 @@ static void rc2_render_audio_panel(Gfx *gfx, UI *ui) {
                          preferred, 10);
 }
 
+typedef struct {
+  SDL_Rect card;
+  SDL_Rect title;
+  SDL_Rect body;
+  SDL_Rect primary;
+  SDL_Rect verify;
+  SDL_Rect reveal;
+  SDL_Rect cancel;
+} HintPanelLayout;
+
+static TextKey hint_technique_key(HumanTechnique technique) {
+  switch (technique) {
+    case HUMAN_TECHNIQUE_NAKED_SINGLE: return T_TECH_NAKED_SINGLE;
+    case HUMAN_TECHNIQUE_HIDDEN_SINGLE: return T_TECH_HIDDEN_SINGLE;
+    case HUMAN_TECHNIQUE_LOCKED_CANDIDATE: return T_TECH_LOCKED_CANDIDATE;
+    case HUMAN_TECHNIQUE_NAKED_PAIR: return T_TECH_NAKED_PAIR;
+    case HUMAN_TECHNIQUE_NAKED_TRIPLE: return T_TECH_NAKED_TRIPLE;
+    case HUMAN_TECHNIQUE_X_WING: return T_TECH_X_WING;
+    case HUMAN_TECHNIQUE_NONE:
+    default:
+      return T_HINT_PREVIEW;
+  }
+}
+
+static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
+  HintPanelLayout panel;
+  memset(&panel, 0, sizeof(panel));
+  if (!gfx || !ui) return panel;
+  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  SDL_Rect side = layout.side;
+  int margin = side.w < 240 ? 7 : 10;
+  panel.card = (SDL_Rect){side.x + margin, side.y + margin,
+                          side.w - margin * 2, side.h - margin * 2};
+  int x = panel.card.x + 10;
+  int width = panel.card.w - 20;
+  int y = panel.card.y + 10;
+  panel.title = (SDL_Rect){x, y, width, 32};
+  int button_h = panel.card.h < 430 ? 31 : 36;
+  int gap = 6;
+  panel.cancel = (SDL_Rect){x, panel.card.y + panel.card.h - button_h - 10,
+                            width, button_h};
+  panel.reveal = (SDL_Rect){x, panel.cancel.y - button_h - gap,
+                            width, button_h};
+  panel.verify = (SDL_Rect){x, panel.reveal.y - button_h - gap,
+                            width, button_h};
+  panel.primary = (SDL_Rect){x, panel.verify.y - button_h - gap,
+                             width, button_h};
+  panel.body = (SDL_Rect){x, panel.title.y + panel.title.h + 4, width,
+                          panel.primary.y -
+                              (panel.title.y + panel.title.h + 8)};
+  return panel;
+}
+
+static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
+                           int x, int y) {
+  return ui && ui->hint_preview_active && rect.w > 0 && rect.h > 0 &&
+         point_in(rect, x, y);
+}
+
+static bool hint_apply_hit(const Gfx *gfx, const UI *ui, int x, int y) {
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  return ui && ui->hint_preview.status == HUMAN_HINT_LOGICAL &&
+         hint_panel_hit(gfx, ui, panel.primary, x, y);
+}
+
+static bool hint_verify_hit(const Gfx *gfx, const UI *ui, int x, int y) {
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  return ui &&
+         (ui->hint_preview.status == HUMAN_HINT_INVALID ||
+          ui->hint_preview.status == HUMAN_HINT_STALLED) &&
+         hint_panel_hit(gfx, ui, panel.verify, x, y);
+}
+
+static bool hint_reveal_hit(const Gfx *gfx, const UI *ui, int x, int y) {
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  return ui && ui->hint_preview.status != HUMAN_HINT_INVALID &&
+         hint_panel_hit(gfx, ui, panel.reveal, x, y);
+}
+
+static bool hint_cancel_hit(const Gfx *gfx, const UI *ui, int x, int y) {
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  return hint_panel_hit(gfx, ui, panel.cancel, x, y);
+}
+
+static void hint_preview_text(const UI *ui, char *buffer, size_t size) {
+  if (!ui || !buffer || size == 0) return;
+  buffer[0] = '\0';
+  if (ui->hint_preview.status == HUMAN_HINT_INVALID) {
+    snprintf(buffer, size, "%s", tr(ui->language, T_HINT_CONTRADICTION));
+    return;
+  }
+  if (ui->hint_preview.status == HUMAN_HINT_STALLED) {
+    snprintf(buffer, size, "%s", tr(ui->language, T_HINT_STALLED));
+    return;
+  }
+  if (ui->hint_preview.status != HUMAN_HINT_LOGICAL) return;
+
+  const HumanStep *reasoning = &ui->hint_preview.reasoning;
+  const HumanStep *placement = &ui->hint_preview.placement;
+  const char *technique =
+      tr(ui->language, hint_technique_key(reasoning->technique));
+  TextKey format = ui->hint_preview.reasoning_steps <= 1
+                       ? T_HINT_DIRECT_FMT
+                       : T_HINT_CHAIN_FMT;
+  snprintf(buffer, size, tr(ui->language, format), technique,
+           placement->placement_value, placement->placement_cell / 9 + 1,
+           placement->placement_cell % 9 + 1);
+}
+
+static void hint_panel_button(Gfx *gfx, Theme theme, SDL_Rect rect,
+                              const char *label, bool primary) {
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  bool hover = point_in(rect, mx, my);
+  bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Color background =
+      primary ? theme.title : (hover ? theme.hover : theme.btn);
+  SDL_Color foreground = primary ? theme.bg : theme.btnfg;
+  SDL_Rect face =
+      polish_button_face(gfx, theme, rect, background, pressed, false);
+  (void)draw_fitted_text(gfx, label, foreground, face, 16, 9);
+}
+
+static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
+  if (!gfx || !ui || !ui->hint_preview_active || ui->screen != SCR_PLAY ||
+      app_pause_hides_play(ui))
+    return;
+  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  draw_round_rect(gfx->ren, panel.card, 10, theme.palette_bg);
+  SDL_SetRenderDrawColor(gfx->ren, theme.sel_outline.r, theme.sel_outline.g,
+                         theme.sel_outline.b, 255);
+  SDL_RenderDrawRect(gfx->ren, &panel.card);
+
+  (void)draw_fitted_text(gfx, tr(ui->language, T_HINT_PREVIEW), theme.title,
+                         panel.title, 20, 10);
+  char message[320];
+  hint_preview_text(ui, message, sizeof(message));
+  if (panel.body.h > 8)
+    (void)polish_draw_wrapped_fit(gfx, message, theme.btnfg, panel.body, 15, 9,
+                                  false);
+
+  if (ui->hint_preview.status == HUMAN_HINT_LOGICAL)
+    hint_panel_button(gfx, theme, panel.primary, tr(ui->language, T_APPLY),
+                      true);
+  if (ui->hint_preview.status == HUMAN_HINT_INVALID ||
+      ui->hint_preview.status == HUMAN_HINT_STALLED)
+    hint_panel_button(gfx, theme, panel.verify, tr(ui->language, T_VERIFY),
+                      true);
+  if (ui->hint_preview.status != HUMAN_HINT_INVALID)
+    hint_panel_button(gfx, theme, panel.reveal,
+                      tr(ui->language, T_REVEAL_CELL), false);
+  hint_panel_button(gfx, theme, panel.cancel, tr(ui->language, T_CANCEL),
+                    false);
+}
+
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   bool play_surface =
       ui && (ui->screen == SCR_PLAY ||
@@ -345,6 +501,7 @@ static void rc2_render_generation_overlay(Gfx *gfx, UI *ui) {
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   app_render_polish(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
+  rc2_render_hint_panel(gfx, ui);
   rc2_render_audio_panel(gfx, ui);
   rc2_render_storage_banner(gfx, ui);
   rc2_render_generation_overlay(gfx, ui);
