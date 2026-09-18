@@ -52,9 +52,15 @@ static void test_navigation_contract(void) {
   assert(app_return_aux(&state));
   assert(state.screen == APP_SCREEN_PLAY);
 
+  state.pause_reasons = APP_PAUSE_MANUAL | APP_PAUSE_FOCUS;
   assert(app_open_aux(&state, APP_SCREEN_ABOUT));
   assert(state.prev_screen == APP_SCREEN_PLAY);
+  assert(state.pause_reasons == (APP_PAUSE_MANUAL | APP_PAUSE_FOCUS));
+  assert(app_open_aux(&state, APP_SCREEN_HELP));
+  assert(state.prev_screen == APP_SCREEN_PLAY);
   assert(app_return_aux(&state));
+  assert(state.screen == APP_SCREEN_PLAY);
+  assert(state.pause_reasons == (APP_PAUSE_MANUAL | APP_PAUSE_FOCUS));
   assert(!app_open_aux(&state, APP_SCREEN_RESULT));
 }
 
@@ -147,7 +153,7 @@ static void test_time_limit_preempts_input(void) {
       .column = index % 9,
       .value = game.solution[index],
   };
-  AppActionOutcome outcome = app_apply_action(&game, &state, move, 601.0);
+  AppActionOutcome outcome = app_apply_action(&game, &state, move, 600.0);
   assert(outcome.terminal && outcome.result == APP_RESULT_LOSE);
   assert(!outcome.changed && !outcome.no_effect);
   assert(game.puzzle[index] == before);
