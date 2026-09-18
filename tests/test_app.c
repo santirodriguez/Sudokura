@@ -44,6 +44,13 @@ static void test_navigation_contract(void) {
   AppState state;
   app_state_init(&state);
   assert(state.screen == APP_SCREEN_HOME);
+  assert(!state.reduced_motion);
+
+  assert(app_open_aux(&state, APP_SCREEN_SETTINGS));
+  assert(state.screen == APP_SCREEN_SETTINGS);
+  assert(state.prev_screen == APP_SCREEN_HOME);
+  assert(app_return_aux(&state));
+  assert(state.screen == APP_SCREEN_HOME);
 
   assert(app_open_aux(&state, APP_SCREEN_HELP));
   assert(state.screen == APP_SCREEN_HELP);
