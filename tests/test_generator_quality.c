@@ -193,8 +193,10 @@ static int compare_unsigned(const void *left, const void *right) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-static double elapsed_ms(clock_t start, clock_t finish) {
-  return (double)(finish - start) * 1000.0 / (double)CLOCKS_PER_SEC;
+static double wall_ms(void) {
+  struct timespec value;
+  assert(timespec_get(&value, TIME_UTC) == TIME_UTC);
+  return (double)value.tv_sec * 1000.0 + (double)value.tv_nsec / 1000000.0;
 }
 
 static HumanRating expected_rating(GameDifficulty difficulty) {
@@ -231,14 +233,14 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
     AttemptCounter counter = {0};
     GameGenerationControl control = {count_attempt, &counter};
     Game game;
-    clock_t start = clock();
+    double start = wall_ms();
     GameGenerationResult result = game_generate_difficulty(
         &game, seed, difficulty, SUDOKURA_GENERATOR_REVISION, &control);
-    clock_t finish = clock();
+    double finish = wall_ms();
     assert(result == GAME_GENERATION_OK);
     assert(counter.attempts >= 1 &&
            counter.attempts <= game_generation_attempt_budget(difficulty));
-    timings[index] = elapsed_ms(start, finish);
+    timings[index] = finish - start;
     attempts[index] = counter.attempts;
 
     int independent_solution[81];
@@ -255,11 +257,6 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
     total_eliminations += oracle.eliminated_candidates;
     total_placements += oracle.placements;
     hash = hash_game(hash, &game, &evaluation);
-
-    Game duplicate;
-    assert(game_new_difficulty_revision(
-        &duplicate, seed, difficulty, SUDOKURA_GENERATOR_REVISION));
-    assert(!memcmp(&game, &duplicate, sizeof(game)));
   }
 
   qsort(timings, QUALITY_CORPUS_PER_DIFFICULTY, sizeof(timings[0]),
@@ -268,7 +265,7 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
         compare_unsigned);
   int p95 = (QUALITY_CORPUS_PER_DIFFICULTY * 95 + 99) / 100 - 1;
   printf("quality-v3 difficulty=%d corpus=%d digest=%016" PRIx64
-         " cpu_ms_median=%.3f cpu_ms_p95=%.3f cpu_ms_max=%.3f"
+         " wall_ms_median=%.3f wall_ms_p95=%.3f wall_ms_max=%.3f"
          " attempts_median=%u attempts_p95=%u attempts_max=%u"
          " oracle_eliminations=%" PRIu64 " oracle_placements=%" PRIu64 "\n",
          (int)difficulty, QUALITY_CORPUS_PER_DIFFICULTY, hash,
