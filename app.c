@@ -106,7 +106,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     state->mistakes = 0;
     state->strikes = 0;
     state->notes_mode = false;
-    state->elapsed_base = 0.0;
+    state->elapsed_ms = 0;
+    state->running_since_ms = 0;
     state->pause_reasons = 0;
     state->session_open = true;
     state->result = APP_RESULT_NONE;
