@@ -220,6 +220,9 @@ StoreStatus store_read_file(const char *path, unsigned char *data,
 
 static bool write_temporary(const char *temporary,
                             const unsigned char *data, size_t size) {
+#ifdef SUDOKURA_STORE_TESTING
+  if (store_fault_is(STORE_TEST_FAULT_OPEN)) return false;
+#endif
 #if defined(_WIN32)
   wchar_t wide_path[SUDOKURA_STORE_PATH_CAPACITY];
   if (!utf8_to_wide(temporary, wide_path,
@@ -245,12 +248,16 @@ static bool write_temporary(const char *temporary,
 
   size_t target = size;
 #ifdef SUDOKURA_STORE_TESTING
-  if (store_fault_is(STORE_TEST_FAULT_DURING_WRITE) && target > 1)
+  if ((store_fault_is(STORE_TEST_FAULT_DURING_WRITE) ||
+       store_fault_is(STORE_TEST_FAULT_NO_SPACE)) &&
+      target > 1)
     target /= 2;
 #endif
   bool ok = fwrite(data, 1, target, file) == target;
 #ifdef SUDOKURA_STORE_TESTING
-  if (store_fault_is(STORE_TEST_FAULT_DURING_WRITE)) ok = false;
+  if (store_fault_is(STORE_TEST_FAULT_DURING_WRITE) ||
+      store_fault_is(STORE_TEST_FAULT_NO_SPACE))
+    ok = false;
 #endif
   if (ok) ok = sync_file(file);
   if (fclose(file) != 0) ok = false;
@@ -271,6 +278,16 @@ static StoreStatus write_atomic_internal(const char *path,
     (void)store_remove_file(temporary);
     return STORE_IO_ERROR;
   }
+
+#ifdef SUDOKURA_STORE_TESTING
+  if (store_fault_is(STORE_TEST_FAULT_CRASH_AFTER_SYNC)) {
+#if defined(_WIN32)
+    ExitProcess(73);
+#else
+    _exit(73);
+#endif
+  }
+#endif
 
   if (!replace_file(temporary, path)) {
     (void)store_remove_file(temporary);
