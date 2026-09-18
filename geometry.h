@@ -47,6 +47,7 @@ typedef struct {
   GeoRect palette_label;
   GeoRect palette[GEOMETRY_PALETTE_COUNT];
   GeoRect progress;
+  GeoRect status;
   GeoRect play_language;
 
   GeoRect screen_language;
@@ -91,6 +92,13 @@ typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 
+typedef struct {
+  int space_xs, space_sm, space_md, space_lg;
+  int radius_control, radius_panel;
+  int min_control_h;
+  int grid_minor_px, grid_major_px;
+} GeometryStyle;
+
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *out);
 bool geometry_window_size_supported(int width, int height);
 bool geometry_normalize_window_size(int requested_width, int requested_height,
@@ -99,5 +107,6 @@ bool geometry_contains(GeoRect rect, int x, int y);
 bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
 GeometryFonts geometry_font_sizes(const AppGeometry *geometry, int width, int height);
+GeometryStyle geometry_style(const AppGeometry *geometry, int width, int height);
 
 #endif
