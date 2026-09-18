@@ -210,7 +210,7 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   AppActionOutcome outcome = app_check_terminal(game, ui, elapsed_time(ui));
   if (!outcome.terminal) return false;
   finish_terminal_action(ui);
-  (void)save_current_session(persistence, game, ui);
+  (void)checkpoint_current_session(persistence, game, ui);
   return true;
 }
 
@@ -430,10 +430,8 @@ int main(int argc, char **argv) {
           settle_terminal(&persistence, &game, &ui))
         continue;
       if (e.type == SDL_QUIT) {
-        if (ui.session_open)
-          (void)save_current_session(&persistence, &game, &ui);
-        capture_window_preferences(&persistence, &g, &ui);
-        running = false;
+        if (request_exit(&persistence, &game, &ui, &g))
+          running = false;
         continue;
       }
       if (e.type == SDL_WINDOWEVENT) {
@@ -444,7 +442,7 @@ int main(int argc, char **argv) {
                     e.window.event == SDL_WINDOWEVENT_HIDDEN) &&
                    ui.session_open && ui.result == RES_NONE) {
           if (clock_pause(&ui, PAUSE_FOCUS))
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)checkpoint_current_session(&persistence, &game, &ui);
         }
         /* Focus recovery intentionally leaves PAUSE_FOCUS set. The board stays
            hidden until the player explicitly resumes, so a stopped Time
@@ -454,6 +452,11 @@ int main(int argc, char **argv) {
       if (e.type == SDL_KEYDOWN) {
         SDL_Keycode k = e.key.keysym.sym;
         SDL_Keymod mod = SDL_GetModState();
+        if (persistence_has_save_error(&persistence) && k == SDLK_r) {
+          ui_button_click();
+          (void)persistence_flush(&persistence);
+          continue;
+        }
         if (open_global_info_key(&persistence, &game, &ui, k))
           continue;
         if (k == SDLK_l) {
@@ -462,8 +465,10 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.screen == SCR_TITLE) {
-          if (k == SDLK_ESCAPE)
-            running = false;
+          if (k == SDLK_ESCAPE) {
+            if (request_exit(&persistence, &game, &ui, &g))
+              running = false;
+          }
           else if (k == SDLK_TAB)
             home_move_focus(&ui, (mod & KMOD_SHIFT) ? -1 : 1);
           else if (k == SDLK_LEFT) {
@@ -549,7 +554,7 @@ int main(int argc, char **argv) {
               (k == SDLK_p || k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
             ui_button_click();
             if (resume_user_pause(&ui))
-              (void)save_current_session(&persistence, &game, &ui);
+              (void)checkpoint_current_session(&persistence, &game, &ui);
           } else if (k == SDLK_ESCAPE) {
             ui_button_click();
             go_home(&persistence, &game, &ui);
@@ -573,7 +578,7 @@ int main(int argc, char **argv) {
         else if (k == SDLK_p) {
           ui_button_click();
           clock_pause(&ui, PAUSE_MANUAL);
-          (void)save_current_session(&persistence, &game, &ui);
+          (void)checkpoint_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_t) {
           ui_button_click();
           ui.dark_theme = !ui.dark_theme;
@@ -583,27 +588,27 @@ int main(int argc, char **argv) {
           ui.notes_mode = !ui.notes_mode;
           show_toast(&ui,
                      tr(ui.language, ui.notes_mode ? T_NOTES_ON : T_NOTES_OFF));
-          (void)save_current_session(&persistence, &game, &ui);
+          (void)stage_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_m) {
           ui_button_click();
           ui.strict_mode = !ui.strict_mode;
           show_toast(&ui,
                      tr(ui.language, ui.strict_mode ? T_STRICT : T_FREE));
           (void)save_preferences(&persistence, &ui);
-          (void)save_current_session(&persistence, &game, &ui);
+          (void)stage_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_h) {
           ui_button_click();
           if (apply_hint_action(&game, &ui, r, c))
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)stage_current_session(&persistence, &game, &ui);
         } else {
           int value = input_digit_value(k, e.key.keysym.scancode);
           if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
             if (apply_player_input(&game, &ui, r, c, 0, false))
-              (void)save_current_session(&persistence, &game, &ui);
+              (void)stage_current_session(&persistence, &game, &ui);
           } else if (value >= 1 && value <= 9 &&
                      apply_player_input(&game, &ui, r, c, value,
                                         ui.notes_mode || shifted)) {
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)stage_current_session(&persistence, &game, &ui);
           }
         }
         continue;
@@ -614,6 +619,11 @@ int main(int argc, char **argv) {
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
         if (!left && !right) continue;
+        if (left && storage_retry_hit(&g, x, y)) {
+          ui_button_click();
+          (void)persistence_flush(&persistence);
+          continue;
+        }
         if (point_in(language_rect(&g, &ui), x, y)) {
           if (!left) continue;
           for (int language = 0; language < LANG_COUNT; ++language) {
@@ -681,7 +691,8 @@ int main(int argc, char **argv) {
           } else if (point_in(sdl_rect(a.home_secondary[3]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_QUIT;
-            running = false;
+            if (request_exit(&persistence, &game, &ui, &g))
+              running = false;
           }
           continue;
         }
@@ -731,7 +742,7 @@ int main(int argc, char **argv) {
               if (point_in(sdl_rect(a.pause_buttons[0]), x, y)) {
                 ui_button_click();
                 if (resume_user_pause(&ui))
-                  (void)save_current_session(&persistence, &game, &ui);
+                  (void)checkpoint_current_session(&persistence, &game, &ui);
               } else if (point_in(sdl_rect(a.pause_buttons[1]), x, y)) {
                 ui_button_click();
                 go_home(&persistence, &game, &ui);
@@ -762,7 +773,7 @@ int main(int argc, char **argv) {
             int value = row * 3 + column + 1;
             if ((right || ui.notes_mode) &&
                 apply_player_input(&game, &ui, r, c, value, true))
-              (void)save_current_session(&persistence, &game, &ui);
+              (void)stage_current_session(&persistence, &game, &ui);
           }
         } else {
           if (!left) continue;
@@ -775,14 +786,14 @@ int main(int argc, char **argv) {
             show_toast(&ui,
                        tr(ui.language, ui.strict_mode ? T_STRICT : T_FREE));
             (void)save_preferences(&persistence, &ui);
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_MENU], x, y)) {
             ui_button_click();
             go_home(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_PAUSE], x, y)) {
             ui_button_click();
             clock_pause(&ui, PAUSE_MANUAL);
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)checkpoint_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_RESTART], x, y)) {
             ui_button_click();
             if (restart_current_session_confirmed(&game, &ui, &g)) {
@@ -792,13 +803,13 @@ int main(int argc, char **argv) {
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
             ui_button_click();
             if (apply_hint_action(&game, &ui, ui.sel_r, ui.sel_c))
-              (void)save_current_session(&persistence, &game, &ui);
+              (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_NOTES], x, y)) {
             ui_button_click();
             ui.notes_mode = !ui.notes_mode;
             show_toast(&ui,
                        tr(ui.language, ui.notes_mode ? T_NOTES_ON : T_NOTES_OFF));
-            (void)save_current_session(&persistence, &game, &ui);
+            (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_VERIFY], x, y)) {
             ui_button_click();
             int conflicts = apply_verify_action(&game, &ui);
@@ -825,7 +836,7 @@ int main(int argc, char **argv) {
                 if (!palette_number_complete(&game, ui.mode, number)) {
                   if (apply_player_input(&game, &ui, ui.sel_r, ui.sel_c, number,
                                          ui.notes_mode))
-                    (void)save_current_session(&persistence, &game, &ui);
+                    (void)stage_current_session(&persistence, &game, &ui);
                 } else {
                   audio_play_effect(AUDIO_EFFECT_BLOCKED);
                 }
@@ -838,14 +849,18 @@ int main(int argc, char **argv) {
     }
 
     (void)settle_terminal(&persistence, &game, &ui);
+    uint64_t checkpoint_now = now_ms();
     if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
-        now_ms() - persistence.last_checkpoint_ms >= UINT64_C(10000))
-      (void)save_current_session(&persistence, &game, &ui);
+        checkpoint_now - persistence.last_periodic_checkpoint_ms >=
+            SUDOKURA_AUTOSAVE_MAX_MS) {
+      (void)checkpoint_current_session(&persistence, &game, &ui);
+    } else if (save_policy_checkpoint_due(&persistence.save_policy,
+                                          checkpoint_now)) {
+      (void)persistence_flush(&persistence);
+    }
     app_frame(&g, &game, &ui);
   }
 
-  if (ui.session_open) (void)save_current_session(&persistence, &game, &ui);
-  capture_window_preferences(&persistence, &g, &ui);
   app_shutdown(&g);
   return 0;
 }
