@@ -151,6 +151,9 @@ static GameGenerationResult generate_normal_with_ui(
       game_generation_attempt_budget(p->preferences.difficulty);
   app_frame(g, game, ui);
   GameGenerationResult result = start_new_session(p, game, ui, &control);
+  if (result == GAME_GENERATION_CANCELLED &&
+      !SDL_HasEvent(SDL_QUIT))
+    SDL_FlushEvents(SDL_KEYDOWN, SDL_KEYUP);
   ui->generating = false;
   ui->generation_attempt = 0;
   ui->generation_max_attempts = 0;
@@ -170,6 +173,9 @@ static GameGenerationResult generate_daily_with_ui(
   app_frame(g, game, ui);
   GameGenerationResult result =
       start_daily_session(p, game, ui, year, month, day, &control);
+  if (result == GAME_GENERATION_CANCELLED &&
+      !SDL_HasEvent(SDL_QUIT))
+    SDL_FlushEvents(SDL_KEYDOWN, SDL_KEYUP);
   ui->generating = false;
   ui->generation_attempt = 0;
   ui->generation_max_attempts = 0;
