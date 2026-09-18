@@ -210,21 +210,28 @@ static void test_daily_and_results(void) {
   daily.status = SESSION_ACTIVE;
   assert(!session_validate(&daily));
 
-  daily.status = SESSION_WON;
-  daily.strikes = 3;
-  daily.mode = MODE_STRIKES;
-  assert(!session_validate(&daily));
-  daily.strikes = 0;
-  daily.mode = MODE_TIME;
-  daily.elapsed_ms = UINT64_C(600000);
-  assert(!session_validate(&daily));
-
   SessionState lost = make_state();
   lost.status = SESSION_LOST;
   lost.strikes = 3;
   assert(session_validate(&lost));
   lost.strikes = 2;
   assert(!session_validate(&lost));
+
+  SessionState incompatible_win = make_state();
+  for (int i = 0; i < 81; ++i)
+    if (!incompatible_win.game.fixed[i])
+      incompatible_win.game.puzzle[i] = incompatible_win.game.solution[i];
+  incompatible_win.status = SESSION_WON;
+  incompatible_win.mode = MODE_STRIKES;
+  incompatible_win.strikes = 3;
+  assert(!session_validate(&incompatible_win));
+
+  incompatible_win.mode = MODE_TIME;
+  incompatible_win.strikes = 0;
+  incompatible_win.elapsed_ms = UINT64_C(600000);
+  assert(!session_validate(&incompatible_win));
+  incompatible_win.elapsed_ms = UINT64_C(599999);
+  assert(session_validate(&incompatible_win));
 }
 
 static void test_time_attack_loss_boundary(void) {
