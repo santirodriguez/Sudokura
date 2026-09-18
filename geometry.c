@@ -337,7 +337,7 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
 
   common_screens(width, height, portrait, g);
   set_compatibility_aliases(g);
-  return geometry_play_valid(g, width, height);
+  return true;
 }
 
 GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
@@ -646,7 +646,7 @@ bool geometry_compute(int width, int height, GeometryMode mode,
     return false;
   }
 
-  if (width < 640) return true;
+  if (width < 640) return geometry_play_valid(geometry, width, height);
 
   int top = geometry->home_logo.y;
   int bottom = geometry_final_rect_bottom(geometry->home_logo);
@@ -668,11 +668,11 @@ bool geometry_compute(int width, int height, GeometryMode mode,
       geometry->screen_language.y + geometry->screen_language.h + 12;
   int available_bottom = height - 24;
   int spare = available_bottom - available_top - block_height;
-  if (spare <= 0) return true;
+  if (spare <= 0) return geometry_play_valid(geometry, width, height);
 
   int target_top = available_top + spare * 2 / 5;
   int delta = target_top - top;
-  if (delta <= 0) return true;
+  if (delta <= 0) return geometry_play_valid(geometry, width, height);
 
   geometry_final_shift_rect_y(&geometry->home_logo, delta);
   geometry_final_shift_rect_y(&geometry->home_mode_label, delta);
