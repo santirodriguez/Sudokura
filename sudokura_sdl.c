@@ -1,50 +1,27 @@
-/* Sudokura SDL application is kept as one C translation unit. */
-#include "session.c"
-#include "seed.c"
+/* Sudokura SDL application composition.
+
+   Core/runtime modules are compiled as normal C translation units. The SDL
+   presentation remains split into internal fragments, but their order and
+   active render path are explicit here: base screens -> presentation polish
+   -> desktop About adjustment -> final controls/audio -> input -> main loop.
+*/
+#include "session.h"
+#include "seed.h"
 #include "audio.h"
-#include "input.c"
-#include "assets/generated/flag_us.c"
-#include "assets/generated/flag_ar.c"
-#include "assets/generated/flag_ca.c"
-#define persistence_init persistence_init_base
-#define start_new_session start_new_session_base
-#define start_daily_session start_daily_session_base
-#define go_home go_home_base
+#include "input.h"
+#include "progress.h"
+
 #include "src/sudokura_sdl/01_runtime.inc"
-#undef go_home
-#undef start_daily_session
-#undef start_new_session
-#undef persistence_init
-#define SUDOKURA_RUNTIME_LEGACY_PROGRESS 1
-#include "progress.c"
-#undef SUDOKURA_RUNTIME_LEGACY_PROGRESS
 #include "src/sudokura_sdl/02_font_discovery.inc"
 #include "src/sudokura_sdl/ui_geometry.inc"
-#define geometry_compute ui_geometry_compute
 #include "src/sudokura_sdl/03_board_render.inc"
-#undef geometry_compute
-#define app_init app_init_base
-#define app_shutdown app_shutdown_base
-#define app_frame app_frame_base
-#define app_render app_render_base
 #include "src/sudokura_sdl/04_screens.inc"
-#undef app_render
-#undef app_frame
-#undef app_shutdown
-#undef app_init
-#define app_render app_render_polish_base
-#define go_home go_home_polish_base
 #include "src/sudokura_sdl/polish_ui.inc"
-#undef go_home
-#undef app_render
-#define app_render app_render_about_base
 #include "src/sudokura_sdl/about_overlay.inc"
-#undef app_render
-#define go_home_base go_home_polish_base
 #include "src/sudokura_sdl/rc2_ui.inc"
-#undef go_home_base
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
+
 #define SDL_PollEvent ui_poll_event
 #include "src/sudokura_sdl/05_main.inc"
 #undef SDL_PollEvent
