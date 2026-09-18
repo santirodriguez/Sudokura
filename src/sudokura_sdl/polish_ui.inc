@@ -386,7 +386,8 @@ static void app_render(Gfx *gfx, const Game *game, UI *ui) {
   app_render_base(gfx, game, ui);
   if (ui->screen == SCR_TITLE)
     polish_render_home(gfx, ui);
-  else if (ui->screen == SCR_PLAY)
+  else if (ui->screen == SCR_PLAY ||
+           (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY))
     polish_render_play(gfx, game, ui);
   else if (ui->screen == SCR_ABOUT)
     polish_render_about(gfx, ui);
