@@ -18,6 +18,10 @@ static const char *unicode_path = ".sudokura-storage-\xc3\xb1-test.dat";
 static const char *profile_directory = ".sudokura-profile-path-test";
 static const char *profile_unicode_path =
     ".sudokura-profile-path-test/profile-\xc3\xb1.dat";
+#if !defined(_WIN32)
+static const char *readonly_directory = ".sudokura-readonly-test";
+static const char *readonly_path = ".sudokura-readonly-test/data.dat";
+#endif
 
 static void cleanup(void) {
   (void)store_remove_file(active_path);
@@ -28,6 +32,9 @@ static void cleanup(void) {
   (void)_rmdir(profile_directory);
 #else
   (void)rmdir(profile_directory);
+  (void)chmod(readonly_directory, 0700);
+  (void)store_remove_file(readonly_path);
+  (void)rmdir(readonly_directory);
 #endif
   (void)store_remove_file("profile.lock");
 }
@@ -93,6 +100,19 @@ static void test_utf8_path(void) {
   assert_contents(profile_unicode_path, "utf8-path");
 }
 
+#if !defined(_WIN32)
+static void test_permission_failure(void) {
+  const unsigned char value[] = "blocked";
+  assert(mkdir(readonly_directory, 0700) == 0);
+  assert(chmod(readonly_directory, 0500) == 0);
+  assert(store_atomic_write(readonly_path, NULL, value, sizeof(value) - 1) ==
+         STORE_IO_ERROR);
+  assert(!store_file_exists(readonly_path));
+  assert(chmod(readonly_directory, 0700) == 0);
+  assert(rmdir(readonly_directory) == 0);
+}
+#endif
+
 static void test_writer_lock(void) {
   StoreWriterLock first;
   StoreWriterLock second;
@@ -108,6 +128,9 @@ int main(void) {
   test_atomic_backup();
   test_faults_preserve_active();
   test_utf8_path();
+#if !defined(_WIN32)
+  test_permission_failure();
+#endif
   test_writer_lock();
   cleanup();
   puts("recoverable storage, UTF-8 paths, fault injection, and writer lock passed");
