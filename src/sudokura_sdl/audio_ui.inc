@@ -115,7 +115,6 @@ static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_ui = ui;
   audio_sync_ui(game, ui);
-  (void)app_frame_base;
-  app_render(gfx, game, ui);
+  app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);
 }
