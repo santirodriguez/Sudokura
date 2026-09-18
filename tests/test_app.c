@@ -17,6 +17,11 @@ static int wrong_value(const Game *game, int index) {
   return value;
 }
 
+static void fixture_game_new(Game *game, uint64_t seed) {
+  assert(game_new_difficulty_revision(game, seed, DIFFICULTY_MEDIUM,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+}
+
 static AppState playing_state(GameMode mode) {
   AppState state;
   app_state_init(&state);
@@ -69,7 +74,7 @@ static void test_navigation_contract(void) {
 
 static void test_no_change_and_strikes(void) {
   Game game;
-  game_new(&game, 99);
+  fixture_game_new(&game, 99);
   AppState state = playing_state(MODE_STRIKES);
   int index = first_playable(&game);
   assert(index >= 0);
@@ -91,7 +96,7 @@ static void test_no_change_and_strikes(void) {
 
 static void test_grouped_events_stop_at_loss(void) {
   Game game;
-  game_new(&game, 1234);
+  fixture_game_new(&game, 1234);
   int index = first_playable(&game);
   assert(index >= 0);
   fill_except(&game, index);
@@ -124,7 +129,7 @@ static void test_grouped_events_stop_at_loss(void) {
 
 static void test_win_is_terminal(void) {
   Game game;
-  game_new(&game, 77);
+  fixture_game_new(&game, 77);
   int index = first_playable(&game);
   assert(index >= 0);
   fill_except(&game, index);
@@ -144,7 +149,7 @@ static void test_win_is_terminal(void) {
 
 static void test_idle_terminal_check(void) {
   Game game;
-  game_new(&game, 8080);
+  fixture_game_new(&game, 8080);
   AppState state = playing_state(MODE_TIME);
   AppActionOutcome before = app_check_terminal(&game, &state, 599.999);
   assert(!before.terminal && state.result == APP_RESULT_NONE);
@@ -156,7 +161,7 @@ static void test_idle_terminal_check(void) {
 
 static void test_time_limit_preempts_input(void) {
   Game game;
-  game_new(&game, 7);
+  fixture_game_new(&game, 7);
   int index = first_playable(&game);
   assert(index >= 0);
   int before = game.puzzle[index];
@@ -176,7 +181,7 @@ static void test_time_limit_preempts_input(void) {
 
 static void test_continue_action(void) {
   Game game;
-  game_new(&game, 55);
+  fixture_game_new(&game, 55);
   AppState state;
   app_state_init(&state);
   state.has_session = true;
@@ -198,7 +203,7 @@ static void test_continue_action(void) {
 
 static void test_hint_verify_and_restart(void) {
   Game game;
-  game_new(&game, 314159);
+  fixture_game_new(&game, 314159);
   AppState state = playing_state(MODE_CLASSIC);
   int index = first_playable(&game);
   assert(index >= 0);
