@@ -336,12 +336,14 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui){
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
   ui->elapsed_base=(double)s->elapsed_ms/1000.0;ui->running_since=now_s();
-  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=true;ui->has_session=true;
+  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;ui->has_session=true;
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
-  if(s->status==SESSION_WON){ui->result=RES_WIN;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
-  else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
-  else{ui->result=RES_NONE;ui->screen=SCR_PLAY;}
-  ui->prev_screen=ui->screen;p->last_checkpoint=now_s();
+  if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
+  else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
+  else ui->result=RES_NONE;
+  AppAction continue_action={.kind=APP_ACTION_CONTINUE};
+  (void)app_apply_action(game,ui,continue_action,ui->elapsed_base);
+  p->last_checkpoint=now_s();
 }
 
 static void start_new_session(Persistence*p,Game*game,UI*ui){
@@ -364,7 +366,10 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
-  game_restart(game);ui->sel_r=4;ui->sel_c=4;begin_fresh_play(ui);
+  AppAction restart_action={.kind=APP_ACTION_RESTART};
+  AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
+  if(!outcome.changed)return;
+  ui->sel_r=4;ui->sel_c=4;set_mode_params(ui);clock_reset(ui);
   (void)save_current_session(p,game,ui);
 }
 
