@@ -309,11 +309,45 @@ static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
                          14, 9);
 }
 
+static void rc2_render_generation_overlay(Gfx *gfx, UI *ui) {
+  if (!gfx || !ui || !ui->generating) return;
+  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
+  SDL_Color veil = theme.bg;
+  veil.a = 225;
+  draw_rect(gfx->ren, 0, 0, gfx->width, gfx->height, veil);
+
+  int width = gfx->width < 640 ? gfx->width - 32 : 460;
+  if (width > gfx->width - 32) width = gfx->width - 32;
+  int height = gfx->width < 640 ? 132 : 150;
+  SDL_Rect card = {(gfx->width - width) / 2, (gfx->height - height) / 2,
+                   width, height};
+  SDL_Rect shadow = card;
+  shadow.y += 5;
+  draw_round_rect(gfx->ren, shadow, 14, theme.shadow);
+  draw_round_rect(gfx->ren, card, 14, theme.palette_bg);
+
+  char message[128];
+  if (ui->generation_max_attempts > 0) {
+    snprintf(message, sizeof message, "%s  %u/%u",
+             tr(ui->language, T_GENERATING), ui->generation_attempt,
+             ui->generation_max_attempts);
+  } else {
+    snprintf(message, sizeof message, "%s",
+             tr(ui->language, T_GENERATING));
+  }
+  SDL_Rect title = {card.x + 18, card.y + 24, card.w - 36, 48};
+  SDL_Rect cancel = {card.x + 18, card.y + 82, card.w - 36, 34};
+  (void)draw_fitted_text(gfx, message, theme.title, title, 24, 12);
+  (void)draw_fitted_text(gfx, tr(ui->language, T_GENERATING_CANCEL),
+                         theme.dim, cancel, 16, 10);
+}
+
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   app_render_polish(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
   rc2_render_audio_panel(gfx, ui);
   rc2_render_storage_banner(gfx, ui);
+  rc2_render_generation_overlay(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
