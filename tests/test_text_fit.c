@@ -88,7 +88,7 @@ int main(void) {
     for (int mode = 0; mode < 3; ++mode) {
       int width = sizes[s][0], height = sizes[s][1];
       AppGeometry g;
-      assert(ui_geometry_compute(width, height, (GeometryMode)mode, &g));
+      assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       GeometryFonts tier = geometry_font_sizes(&g, width, height);
 
       assert_rect(g.play_language, width, height);
