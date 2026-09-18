@@ -191,6 +191,40 @@ int main(void) {
                       g.about_links[i].h - 3));
         }
 
+        int hint_margin = g.sidebar.w < 240 ? 7 : 10;
+        int hint_card_h = g.sidebar.h - hint_margin * 2;
+        int hint_button_h = hint_card_h < 430 ? 31 : 36;
+        int hint_body_w = g.sidebar.w - hint_margin * 2 - 20;
+        int hint_body_h = hint_card_h - hint_button_h * 4 - 78;
+        assert(hint_body_w > 8 && hint_body_h > 8);
+        assert(fits(font, tr((Language)language, T_HINT_PREVIEW), 20, 10,
+                    hint_body_w, 32));
+        assert(fits(font, tr((Language)language, T_APPLY), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_VERIFY), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_REVEAL_CELL), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_CANCEL), 16, 9,
+                    hint_body_w, hint_button_h));
+
+        char hint_message[320];
+        snprintf(hint_message, sizeof hint_message,
+                 tr((Language)language, T_HINT_CHAIN_FMT),
+                 tr((Language)language, T_TECH_LOCKED_CANDIDATE), 9, 9, 9);
+        size_t hint_length = strlen(hint_message);
+        snprintf(hint_message + hint_length,
+                 sizeof hint_message - hint_length, "\n%s",
+                 tr((Language)language, T_HINT_MARKER_LEGEND));
+        assert(wrapped_fits(font, hint_message, 15, 9,
+                            hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_CONTRADICTION),
+                            15, 9, hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_STALLED),
+                            15, 9, hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_NEEDS_VERIFY),
+                            15, 9, hint_body_w, hint_body_h));
+
         assert(fits(font, tr((Language)language, T_AUDIO), tier.control + 8, 10,
                     width < 640 ? width - 60 : 420, 42));
         assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
