@@ -56,6 +56,7 @@ typedef struct {
 
   bool assisted;
   bool hint_preview_active;
+  bool hint_verify_required;
   HumanHint hint_preview;
 
   AppScreen screen, prev_screen;
