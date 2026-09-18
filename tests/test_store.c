@@ -110,27 +110,27 @@ static void test_faults_preserve_active(void) {
                             sizeof(base) - 1) == STORE_OK);
 
   store_test_set_fault(STORE_TEST_FAULT_OPEN);
-  assert(store_atomic_write(active_path, backup_path, update,
+  assert(store_atomic_write(active_path, NULL, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
 
   store_test_set_fault(STORE_TEST_FAULT_DURING_WRITE);
-  assert(store_atomic_write(active_path, backup_path, update,
+  assert(store_atomic_write(active_path, NULL, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
 
   store_test_set_fault(STORE_TEST_FAULT_NO_SPACE);
-  assert(store_atomic_write(active_path, backup_path, update,
+  assert(store_atomic_write(active_path, NULL, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
 
   store_test_set_fault(STORE_TEST_FAULT_SYNC);
-  assert(store_atomic_write(active_path, backup_path, update,
+  assert(store_atomic_write(active_path, NULL, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
 
   store_test_set_fault(STORE_TEST_FAULT_REPLACE);
-  assert(store_atomic_write(active_path, backup_path, update,
+  assert(store_atomic_write(active_path, NULL, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
 
