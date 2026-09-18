@@ -139,6 +139,50 @@ static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,size
 static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
 static void draw_back_button(Gfx*g,const UI*ui,Theme th){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);}
 
+static bool hint_step_has_cell(const int *cells, int count, int cell) {
+  if (!cells || count <= 0) return false;
+  for (int i = 0; i < count; ++i)
+    if (cells[i] == cell) return true;
+  return false;
+}
+
+static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
+                                  int cell, SDL_Rect rect) {
+  if (!g || !ui || !ui->hint_preview_active) return;
+  const HumanHint *hint = &ui->hint_preview;
+  bool source = hint->status == HUMAN_HINT_LOGICAL &&
+                hint_step_has_cell(hint->reasoning.source_cells,
+                                   hint->reasoning.source_count, cell);
+  bool affected = hint->status == HUMAN_HINT_LOGICAL &&
+                  hint_step_has_cell(hint->reasoning.affected_cells,
+                                     hint->reasoning.affected_count, cell);
+  bool target = hint->status == HUMAN_HINT_LOGICAL &&
+                hint->placement.placement_cell == cell;
+  bool contradiction =
+      hint->status == HUMAN_HINT_INVALID && hint->contradiction_cell == cell;
+  if (!source && !affected && !target && !contradiction) return;
+
+  SDL_Color marker = contradiction ? theme.text_wrong : theme.sel_outline;
+  SDL_Rect inner = {rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8};
+  if (source) draw_focus_ring(g->ren, inner, marker);
+  if (affected || contradiction) {
+    draw_line(g->ren, inner.x + 2, inner.y + 2,
+              inner.x + inner.w - 3, inner.y + inner.h - 3, marker);
+    draw_line(g->ren, inner.x + inner.w - 3, inner.y + 2,
+              inner.x + 2, inner.y + inner.h - 3, marker);
+  }
+  if (target) {
+    int cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+    int arm = rect.w < rect.h ? rect.w / 5 : rect.h / 5;
+    if (arm < 4) arm = 4;
+    draw_line(g->ren, cx - arm, cy, cx + arm, cy, marker);
+    draw_line(g->ren, cx, cy - arm, cx, cy + arm, marker);
+    SDL_Rect target_box = {rect.x + 7, rect.y + 7, rect.w - 14, rect.h - 14};
+    SDL_SetRenderDrawColor(g->ren, marker.r, marker.g, marker.b, 255);
+    SDL_RenderDrawRect(g->ren, &target_box);
+  }
+}
+
 static void render_pause_overlay(Gfx*g,const UI*ui);
 
 /* =================== RENDER PLAY =================== */
@@ -168,6 +212,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
     }else if(game->notes[i]){
       for(int vv=1;vv<=9;vv++)if(game->notes[i]&(1u<<vv)){char b[2]={(char)('0'+vv),0};int tw,thh;SDL_Texture*t=render_text(g,g->font_note,b,th.dim,&tw,&thh);if(t){int sub=cs/3,q=(vv-1)/3,qq=(vv-1)%3;SDL_Rect d={x+qq*sub+(sub-tw)/2,y+q*sub+(sub-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
     }
+    draw_hint_cell_marker(g,ui,th,i,(SDL_Rect){x,y,cs,cs});
   }
 
   SidebarRects R;compute_sidebar_rects(&L,&R);int tw,thh;
