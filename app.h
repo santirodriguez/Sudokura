@@ -50,7 +50,7 @@ enum {
 typedef struct {
   int sel_r, sel_c;
   bool notes_mode, strict_mode, dark_theme;
-  bool auto_remove_peer_notes;
+  bool reduced_motion, auto_remove_peer_notes;
   Language language;
 
   uint16_t undo_count, redo_count;
