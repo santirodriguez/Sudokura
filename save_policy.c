@@ -33,6 +33,8 @@ bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms) {
   if (!save_policy_dirty(policy)) return false;
   if (now_ms < policy->dirty_since_ms || now_ms < policy->last_change_ms)
     return true;
+  if (policy->last_status != STORE_OK)
+    return now_ms - policy->last_change_ms >= SUDOKURA_AUTOSAVE_MAX_MS;
   return now_ms - policy->last_change_ms >= SUDOKURA_AUTOSAVE_QUIET_MS ||
          now_ms - policy->dirty_since_ms >= SUDOKURA_AUTOSAVE_MAX_MS;
 }
@@ -44,6 +46,8 @@ void save_policy_record_result(SavePolicy *policy, StoreStatus status,
   if (status == STORE_OK) {
     policy->dirty_mask = SAVE_DIRTY_NONE;
     policy->dirty_since_ms = now_ms;
+    policy->last_change_ms = now_ms;
+  } else {
     policy->last_change_ms = now_ms;
   }
 }
