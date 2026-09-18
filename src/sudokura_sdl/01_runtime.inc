@@ -212,10 +212,58 @@ static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool
   return apply_action_outcome(ui,outcome);
 }
 
-static bool apply_hint_action(Game*game,UI*ui,int row,int column){
+static void clear_hint_preview(UI*ui){
+  if(!ui)return;
+  ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
+}
+
+static bool prepare_hint_preview(const Game*game,UI*ui){
+  if(!game||!ui||!ui->session_open||ui->screen!=SCR_PLAY)return false;
+  HumanHint hint;
+  if(!human_hint_analyze(game->puzzle,&hint))return false;
+  if(hint.status==HUMAN_HINT_SOLVED)return false;
+  ui->hint_preview=hint;
+  ui->hint_preview_active=true;
+  if(hint.status==HUMAN_HINT_LOGICAL&&hint.placement.placement_cell>=0){
+    ui->sel_r=hint.placement.placement_cell/9;
+    ui->sel_c=hint.placement.placement_cell%9;
+  }else if(hint.status==HUMAN_HINT_INVALID&&hint.contradiction_cell>=0){
+    ui->sel_r=hint.contradiction_cell/9;
+    ui->sel_c=hint.contradiction_cell%9;
+  }
+  return true;
+}
+
+static bool apply_logical_hint_action(Game*game,UI*ui){
+  if(!game||!ui||!ui->hint_preview_active||
+     ui->hint_preview.status!=HUMAN_HINT_LOGICAL)return false;
+  HumanStep placement=ui->hint_preview.placement;
+  if(placement.placement_cell<0||placement.placement_value<1||
+     placement.placement_value>9)return false;
+  AppAction action={
+    .kind=APP_ACTION_PLACE,
+    .row=placement.placement_cell/9,
+    .column=placement.placement_cell%9,
+    .value=placement.placement_value
+  };
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  bool changed=apply_action_outcome(ui,outcome);
+  if(changed){
+    ui->assisted=true;
+    clear_hint_preview(ui);
+  }
+  return changed;
+}
+
+static bool apply_reveal_action(Game*game,UI*ui,int row,int column){
   AppAction action={.kind=APP_ACTION_HINT,.row=row,.column=column};
   AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
-  if(outcome.changed)show_toast(ui,tr(ui->language,T_HINT_USED));
+  if(outcome.changed){
+    ui->assisted=true;
+    clear_hint_preview(ui);
+    show_toast(ui,tr(ui->language,T_HINT_USED));
+  }
   if(outcome.terminal)finish_terminal_action(ui);
   return outcome.changed||outcome.terminal;
 }
