@@ -5,14 +5,31 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 static const char *active_path = ".sudokura-storage-test.dat";
 static const char *backup_path = ".sudokura-storage-test.dat.bak";
 static const char *unicode_path = ".sudokura-storage-\xc3\xb1-test.dat";
+static const char *profile_directory = ".sudokura-profile-path-test";
+static const char *profile_unicode_path =
+    ".sudokura-profile-path-test/profile-\xc3\xb1.dat";
 
 static void cleanup(void) {
   (void)store_remove_file(active_path);
   (void)store_remove_file(backup_path);
   (void)store_remove_file(unicode_path);
+  (void)store_remove_file(profile_unicode_path);
+#if defined(_WIN32)
+  (void)_rmdir(profile_directory);
+#else
+  (void)rmdir(profile_directory);
+#endif
+  (void)store_remove_file("profile.lock");
 }
 
 static void assert_contents(const char *path, const char *expected) {
@@ -65,6 +82,15 @@ static void test_utf8_path(void) {
   assert(store_atomic_write(unicode_path, NULL, value, sizeof(value) - 1) ==
          STORE_OK);
   assert_contents(unicode_path, "utf8-path");
+
+#if defined(_WIN32)
+  assert(_mkdir(profile_directory) == 0);
+#else
+  assert(mkdir(profile_directory, 0700) == 0);
+#endif
+  assert(store_atomic_write(profile_unicode_path, NULL, value,
+                            sizeof(value) - 1) == STORE_OK);
+  assert_contents(profile_unicode_path, "utf8-path");
 }
 
 static void test_writer_lock(void) {
