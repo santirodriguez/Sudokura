@@ -7,16 +7,106 @@ static void render_pause_overlay(Gfx*g,const UI*ui){
 }
 
 static void blit_wrapped(Gfx*g,int x,int y,int w,int max_h,const char*text,SDL_Color col){int tw,thh;SDL_Texture*t=render_text_wrapped(g,g->font_body,text,col,w,&tw,&thh);if(t){int visible=thh<max_h?thh:max_h;SDL_Rect source={0,0,tw,visible},d={x,y,tw,visible};SDL_RenderCopy(g->ren,t,&source,&d);SDL_DestroyTexture(t);}}
-static void render_help(Gfx*g,UI*ui){Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);AppGeometry a;if(!get_geometry(g,ui,&a))return;SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);int tw,thh;SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);if(T){SDL_Rect d={heading.x,heading.y,tw,thh};SDL_RenderCopy(g->ren,T,NULL,&d);SDL_DestroyTexture(T);}blit_wrapped(g,body.x,body.y,body.w,body.h,tr(ui->language,T_HELP_BODY),th.dim);draw_back_button(g,ui,th);}
+static void render_help(Gfx*g,UI*ui){
+  Theme th=ui->dark_theme?theme_dark():theme_light();
+  SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
+  SDL_RenderClear(g->ren);
+  AppGeometry a;
+  if(!get_geometry(g,ui,&a))return;
+  SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
+  int tw,thh;
+  SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);
+  if(T){
+    SDL_Rect d={heading.x,heading.y,tw,thh};
+    SDL_RenderCopy(g->ren,T,NULL,&d);
+    SDL_DestroyTexture(T);
+  }
+  char help_text[2048];
+  const char*modifier=input_primary_modifier_label();
+  snprintf(help_text,sizeof help_text,tr(ui->language,T_HELP_BODY),
+           modifier,modifier,modifier,modifier);
+  blit_wrapped(g,body.x,body.y,body.w,body.h,help_text,th.dim);
+  draw_back_button(g,ui,th);
+}
 
 static void render_end(Gfx*g,const Game*game,UI*ui){
-  Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);if(ui->result==RES_WIN)draw_victory_animation(g,th);
-  AppGeometry a;if(!get_geometry(g,ui,&a))return;GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);draw_wordmark(g,sdl_rect(a.end_logo));SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
-  const char*title=tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);SDL_Color title_color=ui->result==RES_WIN?(SDL_Color){60,220,160,255}:(SDL_Color){220,80,80,255};(void)draw_fitted_text(g,title,title_color,heading,fonts.heading,16);
-  const char*mode_name=ui->is_daily?tr(ui->language,T_DAILY_SHORT):tr(ui->language,mode_key(ui->mode));const char*diff=difficulty_name(ui->language,game->difficulty);double el=elapsed_time(ui);char lines[3][128];
-  snprintf(lines[0],sizeof lines[0],"%s · %s",mode_name,diff);snprintf(lines[1],sizeof lines[1],"%s %02d:%02d   ·   %s %d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60),tr(ui->language,T_ERRORS),ui->mistakes);snprintf(lines[2],sizeof lines[2],"%s: %d",tr(ui->language,T_HINTS),game_hint_count(game));
-  int row_h=summary.h/3;for(int i=0;i<3;i++){SDL_Rect row={summary.x,summary.y+i*row_h,summary.w,row_h};(void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,10);}
-  int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);bool p1=point_in(b1,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),p2=point_in(b2,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect b1p=pressed_paint_rect(b1,p1),b2p=pressed_paint_rect(b2,p2);draw_round_rect(g->ren,b1p,7,p1?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,ui->result==RES_WIN?T_NEXT:T_RETRY),th.bg,b1p,fonts.control+2,10);draw_round_rect(g->ren,b2p,7,p2?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,b2p,fonts.control,10);
+  Theme th=ui->dark_theme?theme_dark():theme_light();
+  SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
+  SDL_RenderClear(g->ren);
+  if(ui->result==RES_WIN)draw_victory_animation(g,th);
+  AppGeometry a;
+  if(!get_geometry(g,ui,&a))return;
+  GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
+  draw_wordmark(g,sdl_rect(a.end_logo));
+  SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
+  const char*title=tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);
+  SDL_Color title_color=ui->result==RES_WIN
+                            ?(SDL_Color){60,220,160,255}
+                            :(SDL_Color){220,80,80,255};
+  (void)draw_fitted_text(g,title,title_color,heading,fonts.heading,16);
+
+  const char*mode_name=ui->is_daily
+                            ?tr(ui->language,T_DAILY_SHORT)
+                            :tr(ui->language,mode_key(ui->mode));
+  const char*diff=difficulty_name(ui->language,game->difficulty);
+  double el=elapsed_time(ui);
+  int minutes=(int)(el/60);
+  int seconds=(int)fmod(el,60);
+  char lines[4][160];
+  snprintf(lines[0],sizeof lines[0],"%s · %s",mode_name,diff);
+  if(ui->mode==MODE_STRIKES){
+    snprintf(lines[1],sizeof lines[1],"%s %02d:%02d · %s %d/%d",
+             tr(ui->language,T_TIME),minutes,seconds,
+             tr(ui->language,T_STRIKES),ui->strikes,ui->strikes_max);
+  }else if(ui->mode==MODE_TIME){
+    snprintf(lines[1],sizeof lines[1],"%s %02d:%02d · %s %d",
+             tr(ui->language,T_TIME),minutes,seconds,
+             tr(ui->language,T_ERRORS),ui->mistakes);
+  }else{
+    snprintf(lines[1],sizeof lines[1],"%s %02d:%02d",
+             tr(ui->language,T_TIME),minutes,seconds);
+  }
+  if(ui->assisted)
+    snprintf(lines[2],sizeof lines[2],"%s: %d · %s",
+             tr(ui->language,T_HINTS),game_hint_count(game),
+             tr(ui->language,T_ASSISTED));
+  else
+    snprintf(lines[2],sizeof lines[2],"%s: %d",
+             tr(ui->language,T_HINTS),game_hint_count(game));
+
+  if(ui->result_best_time_available){
+    unsigned long long best_s=
+        (unsigned long long)(ui->result_best_time_ms/1000u);
+    snprintf(lines[3],sizeof lines[3],"%s: %u · %s %02llu:%02llu",
+             tr(ui->language,T_COMPLETED),ui->result_finished_count,
+             tr(ui->language,T_BEST),best_s/60u,best_s%60u);
+  }else{
+    snprintf(lines[3],sizeof lines[3],"%s: %u",
+             tr(ui->language,T_COMPLETED),ui->result_finished_count);
+  }
+
+  int row_h=summary.h/4;
+  for(int i=0;i<4;i++){
+    SDL_Rect row={summary.x,summary.y+i*row_h,summary.w,
+                  i==3?summary.h-i*row_h:row_h};
+    (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,9);
+  }
+
+  int mx=0,my=0;
+  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
+  bool p1=point_in(b1,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));
+  bool p2=point_in(b2,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Rect b1p=pressed_paint_rect(b1,p1),b2p=pressed_paint_rect(b2,p2);
+  draw_round_rect(g->ren,b1p,7,p1?th.sel:th.title);
+  TextKey primary=ui->result==RES_WIN
+                      ?(ui->is_daily?T_ANOTHER_NORMAL:T_ANOTHER_GAME)
+                      :T_RETRY_SAME;
+  (void)draw_fitted_text(g,tr(ui->language,primary),th.bg,b1p,
+                         fonts.control+2,9);
+  draw_round_rect(g->ren,b2p,7,p2?th.sel:th.btn);
+  (void)draw_fitted_text(g,tr(ui->language,T_HOME),th.btnfg,b2p,
+                         fonts.control,9);
 }
 
 static bool confirm_box(SDL_Window*win,const char*title,const char*msg,const char*ok_label,const char*cancel_label){
