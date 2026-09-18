@@ -394,6 +394,7 @@ static void test_v12_fixture_matrix(void) {
   daily.elapsed_ms = UINT64_C(45678);
   assert(session_validate(&daily));
   run_v12_fixture(&daily);
+  cleanup();
 }
 
 static void test_v12_migration_and_one_time_import(void) {
