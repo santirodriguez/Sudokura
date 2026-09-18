@@ -212,8 +212,10 @@ static void test_player_input(void) {
   assert(game_apply_input(&game, row, column, conflicting, false, true) == GAME_INPUT_STRICT_REJECTED);
   int wrong = game.solution[i] % 9 + 1; assert(wrong != game.solution[i]);
   assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_WRONG);
+  assert(game_wrong_entry_count(&game) == 1);
   assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_NO_CHANGE);
   assert(game_apply_input(&game, row, column, 0, false, false) == GAME_INPUT_CLEARED);
+  assert(game_wrong_entry_count(&game) == 0);
   assert(game_apply_input(NULL, row, column, value, false, false) == GAME_INPUT_NO_CHANGE);
 }
 
@@ -262,7 +264,7 @@ static void test_bounds(void) {
   assert(!game_place(NULL, 0, 0, 1, false)); assert(!game_place(&game, -1, 0, 1, false)); assert(!game_place(&game, 0, 9, 1, false));
   assert(!game_toggle_note(&game, 9, 0, 1)); assert(!game_toggle_note(&game, 0, -1, 1)); assert(!game_hint(&game, -1, -1));
   assert(!game_cell_locked(&game, 9, 9)); assert(!game_has_conflict(&game, 9, 9)); assert(!game_has_conflict(NULL, 0, 0));
-  assert(game_conflict_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_fill_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
+  assert(game_conflict_count(NULL) == 0 && game_wrong_entry_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_fill_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
   assert(game_solution_count(NULL, 2) == 0); int invalid[81] = {0}; invalid[0] = invalid[1] = 1; assert(game_solution_count(invalid, 2) == 0); assert(game_difficulty_score(invalid) == -1);
 }
 
