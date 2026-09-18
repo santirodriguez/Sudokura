@@ -34,6 +34,21 @@ int main(void) {
   assert(input_digit_value(SDLK_PAGEUP, SDL_SCANCODE_KP_9) == 9);
   assert(input_digit_value(SDLK_a, SDL_SCANCODE_A) == -1);
 
-  puts("keyboard digit mapping passed for top row and physical keypad");
+  assert(!input_key_repeat_allowed(SDLK_1, SDL_SCANCODE_1));
+  assert(!input_key_repeat_allowed(SDLK_UNKNOWN, SDL_SCANCODE_KP_1));
+  assert(!input_key_repeat_allowed(SDLK_n, SDL_SCANCODE_N));
+  assert(!input_key_repeat_allowed(SDLK_p, SDL_SCANCODE_P));
+  assert(!input_key_repeat_allowed(SDLK_v, SDL_SCANCODE_V));
+  assert(!input_key_repeat_allowed(SDLK_F1, SDL_SCANCODE_F1));
+  assert(input_key_repeat_allowed(SDLK_UP, SDL_SCANCODE_UP));
+  assert(input_key_repeat_allowed(SDLK_LEFT, SDL_SCANCODE_LEFT));
+  assert(input_key_repeat_allowed(SDLK_w, SDL_SCANCODE_W));
+  assert(input_key_repeat_allowed(SDLK_d, SDL_SCANCODE_D));
+
+  assert(input_mouse_button_is_primary(SDL_BUTTON_LEFT));
+  assert(!input_mouse_button_is_primary(SDL_BUTTON_RIGHT));
+  assert(!input_mouse_button_is_primary(SDL_BUTTON_MIDDLE));
+
+  puts("keyboard digit, repeat, and mouse-button input policies passed");
   return 0;
 }
