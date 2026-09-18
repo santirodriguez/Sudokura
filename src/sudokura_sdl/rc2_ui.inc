@@ -222,8 +222,10 @@ static void rc2_render_audio_panel(Gfx *gfx, UI *ui) {
 }
 
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
-  if (!gfx || !game || !ui || ui->screen != SCR_PLAY ||
-      (ui->pause_reasons & PAUSE_MANUAL))
+  bool play_surface =
+      ui && (ui->screen == SCR_PLAY ||
+             (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY));
+  if (!gfx || !game || !play_surface || (ui->pause_reasons & PAUSE_MANUAL))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
