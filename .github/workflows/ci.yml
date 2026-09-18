@@ -42,13 +42,17 @@ jobs:
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_profile.c profile.c session.c store_io.c game.c -o tests/test_profile_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c -o tests/test_live_save_san
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san
           ./tests/test_save_policy_san
           ./tests/test_session_san
           ./tests/test_profile_san
-          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_session_san tests/test_profile_san
+          ./tests/test_live_save_san
+          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_session_san tests/test_profile_san tests/test_live_save_san
       - run: make WERROR=-Werror
       - run: ldd sudokura && size sudokura && du -h sudokura
 
