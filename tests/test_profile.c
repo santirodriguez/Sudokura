@@ -57,11 +57,11 @@ static int first_playable(const Game *game) {
   return -1;
 }
 
-static SessionState normal_state(void) {
+static SessionState normal_state_revision(uint32_t revision) {
   SessionState state;
   memset(&state, 0, sizeof(state));
-  game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
-                      DIFFICULTY_HARD);
+  assert(game_new_difficulty_revision(
+      &state.game, UINT64_C(0x123456789abcdef0), DIFFICULTY_HARD, revision));
   state.mode = MODE_STRIKES;
   state.selected_row = 4;
   state.selected_column = 5;
@@ -77,10 +77,18 @@ static SessionState normal_state(void) {
   return state;
 }
 
-static SessionState daily_state(void) {
+static SessionState normal_state(void) {
+  return normal_state_revision(SUDOKURA_GENERATOR_REVISION);
+}
+
+static SessionState legacy_normal_state(void) {
+  return normal_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
+}
+
+static SessionState daily_state_revision(uint32_t revision) {
   SessionState state;
   memset(&state, 0, sizeof(state));
-  assert(game_new_daily(&state.game, 2026, 9, 18));
+  assert(game_new_daily_revision(&state.game, 2026, 9, 18, revision));
   state.mode = MODE_CLASSIC;
   state.selected_row = 3;
   state.selected_column = 6;
@@ -92,6 +100,14 @@ static SessionState daily_state(void) {
   state.elapsed_ms = UINT64_C(12345);
   assert(session_validate(&state));
   return state;
+}
+
+static SessionState daily_state(void) {
+  return daily_state_revision(SUDOKURA_GENERATOR_REVISION);
+}
+
+static SessionState legacy_daily_state(void) {
+  return daily_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
 }
 
 static void test_profile_roundtrip(void) {
@@ -316,8 +332,8 @@ static void assert_migrated_session_equal(const SessionState *expected,
   assert(!memcmp(&actual->game, &expected->game, sizeof(Game)));
 }
 
-static SessionState won_state(void) {
-  SessionState state = normal_state();
+static SessionState won_state_revision(uint32_t revision) {
+  SessionState state = normal_state_revision(revision);
   for (int i = 0; i < 81; ++i) {
     state.game.puzzle[i] = state.game.solution[i];
     state.game.notes[i] = 0;
@@ -328,12 +344,20 @@ static SessionState won_state(void) {
   return state;
 }
 
-static SessionState lost_state(void) {
-  SessionState state = normal_state();
+static SessionState won_state(void) {
+  return won_state_revision(SUDOKURA_GENERATOR_REVISION);
+}
+
+static SessionState lost_state_revision(uint32_t revision) {
+  SessionState state = normal_state_revision(revision);
   state.status = SESSION_LOST;
   state.strikes = 3;
   assert(session_validate(&state));
   return state;
+}
+
+static SessionState lost_state(void) {
+  return lost_state_revision(SUDOKURA_GENERATOR_REVISION);
 }
 
 static void run_v12_fixture(const SessionState *state) {
@@ -372,22 +396,22 @@ static void run_v12_fixture(const SessionState *state) {
 }
 
 static void test_v12_fixture_matrix(void) {
-  SessionState active = normal_state();
+  SessionState active = legacy_normal_state();
   run_v12_fixture(&active);
 
-  SessionState paused = normal_state();
+  SessionState paused = legacy_normal_state();
   paused.manual_paused = true;
   paused.elapsed_ms += UINT64_C(3210);
   assert(session_validate(&paused));
   run_v12_fixture(&paused);
 
-  SessionState won = won_state();
+  SessionState won = won_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
   run_v12_fixture(&won);
 
-  SessionState lost = lost_state();
+  SessionState lost = lost_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
   run_v12_fixture(&lost);
 
-  SessionState daily = daily_state();
+  SessionState daily = legacy_daily_state();
   int playable = first_playable(&daily.game);
   assert(playable >= 0);
   daily.game.notes[playable] = (uint16_t)(1u << 4);
@@ -398,7 +422,7 @@ static void test_v12_fixture_matrix(void) {
 }
 
 static void test_v12_migration_and_one_time_import(void) {
-  SessionState state = normal_state();
+  SessionState state = legacy_normal_state();
   Preferences preferences;
   preferences_defaults(&preferences);
   preferences.language = LANG_ES;
@@ -441,7 +465,7 @@ static void test_v12_migration_and_one_time_import(void) {
 
 static void test_daily_uses_separate_slot(void) {
   cleanup();
-  SessionState daily = daily_state();
+  SessionState daily = legacy_daily_state();
   assert(session_save_file(legacy_session_path, &daily));
   ProfileLegacyPaths paths = legacy_paths();
   ProfileData profile;
@@ -487,7 +511,7 @@ static void test_corrupt_legacy_inputs_fail_closed(void) {
 
 static void test_incompatible_legacy_is_preserved(void) {
   cleanup();
-  SessionState state = normal_state();
+  SessionState state = legacy_normal_state();
   assert(session_save_file(legacy_session_path, &state));
 
   unsigned char bytes[LEGACY_HEADER_SIZE + LEGACY_SESSION_PAYLOAD_SIZE];
