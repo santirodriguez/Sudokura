@@ -36,7 +36,12 @@ enum {
 typedef struct {
   int sel_r, sel_c;
   bool notes_mode, strict_mode, dark_theme;
+  bool auto_remove_peer_notes;
   Language language;
+
+  uint16_t undo_count, redo_count;
+  GameEdit undo[SUDOKURA_HISTORY_LIMIT];
+  GameEdit redo[SUDOKURA_HISTORY_LIMIT];
 
   int mistakes, strikes, strikes_max;
   uint64_t elapsed_ms, running_since_ms;
