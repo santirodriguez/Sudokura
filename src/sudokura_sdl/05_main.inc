@@ -226,7 +226,8 @@ int main(int argc, char **argv) {
             ui.screen = SCR_PLAY;
             ui.pause_reasons = PAUSE_MANUAL;
           } else {
-            ui.screen = SCR_PLAY;
+            ui.screen = APP_SCREEN_SETTINGS;
+            ui.prev_screen = SCR_PLAY;
             ui.pause_reasons = PAUSE_MODAL;
             audio_settings_open = true;
           }
