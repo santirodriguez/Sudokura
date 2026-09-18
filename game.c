@@ -421,10 +421,12 @@ static V3CandidateResult generate_candidate_v3(
         evaluation.rating != wanted)
       continue;
 
-    if (difficulty == DIFFICULTY_MEDIUM && evaluation.elimination_steps < 1)
+    if (difficulty == DIFFICULTY_MEDIUM &&
+        evaluation.technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] < 1)
       continue;
     if (difficulty == DIFFICULTY_HARD &&
-        (evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
+        (evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] +
+         evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
          evaluation.technique_steps[HUMAN_TECHNIQUE_X_WING]) < 1)
       continue;
 
