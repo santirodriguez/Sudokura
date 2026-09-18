@@ -150,6 +150,7 @@ static void test_player_input(void) {
   assert(game_apply_input(&game, row, column, conflicting, false, true) == GAME_INPUT_STRICT_REJECTED);
   int wrong = game.solution[i] % 9 + 1; assert(wrong != game.solution[i]);
   assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_WRONG);
+  assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_NO_CHANGE);
   assert(game_apply_input(&game, row, column, 0, false, false) == GAME_INPUT_CLEARED);
   assert(game_apply_input(NULL, row, column, value, false, false) == GAME_INPUT_NO_CHANGE);
 }
