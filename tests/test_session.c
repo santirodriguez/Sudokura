@@ -1,5 +1,6 @@
 #include "game.h"
 #include "session.h"
+#include "store_io.h"
 
 #include <assert.h>
 #include <stdint.h>
