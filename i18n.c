@@ -95,6 +95,12 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DISCARD] = "Discard",
         [T_RECOVER] = "Recover",
         [T_PROFILE_RECOVER_PROMPT] = "The active profile is damaged, but a previous valid copy is available. Recovering restores that earlier saved state; it does not start a new game.",
+        [T_GENERATING] = "Generating puzzle…",
+        [T_GENERATING_CANCEL] = "Esc cancels",
+        [T_GENERATION_FAILED] = "Generation failed",
+        [T_GENERATION_FAILED_BODY] = "Sudokura could not generate a puzzle of the requested difficulty within its deterministic work budget. Retry uses a new puzzle identity.",
+        [T_GENERATION_CANCELLED] = "Generation cancelled.",
+        [T_RETRY] = "Retry",
     },
     [LANG_ES] = {
         [T_LANGUAGE] = "Idioma",
@@ -189,6 +195,12 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DISCARD] = "Descartar",
         [T_RECOVER] = "Recuperar",
         [T_PROFILE_RECOVER_PROMPT] = "El perfil activo está dañado, pero hay una copia anterior válida. Recuperarla restaura ese estado guardado anterior; no inicia una partida nueva.",
+        [T_GENERATING] = "Generando sudoku…",
+        [T_GENERATING_CANCEL] = "Esc cancela",
+        [T_GENERATION_FAILED] = "Falló la generación",
+        [T_GENERATION_FAILED_BODY] = "Sudokura no pudo generar un sudoku de la dificultad solicitada dentro de su presupuesto determinista de trabajo. Reintentar usa una nueva identidad de puzzle.",
+        [T_GENERATION_CANCELLED] = "Generación cancelada.",
+        [T_RETRY] = "Reintentar",
     },
     [LANG_CA] = {
         [T_LANGUAGE] = "Llengua",
@@ -283,6 +295,12 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_DISCARD] = "Descarta",
         [T_RECOVER] = "Recupera",
         [T_PROFILE_RECOVER_PROMPT] = "El perfil actiu està malmès, però hi ha una còpia anterior vàlida. Recuperar-la restaura aquell estat desat anterior; no inicia una partida nova.",
+        [T_GENERATING] = "Generant sudoku…",
+        [T_GENERATING_CANCEL] = "Esc cancel·la",
+        [T_GENERATION_FAILED] = "Ha fallat la generació",
+        [T_GENERATION_FAILED_BODY] = "Sudokura no ha pogut generar un sudoku de la dificultat sol·licitada dins del seu pressupost determinista de treball. Reintentar utilitza una nova identitat de puzzle.",
+        [T_GENERATION_CANCELLED] = "Generació cancel·lada.",
+        [T_RETRY] = "Torna-ho a provar",
     },
 };
 
