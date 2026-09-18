@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "game.h"
+#include "human.h"
 #include "i18n.h"
 
 typedef enum {
@@ -52,6 +53,10 @@ typedef struct {
   bool generating;
   unsigned generation_attempt;
   unsigned generation_max_attempts;
+
+  bool assisted;
+  bool hint_preview_active;
+  HumanHint hint_preview;
 
   AppScreen screen, prev_screen;
   GameMode mode;
