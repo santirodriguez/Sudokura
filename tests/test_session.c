@@ -210,6 +210,15 @@ static void test_daily_and_results(void) {
   daily.status = SESSION_ACTIVE;
   assert(!session_validate(&daily));
 
+  daily.status = SESSION_WON;
+  daily.strikes = 3;
+  daily.mode = MODE_STRIKES;
+  assert(!session_validate(&daily));
+  daily.strikes = 0;
+  daily.mode = MODE_TIME;
+  daily.elapsed_ms = UINT64_C(600000);
+  assert(!session_validate(&daily));
+
   SessionState lost = make_state();
   lost.status = SESSION_LOST;
   lost.strikes = 3;
@@ -222,16 +231,14 @@ static void test_time_attack_loss_boundary(void) {
   SessionState timed = make_state();
   timed.mode = MODE_TIME;
   timed.strikes = 0;
-  timed.elapsed_ms = UINT64_C(600000);
+  timed.elapsed_ms = UINT64_C(599999);
   timed.status = SESSION_ACTIVE;
   assert(session_validate(&timed));
 
-  timed.status = SESSION_LOST;
+  timed.elapsed_ms = UINT64_C(600000);
   assert(!session_validate(&timed));
 
-  /* capture_session() rounds upward, so any runtime loss just over 600 s
-     serializes beyond the strict > 600 s validation boundary. */
-  timed.elapsed_ms = UINT64_C(600001);
+  timed.status = SESSION_LOST;
   assert(session_validate(&timed));
   assert(session_save_file(session_path, &timed));
 
@@ -239,7 +246,7 @@ static void test_time_attack_loss_boundary(void) {
   memset(&loaded, 0, sizeof(loaded));
   assert(session_load_file(session_path, &loaded) == STORE_OK);
   assert(loaded.status == SESSION_LOST);
-  assert(loaded.elapsed_ms == UINT64_C(600001));
+  assert(loaded.elapsed_ms == UINT64_C(600000));
 }
 
 static void test_semantic_rejections(void) {
