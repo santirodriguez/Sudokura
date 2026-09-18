@@ -52,7 +52,10 @@ static void test_navigation_contract(void) {
   assert(app_return_aux(&state));
   assert(state.screen == APP_SCREEN_PLAY);
 
+  state.pause_reasons = APP_PAUSE_MODAL;
+  assert(!app_pause_hides_play(&state));
   state.pause_reasons = APP_PAUSE_MANUAL | APP_PAUSE_FOCUS;
+  assert(app_pause_hides_play(&state));
   assert(app_open_aux(&state, APP_SCREEN_ABOUT));
   assert(state.prev_screen == APP_SCREEN_PLAY);
   assert(state.pause_reasons == (APP_PAUSE_MANUAL | APP_PAUSE_FOCUS));
