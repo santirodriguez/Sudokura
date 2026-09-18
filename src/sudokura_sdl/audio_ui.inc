@@ -32,7 +32,8 @@ static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
 
   bool gameplay_context =
       ui->screen == SCR_PLAY ||
-      ((ui->screen == SCR_HELP || ui->screen == SCR_ABOUT) &&
+      ((ui->screen == SCR_HELP || ui->screen == SCR_ABOUT ||
+        ui->screen == APP_SCREEN_SETTINGS) &&
        ui->prev_screen == SCR_PLAY);
   if (!gameplay_context || !game || ui->result != RES_NONE)
     return AUDIO_CONTEXT_MAIN;
