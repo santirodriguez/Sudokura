@@ -38,12 +38,17 @@ static void assert_v3_human_rating(const Game *game) {
   assert(human_evaluate(game->initial, &evaluation));
   assert(evaluation.valid && evaluation.solved && !evaluation.stalled);
   assert(evaluation.rating == expected_human_rating(game->difficulty));
-  if (game->difficulty == DIFFICULTY_MEDIUM)
-    assert(evaluation.elimination_steps >= 1);
-  if (game->difficulty == DIFFICULTY_HARD)
-    assert(evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
+  if (game->difficulty == DIFFICULTY_MEDIUM) {
+    assert(evaluation.max_technique == HUMAN_TECHNIQUE_LOCKED_CANDIDATE);
+    assert(evaluation.technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] >= 1);
+  }
+  if (game->difficulty == DIFFICULTY_HARD) {
+    assert(evaluation.max_technique >= HUMAN_TECHNIQUE_NAKED_PAIR);
+    assert(evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] +
+               evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
                evaluation.technique_steps[HUMAN_TECHNIQUE_X_WING] >=
            1);
+  }
 }
 
 static void test_generation(void) {
