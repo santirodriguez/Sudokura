@@ -180,6 +180,53 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   return true;
 }
 
+static const char *persistence_startup_error(const Persistence *p,
+                                             Language language) {
+  if (!p) return tr(language, T_PROFILE_IO_ERROR);
+  if (p->lock_status == STORE_LOCK_BUSY)
+    return tr(language, T_PROFILE_IN_USE);
+  if (p->lock_status != STORE_LOCK_ACQUIRED)
+    return tr(language, T_PROFILE_IO_ERROR);
+  if (p->profile_status == STORE_CORRUPT)
+    return tr(language, T_PROFILE_CORRUPT);
+  if (p->profile_status == STORE_INCOMPATIBLE)
+    return tr(language, T_PROFILE_INCOMPATIBLE);
+  if (p->profile_status != STORE_OK)
+    return tr(language, T_PROFILE_IO_ERROR);
+  return NULL;
+}
+
+static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
+  if (!g || !g->win || !preferences) return;
+  if (preferences->window_width >= 320 && preferences->window_height >= 240)
+    SDL_SetWindowSize(g->win, (int)preferences->window_width,
+                     (int)preferences->window_height);
+  if (preferences->window_x != INT32_MIN &&
+      preferences->window_y != INT32_MIN)
+    SDL_SetWindowPosition(g->win, preferences->window_x,
+                         preferences->window_y);
+  if (preferences->window_maximized)
+    SDL_MaximizeWindow(g->win);
+  SDL_PumpEvents();
+  (void)SDL_GetRendererOutputSize(g->ren, &g->width, &g->height);
+}
+
+static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
+  if (!p || !p->enabled || !g || !g->win || !ui) return;
+  int x = 0, y = 0, width = 0, height = 0;
+  SDL_GetWindowPosition(g->win, &x, &y);
+  SDL_GetWindowSize(g->win, &width, &height);
+  Uint32 flags = SDL_GetWindowFlags(g->win);
+  p->preferences.window_x = x;
+  p->preferences.window_y = y;
+  if (width >= 320 && height >= 240) {
+    p->preferences.window_width = (uint32_t)width;
+    p->preferences.window_height = (uint32_t)height;
+  }
+  p->preferences.window_maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+  (void)save_preferences(p, ui);
+}
+
 int main(int argc, char **argv) {
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
@@ -293,13 +340,22 @@ int main(int argc, char **argv) {
   Persistence persistence;
   persistence_init(&persistence);
   ui.language = persistence.preferences.language;
+  const char *startup_error =
+      persistence_startup_error(&persistence, ui.language);
+  if (startup_error) {
+    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                   tr(ui.language, T_STORAGE_ERROR),
+                                   startup_error, g.win);
+    app_shutdown(&g);
+    return 1;
+  }
   ui.dark_theme = persistence.preferences.dark_theme;
   ui.strict_mode = persistence.preferences.strict_mode;
   ui.mode = persistence.preferences.mode;
   home_difficulty = persistence.preferences.difficulty;
   set_mode_params(&ui);
-  ui.has_session =
-      persistence.enabled && session_can_continue(&persistence.saved);
+  apply_window_preferences(&g, &persistence.preferences);
+  ui.has_session = session_can_continue(&persistence.saved);
 
   bool running = true;
   SDL_Event e;
@@ -312,6 +368,7 @@ int main(int argc, char **argv) {
       if (e.type == SDL_QUIT) {
         if (ui.session_open)
           (void)save_current_session(&persistence, &game, &ui);
+        capture_window_preferences(&persistence, &g, &ui);
         running = false;
         continue;
       }
@@ -724,6 +781,7 @@ int main(int argc, char **argv) {
   }
 
   if (ui.session_open) (void)save_current_session(&persistence, &game, &ui);
+  capture_window_preferences(&persistence, &g, &ui);
   app_shutdown(&g);
   return 0;
 }
