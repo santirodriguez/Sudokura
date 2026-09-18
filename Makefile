@@ -38,6 +38,8 @@ tests/test_profile: tests/test_profile.c profile.c profile.h session.c session.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_profile.c profile.c session.c store_io.c game.c human.c -o $@
 tests/test_live_save: tests/test_live_save.c profile.c profile.h save_policy.c save_policy.h session.c session.h store_io.c store_io.h store_status.h game.c game.h i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o $@
+tests/test_human: tests/test_human.c human.c human.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_human.c human.c -o $@
 tests/test_seed: tests/test_seed.c seed.c seed.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_seed.c seed.c -o $@
 tests/test_progress: tests/test_progress.c progress.c progress.h game.c game.h session.c session.h store_io.c store_io.h store_status.h
@@ -54,7 +56,7 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input
 	./tests/test_text_fit
 	./tests/test_audio
 	./tests/test_input
-test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_seed tests/test_progress tests/test_geometry_ui
+test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_seed tests/test_progress tests/test_geometry_ui
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
@@ -63,6 +65,7 @@ test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/t
 	./tests/test_save_policy
 	./tests/test_profile
 	./tests/test_live_save
+	./tests/test_human
 	./tests/test_seed
 	./tests/test_progress
 	./tests/test_geometry_ui
@@ -72,4 +75,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input
+	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input
