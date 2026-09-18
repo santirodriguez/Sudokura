@@ -14,6 +14,9 @@ typedef struct {
   SDL_Rect back;
 } AudioPanelLayout;
 
+static Persistence *audio_persistence = NULL;
+static Gfx *audio_gfx = NULL;
+static UI *audio_ui = NULL;
 static bool audio_settings_open = false;
 static bool ui_home_cue_requested = false;
 
