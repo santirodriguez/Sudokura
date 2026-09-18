@@ -207,6 +207,7 @@ void preferences_defaults(Preferences *preferences) {
   preferences->music_volume = 20;
   preferences->fx_volume = 65;
   preferences->reduced_motion = false;
+  preferences->auto_remove_peer_notes = false;
   preferences->window_x = INT32_MIN;
   preferences->window_y = INT32_MIN;
   preferences->window_width = SUDOKURA_DEFAULT_WINDOW_WIDTH;
