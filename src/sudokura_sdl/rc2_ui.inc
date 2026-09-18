@@ -283,8 +283,14 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
 
 static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
                            int x, int y) {
+  (void)gfx;
   return ui && ui->hint_preview_active && rect.w > 0 && rect.h > 0 &&
          point_in(rect, x, y);
+}
+
+static bool hint_panel_blocks_point(const Gfx *gfx, const UI *ui, int x, int y) {
+  HintPanelLayout panel = hint_panel_layout(gfx, ui);
+  return ui && ui->hint_preview_active && point_in(panel.card, x, y);
 }
 
 static bool hint_apply_hit(const Gfx *gfx, const UI *ui, int x, int y) {
@@ -320,7 +326,10 @@ static void hint_preview_text(const UI *ui, char *buffer, size_t size) {
     return;
   }
   if (ui->hint_preview.status == HUMAN_HINT_STALLED) {
-    snprintf(buffer, size, "%s", tr(ui->language, T_HINT_STALLED));
+    snprintf(buffer, size, "%s",
+             tr(ui->language, ui->hint_verify_required
+                                  ? T_HINT_NEEDS_VERIFY
+                                  : T_HINT_STALLED));
     return;
   }
   if (ui->hint_preview.status != HUMAN_HINT_LOGICAL) return;
