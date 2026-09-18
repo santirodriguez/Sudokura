@@ -118,6 +118,19 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     return outcome;
   }
 
+  if (action.kind == APP_ACTION_CONTINUE) {
+    if (!game || !state->has_session) return outcome;
+    state->session_open = true;
+    state->screen = state->result == APP_RESULT_NONE ? APP_SCREEN_PLAY
+                                                     : APP_SCREEN_RESULT;
+    state->prev_screen = state->screen;
+    outcome.changed = true;
+    outcome.terminal = state->result != APP_RESULT_NONE;
+    outcome.no_effect = false;
+    outcome.result = state->result;
+    return outcome;
+  }
+
   if (state->result != APP_RESULT_NONE ||
       state->screen == APP_SCREEN_RESULT) {
     outcome.terminal = true;
