@@ -222,11 +222,13 @@ static void assert_rating_rule(GameDifficulty difficulty,
   }
 }
 
-static uint64_t run_v3_corpus(GameDifficulty difficulty) {
+static uint64_t run_v3_corpus(GameDifficulty difficulty,
+                              int *failures_out) {
   double timings[QUALITY_CORPUS_PER_DIFFICULTY];
   unsigned attempts[QUALITY_CORPUS_PER_DIFFICULTY];
   uint64_t hash = UINT64_C(1469598103934665603);
   uint64_t total_eliminations = 0, total_placements = 0;
+  int failures = 0;
 
   for (int index = 0; index < QUALITY_CORPUS_PER_DIFFICULTY; ++index) {
     uint64_t seed = corpus_seed(difficulty, index);
@@ -237,18 +239,19 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
     GameGenerationResult result = game_generate_difficulty(
         &game, seed, difficulty, SUDOKURA_GENERATOR_REVISION, &control);
     double finish = wall_ms();
+    timings[index] = finish - start;
+    attempts[index] = counter.attempts;
     if (result != GAME_GENERATION_OK) {
+      ++failures;
       fprintf(stderr,
               "quality generation failure difficulty=%d index=%d seed=%" PRIu64
               " result=%d attempts=%u budget=%u\n",
               (int)difficulty, index, seed, (int)result, counter.attempts,
               game_generation_attempt_budget(difficulty));
+      continue;
     }
-    assert(result == GAME_GENERATION_OK);
     assert(counter.attempts >= 1 &&
            counter.attempts <= game_generation_attempt_budget(difficulty));
-    timings[index] = finish - start;
-    attempts[index] = counter.attempts;
 
     int independent_solution[81];
     assert(independent_solution_count(game.initial, independent_solution) == 1);
@@ -274,13 +277,15 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
   printf("quality-v3 difficulty=%d corpus=%d digest=%016" PRIx64
          " wall_ms_median=%.3f wall_ms_p95=%.3f wall_ms_max=%.3f"
          " attempts_median=%u attempts_p95=%u attempts_max=%u"
-         " oracle_eliminations=%" PRIu64 " oracle_placements=%" PRIu64 "\n",
+         " oracle_eliminations=%" PRIu64 " oracle_placements=%" PRIu64
+         " failures=%d\n",
          (int)difficulty, QUALITY_CORPUS_PER_DIFFICULTY, hash,
          timings[QUALITY_CORPUS_PER_DIFFICULTY / 2], timings[p95],
          timings[QUALITY_CORPUS_PER_DIFFICULTY - 1],
          attempts[QUALITY_CORPUS_PER_DIFFICULTY / 2], attempts[p95],
          attempts[QUALITY_CORPUS_PER_DIFFICULTY - 1],
-         total_eliminations, total_placements);
+         total_eliminations, total_placements, failures);
+  if (failures_out) *failures_out = failures;
   return hash;
 }
 
@@ -336,9 +341,13 @@ static uint64_t legacy_digest(void) {
 
 int main(void) {
   uint64_t legacy = legacy_digest();
-  uint64_t easy = run_v3_corpus(DIFFICULTY_EASY);
-  uint64_t medium = run_v3_corpus(DIFFICULTY_MEDIUM);
-  uint64_t hard = run_v3_corpus(DIFFICULTY_HARD);
+  int easy_failures = 0, medium_failures = 0, hard_failures = 0;
+  uint64_t easy = run_v3_corpus(DIFFICULTY_EASY, &easy_failures);
+  uint64_t medium = run_v3_corpus(DIFFICULTY_MEDIUM, &medium_failures);
+  uint64_t hard = run_v3_corpus(DIFFICULTY_HARD, &hard_failures);
+  assert(easy_failures == 0);
+  assert(medium_failures == 0);
+  assert(hard_failures == 0);
 
   /* Locked after the first cross-platform corpus run. */
   const uint64_t expected_legacy = UINT64_C(0);
