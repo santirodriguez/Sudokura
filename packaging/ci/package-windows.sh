@@ -18,7 +18,7 @@ make WERROR=-Werror test test-ui
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
-  sudokura_sdl.c audio.c game.c geometry.c i18n.c \
+  sudokura_sdl.c app.c audio.c game.c geometry.c i18n.c \
   assets/generated/window_icon.c assets/generated/wordmark.c icon.o \
   -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) -lm -mwindows
 
