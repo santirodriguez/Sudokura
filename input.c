@@ -64,3 +64,9 @@ bool input_key_repeat_allowed(SDL_Keycode key, SDL_Scancode scancode) {
 bool input_mouse_button_is_primary(Uint8 button) {
   return button == SDL_BUTTON_LEFT;
 }
+
+InputInfoShortcut input_info_shortcut(SDL_Keycode key) {
+  if (key == SDLK_F1) return INPUT_INFO_HELP;
+  if (key == SDLK_F2) return INPUT_INFO_ABOUT;
+  return INPUT_INFO_NONE;
+}
