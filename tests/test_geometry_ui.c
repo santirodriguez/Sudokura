@@ -52,7 +52,11 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_HELP].y + g.actions[PLAY_ACTION_HELP].h <=
              g.palette_label.y);
       assert(g.palette_label.y < g.progress.y);
-      assert(g.progress.y + g.progress.h <= g.actions[PLAY_ACTION_ABOUT].y);
+      assert(g.progress.y + g.progress.h <= g.status.y);
+      assert(g.actions[PLAY_ACTION_ABOUT].x == g.status.x);
+      assert(g.actions[PLAY_ACTION_ABOUT].y == g.status.y);
+      assert(g.actions[PLAY_ACTION_ABOUT].w == g.status.w);
+      assert(g.actions[PLAY_ACTION_ABOUT].h == g.status.h);
 
       if (portrait) {
         assert(g.board.w >= 225);
