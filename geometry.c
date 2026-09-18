@@ -363,13 +363,42 @@ GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
   return f;
 }
 
+GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
+  (void)height;
+  GeometryStyle style = {4, 6, 10, 16, 7, 14, 28, 1, 3};
+  if (!g) return style;
+  bool portrait = width < 640;
+  bool xl = width >= 1600 && g->board.w >= 810;
+  if (portrait) {
+    style.space_xs = 3;
+    style.space_sm = 4;
+    style.space_md = 8;
+    style.space_lg = 12;
+    style.radius_control = 6;
+    style.radius_panel = 10;
+    style.min_control_h = 28;
+    style.grid_major_px = 3;
+  } else if (xl) {
+    style.space_xs = 6;
+    style.space_sm = 8;
+    style.space_md = 14;
+    style.space_lg = 22;
+    style.radius_control = 9;
+    style.radius_panel = 16;
+    style.min_control_h = 36;
+    style.grid_major_px = 4;
+  }
+  return style;
+}
+
 bool geometry_play_valid(const AppGeometry *g, int width, int height) {
   if (!g || !geometry_rect_in_bounds(g->board, width, height) ||
       !geometry_rect_in_bounds(g->sidebar, width, height) ||
       !geometry_rect_in_bounds(g->play_language, width, height) ||
       !geometry_rect_in_bounds(g->play_title, width, height) ||
       !geometry_rect_in_bounds(g->palette_label, width, height) ||
-      !geometry_rect_in_bounds(g->progress, width, height))
+      !geometry_rect_in_bounds(g->progress, width, height) ||
+      !geometry_rect_in_bounds(g->status, width, height))
     return false;
 
   bool portrait = width < 640;
@@ -493,7 +522,7 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   int action_gap = compact ? 2 : 3;
   int action_h = compact ? 28 : 32;
   int menu_h = compact ? 28 : 34;
-  int about_h = compact ? 28 : 32;
+  int status_h = compact ? 28 : 32;
   int hud_item_h = compact ? 20 : 22;
   int hud_rows = (geometry->hud_count + 2) / 3;
   int hud_gap = 3;
@@ -508,7 +537,7 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   int board_y = geometry_final_rect_bottom(geometry->play_title) + 4;
   int reserve = section_gap + hud_h + section_gap + actions_h + section_gap +
                 palette_label_h + 2 + palette_h + section_gap + progress_h +
-                section_gap + about_h + margin;
+                section_gap + status_h + margin;
   int board = height - board_y - reserve;
   if (board > shell_w) board = shell_w;
   board -= board % 9;
@@ -528,10 +557,11 @@ static bool geometry_final_layout_portrait_play(int width, int height,
           palette_h, GEOMETRY_PALETTE_COUNT, 2);
   y += palette_h + section_gap;
   geometry->progress = (GeoRect){margin, y, shell_w, progress_h};
-  int about_y = height - margin - about_h;
-  if (geometry_final_rect_bottom(geometry->progress) + section_gap > about_y) return false;
-  geometry->actions[PLAY_ACTION_ABOUT] =
-      (GeoRect){margin, about_y, shell_w, about_h};
+  int status_y = height - margin - status_h;
+  if (geometry_final_rect_bottom(geometry->progress) + section_gap > status_y)
+    return false;
+  geometry->status = (GeoRect){margin, status_y, shell_w, status_h};
+  geometry->actions[PLAY_ACTION_ABOUT] = geometry->status;
   int sidebar_y = geometry_final_rect_bottom(geometry->board) + 2;
   geometry->sidebar = (GeoRect){margin, sidebar_y, shell_w,
                                 height - margin - sidebar_y};
@@ -550,7 +580,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   int remaining = bottom - top;
   bool xl = width >= 1600 && height >= 900;
   int section_gap, action_gap, menu_h, row_h, palette_label_h;
-  int palette_item_h, palette_gap, progress_h, about_h;
+  int palette_item_h, palette_gap, progress_h, status_h;
 
   if (xl && remaining >= 540) {
     section_gap = 7;
@@ -561,7 +591,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     palette_item_h = 44;
     palette_gap = 6;
     progress_h = 30;
-    about_h = 42;
+    status_h = 42;
   } else if (remaining >= 390) {
     section_gap = 5;
     action_gap = 4;
@@ -571,7 +601,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     palette_item_h = 30;
     palette_gap = 4;
     progress_h = 24;
-    about_h = 34;
+    status_h = 34;
   } else {
     section_gap = 2;
     action_gap = 2;
@@ -581,7 +611,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     palette_item_h = 22;
     palette_gap = 2;
     progress_h = 18;
-    about_h = 26;
+    status_h = 26;
   }
 
   int x = geometry->sidebar.x;
@@ -596,9 +626,11 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   y += palette_h + section_gap;
   geometry->progress = (GeoRect){x, y, w, progress_h};
 
-  int about_y = bottom - about_h;
-  if (geometry_final_rect_bottom(geometry->progress) + section_gap > about_y) return false;
-  geometry->actions[PLAY_ACTION_ABOUT] = (GeoRect){x, about_y, w, about_h};
+  int status_y = bottom - status_h;
+  if (geometry_final_rect_bottom(geometry->progress) + section_gap > status_y)
+    return false;
+  geometry->status = (GeoRect){x, status_y, w, status_h};
+  geometry->actions[PLAY_ACTION_ABOUT] = geometry->status;
   return geometry_final_play_rects_in_bounds(geometry, width, height);
 }
 
