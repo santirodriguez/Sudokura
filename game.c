@@ -449,7 +449,7 @@ bool game_generator_revision_supported(uint32_t revision) {
 unsigned game_generation_attempt_budget(GameDifficulty difficulty) {
   switch (difficulty) {
     case DIFFICULTY_EASY: return 64u;
-    case DIFFICULTY_MEDIUM: return 192u;
+    case DIFFICULTY_MEDIUM: return 1024u;
     case DIFFICULTY_HARD: return 768u;
     default: return 0u;
   }
