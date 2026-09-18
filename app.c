@@ -127,6 +127,14 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
 
   if (!game) return outcome;
 
+  bool play_action =
+      action.kind == APP_ACTION_PLACE || action.kind == APP_ACTION_NOTE ||
+      action.kind == APP_ACTION_CLEAR || action.kind == APP_ACTION_HINT ||
+      action.kind == APP_ACTION_VERIFY;
+  if (play_action &&
+      (!state->session_open || state->screen != APP_SCREEN_PLAY))
+    return outcome;
+
   if (game_mode_lost(state->mode, state->strikes, state->strikes_max,
                      elapsed_s, state->time_limit_s)) {
     state->result = APP_RESULT_LOSE;
