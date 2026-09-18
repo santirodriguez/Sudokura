@@ -344,20 +344,12 @@ static SessionState won_state_revision(uint32_t revision) {
   return state;
 }
 
-static SessionState won_state(void) {
-  return won_state_revision(SUDOKURA_GENERATOR_REVISION);
-}
-
 static SessionState lost_state_revision(uint32_t revision) {
   SessionState state = normal_state_revision(revision);
   state.status = SESSION_LOST;
   state.strikes = 3;
   assert(session_validate(&state));
   return state;
-}
-
-static SessionState lost_state(void) {
-  return lost_state_revision(SUDOKURA_GENERATOR_REVISION);
 }
 
 static void run_v12_fixture(const SessionState *state) {
