@@ -740,6 +740,11 @@ static void go_home(Persistence *persistence, const Game *game, UI *ui) {
   bool entering_home = ui && ui->screen != SCR_TITLE;
   settings_open = false;
   go_home_polish(persistence, game, ui);
-  if (persistence && ui) refresh_resume_info(persistence, ui);
+  if (persistence && ui) {
+    refresh_resume_info(persistence, ui);
+    home_focus = ui->normal_resume.can_continue
+                     ? HOME_FOCUS_CONTINUE
+                     : HOME_FOCUS_NEW;
+  }
   if (entering_home) ui_home_cue_requested = true;
 }
