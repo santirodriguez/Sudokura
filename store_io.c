@@ -350,6 +350,10 @@ StoreLockStatus store_writer_lock_acquire(const char *directory,
 #else
   int fd = open(path, O_RDWR | O_CREAT, 0600);
   if (fd < 0) return STORE_LOCK_ERROR;
+  if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
+    close(fd);
+    return STORE_LOCK_ERROR;
+  }
   if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
     int error = errno;
     close(fd);
