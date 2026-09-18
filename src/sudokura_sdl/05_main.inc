@@ -256,9 +256,17 @@ static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
 }
 
 static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
+  if (!p || !game || !ui || !g) return;
+  victory_animation_reset();
+
+  const SessionState *saved = profile_slot_session(&p->profile.daily);
+  if (saved && session_can_continue(saved)) {
+    restore_saved_session(p, game, ui, true);
+    return;
+  }
+
   int year = 0, month = 0, day = 0;
   if (!local_date(&year, &month, &day)) return;
-  victory_animation_reset();
   if (saved_daily_matches(p, year, month, day)) {
     restore_saved_session(p, game, ui, true);
     return;
@@ -566,7 +574,7 @@ int main(int argc, char **argv) {
   home_difficulty = persistence.preferences.difficulty;
   set_mode_params(&ui);
   apply_window_preferences(&g, &persistence.preferences);
-  ui.has_session = session_can_continue(&persistence.saved);
+  refresh_resume_info(&persistence, &ui);
 
   bool running = true;
   SDL_Event e;
@@ -713,16 +721,23 @@ int main(int argc, char **argv) {
         }
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
-        bool control = (mod & KMOD_CTRL) != 0;
         int r = ui.sel_r, c = ui.sel_c;
-        if (control && (k == SDLK_z || k == SDLK_y)) {
-          AppActionKind kind =
-              (k == SDLK_y || shifted) ? APP_ACTION_REDO : APP_ACTION_UNDO;
+        InputPlayShortcut play_shortcut = input_play_shortcut(k, mod);
+        if (play_shortcut == INPUT_PLAY_UNDO ||
+            play_shortcut == INPUT_PLAY_REDO) {
+          AppActionKind kind = play_shortcut == INPUT_PLAY_REDO
+                                   ? APP_ACTION_REDO
+                                   : APP_ACTION_UNDO;
           ui_button_click();
           if (apply_history_action(&game, &ui, kind)) {
             clear_hint_preview(&ui);
             (void)stage_current_session(&persistence, &game, &ui);
           }
+          continue;
+        }
+        if (play_shortcut == INPUT_PLAY_VERIFY) {
+          ui_button_click();
+          verify_current_entries(&persistence, &game, &ui);
           continue;
         }
         if (ui.hint_preview_active) {
@@ -1009,12 +1024,28 @@ int main(int argc, char **argv) {
             (void)save_preferences(&persistence, &ui);
             (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_MENU], x, y)) {
+            SDL_Rect menu_rect, pause_rect;
+            menu_pause_rects(controls.btn[PLAY_ACTION_MENU],
+                             &menu_rect, &pause_rect);
             ui_button_click();
-            go_home(&persistence, &game, &ui);
+            if (point_in(menu_rect, x, y)) {
+              go_home(&persistence, &game, &ui);
+            } else if (point_in(pause_rect, x, y)) {
+              clock_pause(&ui, PAUSE_MANUAL);
+              (void)checkpoint_current_session(&persistence, &game, &ui);
+            }
           } else if (point_in(controls.btn[PLAY_ACTION_PAUSE], x, y)) {
+            SDL_Rect undo_rect, redo_rect;
+            undo_redo_rects(controls.btn[PLAY_ACTION_PAUSE],
+                            &undo_rect, &redo_rect);
+            AppActionKind kind = point_in(undo_rect, x, y)
+                                     ? APP_ACTION_UNDO
+                                     : APP_ACTION_REDO;
             ui_button_click();
-            clock_pause(&ui, PAUSE_MANUAL);
-            (void)checkpoint_current_session(&persistence, &game, &ui);
+            if (apply_history_action(&game, &ui, kind)) {
+              clear_hint_preview(&ui);
+              (void)stage_current_session(&persistence, &game, &ui);
+            }
           } else if (point_in(controls.btn[PLAY_ACTION_RESTART], x, y)) {
             SDL_Rect restart_rect, clear_rect;
             restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],
