@@ -153,7 +153,7 @@ static bool valid_result(const ProfileResult *result) {
       result->difficulty < DIFFICULTY_EASY ||
       result->difficulty >= DIFFICULTY_COUNT ||
       result->mode < MODE_CLASSIC || result->mode > MODE_TIME ||
-      result->status == SESSION_ACTIVE || result->status > SESSION_LOST ||
+      result->status < SESSION_WON || result->status > SESSION_LOST ||
       result->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
       result->mistakes > PROFILE_MAX_COUNTER ||
       result->strikes > PROFILE_MAX_COUNTER)
