@@ -225,7 +225,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   bool play_surface =
       ui && (ui->screen == SCR_PLAY ||
              (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY));
-  if (!gfx || !game || !play_surface || (ui->pause_reasons & PAUSE_USER_VISIBLE))
+  if (!gfx || !game || !play_surface || app_pause_hides_play(ui))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
