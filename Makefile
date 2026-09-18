@@ -56,10 +56,13 @@ tests/test_audio: tests/test_audio.c audio.c audio.h $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS) -lm
 tests/test_input: tests/test_input.c input.c input.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_input.c input.c -o $@
-test-ui: tests/test_text_fit tests/test_audio tests/test_input
+tests/test_interaction: tests/test_interaction.c app.c app.h input.c input.h game.c game.h human.c human.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_interaction.c app.c input.c game.c human.c -o $@
+test-ui: tests/test_text_fit tests/test_audio tests/test_input tests/test_interaction
 	./tests/test_text_fit
 	./tests/test_audio
 	./tests/test_input
+	./tests/test_interaction
 quality: tests/test_generator_quality tests/test_human_calibration
 	./tests/test_human_calibration
 	./tests/test_generator_quality
@@ -82,4 +85,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input
+	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_text_fit tests/test_audio tests/test_input tests/test_interaction
