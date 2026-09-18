@@ -500,12 +500,13 @@ static HumanRating classify(const HumanEvaluation *evaluation) {
   if (!evaluation || !evaluation->solved) return HUMAN_RATING_UNSUPPORTED;
   if (evaluation->max_technique <= HUMAN_TECHNIQUE_HIDDEN_SINGLE)
     return HUMAN_RATING_EASY;
-  if (evaluation->max_technique <= HUMAN_TECHNIQUE_NAKED_PAIR &&
-      (evaluation->technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] > 0 ||
-       evaluation->technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] > 0))
+  if (evaluation->max_technique == HUMAN_TECHNIQUE_LOCKED_CANDIDATE &&
+      evaluation->technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] > 0)
     return HUMAN_RATING_MEDIUM;
-  if (evaluation->max_technique <= HUMAN_TECHNIQUE_X_WING &&
-      (evaluation->technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] > 0 ||
+  if (evaluation->max_technique >= HUMAN_TECHNIQUE_NAKED_PAIR &&
+      evaluation->max_technique <= HUMAN_TECHNIQUE_X_WING &&
+      (evaluation->technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] > 0 ||
+       evaluation->technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] > 0 ||
        evaluation->technique_steps[HUMAN_TECHNIQUE_X_WING] > 0))
     return HUMAN_RATING_HARD;
   return HUMAN_RATING_UNSUPPORTED;
