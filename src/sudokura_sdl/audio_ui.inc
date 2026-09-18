@@ -104,6 +104,8 @@ static bool app_init(Gfx *gfx, const char *font_cli) {
 
 static void app_shutdown(Gfx *gfx) {
   audio_shutdown();
+  if (audio_persistence)
+    store_writer_lock_release(&audio_persistence->writer_lock);
   if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
   app_icon_texture = NULL;
   audio_persistence = NULL;
