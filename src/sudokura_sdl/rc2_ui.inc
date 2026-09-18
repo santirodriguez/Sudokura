@@ -65,7 +65,7 @@ static void ui_audio_set_music_level(int value) {
   if(audio_persistence){
     audio_persistence->preferences.music_volume=(uint8_t)level;
     if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
-    else (void)persistence_write_profile(audio_persistence);
+    else persistence_stage_preferences(audio_persistence);
   }
 }
 
@@ -75,7 +75,7 @@ static void ui_audio_set_fx_level(int value) {
   if(audio_persistence){
     audio_persistence->preferences.fx_volume=(uint8_t)level;
     if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
-    else (void)persistence_write_profile(audio_persistence);
+    else persistence_stage_preferences(audio_persistence);
   }
 }
 
