@@ -76,6 +76,7 @@ bool game_toggle_note(Game *game,int row,int col,int value);
 bool game_hint(Game *game,int row,int col);
 bool game_has_conflict(const Game *game,int row,int col);
 int game_conflict_count(const Game *game);
+int game_wrong_entry_count(const Game *game);
 bool game_is_solved(const Game *game);
 bool game_mode_lost(GameMode mode,int strikes,int strikes_max,double elapsed,double limit);
 #endif
