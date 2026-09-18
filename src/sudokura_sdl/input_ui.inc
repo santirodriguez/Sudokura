@@ -53,10 +53,12 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
     if (event->key.repeat &&
         !input_key_repeat_allowed(key, event->key.keysym.scancode))
       return true;
-    if (key == SDLK_F1 || key == SDLK_F2) {
+    InputInfoShortcut shortcut = input_info_shortcut(key);
+    if (shortcut != INPUT_INFO_NONE) {
       audio_play_effect(AUDIO_EFFECT_CLICK);
       audio_settings_open = false;
-      (void)app_open_aux(audio_ui, key == SDLK_F1 ? SCR_HELP : SCR_ABOUT);
+      (void)app_open_aux(audio_ui,
+                         shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT);
       return true;
     }
     if (key == SDLK_v) {
