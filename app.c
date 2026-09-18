@@ -30,6 +30,10 @@ bool app_screen_is_auxiliary(AppScreen screen) {
          screen == APP_SCREEN_ABOUT;
 }
 
+bool app_pause_hides_play(const AppState *state) {
+  return state && (state->pause_reasons & APP_PAUSE_USER_VISIBLE) != 0;
+}
+
 bool app_open_aux(AppState *state, AppScreen screen) {
   if (!state || !app_screen_is_auxiliary(screen) || state->screen == screen)
     return false;
