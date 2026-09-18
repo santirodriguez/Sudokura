@@ -49,11 +49,21 @@ static bool ui_handle_audio_panel_event(SDL_Event *event) {
   if (!audio_settings_open || !audio_gfx || !audio_ui) return false;
 
   if (event->type == SDL_KEYDOWN) {
-    if (event->key.keysym.sym == SDLK_v) {
+    SDL_Keycode key = event->key.keysym.sym;
+    if (event->key.repeat &&
+        !input_key_repeat_allowed(key, event->key.keysym.scancode))
+      return true;
+    if (key == SDLK_F1 || key == SDLK_F2) {
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      audio_settings_open = false;
+      (void)app_open_aux(audio_ui, key == SDLK_F1 ? SCR_HELP : SCR_ABOUT);
+      return true;
+    }
+    if (key == SDLK_v) {
       audio_toggle(audio_persistence);
       return true;
     }
-    if (event->key.keysym.sym == SDLK_ESCAPE) {
+    if (key == SDLK_ESCAPE) {
       ui_audio_close(audio_persistence, NULL, audio_ui);
       return true;
     }
@@ -100,6 +110,9 @@ static int ui_poll_event(SDL_Event *event) {
 
     if (event->type == SDL_KEYDOWN) {
       SDL_Keycode key = event->key.keysym.sym;
+      if (event->key.repeat &&
+          !input_key_repeat_allowed(key, event->key.keysym.scancode))
+        continue;
       int digit = input_digit_value(key, event->key.keysym.scancode);
 
       if (key == SDLK_v) {
