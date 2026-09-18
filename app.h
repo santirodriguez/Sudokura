@@ -23,6 +23,20 @@ typedef enum {
   APP_RESULT_LOSE = 2
 } AppResult;
 
+typedef struct {
+  bool present;
+  bool can_continue;
+  bool completed;
+  bool assisted;
+  bool today;
+  GameMode mode;
+  GameDifficulty difficulty;
+  uint64_t elapsed_ms;
+  int year;
+  int month;
+  int day;
+} AppResumeInfo;
+
 enum {
   APP_PAUSE_MANUAL = 1u << 0,
   APP_PAUSE_FOCUS = 1u << 1,
@@ -50,6 +64,10 @@ typedef struct {
 
   bool session_open, has_session, is_daily;
   int daily_year, daily_month, daily_day;
+  AppResumeInfo normal_resume, daily_resume;
+  uint32_t result_finished_count;
+  bool result_best_time_available;
+  uint64_t result_best_time_ms;
 
   char toast[96];
   double toast_t0;
