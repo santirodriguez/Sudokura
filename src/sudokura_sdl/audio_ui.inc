@@ -23,7 +23,7 @@ static void audio_toggle(Persistence *persistence) {
     if (audio_ui)
       (void)save_preferences(persistence, audio_ui);
     else
-      (void)persistence_write_profile(persistence);
+      persistence_stage_preferences(persistence);
   }
 }
 
