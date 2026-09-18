@@ -25,6 +25,21 @@ static bool confirm_box(SDL_Window*win,const char*title,const char*msg,const cha
   const SDL_MessageBoxData data={SDL_MESSAGEBOX_INFORMATION,win,title,msg,2,buttons,&scheme};int buttonid=-1;if(SDL_ShowMessageBox(&data,&buttonid)<0)return false;return buttonid==1;
 }
 
+static int choice_box(SDL_Window*win,const char*title,const char*msg,
+                      const char*back_label,const char*retry_label,
+                      const char*discard_label){
+  const SDL_MessageBoxButtonData buttons[]={
+    {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,back_label},
+    {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,retry_label},
+    {0,2,discard_label}
+  };
+  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
+  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,win,title,msg,3,buttons,&scheme};
+  int buttonid=0;
+  if(SDL_ShowMessageBox(&data,&buttonid)<0)return 0;
+  return buttonid;
+}
+
 static void app_render_base(Gfx*g,const Game*game,UI*ui){
   update_font_tiers(g,ui);
   if(ui->screen==SCR_TITLE){
