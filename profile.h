@@ -81,6 +81,9 @@ const SessionState *profile_slot_session(const ProfileSlot *slot);
 
 StoreStatus profile_save_file(const char *path, const char *backup_path,
                               const ProfileData *profile);
+StoreStatus profile_save_runtime_file(const char *path,
+                                      const char *backup_path,
+                                      const ProfileData *profile);
 StoreStatus profile_load_file(const char *path, ProfileData *profile);
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
