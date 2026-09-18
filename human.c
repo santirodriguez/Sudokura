@@ -96,12 +96,24 @@ static void step_add_source(HumanStep *step, int cell) {
     step->source_cells[step->source_count++] = cell;
 }
 
-static void step_add_affected(HumanStep *step, int cell) {
+static void step_add_affected_mask(HumanStep *step, int cell,
+                                   uint16_t mask) {
   if (!step || cell < 0 || cell >= HUMAN_CELL_COUNT) return;
-  for (int i = 0; i < step->affected_count; ++i)
-    if (step->affected_cells[i] == cell) return;
-  if (step->affected_count < HUMAN_STEP_AFFECTED_MAX)
-    step->affected_cells[step->affected_count++] = cell;
+  for (int i = 0; i < step->affected_count; ++i) {
+    if (step->affected_cells[i] == cell) {
+      step->affected_masks[i] |= mask;
+      return;
+    }
+  }
+  if (step->affected_count < HUMAN_STEP_AFFECTED_MAX) {
+    int index = step->affected_count++;
+    step->affected_cells[index] = cell;
+    step->affected_masks[index] = mask;
+  }
+}
+
+static void step_add_affected(HumanStep *step, int cell) {
+  step_add_affected_mask(step, cell, 0);
 }
 
 static bool place_value(HumanState *state, int cell, int value) {
@@ -124,10 +136,11 @@ static bool eliminate_mask(HumanState *state, HumanStep *step, int cell,
       state->value[cell] != 0)
     return false;
   uint16_t before = state->candidates[cell];
+  uint16_t removed = (uint16_t)(before & mask);
   uint16_t after = (uint16_t)(before & (uint16_t)~mask);
   if (after == before || after == 0) return false;
   state->candidates[cell] = after;
-  step_add_affected(step, cell);
+  step_add_affected_mask(step, cell, removed);
   return true;
 }
 
@@ -588,9 +601,11 @@ bool human_hint_analyze(const int puzzle[HUMAN_CELL_COUNT],
   return true;
 }
 
-bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
-                                   HumanEvaluation *out,
-                                   HumanStep *last_step) {
+static bool human_evaluate_internal(const int puzzle[HUMAN_CELL_COUNT],
+                                    HumanEvaluation *out,
+                                    HumanStep *last_step,
+                                    HumanStepObserver observer,
+                                    void *userdata) {
   if (!out) return false;
   memset(out, 0, sizeof(*out));
   if (last_step) step_reset(last_step, HUMAN_TECHNIQUE_NONE);
@@ -611,6 +626,11 @@ bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
     if (!changed) {
       out->stalled = true;
       break;
+    }
+
+    if (observer && !observer(&step, userdata)) {
+      out->valid = false;
+      return false;
     }
 
     ++out->total_steps;
@@ -637,6 +657,18 @@ bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
   return out->valid;
 }
 
+bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
+                                   HumanEvaluation *out,
+                                   HumanStep *last_step) {
+  return human_evaluate_internal(puzzle, out, last_step, NULL, NULL);
+}
+
+bool human_evaluate_trace(const int puzzle[HUMAN_CELL_COUNT],
+                          HumanEvaluation *out,
+                          HumanStepObserver observer, void *userdata) {
+  return human_evaluate_internal(puzzle, out, NULL, observer, userdata);
+}
+
 bool human_evaluate(const int puzzle[HUMAN_CELL_COUNT], HumanEvaluation *out) {
-  return human_evaluate_with_last_step(puzzle, out, NULL);
+  return human_evaluate_internal(puzzle, out, NULL, NULL, NULL);
 }
