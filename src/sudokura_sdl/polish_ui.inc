@@ -87,6 +87,30 @@ static void polish_home_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   if (focused && !disabled) draw_focus_ring(gfx->ren, rect, theme.sel_outline);
 }
 
+static void polish_home_context_button(
+    Gfx *gfx, Theme theme, SDL_Rect rect, const char *label,
+    const char *detail, bool disabled, bool focused, int preferred) {
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  bool hover = !disabled && point_in(rect, mx, my);
+  bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Color background =
+      disabled ? theme.palette_bg : (hover ? theme.hover : theme.btn);
+  SDL_Rect face =
+      polish_button_face(gfx, theme, rect, background, pressed, disabled);
+  SDL_Color main_color = disabled ? theme.dim : theme.btnfg;
+  SDL_Rect main = {face.x + 2, face.y + 1, face.w - 4,
+                   face.h * 3 / 5};
+  SDL_Rect sub = {face.x + 2, face.y + face.h * 3 / 5 - 2,
+                  face.w - 4, face.h * 2 / 5 + 1};
+  (void)draw_fitted_text(gfx, label, main_color, main, preferred, 9);
+  if (detail && detail[0]) {
+    int sub_preferred = preferred > 13 ? preferred - 4 : 10;
+    (void)draw_fitted_text(gfx, detail, theme.dim, sub, sub_preferred, 9);
+  }
+  if (focused && !disabled) draw_focus_ring(gfx->ren, rect, theme.sel_outline);
+}
+
 static void polish_render_home(Gfx *gfx, UI *ui) {
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   AppGeometry geometry;
@@ -142,28 +166,49 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   polish_home_button(gfx, theme, sdl_rect(geometry.home_primary[0]),
                      tr(ui->language, T_NEW_GAME), true, false,
                      home_focus == HOME_FOCUS_NEW, fonts.control);
-  polish_home_button(gfx, theme, sdl_rect(geometry.home_primary[1]),
-                     tr(ui->language, T_CONTINUE), false, !ui->has_session,
-                     home_focus == HOME_FOCUS_CONTINUE, fonts.control);
 
-  SDL_Rect daily = sdl_rect(geometry.home_primary[2]);
-  bool daily_hover = point_in(daily, mx, my);
-  bool daily_pressed = daily_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-  SDL_Rect daily_face = polish_button_face(
-      gfx, theme, daily, daily_hover ? theme.hover : theme.btn, daily_pressed, false);
-  SDL_Rect daily_main = {daily_face.x, daily_face.y + 2, daily_face.w,
-                         daily_face.h * 3 / 5};
-  SDL_Rect daily_sub = {daily_face.x, daily_face.y + daily_face.h * 3 / 5 - 2,
-                        daily_face.w, daily_face.h * 2 / 5};
-  (void)draw_fitted_text(gfx, tr(ui->language, T_DAILY), theme.btnfg, daily_main,
-                         fonts.control, 10);
-  char daily_detail[64];
-  snprintf(daily_detail, sizeof daily_detail, "%s · %s",
-           tr(ui->language, T_CLASSIC), tr(ui->language, T_MEDIUM));
-  int sub_preferred = fonts.help > 12 ? fonts.help - 4 : 12;
-  (void)draw_fitted_text(gfx, daily_detail, theme.dim, daily_sub, sub_preferred, 10);
-  if (home_focus == HOME_FOCUS_DAILY)
-    draw_focus_ring(gfx->ren, daily, theme.sel_outline);
+  char normal_detail[128] = "";
+  if (ui->normal_resume.can_continue) {
+    unsigned long long total_s =
+        (unsigned long long)(ui->normal_resume.elapsed_ms / 1000u);
+    snprintf(normal_detail, sizeof normal_detail, "%s · %s · %02llu:%02llu",
+             tr(ui->language, mode_key(ui->normal_resume.mode)),
+             difficulty_name(ui->language, ui->normal_resume.difficulty),
+             total_s / 60u, total_s % 60u);
+  }
+  polish_home_context_button(
+      gfx, theme, sdl_rect(geometry.home_primary[1]),
+      tr(ui->language, T_CONTINUE_NORMAL), normal_detail,
+      !ui->normal_resume.can_continue,
+      home_focus == HOME_FOCUS_CONTINUE, fonts.control);
+
+  const char *daily_label = tr(ui->language, T_DAILY);
+  char daily_detail[128] = "";
+  if (ui->daily_resume.can_continue) {
+    daily_label = tr(ui->language, T_CONTINUE_DAILY);
+    unsigned long long total_s =
+        (unsigned long long)(ui->daily_resume.elapsed_ms / 1000u);
+    snprintf(daily_detail, sizeof daily_detail,
+             "%04d-%02d-%02d · %s · %02llu:%02llu",
+             ui->daily_resume.year, ui->daily_resume.month,
+             ui->daily_resume.day,
+             difficulty_name(ui->language, ui->daily_resume.difficulty),
+             total_s / 60u, total_s % 60u);
+  } else if (ui->daily_resume.completed && ui->daily_resume.today) {
+    daily_label = tr(ui->language, T_DAILY_COMPLETE);
+    unsigned long long total_s =
+        (unsigned long long)(ui->daily_resume.elapsed_ms / 1000u);
+    snprintf(daily_detail, sizeof daily_detail,
+             "%04d-%02d-%02d · %02llu:%02llu",
+             ui->daily_resume.year, ui->daily_resume.month,
+             ui->daily_resume.day, total_s / 60u, total_s % 60u);
+  } else {
+    snprintf(daily_detail, sizeof daily_detail, "%s · %s",
+             tr(ui->language, T_CLASSIC), tr(ui->language, T_MEDIUM));
+  }
+  polish_home_context_button(
+      gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
+      false, home_focus == HOME_FOCUS_DAILY, fonts.control);
 
   const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT] = {
       T_HELP, T_ABOUT, T_THEME, T_QUIT};
