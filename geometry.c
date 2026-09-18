@@ -385,7 +385,6 @@ GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
     style.space_lg = 22;
     style.radius_control = 9;
     style.radius_panel = 16;
-    style.min_control_h = 36;
     style.grid_major_px = 4;
   }
   return style;
