@@ -197,7 +197,7 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
   }
 
   if (action.kind == APP_ACTION_VERIFY) {
-    outcome.detail = game_conflict_count(game);
+    outcome.detail = game_wrong_entry_count(game);
     outcome.revealed = true;
     outcome.no_effect = false;
     return outcome;
