@@ -45,6 +45,8 @@ static void test_independent_slot_dirty_bits(void) {
   save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 110);
   assert(save_policy_slot_dirty(&policy, true));
   assert(save_policy_slot_dirty(&policy, false));
+  save_policy_mark(&policy, SAVE_DIRTY_RESULTS, 120);
+  assert((policy.dirty_mask & SAVE_DIRTY_RESULTS) != 0);
 }
 
 int main(void) {
