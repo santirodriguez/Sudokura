@@ -257,7 +257,7 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
     draw_line(gfx->ren, layout.side.x + 12, controls.btn[0].y - 7,
               layout.side.x + layout.side.w - 13, controls.btn[0].y - 7,
               separator);
-  if (controls.palette_label.y > controls.btn[8].y + controls.btn[8].h)
+  if (controls.palette_label.y > controls.btn[PLAY_ACTION_HELP].y + controls.btn[PLAY_ACTION_HELP].h)
     draw_line(gfx->ren, layout.side.x + 12, controls.palette_label.y - 6,
               layout.side.x + layout.side.w - 13, controls.palette_label.y - 6,
               separator);
@@ -415,7 +415,6 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
   }
 
   draw_back_button(gfx, ui, theme);
-  draw_language_selector(gfx, ui);
 }
 
 static void app_render_polish(Gfx *gfx, const Game *game, UI *ui) {
