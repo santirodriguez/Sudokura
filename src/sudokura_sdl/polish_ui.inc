@@ -163,8 +163,9 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       draw_focus_ring(gfx->ren, rect, theme.sel_outline);
   }
 
+  bool normal_resumable = ui->normal_resume.can_continue;
   polish_home_button(gfx, theme, sdl_rect(geometry.home_primary[0]),
-                     tr(ui->language, T_NEW_GAME), true, false,
+                     tr(ui->language, T_NEW_GAME), !normal_resumable, false,
                      home_focus == HOME_FOCUS_NEW, fonts.control);
 
   char normal_detail[128] = "";
@@ -176,10 +177,13 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
              difficulty_name(ui->language, ui->normal_resume.difficulty),
              total_s / 60u, total_s % 60u);
   }
+  SDL_Rect continue_rect = sdl_rect(geometry.home_primary[1]);
+  if (normal_resumable)
+    draw_round_rect(gfx->ren, continue_rect, 7, theme.title);
   polish_home_context_button(
-      gfx, theme, sdl_rect(geometry.home_primary[1]),
+      gfx, theme, continue_rect,
       tr(ui->language, T_CONTINUE_NORMAL), normal_detail,
-      !ui->normal_resume.can_continue,
+      !normal_resumable,
       home_focus == HOME_FOCUS_CONTINUE, fonts.control);
 
   const char *daily_label = tr(ui->language, T_DAILY);
