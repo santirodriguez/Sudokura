@@ -325,9 +325,10 @@ static void finalize_generated_game(Game *game, uint64_t seed,
 
 static bool generate_revision2(Game *out, uint64_t seed,
                                GameDifficulty difficulty) {
+  enum { LEGACY_MAX_ATTEMPTS = 1000000 };
   Game candidate;
   memset(&candidate, 0, sizeof(candidate));
-  for (uint64_t attempt = 0;; ++attempt) {
+  for (uint64_t attempt = 0; attempt < LEGACY_MAX_ATTEMPTS; ++attempt) {
     uint64_t attempt_seed =
         mix64(seed ^ (UINT64_C(0x9e3779b97f4a7c15) *
                       (attempt + UINT64_C(1))));
@@ -339,6 +340,7 @@ static bool generate_revision2(Game *out, uint64_t seed,
       return true;
     }
   }
+  return false;
 }
 
 static int v3_min_clues(GameDifficulty difficulty) {
