@@ -138,7 +138,7 @@ static void app_render_base(Gfx*g,const Game*game,UI*ui){
     SDL_RenderClear(g->ren);
   }else if(ui->screen==SCR_HELP){
     render_help(g,ui);
-  }else if(ui->screen==SCR_ABOUT){
+  }else if(ui->screen==SCR_ABOUT||ui->screen==APP_SCREEN_SETTINGS){
     Theme th=ui->dark_theme?theme_dark():theme_light();
     SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
     SDL_RenderClear(g->ren);

@@ -47,9 +47,7 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
   if (!gfx) return layout;
 
   AppGeometry geometry;
-  bool play_surface =
-      ui && (ui->screen == SCR_PLAY ||
-             (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY));
+  bool play_surface = ui && ui->screen == SCR_PLAY;
   if (play_surface && get_geometry(gfx, ui, &geometry)) {
     layout.banner = sdl_rect(geometry.status);
     int inset = layout.banner.h <= 28 ? 2 : 4;
@@ -556,9 +554,7 @@ static bool clear_selected_available(const Game *game, const UI *ui) {
 }
 
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
-  bool play_surface =
-      ui && (ui->screen == SCR_PLAY ||
-             (ui->screen == APP_SCREEN_SETTINGS && ui->prev_screen == SCR_PLAY));
+  bool play_surface = ui && ui->screen == SCR_PLAY;
   if (!gfx || !game || !play_surface || app_pause_hides_play(ui))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();

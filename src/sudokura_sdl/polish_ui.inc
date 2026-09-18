@@ -1,6 +1,5 @@
 /* Presentation helpers used by the single explicit SDL render pipeline. */
 static SDL_Texture *app_icon_texture = NULL;
-static void about_redraw_desktop_cards(Gfx *gfx, UI *ui);
 
 static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
                                    SDL_Color background, bool pressed,
@@ -58,7 +57,29 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
     }
     SDL_DestroyTexture(texture);
   }
-  return false;
+
+  /* The supported geometry matrix must fit above. If a platform font is
+     unexpectedly wider, keep copy visible in the validated rectangle rather
+     than silently dropping it. */
+  TTF_Font *fallback = cached_font(gfx, minimum);
+  int tw = 0, th = 0;
+  SDL_Texture *texture =
+      render_text_wrapped(gfx, fallback, text, color, rect.w - 8, &tw, &th);
+  if (!texture) return false;
+  int visible_w = tw < rect.w - 4 ? tw : rect.w - 4;
+  int visible_h = th < rect.h - 2 ? th : rect.h - 2;
+  if (visible_w <= 0 || visible_h <= 0) {
+    SDL_DestroyTexture(texture);
+    return false;
+  }
+  SDL_Rect source = {0, 0, visible_w, visible_h};
+  SDL_Rect destination = {
+      rect.x + 4,
+      centered ? rect.y + (rect.h - visible_h) / 2 : rect.y + 1,
+      visible_w, visible_h};
+  SDL_RenderCopy(gfx->ren, texture, &source, &destination);
+  SDL_DestroyTexture(texture);
+  return true;
 }
 
 static int polish_home_bottom(const AppGeometry *geometry) {
@@ -421,13 +442,10 @@ static void app_render_polish(Gfx *gfx, const Game *game, UI *ui) {
   app_render_base(gfx, game, ui);
   if (ui->screen == SCR_TITLE) {
     polish_render_home(gfx, ui);
-  } else if (ui->screen == SCR_PLAY ||
-             (ui->screen == APP_SCREEN_SETTINGS &&
-              ui->prev_screen == SCR_PLAY)) {
+  } else if (ui->screen == SCR_PLAY) {
     polish_render_play(gfx, game, ui);
   } else if (ui->screen == SCR_ABOUT) {
     polish_render_about(gfx, ui);
-    about_redraw_desktop_cards(gfx, ui);
   }
 }
 

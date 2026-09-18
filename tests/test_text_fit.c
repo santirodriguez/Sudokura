@@ -75,7 +75,7 @@ int main(void) {
       [PLAY_ACTION_HINT] = T_HINT,
       [PLAY_ACTION_NOTES] = T_NOTES,
       [PLAY_ACTION_VERIFY] = T_VERIFY,
-      [PLAY_ACTION_AUDIO] = T_SOUND,
+      [PLAY_ACTION_AUDIO] = T_SETTINGS,
       [PLAY_ACTION_HELP] = T_HELP,
       [PLAY_ACTION_ABOUT] = T_ABOUT,
   };
@@ -279,17 +279,35 @@ int main(void) {
         assert(wrapped_fits(font, tr((Language)language, T_HINT_NEEDS_VERIFY),
                             15, 9, hint_body_w, hint_body_h));
 
-        assert(fits(font, tr((Language)language, T_AUDIO), tier.control + 8, 10,
-                    width < 640 ? width - 60 : 420, 42));
+        int settings_w = width < 640 ? width - 60 : 420;
+        assert(fits(font, tr((Language)language, T_SETTINGS),
+                    tier.control + 8, 10, settings_w, 42));
+        char settings_sample[160];
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_THEME),
+                 tr((Language)language, T_DARK));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_LANGUAGE),
+                 language_name((Language)language));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_SOUND),
+                 tr((Language)language, T_ON));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_REDUCED_MOTION),
+                 tr((Language)language, T_OFF));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
         assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
-                    width < 640 ? width - 60 : 420, 24));
+                    settings_w, 24));
         assert(fits(font, tr((Language)language, T_FX), tier.control, 10,
-                    width < 640 ? width - 60 : 420, 24));
+                    settings_w, 24));
       }
     }
   }
 
   TTF_Quit();
-  puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Audio labels and all responsive tiers");
+  puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Settings labels and all responsive tiers");
   return 0;
 }
