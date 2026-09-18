@@ -568,6 +568,7 @@ int main(int argc, char **argv) {
     return 1;
   }
   ui.dark_theme = persistence.preferences.dark_theme;
+  ui.reduced_motion = persistence.preferences.reduced_motion;
   ui.strict_mode = persistence.preferences.strict_mode;
   ui.auto_remove_peer_notes = persistence.preferences.auto_remove_peer_notes;
   ui.mode = persistence.preferences.mode;
