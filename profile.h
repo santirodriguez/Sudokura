@@ -55,6 +55,12 @@ typedef struct {
 } ProfileData;
 
 typedef struct {
+  uint32_t finished;
+  bool best_time_available;
+  uint64_t best_time_ms;
+} ProfileResultSummary;
+
+typedef struct {
   const char *session_path;
   const char *preferences_path;
   const char *audio_levels_path;
@@ -70,6 +76,10 @@ bool profile_slot_set(ProfileSlot *slot, const SessionState *session,
 bool profile_slot_set_runtime(ProfileSlot *slot, const SessionState *session,
                               bool assisted);
 const SessionState *profile_slot_session(const ProfileSlot *slot);
+bool profile_record_result(ProfileData *profile, const ProfileResult *result,
+                           bool *inserted);
+ProfileResultSummary profile_result_summary(const ProfileData *profile,
+                                            const ProfileResult *reference);
 
 StoreStatus profile_save_file(const char *path, const char *backup_path,
                               const ProfileData *profile);
