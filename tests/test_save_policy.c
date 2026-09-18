@@ -28,8 +28,10 @@ static void test_error_preserves_dirty_state(void) {
   assert(save_policy_has_error(&policy));
   assert(save_policy_slot_dirty(&policy, false));
   assert(!save_policy_slot_dirty(&policy, true));
+  assert(!save_policy_checkpoint_due(&policy, 1000));
+  assert(save_policy_checkpoint_due(&policy, 5020));
 
-  save_policy_record_result(&policy, STORE_OK, 30);
+  save_policy_record_result(&policy, STORE_OK, 5030);
   assert(!save_policy_dirty(&policy));
   assert(!save_policy_has_error(&policy));
 }
