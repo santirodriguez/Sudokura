@@ -7,8 +7,11 @@
 
 #if defined(_WIN32)
 #include <direct.h>
+#include <process.h>
 #else
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -57,6 +60,28 @@ static bool executable_sibling_path(
   return true;
 }
 
+static int run_child(const char *argv0, const char *mode,
+                     const char *arg1, const char *arg2) {
+#if defined(_WIN32)
+  const char *args[5] = {argv0, mode, arg1, arg2, NULL};
+  intptr_t result = _spawnv(_P_WAIT, argv0, args);
+  return result < 0 ? 255 : (int)result;
+#else
+  pid_t pid = fork();
+  if (pid < 0) return 255;
+  if (pid == 0) {
+    if (arg2)
+      execl(argv0, argv0, mode, arg1, arg2, (char *)NULL);
+    else
+      execl(argv0, argv0, mode, arg1, (char *)NULL);
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status)) return 255;
+  return WEXITSTATUS(status);
+#endif
+}
+
 static void assert_contents(const char *path, const char *expected) {
   unsigned char data[128];
   size_t size = 0;
@@ -84,7 +109,17 @@ static void test_faults_preserve_active(void) {
   assert(store_atomic_write(active_path, backup_path, base,
                             sizeof(base) - 1) == STORE_OK);
 
+  store_test_set_fault(STORE_TEST_FAULT_OPEN);
+  assert(store_atomic_write(active_path, backup_path, update,
+                            sizeof(update) - 1) == STORE_IO_ERROR);
+  assert_contents(active_path, "known-good");
+
   store_test_set_fault(STORE_TEST_FAULT_DURING_WRITE);
+  assert(store_atomic_write(active_path, backup_path, update,
+                            sizeof(update) - 1) == STORE_IO_ERROR);
+  assert_contents(active_path, "known-good");
+
+  store_test_set_fault(STORE_TEST_FAULT_NO_SPACE);
   assert(store_atomic_write(active_path, backup_path, update,
                             sizeof(update) - 1) == STORE_IO_ERROR);
   assert_contents(active_path, "known-good");
@@ -132,18 +167,68 @@ static void test_permission_failure(void) {
 }
 #endif
 
-static void test_writer_lock(void) {
+static void test_writer_lock(const char *argv0) {
   StoreWriterLock first;
-  StoreWriterLock second;
   assert(store_writer_lock_acquire(".", &first) == STORE_LOCK_ACQUIRED);
-  assert(store_writer_lock_acquire(".", &second) == STORE_LOCK_BUSY);
+  assert(run_child(argv0, "--expect-lock-busy", ".", NULL) == 0);
   store_writer_lock_release(&first);
-  assert(store_writer_lock_acquire(".", &second) == STORE_LOCK_ACQUIRED);
-  store_writer_lock_release(&second);
+
+  assert(run_child(argv0, "--expect-lock-acquired", ".", NULL) == 0);
+  assert(run_child(argv0, "--lock-and-exit", ".", NULL) == 0);
+
+  StoreWriterLock after_exit;
+  assert(store_writer_lock_acquire(".", &after_exit) == STORE_LOCK_ACQUIRED);
+  store_writer_lock_release(&after_exit);
+}
+
+static void test_unexpected_exit_preserves_active(const char *argv0) {
+  const unsigned char base[] = "before-crash";
+  const unsigned char update[] = "after-crash";
+  assert(store_atomic_write(active_path, backup_path, base,
+                            sizeof(base) - 1) == STORE_OK);
+  int exit_code =
+      run_child(argv0, "--crash-write", active_path, backup_path);
+  assert(exit_code == 73);
+  assert_contents(active_path, "before-crash");
+  assert_contents(backup_path, "before-crash");
+
+  assert(store_atomic_write(active_path, backup_path, update,
+                            sizeof(update) - 1) == STORE_OK);
+  assert_contents(active_path, "after-crash");
 }
 
 int main(int argc, char **argv) {
   assert(argc > 0 && argv && argv[0]);
+
+  if (argc >= 3 && strcmp(argv[1], "--expect-lock-busy") == 0) {
+    StoreWriterLock lock;
+    StoreLockStatus status = store_writer_lock_acquire(argv[2], &lock);
+    if (status == STORE_LOCK_ACQUIRED) store_writer_lock_release(&lock);
+    return status == STORE_LOCK_BUSY ? 0 : 2;
+  }
+  if (argc >= 3 && strcmp(argv[1], "--expect-lock-acquired") == 0) {
+    StoreWriterLock lock;
+    StoreLockStatus status = store_writer_lock_acquire(argv[2], &lock);
+    if (status == STORE_LOCK_ACQUIRED) store_writer_lock_release(&lock);
+    return status == STORE_LOCK_ACQUIRED ? 0 : 2;
+  }
+  if (argc >= 3 && strcmp(argv[1], "--lock-and-exit") == 0) {
+    StoreWriterLock lock;
+    if (store_writer_lock_acquire(argv[2], &lock) != STORE_LOCK_ACQUIRED)
+      return 2;
+#if defined(_WIN32)
+    _exit(0);
+#else
+    _exit(0);
+#endif
+  }
+  if (argc >= 4 && strcmp(argv[1], "--crash-write") == 0) {
+    const unsigned char update[] = "after-crash";
+    store_test_set_fault(STORE_TEST_FAULT_CRASH_AFTER_SYNC);
+    (void)store_atomic_write(argv[2], argv[3], update, sizeof(update) - 1);
+    return 2;
+  }
+
   assert(executable_sibling_path(executable_unicode_path, argv[0],
                                  "storage-\xc3\xb1-executable.dat"));
   cleanup();
@@ -153,8 +238,9 @@ int main(int argc, char **argv) {
 #if !defined(_WIN32)
   test_permission_failure();
 #endif
-  test_writer_lock();
+  test_writer_lock(argv[0]);
+  test_unexpected_exit_preserves_active(argv[0]);
   cleanup();
-  puts("recoverable storage, UTF-8 paths, fault injection, and writer lock passed");
+  puts("recoverable storage, UTF-8 paths, failure injection, process locking, and crash preservation passed");
   return 0;
 }
