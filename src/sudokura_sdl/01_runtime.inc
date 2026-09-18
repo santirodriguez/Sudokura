@@ -380,13 +380,18 @@ static void persistence_init_base(Persistence*p){
   p->last_periodic_checkpoint_ms=now_ms();
 }
 
+static void persistence_stage_preferences(Persistence*p){
+  if(!p||!p->enabled)return;
+  p->profile.preferences=p->preferences;
+  save_policy_mark(&p->save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
+}
+
 static bool save_preferences(Persistence*p,const UI*ui){
   if(!p||!p->enabled||!ui)return false;
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
   p->preferences.strict_mode=ui->strict_mode;
-  p->profile.preferences=p->preferences;
-  save_policy_mark(&p->save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
+  persistence_stage_preferences(p);
   return true;
 }
 
