@@ -48,8 +48,12 @@ static void home_cycle_difficulty(Persistence *p, UI *ui, int delta) {
                        DIFFICULTY_COUNT));
 }
 
-static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g) {
-  return !ui->has_session || !session_has_meaningful_progress(&p->saved) ||
+static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
+                                            bool daily) {
+  if (!p) return true;
+  const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
+  const SessionState *saved = profile_slot_session(slot);
+  return !saved || !session_has_meaningful_progress(saved) ||
          confirm_box(g->win, tr(ui->language, T_NEW_GAME),
                      tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
                      tr(ui->language, T_CANCEL));
@@ -69,7 +73,7 @@ static bool restart_current_session_confirmed(const Game *game, UI *ui,
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (replace_saved_session_confirmed(p, ui, g)) {
+  if (replace_saved_session_confirmed(p, ui, g, false)) {
     victory_animation_reset();
     start_new_session(p, game, ui);
   }
@@ -80,10 +84,10 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   if (!local_date(&year, &month, &day)) return;
   victory_animation_reset();
   if (saved_daily_matches(p, year, month, day)) {
-    restore_saved_session(p, game, ui);
+    restore_saved_session(p, game, ui, true);
     return;
   }
-  if (replace_saved_session_confirmed(p, ui, g))
+  if (replace_saved_session_confirmed(p, ui, g, true))
     (void)start_daily_session(p, game, ui, year, month, day);
 }
 
@@ -106,7 +110,7 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
     case HOME_FOCUS_CONTINUE:
       if (ui->has_session) {
         victory_animation_reset();
-        restore_saved_session(p, game, ui);
+        restore_saved_session(p, game, ui, false);
       }
       break;
     case HOME_FOCUS_DAILY:
@@ -376,7 +380,7 @@ int main(int argc, char **argv) {
           else if (k == SDLK_c && ui.has_session) {
             ui_button_click();
             victory_animation_reset();
-            restore_saved_session(&persistence, &game, &ui);
+            restore_saved_session(&persistence, &game, &ui, false);
           } else if (k == SDLK_d) {
             ui_button_click();
             home_daily_game(&persistence, &game, &ui, &g);
@@ -535,7 +539,7 @@ int main(int argc, char **argv) {
             ui_button_click();
             home_focus = HOME_FOCUS_CONTINUE;
             victory_animation_reset();
-            restore_saved_session(&persistence, &game, &ui);
+            restore_saved_session(&persistence, &game, &ui, false);
           } else if (point_in(sdl_rect(a.home_primary[2]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_DAILY;
