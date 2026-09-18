@@ -383,17 +383,22 @@ static void app_render_polish(Gfx *gfx, const Game *game, UI *ui) {
   }
 }
 
-static void start_new_session(Persistence *persistence, Game *game, UI *ui) {
-  start_new_session_base(persistence, game, ui);
-  audio_play_effect(AUDIO_EFFECT_START);
+static GameGenerationResult start_new_session(
+    Persistence *persistence, Game *game, UI *ui,
+    const GameGenerationControl *control) {
+  GameGenerationResult result =
+      start_new_session_base(persistence, game, ui, control);
+  if (result == GAME_GENERATION_OK) audio_play_effect(AUDIO_EFFECT_START);
+  return result;
 }
 
-static bool start_daily_session(Persistence *persistence, Game *game, UI *ui,
-                                int year, int month, int day) {
-  bool started =
-      start_daily_session_base(persistence, game, ui, year, month, day);
-  if (started) audio_play_effect(AUDIO_EFFECT_START);
-  return started;
+static GameGenerationResult start_daily_session(
+    Persistence *persistence, Game *game, UI *ui, int year, int month, int day,
+    const GameGenerationControl *control) {
+  GameGenerationResult result =
+      start_daily_session_base(persistence, game, ui, year, month, day, control);
+  if (result == GAME_GENERATION_OK) audio_play_effect(AUDIO_EFFECT_START);
+  return result;
 }
 
 static void go_home_polish(Persistence *persistence, const Game *game,
