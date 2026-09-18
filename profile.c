@@ -129,8 +129,11 @@ static bool valid_edit(const ProfileEdit *edit) {
          edit->before_hinted <= 1 && edit->after_hinted <= 1;
 }
 
-static bool valid_profile_session(const ProfileSession *slot, bool daily) {
-  if (!slot || !session_validate(&slot->session) ||
+static bool valid_profile_session_common(const ProfileSession *slot,
+                                         bool daily, bool canonical) {
+  if (!slot ||
+      !(canonical ? session_validate(&slot->session)
+                  : session_validate_runtime(&slot->session)) ||
       slot->session.is_daily != daily ||
       slot->undo_count > SUDOKURA_HISTORY_LIMIT ||
       slot->redo_count > SUDOKURA_HISTORY_LIMIT)
@@ -146,6 +149,15 @@ static bool valid_profile_session(const ProfileSession *slot, bool daily) {
   for (uint16_t i = 0; i < slot->redo_count; ++i)
     if (!valid_edit(&slot->redo[i])) return false;
   return true;
+}
+
+static bool valid_profile_session(const ProfileSession *slot, bool daily) {
+  return valid_profile_session_common(slot, daily, true);
+}
+
+static bool valid_profile_session_runtime(const ProfileSession *slot,
+                                          bool daily) {
+  return valid_profile_session_common(slot, daily, false);
 }
 
 static bool valid_result(const ProfileResult *result) {
@@ -193,16 +205,36 @@ bool profile_validate(const ProfileData *profile) {
   return true;
 }
 
+static bool profile_slot_assign(ProfileSlot *slot,
+                                const SessionState *session, bool assisted,
+                                bool canonical) {
+  if (!slot || !session ||
+      !(canonical ? session_validate(session)
+                  : session_validate_runtime(session)))
+    return false;
+  ProfileSlot staged;
+  memset(&staged, 0, sizeof(staged));
+  staged.present = true;
+  staged.value.session = *session;
+  staged.value.assisted = assisted;
+  for (int i = 0; i < 81; ++i)
+    if (session->game.hinted[i]) staged.value.assisted = true;
+  if (!(canonical ? valid_profile_session(&staged.value, session->is_daily)
+                  : valid_profile_session_runtime(&staged.value,
+                                                  session->is_daily)))
+    return false;
+  *slot = staged;
+  return true;
+}
+
 bool profile_slot_set(ProfileSlot *slot, const SessionState *session,
                       bool assisted) {
-  if (!slot || !session || !session_validate(session)) return false;
-  memset(slot, 0, sizeof(*slot));
-  slot->present = true;
-  slot->value.session = *session;
-  slot->value.assisted = assisted;
-  for (int i = 0; i < 81; ++i)
-    if (session->game.hinted[i]) slot->value.assisted = true;
-  return valid_profile_session(&slot->value, session->is_daily);
+  return profile_slot_assign(slot, session, assisted, true);
+}
+
+bool profile_slot_set_runtime(ProfileSlot *slot, const SessionState *session,
+                              bool assisted) {
+  return profile_slot_assign(slot, session, assisted, false);
 }
 
 const SessionState *profile_slot_session(const ProfileSlot *slot) {
@@ -519,9 +551,25 @@ static StoreStatus decode_slot(ProfileReader *reader, ProfileSlot *slot,
   return STORE_OK;
 }
 
+static bool profile_validate_runtime(const ProfileData *profile) {
+  if (!profile || !preferences_validate(&profile->preferences) ||
+      profile->result_count > SUDOKURA_RESULT_LIMIT)
+    return false;
+  if (profile->normal.present &&
+      !valid_profile_session_runtime(&profile->normal.value, false))
+    return false;
+  if (profile->daily.present &&
+      !valid_profile_session_runtime(&profile->daily.value, true))
+    return false;
+  for (uint16_t i = 0; i < profile->result_count; ++i)
+    if (!valid_result(&profile->results[i])) return false;
+  return true;
+}
+
 StoreStatus profile_save_file(const char *path, const char *backup_path,
                               const ProfileData *profile) {
-  if (!path || !profile || !profile_validate(profile)) return STORE_IO_ERROR;
+  if (!path || !profile || !profile_validate_runtime(profile))
+    return STORE_IO_ERROR;
 
   unsigned char data[PROFILE_MAX_FILE_SIZE];
   unsigned char *payload = data + PROFILE_HEADER_SIZE;
@@ -588,6 +636,23 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   if (!reader.ok || reader.position != reader.size || !profile_validate(&loaded))
     return STORE_CORRUPT;
   *profile = loaded;
+  return STORE_OK;
+}
+
+StoreStatus profile_recover_previous(const char *profile_path,
+                                     const char *profile_backup_path,
+                                     ProfileData *profile) {
+  if (!profile_path || !profile_backup_path || !profile) return STORE_IO_ERROR;
+  ProfileData recovered;
+  StoreStatus status = profile_load_file(profile_backup_path, &recovered);
+  if (status != STORE_OK) return status;
+  status = profile_save_file(profile_path, NULL, &recovered);
+  if (status != STORE_OK) return status;
+  ProfileData verified;
+  status = profile_load_file(profile_path, &verified);
+  if (status != STORE_OK) return status;
+  if (!profiles_equal(&recovered, &verified)) return STORE_CORRUPT;
+  *profile = verified;
   return STORE_OK;
 }
 
