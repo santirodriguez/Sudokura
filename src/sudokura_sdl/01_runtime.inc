@@ -171,6 +171,7 @@ static void set_mode_params(UI*ui){
 static void begin_fresh_play(UI*ui){
   ui->screen=SCR_PLAY; ui->prev_screen=SCR_PLAY; ui->result=RES_NONE;
   ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
+  ui->undo_count=0; ui->redo_count=0;
   set_mode_params(ui); clock_reset(ui);
 }
 static void victory_animation_start(void);
@@ -209,6 +210,13 @@ static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool
     .row=row,.column=column,.value=value
   };
   AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  return apply_action_outcome(ui,outcome);
+}
+
+static bool apply_history_action(Game*game,UI*ui,AppActionKind kind){
+  AppAction action={.kind=kind};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.blocked)audio_play_effect(AUDIO_EFFECT_BLOCKED);
   return apply_action_outcome(ui,outcome);
 }
 
@@ -447,6 +455,7 @@ static bool save_preferences(Persistence*p,const UI*ui){
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
   p->preferences.strict_mode=ui->strict_mode;
+  p->preferences.auto_remove_peer_notes=ui->auto_remove_peer_notes;
   persistence_stage_preferences(p);
   return true;
 }
@@ -489,6 +498,10 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
                  ? profile_slot_set_runtime(slot,&state,assisted)
                  : profile_slot_set(slot,&state,assisted);
   if(!valid)return false;
+  slot->value.undo_count=ui->undo_count;
+  slot->value.redo_count=ui->redo_count;
+  memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
+  memcpy(slot->value.redo,ui->redo,sizeof(ui->redo));
   if(!state.is_daily)p->saved=state;
   ui->has_session=session_can_continue(&p->saved);
   save_policy_mark(&p->save_policy,
@@ -516,6 +529,9 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   bool normal_continue=session_can_continue(&p->saved);
   ui->has_session=true;
   ui->assisted=slot->value.assisted;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  ui->undo_count=slot->value.undo_count;ui->redo_count=slot->value.redo_count;
+  memcpy(ui->undo,slot->value.undo,sizeof(ui->undo));
+  memcpy(ui->redo,slot->value.redo,sizeof(ui->redo));
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
   if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
@@ -536,6 +552,7 @@ static GameGenerationResult start_new_session_base(
   if(result!=GAME_GENERATION_OK)return result;
   *game=generated;
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
   ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
@@ -556,6 +573,7 @@ static GameGenerationResult start_daily_session_base(
   if(result!=GAME_GENERATION_OK)return result;
   *game=generated;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
   ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
