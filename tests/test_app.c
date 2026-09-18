@@ -220,7 +220,7 @@ static void test_hint_verify_and_restart(void) {
   AppAction verify = {.kind = APP_ACTION_VERIFY};
   AppActionOutcome verified = app_apply_action(&game, &state, verify, 1.0);
   assert(verified.revealed && !verified.no_effect);
-  assert(verified.detail == game_conflict_count(&game));
+  assert(verified.detail == game_wrong_entry_count(&game));
 
   AppAction restart = {.kind = APP_ACTION_RESTART};
   AppActionOutcome restarted = app_apply_action(&game, &state, restart, 1.0);
