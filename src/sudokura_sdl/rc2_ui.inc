@@ -20,6 +20,39 @@ static UI *audio_ui = NULL;
 static bool audio_settings_open = false;
 static bool ui_home_cue_requested = false;
 
+typedef struct {
+  SDL_Rect banner;
+  SDL_Rect message;
+  SDL_Rect retry;
+} StorageBannerLayout;
+
+static StorageBannerLayout storage_banner_layout(const Gfx *gfx) {
+  StorageBannerLayout layout;
+  memset(&layout, 0, sizeof(layout));
+  if (!gfx) return layout;
+  int margin = gfx->width < 640 ? 8 : 14;
+  int height = gfx->width < 640 ? 64 : 52;
+  int width = gfx->width - margin * 2;
+  if (width > 760) width = 760;
+  layout.banner = (SDL_Rect){(gfx->width - width) / 2,
+                             gfx->height - height - margin, width, height};
+  int retry_w = gfx->width < 640 ? 116 : 150;
+  layout.retry = (SDL_Rect){layout.banner.x + layout.banner.w - retry_w - 8,
+                            layout.banner.y + 8, retry_w,
+                            layout.banner.h - 16};
+  layout.message = (SDL_Rect){layout.banner.x + 10, layout.banner.y + 7,
+                              layout.retry.x - layout.banner.x - 18,
+                              layout.banner.h - 14};
+  return layout;
+}
+
+static bool storage_retry_hit(const Gfx *gfx, int x, int y) {
+  if (!audio_persistence || !persistence_has_save_error(audio_persistence))
+    return false;
+  StorageBannerLayout layout = storage_banner_layout(gfx);
+  return point_in(layout.retry, x, y);
+}
+
 static int ui_clamp_percent(int value) {
   if (value < 0) return 0;
   if (value > 100) return 100;
@@ -251,10 +284,36 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
               controls.btn[PLAY_ACTION_ABOUT].y - 4, separator);
 }
 
+static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
+  if (!gfx || !ui || !audio_persistence ||
+      !persistence_has_save_error(audio_persistence))
+    return;
+  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
+  StorageBannerLayout layout = storage_banner_layout(gfx);
+  SDL_Color background = theme.palette_bg;
+  SDL_Color outline = theme.text_wrong;
+  draw_round_rect(gfx->ren, layout.banner, 10, background);
+  SDL_SetRenderDrawColor(gfx->ren, outline.r, outline.g, outline.b, 255);
+  SDL_RenderDrawRect(gfx->ren, &layout.banner);
+  (void)draw_fitted_text(gfx, tr(ui->language, T_SAVE_FAILED), theme.btnfg,
+                         layout.message, 15, 9);
+
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  bool hover = point_in(layout.retry, mx, my);
+  bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Rect face = polish_button_face(
+      gfx, theme, layout.retry, hover ? theme.hover : theme.title, pressed,
+      false);
+  (void)draw_fitted_text(gfx, tr(ui->language, T_RETRY_SAVE), theme.bg, face,
+                         14, 9);
+}
+
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   app_render_polish(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
   rc2_render_audio_panel(gfx, ui);
+  rc2_render_storage_banner(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
