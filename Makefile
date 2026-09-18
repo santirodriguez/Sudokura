@@ -18,7 +18,7 @@ GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
 	assets/generated/flag_us.c assets/generated/flag_us.h \
 	assets/generated/flag_ar.c assets/generated/flag_ar.h \
 	assets/generated/flag_ca.c assets/generated/flag_ca.h
-.PHONY: all test test-ui clean assets
+.PHONY: all test test-ui quality clean assets
 all: sudokura
 sudokura: sudokura_sdl.c app.c app.h app_clock.c app_clock.h profile.c profile.h save_policy.c save_policy.h store_io.c store_io.h store_status.h storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_geometry.inc src/sudokura_sdl/polish_ui.inc src/sudokura_sdl/about_overlay.inc src/sudokura_sdl/rc2_ui.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) audio.c audio.h input.c input.h progress.c progress.h version.h game.h human.h geometry.h i18n.h session.h session.c seed.h seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) sudokura_sdl.c app.c app_clock.c audio.c profile.c save_policy.c store_io.c session.c seed.c progress.c input.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c -o $@ $(SDL_LIBS) -lm
@@ -40,6 +40,8 @@ tests/test_live_save: tests/test_live_save.c profile.c profile.h save_policy.c s
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o $@
 tests/test_human: tests/test_human.c human.c human.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_human.c human.c -o $@
+tests/test_generator_quality: tests/test_generator_quality.c game.c game.h human.c human.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_generator_quality.c game.c human.c -o $@
 tests/test_seed: tests/test_seed.c seed.c seed.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_seed.c seed.c -o $@
 tests/test_progress: tests/test_progress.c progress.c progress.h game.c game.h session.c session.h store_io.c store_io.h store_status.h
@@ -56,7 +58,9 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input
 	./tests/test_text_fit
 	./tests/test_audio
 	./tests/test_input
-test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_seed tests/test_progress tests/test_geometry_ui
+quality: tests/test_generator_quality
+	./tests/test_generator_quality
+test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
