@@ -61,7 +61,7 @@ static SessionState normal_state_revision(uint32_t revision) {
   SessionState state;
   memset(&state, 0, sizeof(state));
   assert(game_new_difficulty_revision(
-      &state.game, UINT64_C(0x123456789abcdef0), DIFFICULTY_HARD, revision));
+      &state.game, UINT64_C(0x123456789abcdef0), DIFFICULTY_EASY, revision));
   state.mode = MODE_STRIKES;
   state.selected_row = 4;
   state.selected_column = 5;
