@@ -396,15 +396,30 @@ static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
                     false);
 }
 
+static void split_control_rects(SDL_Rect combined, SDL_Rect *left,
+                                SDL_Rect *right) {
+  int gap = combined.w >= 180 ? 6 : 4;
+  int left_w = (combined.w - gap) / 2;
+  if (left)
+    *left = (SDL_Rect){combined.x, combined.y, left_w, combined.h};
+  if (right)
+    *right = (SDL_Rect){combined.x + left_w + gap, combined.y,
+                        combined.w - left_w - gap, combined.h};
+}
+
+static void menu_pause_rects(SDL_Rect combined, SDL_Rect *menu,
+                             SDL_Rect *pause) {
+  split_control_rects(combined, menu, pause);
+}
+
+static void undo_redo_rects(SDL_Rect combined, SDL_Rect *undo,
+                            SDL_Rect *redo) {
+  split_control_rects(combined, undo, redo);
+}
+
 static void restart_clear_rects(SDL_Rect combined, SDL_Rect *restart,
                                 SDL_Rect *clear) {
-  int gap = combined.w >= 180 ? 6 : 4;
-  int restart_w = (combined.w - gap) / 2;
-  if (restart)
-    *restart = (SDL_Rect){combined.x, combined.y, restart_w, combined.h};
-  if (clear)
-    *clear = (SDL_Rect){combined.x + restart_w + gap, combined.y,
-                        combined.w - restart_w - gap, combined.h};
+  split_control_rects(combined, restart, clear);
 }
 
 static bool clear_selected_available(const Game *game, const UI *ui) {
@@ -442,6 +457,44 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
   for (int action = 0; action < PLAY_ACTION_COUNT; ++action) {
     SDL_Rect rect = controls.btn[action];
+    if (action == PLAY_ACTION_MENU) {
+      SDL_Rect menu_rect, pause_rect;
+      menu_pause_rects(rect, &menu_rect, &pause_rect);
+      bool menu_hover = point_in(menu_rect, mx, my);
+      bool pause_hover = point_in(pause_rect, mx, my);
+      SDL_Rect menu_face = polish_button_face(
+          gfx, theme, menu_rect, theme.title,
+          menu_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), false);
+      SDL_Rect pause_face = polish_button_face(
+          gfx, theme, pause_rect,
+          pause_hover ? theme.hover : theme.palette_bg,
+          pause_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), false);
+      (void)draw_fitted_text(gfx, tr(ui->language, T_MENU), theme.bg,
+                             menu_face, fonts.control, 9);
+      (void)draw_fitted_text(gfx, tr(ui->language, T_PAUSE), theme.btnfg,
+                             pause_face, fonts.control, 9);
+      continue;
+    }
+
+    if (action == PLAY_ACTION_PAUSE) {
+      SDL_Rect undo_rect, redo_rect;
+      undo_redo_rects(rect, &undo_rect, &redo_rect);
+      bool enabled[2] = {ui->undo_count > 0, ui->redo_count > 0};
+      SDL_Rect parts[2] = {undo_rect, redo_rect};
+      TextKey labels[2] = {T_UNDO, T_REDO};
+      for (int i = 0; i < 2; ++i) {
+        bool hover = enabled[i] && point_in(parts[i], mx, my);
+        SDL_Rect face = polish_button_face(
+            gfx, theme, parts[i],
+            hover ? theme.hover : theme.palette_bg,
+            hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), !enabled[i]);
+        (void)draw_fitted_text(gfx, tr(ui->language, labels[i]),
+                               enabled[i] ? theme.btnfg : theme.dim,
+                               face, fonts.control, 9);
+      }
+      continue;
+    }
+
     if (action == PLAY_ACTION_RESTART) {
       SDL_Rect restart_rect, clear_rect;
       restart_clear_rects(rect, &restart_rect, &clear_rect);
@@ -461,7 +514,8 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
           clear_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
       SDL_Rect clear_face = polish_button_face(
           gfx, theme, clear_rect,
-          clear_hover ? theme.hover : theme.palette_bg, clear_pressed, false);
+          clear_hover ? theme.hover : theme.palette_bg, clear_pressed,
+          !clear_enabled);
       (void)draw_fitted_text(gfx, tr(ui->language, T_CLEAR),
                              clear_enabled ? theme.btnfg : theme.dim,
                              clear_face, fonts.control, 9);
@@ -472,12 +526,9 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
     bool active = (action == PLAY_ACTION_NOTES && ui->notes_mode) ||
                   (action == PLAY_ACTION_AUDIO && audio_is_enabled());
-    bool primary = action == PLAY_ACTION_MENU;
-    SDL_Color background = primary
-                               ? theme.title
-                               : (active ? theme.title
-                                         : (hover ? theme.hover : theme.palette_bg));
-    SDL_Color foreground = (primary || active) ? theme.bg : theme.btnfg;
+    SDL_Color background =
+        active ? theme.title : (hover ? theme.hover : theme.palette_bg);
+    SDL_Color foreground = active ? theme.bg : theme.btnfg;
     SDL_Rect face =
         polish_button_face(gfx, theme, rect, background, pressed, false);
     (void)draw_fitted_text(gfx, tr(ui->language, keys[action]), foreground,
@@ -568,7 +619,6 @@ static void go_home(Persistence *persistence, const Game *game, UI *ui) {
   bool entering_home = ui && ui->screen != SCR_TITLE;
   audio_settings_open = false;
   go_home_polish(persistence, game, ui);
-  if (persistence && ui)
-    ui->has_session = persistence->enabled && session_can_continue(&persistence->saved);
+  if (persistence && ui) refresh_resume_info(persistence, ui);
   if (entering_home) ui_home_cue_requested = true;
 }
