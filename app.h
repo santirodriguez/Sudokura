@@ -2,6 +2,7 @@
 #define SUDOKURA_APP_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "game.h"
 #include "i18n.h"
@@ -36,7 +37,7 @@ typedef struct {
   Language language;
 
   int mistakes, strikes, strikes_max;
-  double elapsed_base, running_since;
+  uint64_t elapsed_ms, running_since_ms;
   double time_limit_s;
   unsigned pause_reasons;
 
