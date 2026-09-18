@@ -1,19 +1,16 @@
-/*  Sudokura v1.2 — native Sudoku in C + SDL2
+/*  Sudokura v1.3 development — native Sudoku in C + SDL2
     - Responsive desktop and portrait UI
     - Help & About with localized navigation
     - Notes, hints, verification and Strict/Free input
     - Classic / Strikes / Time Attack plus Daily Puzzle
-    - Autosave, Continue and real pause handling
+    - Autosave, Continue and independent pause reasons
     - Dark/Light theme and offline language selector
     - Optional SDL2_mixer music, jingles and subtle UI feedback
     Author: santirodriguez — https://santiagorodriguez.com
     License: GPLv3
-    Build (Fedora/Debian/Arch package names vary):
-      install gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
-      gcc -std=c11 -O2 -Wall -Wextra \
-        sudokura_sdl.c app.c audio.c game.c geometry.c i18n.c -o sudokura \
-        $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) \
-        -lm
+    Build:
+      install make, gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
+      make
 */
 
 #if !defined(_WIN32)
