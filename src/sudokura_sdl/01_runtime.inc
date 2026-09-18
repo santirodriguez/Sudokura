@@ -364,8 +364,7 @@ static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;capture_session(&state,game,ui);
   ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
-  bool assisted=slot->present&&slot->value.assisted;
-  if(!profile_slot_set(slot,&state,assisted))return false;
+  if(!profile_slot_set(slot,&state,false))return false;
   if(!state.is_daily)p->saved=state;
   ui->has_session=session_can_continue(&p->saved);
   if(!persistence_write_profile(p))return false;
@@ -381,7 +380,8 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
   app_clock_restore(ui,s->elapsed_ms,now_ms());
-  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;ui->has_session=true;
+  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;
+  ui->has_session=session_can_continue(&p->saved);
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
   if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
   else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
