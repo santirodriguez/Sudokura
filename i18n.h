@@ -23,6 +23,8 @@ typedef enum {
   T_AUTO_NOTES_ON,
   T_AUTO_NOTES_OFF,
   T_THEME,
+  T_SETTINGS,
+  T_REDUCED_MOTION,
   T_MENU,
   T_PALETTE,
   T_BACK,
