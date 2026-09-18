@@ -8,8 +8,9 @@
 static SessionState fresh_state(void) {
   SessionState state;
   memset(&state, 0, sizeof(state));
-  game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
-                      DIFFICULTY_MEDIUM);
+  assert(game_new_difficulty_revision(
+      &state.game, UINT64_C(0x123456789abcdef0), DIFFICULTY_MEDIUM,
+      SUDOKURA_GENERATOR_REVISION_LEGACY));
   state.mode = MODE_CLASSIC;
   state.selected_row = 4;
   state.selected_column = 4;
