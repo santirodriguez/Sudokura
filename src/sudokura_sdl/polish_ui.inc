@@ -239,7 +239,6 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT] = {
       T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
   for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
-    char label[64];
     const char *text = tr(ui->language, secondary_keys[i]);
     polish_home_button(gfx, theme, sdl_rect(geometry.home_secondary[i]), text,
                        false, false, home_focus == HOME_FOCUS_HELP + i,
