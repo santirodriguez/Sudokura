@@ -245,7 +245,7 @@ bool session_validate_runtime(const SessionState *session) {
       session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
       session->strikes > SESSION_MAX_COUNTER ||
       session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
-      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
+      !game_generator_revision_supported(session->game.generator_revision))
     return false;
 
   for (int i = 0; i < 81; ++i) {
@@ -268,8 +268,10 @@ bool session_validate_runtime(const SessionState *session) {
     uint64_t daily_seed = 0;
     if (session->mode != MODE_CLASSIC ||
         session->game.difficulty != DIFFICULTY_MEDIUM ||
-        !game_daily_seed(session->daily_year, session->daily_month,
-                         session->daily_day, &daily_seed) ||
+        !game_daily_seed_revision(session->daily_year, session->daily_month,
+                                  session->daily_day,
+                                  session->game.generator_revision,
+                                  &daily_seed) ||
         daily_seed != session->game.seed)
       return false;
   } else if (session->daily_year != 0 || session->daily_month != 0 ||
@@ -290,7 +292,10 @@ bool session_validate(const SessionState *session) {
   if (!session_validate_runtime(session)) return false;
 
   Game canonical;
-  game_new_difficulty(&canonical, session->game.seed, session->game.difficulty);
+  if (!game_new_difficulty_revision(&canonical, session->game.seed,
+                                    session->game.difficulty,
+                                    session->game.generator_revision))
+    return false;
   if (!game_matches_canonical(&session->game, &canonical)) return false;
 
   return true;
@@ -398,7 +403,7 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
   int daily_day = reader_u8(&reader);
 
   if (!reader.ok) return STORE_CORRUPT;
-  if (generator_revision != SUDOKURA_GENERATOR_REVISION)
+  if (!game_generator_revision_supported(generator_revision))
     return STORE_INCOMPATIBLE;
   if (!valid_difficulty(difficulty) || !valid_mode(mode) || notes_mode > 1 ||
       strict_mode > 1 || manual_paused > 1 || is_daily > 1 ||
@@ -407,7 +412,9 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
 
   SessionState loaded;
   memset(&loaded, 0, sizeof(loaded));
-  game_new_difficulty(&loaded.game, seed, difficulty);
+  if (!game_new_difficulty_revision(&loaded.game, seed, difficulty,
+                                    generator_revision))
+    return STORE_CORRUPT;
   loaded.mode = mode;
   loaded.selected_row = selected_row;
   loaded.selected_column = selected_column;
