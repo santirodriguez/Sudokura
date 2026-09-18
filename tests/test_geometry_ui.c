@@ -28,7 +28,7 @@ int main(void) {
     bool portrait = width < 640;
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
-      assert(ui_geometry_compute(width, height, (GeometryMode)mode, &g));
+      assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert_inside(g.about_study, g.about_study_link);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
