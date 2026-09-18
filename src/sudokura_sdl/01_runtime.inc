@@ -140,6 +140,7 @@ typedef struct {
   char preferences_v12_backup_path[PATH_MAX];
   char audio_v12_backup_path[PATH_MAX];
   SavePolicy save_policy;
+  uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
 static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
@@ -288,7 +289,9 @@ static bool persistence_write_profile(Persistence*p){
   p->profile.preferences=p->preferences;
   StoreStatus status=profile_save_file(p->profile_path,p->profile_backup_path,
                                        &p->profile);
-  save_policy_record_result(&p->save_policy,status,now_ms());
+  uint64_t written_at=now_ms();
+  save_policy_record_result(&p->save_policy,status,written_at);
+  if(status==STORE_OK)p->last_periodic_checkpoint_ms=written_at;
   return status==STORE_OK;
 }
 
@@ -313,6 +316,7 @@ static bool persistence_recover_previous(Persistence*p){
   p->preferences=recovered.preferences;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
   p->enabled=true;
   return true;
 }
@@ -331,6 +335,7 @@ static void persistence_init_base(Persistence*p){
   p->profile_status=STORE_IO_ERROR;
   profile_defaults(&p->profile);
   save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
   p->preferences=p->profile.preferences;
 
   char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
@@ -372,6 +377,7 @@ static void persistence_init_base(Persistence*p){
   p->preferences=p->profile.preferences;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
 }
 
 static bool save_preferences(Persistence*p,const UI*ui){
