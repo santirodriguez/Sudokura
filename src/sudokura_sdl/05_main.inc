@@ -561,6 +561,7 @@ int main(int argc, char **argv) {
   }
   ui.dark_theme = persistence.preferences.dark_theme;
   ui.strict_mode = persistence.preferences.strict_mode;
+  ui.auto_remove_peer_notes = persistence.preferences.auto_remove_peer_notes;
   ui.mode = persistence.preferences.mode;
   home_difficulty = persistence.preferences.difficulty;
   set_mode_params(&ui);
@@ -712,7 +713,18 @@ int main(int argc, char **argv) {
         }
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
+        bool control = (mod & KMOD_CTRL) != 0;
         int r = ui.sel_r, c = ui.sel_c;
+        if (control && (k == SDLK_z || k == SDLK_y)) {
+          AppActionKind kind =
+              (k == SDLK_y || shifted) ? APP_ACTION_REDO : APP_ACTION_UNDO;
+          ui_button_click();
+          if (apply_history_action(&game, &ui, kind)) {
+            clear_hint_preview(&ui);
+            (void)stage_current_session(&persistence, &game, &ui);
+          }
+          continue;
+        }
         if (ui.hint_preview_active) {
           if (k == SDLK_ESCAPE) {
             ui_button_click();
@@ -753,6 +765,13 @@ int main(int argc, char **argv) {
         } else if (k == SDLK_t) {
           ui_button_click();
           ui.dark_theme = !ui.dark_theme;
+          (void)save_preferences(&persistence, &ui);
+        } else if (k == SDLK_n && shifted) {
+          ui_button_click();
+          ui.auto_remove_peer_notes = !ui.auto_remove_peer_notes;
+          show_toast(&ui, tr(ui.language, ui.auto_remove_peer_notes
+                                            ? T_AUTO_NOTES_ON
+                                            : T_AUTO_NOTES_OFF));
           (void)save_preferences(&persistence, &ui);
         } else if (k == SDLK_n) {
           ui_button_click();
@@ -997,8 +1016,23 @@ int main(int argc, char **argv) {
             clock_pause(&ui, PAUSE_MANUAL);
             (void)checkpoint_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_RESTART], x, y)) {
+            SDL_Rect restart_rect, clear_rect;
+            restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],
+                                &restart_rect, &clear_rect);
             ui_button_click();
-            if (restart_current_session_confirmed(&persistence, &game, &ui, &g)) {
+            if (point_in(clear_rect, x, y)) {
+              if (clear_selected_available(&game, &ui)) {
+                if (apply_player_input(&game, &ui, ui.sel_r, ui.sel_c, 0,
+                                       false)) {
+                  clear_hint_preview(&ui);
+                  (void)stage_current_session(&persistence, &game, &ui);
+                }
+              } else {
+                audio_play_effect(AUDIO_EFFECT_BLOCKED);
+              }
+            } else if (point_in(restart_rect, x, y) &&
+                       restart_current_session_confirmed(
+                           &persistence, &game, &ui, &g)) {
               victory_animation_reset();
               restart_current_session(&persistence, &game, &ui);
             }
