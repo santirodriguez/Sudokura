@@ -10,6 +10,8 @@ static bool audio_ui_seen = false;
 static void audio_apply_preferences(Persistence *persistence) {
   if (!persistence) return;
   audio_set_enabled(persistence->preferences.audio_enabled);
+  audio_set_music_volume(persistence->preferences.music_volume);
+  audio_set_fx_volume(persistence->preferences.fx_volume);
   audio_set_context(AUDIO_CONTEXT_MAIN);
 }
 
@@ -20,9 +22,12 @@ static void audio_toggle(Persistence *persistence) {
   if (!enabled) audio_set_enabled(false);
   if (!persistence) return;
   persistence->preferences.audio_enabled = enabled;
-  if (persistence->enabled)
-    (void)preferences_save_file(persistence->preferences_path,
-                                &persistence->preferences);
+  if (persistence->enabled) {
+    if (audio_ui)
+      (void)save_preferences(persistence, audio_ui);
+    else
+      (void)persistence_write_profile(persistence);
+  }
 }
 
 static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
@@ -82,7 +87,6 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
 static void persistence_init(Persistence *persistence) {
   persistence_init_base(persistence);
   audio_persistence = persistence;
-  ui_audio_levels_load();
   audio_apply_preferences(persistence);
 }
 
