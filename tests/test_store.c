@@ -184,10 +184,13 @@ static void test_writer_lock(const char *argv0) {
 static void test_unexpected_exit_preserves_active(const char *argv0) {
   const unsigned char base[] = "before-crash";
   const unsigned char update[] = "after-crash";
-  assert(store_atomic_write(active_path, backup_path, base,
-                            sizeof(base) - 1) == STORE_OK);
-  int exit_code =
-      run_child(argv0, "--crash-write", active_path, backup_path);
+  (void)store_remove_file(active_path);
+  (void)store_remove_file(backup_path);
+  assert(store_atomic_write(active_path, NULL, base, sizeof(base) - 1) ==
+         STORE_OK);
+  assert(store_copy_once(active_path, backup_path) == STORE_OK);
+
+  int exit_code = run_child(argv0, "--crash-write", active_path, NULL);
   assert(exit_code == 73);
   assert_contents(active_path, "before-crash");
   assert_contents(backup_path, "before-crash");
@@ -195,6 +198,7 @@ static void test_unexpected_exit_preserves_active(const char *argv0) {
   assert(store_atomic_write(active_path, backup_path, update,
                             sizeof(update) - 1) == STORE_OK);
   assert_contents(active_path, "after-crash");
+  assert_contents(backup_path, "before-crash");
 }
 
 int main(int argc, char **argv) {
@@ -222,10 +226,11 @@ int main(int argc, char **argv) {
     _exit(0);
 #endif
   }
-  if (argc >= 4 && strcmp(argv[1], "--crash-write") == 0) {
+  if (argc >= 3 && strcmp(argv[1], "--crash-write") == 0) {
     const unsigned char update[] = "after-crash";
     store_test_set_fault(STORE_TEST_FAULT_CRASH_AFTER_SYNC);
-    (void)store_atomic_write(argv[2], argv[3], update, sizeof(update) - 1);
+    (void)store_atomic_write(argv[2], argc >= 4 ? argv[3] : NULL, update,
+                             sizeof(update) - 1);
     return 2;
   }
 
