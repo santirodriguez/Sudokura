@@ -218,6 +218,73 @@ static void test_profile_roundtrip(void) {
   assert(!memcmp(&reloaded.daily.value.session.game, &daily.game, sizeof(Game)));
 }
 
+static void test_result_history_idempotence_and_summary(void) {
+  ProfileData profile;
+  profile_defaults(&profile);
+
+  ProfileResult result = {
+      .seed = UINT64_C(100),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM,
+      .mode = MODE_CLASSIC,
+      .status = SESSION_WON,
+      .assisted = false,
+      .is_daily = false,
+      .elapsed_ms = UINT64_C(180000),
+  };
+  bool inserted = false;
+  assert(profile_record_result(&profile, &result, &inserted));
+  assert(inserted);
+  assert(profile.result_count == 1);
+
+  inserted = true;
+  assert(profile_record_result(&profile, &result, &inserted));
+  assert(!inserted);
+  assert(profile.result_count == 1);
+
+  ProfileResult faster = result;
+  faster.seed = UINT64_C(101);
+  faster.elapsed_ms = UINT64_C(120000);
+  assert(profile_record_result(&profile, &faster, &inserted));
+  assert(inserted);
+
+  ProfileResult assisted = result;
+  assisted.seed = UINT64_C(102);
+  assisted.assisted = true;
+  assisted.elapsed_ms = UINT64_C(60000);
+  assert(profile_record_result(&profile, &assisted, &inserted));
+  assert(inserted);
+
+  ProfileResult hard = result;
+  hard.seed = UINT64_C(103);
+  hard.difficulty = DIFFICULTY_HARD;
+  hard.elapsed_ms = UINT64_C(30000);
+  assert(profile_record_result(&profile, &hard, &inserted));
+  assert(inserted);
+
+  ProfileResultSummary summary = profile_result_summary(&profile, &result);
+  assert(summary.finished == 3);
+  assert(summary.best_time_available);
+  assert(summary.best_time_ms == UINT64_C(120000));
+
+  ProfileResultSummary assisted_summary =
+      profile_result_summary(&profile, &assisted);
+  assert(assisted_summary.finished == 3);
+  assert(assisted_summary.best_time_available);
+  assert(assisted_summary.best_time_ms == UINT64_C(60000));
+
+  for (unsigned i = 0; i < SUDOKURA_RESULT_LIMIT + 5u; ++i) {
+    ProfileResult item = result;
+    item.seed = UINT64_C(1000) + i;
+    item.elapsed_ms = UINT64_C(200000) + i;
+    assert(profile_record_result(&profile, &item, &inserted));
+  }
+  assert(profile.result_count == SUDOKURA_RESULT_LIMIT);
+  assert(profile.results[profile.result_count - 1u].seed ==
+         UINT64_C(1000) + SUDOKURA_RESULT_LIMIT + 4u);
+  assert(profile_validate(&profile));
+}
+
 static void test_bounds_and_future_container(void) {
   SessionState state = normal_state();
   state.elapsed_ms = SUDOKURA_SESSION_MAX_ELAPSED_MS + UINT64_C(1);
@@ -556,6 +623,8 @@ static void test_incompatible_legacy_is_preserved(void) {
 int main(void) {
   cleanup();
   test_profile_roundtrip();
+  cleanup();
+  test_result_history_idempotence_and_summary();
   cleanup();
   test_bounds_and_future_container();
   cleanup();
