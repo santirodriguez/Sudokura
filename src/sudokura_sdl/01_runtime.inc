@@ -58,6 +58,7 @@
 #include "i18n.h"
 #include "session.h"
 #include "profile.h"
+#include "save_policy.h"
 #include "seed.h"
 #include "store_io.h"
 #include "assets/generated/flag_us.h"
@@ -138,7 +139,7 @@ typedef struct {
   char session_v12_backup_path[PATH_MAX];
   char preferences_v12_backup_path[PATH_MAX];
   char audio_v12_backup_path[PATH_MAX];
-  uint64_t last_checkpoint_ms;
+  SavePolicy save_policy;
 } Persistence;
 
 static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
@@ -285,8 +286,41 @@ static void persistence_refresh_normal(Persistence*p){
 static bool persistence_write_profile(Persistence*p){
   if(!p||!p->enabled)return false;
   p->profile.preferences=p->preferences;
-  return profile_save_file(p->profile_path,p->profile_backup_path,
-                           &p->profile)==STORE_OK;
+  StoreStatus status=profile_save_file(p->profile_path,p->profile_backup_path,
+                                       &p->profile);
+  save_policy_record_result(&p->save_policy,status,now_ms());
+  return status==STORE_OK;
+}
+
+static bool persistence_flush(Persistence*p){
+  if(!p||!p->enabled)return false;
+  if(!save_policy_dirty(&p->save_policy))return true;
+  return persistence_write_profile(p);
+}
+
+static bool persistence_has_save_error(const Persistence*p){
+  return p&&save_policy_has_error(&p->save_policy);
+}
+
+static bool persistence_recover_previous(Persistence*p){
+  if(!p||p->lock_status!=STORE_LOCK_ACQUIRED)return false;
+  ProfileData recovered;
+  StoreStatus status=profile_recover_previous(
+      p->profile_path,p->profile_backup_path,&recovered);
+  p->profile_status=status;
+  if(status!=STORE_OK)return false;
+  p->profile=recovered;
+  p->preferences=recovered.preferences;
+  persistence_refresh_normal(p);
+  save_policy_init(&p->save_policy);
+  p->enabled=true;
+  return true;
+}
+
+static bool persistence_previous_available(const Persistence*p){
+  if(!p)return false;
+  ProfileData previous;
+  return profile_load_file(p->profile_backup_path,&previous)==STORE_OK;
 }
 
 static void persistence_init_base(Persistence*p){
@@ -296,6 +330,7 @@ static void persistence_init_base(Persistence*p){
   p->lock_status=STORE_LOCK_ERROR;
   p->profile_status=STORE_IO_ERROR;
   profile_defaults(&p->profile);
+  save_policy_init(&p->save_policy);
   p->preferences=p->profile.preferences;
 
   char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
@@ -336,7 +371,7 @@ static void persistence_init_base(Persistence*p){
   p->enabled=true;
   p->preferences=p->profile.preferences;
   persistence_refresh_normal(p);
-  p->last_checkpoint_ms=now_ms();
+  save_policy_init(&p->save_policy);
 }
 
 static bool save_preferences(Persistence*p,const UI*ui){
@@ -344,7 +379,9 @@ static bool save_preferences(Persistence*p,const UI*ui){
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
   p->preferences.strict_mode=ui->strict_mode;
-  return persistence_write_profile(p);
+  p->profile.preferences=p->preferences;
+  save_policy_mark(&p->save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
+  return true;
 }
 
 static SessionStatus runtime_session_status(const Game*game,const UI*ui){
@@ -365,17 +402,37 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
   out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
 }
 
-static bool save_current_session(Persistence*p,const Game*game,UI*ui){
+static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;
   memset(&state,0,sizeof(state));
   capture_session(&state,game,ui);
   ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
-  if(!profile_slot_set(slot,&state,false))return false;
+  bool same_identity=
+      slot->present &&
+      slot->value.session.game.seed==state.game.seed &&
+      slot->value.session.game.generator_revision==state.game.generator_revision &&
+      slot->value.session.game.difficulty==state.game.difficulty &&
+      slot->value.session.is_daily==state.is_daily &&
+      slot->value.session.daily_year==state.daily_year &&
+      slot->value.session.daily_month==state.daily_month &&
+      slot->value.session.daily_day==state.daily_day;
+  bool assisted=same_identity&&slot->value.assisted;
+  bool valid=same_identity
+                 ? profile_slot_set_runtime(slot,&state,assisted)
+                 : profile_slot_set(slot,&state,assisted);
+  if(!valid)return false;
   if(!state.is_daily)p->saved=state;
   ui->has_session=session_can_continue(&p->saved);
-  if(!persistence_write_profile(p))return false;
-  p->last_checkpoint_ms=now_ms();return true;
+  save_policy_mark(&p->save_policy,
+                   state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
+                   now_ms());
+  return true;
+}
+
+static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
+  if(!stage_current_session(p,game,ui))return false;
+  return persistence_flush(p);
 }
 
 static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
@@ -397,21 +454,20 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   AppAction continue_action={.kind=APP_ACTION_CONTINUE};
   (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
   ui->has_session=normal_continue;
-  p->last_checkpoint_ms=now_ms();
 }
 
 static void start_new_session_base(Persistence*p,Game*game,UI*ui){
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
   game_new_difficulty(game,next_seed(),p->preferences.difficulty);
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
-  begin_fresh_play(ui);(void)save_current_session(p,game,ui);
+  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
 }
 
 static bool start_daily_session_base(Persistence*p,Game*game,UI*ui,int year,int month,int day){
   if(!game_new_daily(game,year,month,day))return false;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
-  begin_fresh_play(ui);(void)save_current_session(p,game,ui);return true;
+  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);return true;
 }
 
 static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
@@ -426,25 +482,25 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
   if(!outcome.changed)return;
   ui->sel_r=4;ui->sel_c=4;set_mode_params(ui);clock_reset(ui);
-  (void)save_current_session(p,game,ui);
+  (void)checkpoint_current_session(p,game,ui);
 }
 
 static void go_home_base(Persistence*p,const Game*game,UI*ui){
-  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)save_current_session(p,game,ui);}
+  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)checkpoint_current_session(p,game,ui);}
   ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
   ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
   ui->notes_mode=false;set_mode_params(ui);
 }
 
 static void open_info_from_play(Persistence*p,const Game*game,UI*ui,Screen screen){
-  clock_pause(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);
+  clock_pause(ui,PAUSE_MODAL);(void)checkpoint_current_session(p,game,ui);
   (void)app_open_aux(ui,screen);
 }
 
 static void return_from_info(Persistence*p,const Game*game,UI*ui){
   bool returning_to_play=ui&&ui->prev_screen==SCR_PLAY;
   (void)app_return_aux(ui);
-  if(returning_to_play){clock_resume(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);}
+  if(returning_to_play){clock_resume(ui,PAUSE_MODAL);(void)checkpoint_current_session(p,game,ui);}
 }
 
 static bool ends_withi(const char* s, const char* suf){
