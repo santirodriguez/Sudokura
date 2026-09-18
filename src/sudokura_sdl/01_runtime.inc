@@ -57,8 +57,9 @@
 #include "version.h"
 #include "i18n.h"
 #include "session.h"
+#include "profile.h"
 #include "seed.h"
-#include "storage.h"
+#include "store_io.h"
 #include "assets/generated/flag_us.h"
 #include "assets/generated/flag_ar.h"
 #include "assets/generated/flag_ca.h"
@@ -124,9 +125,19 @@ typedef struct {
   bool enabled;
   Preferences preferences;
   SessionState saved;
-  StorageOps storage;
+  ProfileData profile;
+  StoreWriterLock writer_lock;
+  StoreLockStatus lock_status;
+  StoreStatus profile_status;
+  char profile_directory[PATH_MAX];
+  char profile_path[PATH_MAX];
+  char profile_backup_path[PATH_MAX];
   char session_path[PATH_MAX];
   char preferences_path[PATH_MAX];
+  char audio_levels_path[PATH_MAX];
+  char session_v12_backup_path[PATH_MAX];
+  char preferences_v12_backup_path[PATH_MAX];
+  char audio_v12_backup_path[PATH_MAX];
   uint64_t last_checkpoint_ms;
 } Persistence;
 
@@ -260,27 +271,66 @@ static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
   return n>=0&&n<PATH_MAX;
 }
 
+static void persistence_refresh_normal(Persistence*p){
+  if(!p)return;
+  const SessionState*normal=profile_slot_session(&p->profile.normal);
+  if(normal)p->saved=*normal;else memset(&p->saved,0,sizeof(p->saved));
+}
+
+static bool persistence_write_profile(Persistence*p){
+  if(!p||!p->enabled)return false;
+  p->profile.preferences=p->preferences;
+  return profile_save_file(p->profile_path,p->profile_backup_path,
+                           &p->profile)==STORE_OK;
+}
+
 static void persistence_init_base(Persistence*p){
   if(!p)return;
   memset(p,0,sizeof(*p));
-  p->storage.save_session=session_save_file;
-  p->storage.save_preferences=preferences_save_file;
-  preferences_defaults(&p->preferences);
+  p->writer_lock.native_handle=-1;
+  p->lock_status=STORE_LOCK_ERROR;
+  p->profile_status=STORE_IO_ERROR;
+  profile_defaults(&p->profile);
+  p->preferences=p->profile.preferences;
+
   char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
   if(!base)return;
-  bool paths_ok=pref_path(p->session_path,base,"session.dat")&&
-                pref_path(p->preferences_path,base,"preferences.dat");
-  SDL_free(base);if(!paths_ok)return;p->enabled=true;
-  StoreStatus pref_status=preferences_load_file(p->preferences_path,&p->preferences);
-  if(pref_status==STORE_CORRUPT){
-    (void)store_quarantine_corrupt(p->preferences_path);preferences_defaults(&p->preferences);
-  }else if(pref_status==STORE_IO_ERROR){
-    preferences_defaults(&p->preferences);
+  bool paths_ok=
+      path_copy(p->profile_directory,sizeof(p->profile_directory),base)&&
+      pref_path(p->profile_path,base,"profile.dat")&&
+      pref_path(p->profile_backup_path,base,"profile.dat.bak")&&
+      pref_path(p->session_path,base,"session.dat")&&
+      pref_path(p->preferences_path,base,"preferences.dat")&&
+      pref_path(p->audio_levels_path,base,"audio-levels.dat")&&
+      pref_path(p->session_v12_backup_path,base,"session.dat.v1.2.bak")&&
+      pref_path(p->preferences_v12_backup_path,base,"preferences.dat.v1.2.bak")&&
+      pref_path(p->audio_v12_backup_path,base,"audio-levels.dat.v1.2.bak");
+  if(!paths_ok){SDL_free(base);return;}
+
+  p->lock_status=store_writer_lock_acquire(base,&p->writer_lock);
+  if(p->lock_status!=STORE_LOCK_ACQUIRED){
+    SDL_free(base);
+    return;
   }
-  StoreStatus session_status=session_load_file(p->session_path,&p->saved);
-  if(session_status==STORE_CORRUPT)(void)store_quarantine_corrupt(p->session_path);
-  else if(session_status==STORE_INCOMPATIBLE)(void)remove(p->session_path);
-  if(session_status!=STORE_OK)memset(&p->saved,0,sizeof(p->saved));
+
+  ProfileLegacyPaths legacy={
+    .session_path=p->session_path,
+    .preferences_path=p->preferences_path,
+    .audio_levels_path=p->audio_levels_path,
+    .session_backup_path=p->session_v12_backup_path,
+    .preferences_backup_path=p->preferences_v12_backup_path,
+    .audio_levels_backup_path=p->audio_v12_backup_path
+  };
+  bool migrated=false;
+  p->profile_status=profile_load_or_migrate_v12(
+      p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated);
+  (void)migrated;
+  SDL_free(base);
+  if(p->profile_status!=STORE_OK)return;
+
+  p->enabled=true;
+  p->preferences=p->profile.preferences;
+  persistence_refresh_normal(p);
   p->last_checkpoint_ms=now_ms();
 }
 
@@ -289,8 +339,7 @@ static bool save_preferences(Persistence*p,const UI*ui){
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
   p->preferences.strict_mode=ui->strict_mode;
-  return storage_save_preferences(&p->storage,p->preferences_path,
-                                  &p->preferences);
+  return persistence_write_profile(p);
 }
 
 static SessionStatus runtime_session_status(const Game*game,const UI*ui){
@@ -314,13 +363,21 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
 static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;capture_session(&state,game,ui);
-  if(!storage_save_session(&p->storage,p->session_path,&state))return false;
-  p->saved=state;ui->has_session=true;p->last_checkpoint_ms=now_ms();return true;
+  ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
+  bool assisted=slot->present&&slot->value.assisted;
+  if(!profile_slot_set(slot,&state,assisted))return false;
+  if(!state.is_daily)p->saved=state;
+  ui->has_session=session_can_continue(&p->saved);
+  if(!persistence_write_profile(p))return false;
+  p->last_checkpoint_ms=now_ms();return true;
 }
 
-static void restore_saved_session(Persistence*p,Game*game,UI*ui){
-  if(!p||!game||!ui||!session_validate(&p->saved))return;
-  const SessionState*s=&p->saved;*game=s->game;ui->mode=s->mode;set_mode_params(ui);
+static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
+  if(!p||!game||!ui)return;
+  const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
+  const SessionState*s=profile_slot_session(slot);
+  if(!s||!session_validate(s))return;
+  *game=s->game;ui->mode=s->mode;set_mode_params(ui);
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
   app_clock_restore(ui,s->elapsed_ms,now_ms());
@@ -349,8 +406,10 @@ static bool start_daily_session_base(Persistence*p,Game*game,UI*ui,int year,int 
 }
 
 static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
-  return p&&session_validate(&p->saved)&&p->saved.is_daily&&
-         p->saved.daily_year==year&&p->saved.daily_month==month&&p->saved.daily_day==day;
+  if(!p)return false;
+  const SessionState*s=profile_slot_session(&p->profile.daily);
+  return s&&session_validate(s)&&s->is_daily&&
+         s->daily_year==year&&s->daily_month==month&&s->daily_day==day;
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
