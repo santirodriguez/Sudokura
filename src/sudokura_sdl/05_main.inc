@@ -261,6 +261,15 @@ static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
   (void)save_preferences(p, ui);
 }
 
+static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
+  if (!p || !ui || !g) return true;
+  if (ui->session_open && game) (void)stage_current_session(p, game, ui);
+  capture_window_preferences(p, g, ui);
+  SaveGateResult gate =
+      resolve_unsaved(p, g, ui, UINT_MAX, T_UNSAVED_EXIT);
+  return gate != SAVE_GATE_BACK;
+}
+
 int main(int argc, char **argv) {
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
@@ -374,6 +383,27 @@ int main(int argc, char **argv) {
   Persistence persistence;
   persistence_init(&persistence);
   ui.language = persistence.preferences.language;
+  if (persistence.profile_status == STORE_CORRUPT &&
+      persistence_previous_available(&persistence)) {
+    bool recover = confirm_box(g.win, tr(ui.language, T_STORAGE_ERROR),
+                               tr(ui.language, T_PROFILE_RECOVER_PROMPT),
+                               tr(ui.language, T_RECOVER),
+                               tr(ui.language, T_QUIT));
+    if (!recover) {
+      app_shutdown(&g);
+      return 1;
+    }
+    if (!persistence_recover_previous(&persistence)) {
+      (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                     tr(ui.language, T_STORAGE_ERROR),
+                                     tr(ui.language, T_PROFILE_IO_ERROR),
+                                     g.win);
+      app_shutdown(&g);
+      return 1;
+    }
+    ui.language = persistence.preferences.language;
+    audio_apply_preferences(&persistence);
+  }
   const char *startup_error =
       persistence_startup_error(&persistence, ui.language);
   if (startup_error) {
