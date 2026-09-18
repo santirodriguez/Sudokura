@@ -32,16 +32,11 @@ static StoreTestFault store_test_fault = STORE_TEST_FAULT_NONE;
 void store_test_set_fault(StoreTestFault fault) {
   store_test_fault = fault;
 }
-#endif
 
-static bool store_fault_is(int fault) {
-#ifdef SUDOKURA_STORE_TESTING
-  return (int)store_test_fault == fault;
-#else
-  (void)fault;
-  return false;
-#endif
+static bool store_fault_is(StoreTestFault fault) {
+  return store_test_fault == fault;
 }
+#endif
 
 #if defined(_WIN32)
 static bool utf8_to_wide(const char *input, wchar_t *output,
