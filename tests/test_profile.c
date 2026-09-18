@@ -134,21 +134,36 @@ static void test_profile_roundtrip(void) {
   assert(profile_slot_set(&profile.normal, &normal, true));
   assert(profile_slot_set(&profile.daily, &daily, false));
 
-  int hinted_cell = -1;
-  for (int i = 0; i < 81; ++i)
-    if (normal.game.hinted[i]) { hinted_cell = i; break; }
-  assert(hinted_cell >= 0);
+  int target = -1, peer = -1;
+  for (int a = 0; a < 81 && target < 0; ++a) {
+    if (normal.game.fixed[a] || normal.game.hinted[a] ||
+        normal.game.puzzle[a] != 0)
+      continue;
+    for (int b = 0; b < 81; ++b) {
+      if (a == b || normal.game.fixed[b] || normal.game.hinted[b] ||
+          normal.game.puzzle[b] != 0)
+        continue;
+      bool related = a / 9 == b / 9 || a % 9 == b % 9 ||
+                     (a / 27 == b / 27 &&
+                      (a % 9) / 3 == (b % 9) / 3);
+      if (related) {
+        target = a;
+        peer = b;
+        break;
+      }
+    }
+  }
+  assert(target >= 0 && peer >= 0);
+  int placed = normal.game.solution[target];
+  assert(game_toggle_note(&normal.game, peer / 9, peer % 9, placed));
+  ProfileEdit edit;
+  assert(game_apply_input_recorded(
+             &normal.game, target / 9, target % 9, placed, false, false, true,
+             &edit) == GAME_INPUT_CORRECT);
+  assert(edit.peer_notes_removed != 0);
+  assert(profile_slot_set(&profile.normal, &normal, true));
   profile.normal.value.undo_count = 1;
-  profile.normal.value.undo[0] = (ProfileEdit){
-      .row = (uint8_t)(hinted_cell / 9),
-      .column = (uint8_t)(hinted_cell % 9),
-      .before_value = 0,
-      .after_value = (uint8_t)normal.game.solution[hinted_cell],
-      .before_notes = 0,
-      .after_notes = 0,
-      .before_hinted = 0,
-      .after_hinted = 1,
-  };
+  profile.normal.value.undo[0] = edit;
 
   profile.result_count = 1;
   profile.results[0] = (ProfileResult){
@@ -183,7 +198,9 @@ static void test_profile_roundtrip(void) {
   assert(loaded.normal.value.assisted);
   assert(loaded.normal.value.undo_count == 1);
   assert(loaded.normal.value.undo[0].after_value ==
-         normal.game.solution[hinted_cell]);
+         normal.game.solution[target]);
+  assert(loaded.normal.value.undo[0].peer_note_value == placed);
+  assert(loaded.normal.value.undo[0].peer_notes_removed != 0);
   assert(loaded.result_count == 1);
   assert(loaded.results[0].status == SESSION_LOST);
 
