@@ -54,6 +54,7 @@
 #include <errno.h>
 
 #include "app.h"
+#include "app_clock.h"
 #include "game.h"
 #include "geometry.h"
 #include "version.h"
@@ -117,6 +118,7 @@ typedef AppState UI;
 #define PAUSE_MODAL APP_PAUSE_MODAL
 #define PAUSE_HOME APP_PAUSE_HOME
 #define PAUSE_END APP_PAUSE_END
+#define PAUSE_USER_VISIBLE APP_PAUSE_USER_VISIBLE
 
 typedef struct {
   bool enabled;
@@ -125,34 +127,28 @@ typedef struct {
   StorageOps storage;
   char session_path[PATH_MAX];
   char preferences_path[PATH_MAX];
-  double last_checkpoint;
+  uint64_t last_checkpoint_ms;
 } Persistence;
 
-static double now_s(void){ return SDL_GetTicks()*0.001; }
-static bool clock_running(const UI*ui){
-  return ui&&ui->session_open&&ui->screen==SCR_PLAY&&ui->pause_reasons==0;
-}
+static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
+static double now_s(void){ return (double)now_ms()*0.001; }
 static double elapsed_time(const UI*ui){
-  if(!ui)return 0;
-  double elapsed=ui->elapsed_base;
-  if(clock_running(ui))elapsed+=now_s()-ui->running_since;
-  return elapsed<0?0:elapsed;
+  return app_clock_elapsed_s(ui,now_ms());
 }
-static void clock_pause(UI*ui,unsigned reason){
-  if(!ui||!reason)return;
-  if(clock_running(ui))ui->elapsed_base+=now_s()-ui->running_since;
-  ui->pause_reasons|=reason;
+static bool clock_pause(UI*ui,unsigned reason){
+  return app_clock_pause(ui,reason,now_ms());
 }
-static void clock_resume(UI*ui,unsigned reason){
-  if(!ui||!reason)return;
-  ui->pause_reasons&=~reason;
-  if(clock_running(ui))ui->running_since=now_s();
+static bool clock_resume(UI*ui,unsigned reason){
+  return app_clock_resume(ui,reason,now_ms());
 }
 static void clock_reset(UI*ui){
-  if(!ui)return;
-  ui->elapsed_base=0;
-  ui->pause_reasons=0;
-  ui->running_since=now_s();
+  app_clock_reset(ui,now_ms());
+}
+static bool resume_user_pause(UI*ui){
+  bool changed=false;
+  if(ui&&((ui->pause_reasons&PAUSE_FOCUS)!=0))changed=clock_resume(ui,PAUSE_FOCUS)||changed;
+  if(ui&&((ui->pause_reasons&PAUSE_MANUAL)!=0))changed=clock_resume(ui,PAUSE_MANUAL)||changed;
+  return changed;
 }
 static void show_toast(UI*ui,const char*msg){ snprintf(ui->toast,sizeof(ui->toast),"%s",msg); ui->toast_t0=now_s(); ui->toast_on=true; }
 static void set_mode_params(UI*ui){
@@ -264,7 +260,7 @@ static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
   return n>=0&&n<PATH_MAX;
 }
 
-static void persistence_init(Persistence*p){
+static void persistence_init_base(Persistence*p){
   if(!p)return;
   memset(p,0,sizeof(*p));
   p->storage.save_session=session_save_file;
@@ -285,7 +281,7 @@ static void persistence_init(Persistence*p){
   if(session_status==STORE_CORRUPT)(void)store_quarantine_corrupt(p->session_path);
   else if(session_status==STORE_INCOMPATIBLE)(void)remove(p->session_path);
   if(session_status!=STORE_OK)memset(&p->saved,0,sizeof(p->saved));
-  p->last_checkpoint=now_s();
+  p->last_checkpoint_ms=now_ms();
 }
 
 static bool save_preferences(Persistence*p,const UI*ui){
@@ -298,8 +294,8 @@ static bool save_preferences(Persistence*p,const UI*ui){
 }
 
 static SessionStatus runtime_session_status(const Game*game,const UI*ui){
-  if(game_is_solved(game))return SESSION_WON;
   if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,elapsed_time(ui),ui->time_limit_s))return SESSION_LOST;
+  if(game_is_solved(game))return SESSION_WON;
   return SESSION_ACTIVE;
 }
 
@@ -310,8 +306,7 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
   out->notes_mode=ui->notes_mode;out->strict_mode=ui->strict_mode;
   out->manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
   out->status=runtime_session_status(game,ui);out->mistakes=ui->mistakes;out->strikes=ui->strikes;
-  double elapsed=elapsed_time(ui);if(elapsed<0)elapsed=0;
-  out->elapsed_ms=(uint64_t)ceil(elapsed*1000.0);
+  out->elapsed_ms=app_clock_elapsed_ms(ui,now_ms());
   out->is_daily=ui->is_daily;out->daily_year=ui->daily_year;
   out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
 }
@@ -320,7 +315,7 @@ static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;capture_session(&state,game,ui);
   if(!storage_save_session(&p->storage,p->session_path,&state))return false;
-  p->saved=state;ui->has_session=true;p->last_checkpoint=now_s();return true;
+  p->saved=state;ui->has_session=true;p->last_checkpoint_ms=now_ms();return true;
 }
 
 static bool saved_has_progress(const SessionState*state){
@@ -335,25 +330,25 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui){
   const SessionState*s=&p->saved;*game=s->game;ui->mode=s->mode;set_mode_params(ui);
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
-  ui->elapsed_base=(double)s->elapsed_ms/1000.0;ui->running_since=now_s();
+  app_clock_restore(ui,s->elapsed_ms,now_ms());
   ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;ui->has_session=true;
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
   if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
   else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
   else ui->result=RES_NONE;
   AppAction continue_action={.kind=APP_ACTION_CONTINUE};
-  (void)app_apply_action(game,ui,continue_action,ui->elapsed_base);
-  p->last_checkpoint=now_s();
+  (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
+  p->last_checkpoint_ms=now_ms();
 }
 
-static void start_new_session(Persistence*p,Game*game,UI*ui){
+static void start_new_session_base(Persistence*p,Game*game,UI*ui){
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
   game_new_difficulty(game,next_seed(),p->preferences.difficulty);
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
   begin_fresh_play(ui);(void)save_current_session(p,game,ui);
 }
 
-static bool start_daily_session(Persistence*p,Game*game,UI*ui,int year,int month,int day){
+static bool start_daily_session_base(Persistence*p,Game*game,UI*ui,int year,int month,int day){
   if(!game_new_daily(game,year,month,day))return false;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
@@ -373,7 +368,7 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
   (void)save_current_session(p,game,ui);
 }
 
-static void go_home(Persistence*p,const Game*game,UI*ui){
+static void go_home_base(Persistence*p,const Game*game,UI*ui){
   if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)save_current_session(p,game,ui);}
   ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
   ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
