@@ -1,8 +1,5 @@
 #include "audio.h"
 
-static Persistence *audio_persistence = NULL;
-static Gfx *audio_gfx = NULL;
-static UI *audio_ui = NULL;
 static Screen audio_previous_screen = SCR_TITLE;
 static Result audio_previous_result = RES_NONE;
 static bool audio_ui_seen = false;
