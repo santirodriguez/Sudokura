@@ -73,6 +73,7 @@ typedef struct {
   HumanStep reasoning;
   HumanStep placement;
   int reasoning_steps;
+  int contradiction_cell;
 } HumanHint;
 
 const char *human_technique_name(HumanTechnique technique);
