@@ -31,6 +31,8 @@ enum {
   APP_PAUSE_END = 1u << 4
 };
 
+#define APP_PAUSE_USER_VISIBLE (APP_PAUSE_MANUAL | APP_PAUSE_FOCUS)
+
 typedef struct {
   int sel_r, sel_c;
   bool notes_mode, strict_mode, dark_theme;
@@ -91,6 +93,8 @@ bool app_screen_is_auxiliary(AppScreen screen);
 bool app_open_aux(AppState *state, AppScreen screen);
 bool app_return_aux(AppState *state);
 bool app_navigate(AppState *state, AppScreen target);
+AppActionOutcome app_check_terminal(Game *game, AppState *state,
+                                    double elapsed_s);
 AppActionOutcome app_apply_action(Game *game, AppState *state,
                                   AppAction action, double elapsed_s);
 
