@@ -45,6 +45,54 @@ static void test_visible_reasoning_only(void) {
   assert(last.explanation[0] != '\0');
 }
 
+static void test_actionable_hint_states(void) {
+  static const char *easy =
+      "53..7...."
+      "6..195..."
+      ".98....6."
+      "8...6...3"
+      "4..8.3..1"
+      "7...2...6"
+      ".6....28."
+      "...419..5"
+      "....8..79";
+  int board[81];
+  parse_puzzle(easy, board);
+  HumanHint hint;
+  assert(human_hint_analyze(board, &hint));
+  assert(hint.status == HUMAN_HINT_LOGICAL);
+  assert(hint.reasoning.technique != HUMAN_TECHNIQUE_NONE);
+  assert(hint.placement.placement_cell >= 0);
+  assert(hint.placement.placement_value >= 1 &&
+         hint.placement.placement_value <= 9);
+  assert(hint.reasoning_steps >= 1);
+
+  int contradiction[81] = {0};
+  contradiction[0] = 4;
+  contradiction[1] = 4;
+  assert(human_hint_analyze(contradiction, &hint));
+  assert(hint.status == HUMAN_HINT_INVALID);
+  assert(hint.contradiction_cell == 1);
+
+  int empty[81] = {0};
+  assert(human_hint_analyze(empty, &hint));
+  assert(hint.status == HUMAN_HINT_STALLED);
+
+  static const char *solved =
+      "534678912"
+      "672195348"
+      "198342567"
+      "859761423"
+      "426853791"
+      "713924856"
+      "961537284"
+      "287419635"
+      "345286179";
+  parse_puzzle(solved, board);
+  assert(human_hint_analyze(board, &hint));
+  assert(hint.status == HUMAN_HINT_SOLVED);
+}
+
 static void test_invalid_and_names(void) {
   int invalid[81] = {0};
   invalid[0] = 1;
@@ -68,6 +116,7 @@ static void test_invalid_and_names(void) {
 
 int main(void) {
   test_visible_reasoning_only();
+  test_actionable_hint_states();
   test_invalid_and_names();
   puts("human evaluator uses visible candidates and emits structured explanations");
   return 0;
