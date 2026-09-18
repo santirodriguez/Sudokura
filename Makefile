@@ -61,8 +61,8 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input
 	./tests/test_audio
 	./tests/test_input
 quality: tests/test_generator_quality tests/test_human_calibration
-	./tests/test_generator_quality
 	./tests/test_human_calibration
+	./tests/test_generator_quality
 test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui
 	./tests/test_main
 	./tests/test_app
