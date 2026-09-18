@@ -76,6 +76,33 @@ static void home_cycle_difficulty(Persistence *p, UI *ui, int delta) {
                        DIFFICULTY_COUNT));
 }
 
+static void verify_current_entries(Persistence *p, Game *game, UI *ui) {
+  if (!game || !ui) return;
+  int incorrect = apply_verify_action(game, ui);
+  if (p) (void)stage_current_session(p, game, ui);
+  if (incorrect == 0) {
+    show_toast(ui, tr(ui->language, T_NO_CONFLICTS));
+  } else {
+    char message[64];
+    snprintf(message, sizeof(message), tr(ui->language, T_CONFLICTS),
+             incorrect);
+    show_toast(ui, message);
+  }
+}
+
+static bool apply_current_logic_hint(Persistence *p, Game *game, UI *ui) {
+  if (!apply_logical_hint_action(game, ui)) return false;
+  if (p) (void)stage_current_session(p, game, ui);
+  return true;
+}
+
+static bool reveal_selected_cell(Persistence *p, Game *game, UI *ui) {
+  if (!game || !ui) return false;
+  if (!apply_reveal_action(game, ui, ui->sel_r, ui->sel_c)) return false;
+  if (p) (void)stage_current_session(p, game, ui);
+  return true;
+}
+
 static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
                                             bool daily) {
   if (!p) return true;
@@ -686,6 +713,28 @@ int main(int argc, char **argv) {
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
         int r = ui.sel_r, c = ui.sel_c;
+        if (ui.hint_preview_active) {
+          if (k == SDLK_ESCAPE) {
+            ui_button_click();
+            clear_hint_preview(&ui);
+            continue;
+          }
+          if (k == SDLK_h && shifted) {
+            ui_button_click();
+            (void)reveal_selected_cell(&persistence, &game, &ui);
+            continue;
+          }
+          if (k == SDLK_h ||
+              k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+            ui_button_click();
+            if (ui.hint_preview.status == HUMAN_HINT_LOGICAL)
+              (void)apply_current_logic_hint(&persistence, &game, &ui);
+            else if (ui.hint_preview.status == HUMAN_HINT_INVALID ||
+                     ui.hint_preview.status == HUMAN_HINT_STALLED)
+              verify_current_entries(&persistence, &game, &ui);
+            continue;
+          }
+        }
         if (k == SDLK_ESCAPE) {
           ui_button_click();
           go_home(&persistence, &game, &ui);
@@ -720,16 +769,18 @@ int main(int argc, char **argv) {
           (void)stage_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_h) {
           ui_button_click();
-          if (apply_hint_action(&game, &ui, r, c))
-            (void)stage_current_session(&persistence, &game, &ui);
+          (void)prepare_hint_preview(&game, &ui);
         } else {
           int value = input_digit_value(k, e.key.keysym.scancode);
           if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
-            if (apply_player_input(&game, &ui, r, c, 0, false))
+            if (apply_player_input(&game, &ui, r, c, 0, false)) {
+              clear_hint_preview(&ui);
               (void)stage_current_session(&persistence, &game, &ui);
+            }
           } else if (value >= 1 && value <= 9 &&
                      apply_player_input(&game, &ui, r, c, value,
                                         ui.notes_mode || shifted)) {
+            clear_hint_preview(&ui);
             (void)stage_current_session(&persistence, &game, &ui);
           }
         }
@@ -745,6 +796,28 @@ int main(int argc, char **argv) {
           ui_button_click();
           (void)persistence_flush(&persistence);
           continue;
+        }
+        if (left && ui.hint_preview_active) {
+          if (hint_apply_hit(&g, &ui, x, y)) {
+            ui_button_click();
+            (void)apply_current_logic_hint(&persistence, &game, &ui);
+            continue;
+          }
+          if (hint_verify_hit(&g, &ui, x, y)) {
+            ui_button_click();
+            verify_current_entries(&persistence, &game, &ui);
+            continue;
+          }
+          if (hint_reveal_hit(&g, &ui, x, y)) {
+            ui_button_click();
+            (void)reveal_selected_cell(&persistence, &game, &ui);
+            continue;
+          }
+          if (hint_cancel_hit(&g, &ui, x, y)) {
+            ui_button_click();
+            clear_hint_preview(&ui);
+            continue;
+          }
         }
         if (point_in(language_rect(&g, &ui), x, y)) {
           if (!left) continue;
@@ -897,8 +970,10 @@ int main(int argc, char **argv) {
             if (row > 2) row = 2;
             int value = row * 3 + column + 1;
             if ((right || ui.notes_mode) &&
-                apply_player_input(&game, &ui, r, c, value, true))
+                apply_player_input(&game, &ui, r, c, value, true)) {
+              clear_hint_preview(&ui);
               (void)stage_current_session(&persistence, &game, &ui);
+            }
           }
         } else {
           if (!left) continue;
@@ -927,8 +1002,7 @@ int main(int argc, char **argv) {
             }
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
             ui_button_click();
-            if (apply_hint_action(&game, &ui, ui.sel_r, ui.sel_c))
-              (void)stage_current_session(&persistence, &game, &ui);
+            (void)prepare_hint_preview(&game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_NOTES], x, y)) {
             ui_button_click();
             ui.notes_mode = !ui.notes_mode;
@@ -937,15 +1011,7 @@ int main(int argc, char **argv) {
             (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_VERIFY], x, y)) {
             ui_button_click();
-            int conflicts = apply_verify_action(&game, &ui);
-            if (conflicts == 0) {
-              show_toast(&ui, tr(ui.language, T_NO_CONFLICTS));
-            } else {
-              char message[32];
-              snprintf(message, sizeof(message), tr(ui.language, T_CONFLICTS),
-                       conflicts);
-              show_toast(&ui, message);
-            }
+            verify_current_entries(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_AUDIO], x, y)) {
             ui_button_click();
             ui_audio_open(&persistence, &game, &ui);
@@ -960,8 +1026,10 @@ int main(int argc, char **argv) {
               if (point_in(controls.pal[number - 1], x, y)) {
                 if (!palette_number_complete(&game, ui.mode, number)) {
                   if (apply_player_input(&game, &ui, ui.sel_r, ui.sel_c, number,
-                                         ui.notes_mode))
+                                         ui.notes_mode)) {
+                    clear_hint_preview(&ui);
                     (void)stage_current_session(&persistence, &game, &ui);
+                  }
                 } else {
                   audio_play_effect(AUDIO_EFFECT_BLOCKED);
                 }
