@@ -23,53 +23,24 @@ static int ui_clamp_percent(int value) {
   return value;
 }
 
-static bool ui_audio_levels_path(char out[PATH_MAX]) {
-  char *base = SDL_GetPrefPath("santirodriguez", "Sudokura");
-  if (!base) return false;
-  int written = snprintf(out, PATH_MAX, "%saudio-levels.dat", base);
-  SDL_free(base);
-  return written >= 0 && written < PATH_MAX;
-}
-
-static void ui_audio_levels_load(void) {
-  int music = AUDIO_DEFAULT_MUSIC_VOLUME;
-  int fx = AUDIO_DEFAULT_FX_VOLUME;
-  char path[PATH_MAX];
-  if (ui_audio_levels_path(path)) {
-    FILE *file = fopen(path, "rb");
-    if (file) {
-      char magic[16] = {0};
-      int loaded_music = music, loaded_fx = fx;
-      if (fscanf(file, "%15s %d %d", magic, &loaded_music, &loaded_fx) == 3 &&
-          strcmp(magic, "SUDOAUDIO1") == 0) {
-        music = ui_clamp_percent(loaded_music);
-        fx = ui_clamp_percent(loaded_fx);
-      }
-      fclose(file);
-    }
-  }
-  audio_set_music_volume(music);
-  audio_set_fx_volume(fx);
-}
-
-static void ui_audio_levels_save(void) {
-  char path[PATH_MAX];
-  if (!ui_audio_levels_path(path)) return;
-  FILE *file = fopen(path, "wb");
-  if (!file) return;
-  (void)fprintf(file, "SUDOAUDIO1 %d %d\n", audio_music_volume(),
-                audio_fx_volume());
-  (void)fclose(file);
-}
-
 static void ui_audio_set_music_level(int value) {
-  audio_set_music_volume(ui_clamp_percent(value));
-  ui_audio_levels_save();
+  int level=ui_clamp_percent(value);
+  audio_set_music_volume(level);
+  if(audio_persistence){
+    audio_persistence->preferences.music_volume=(uint8_t)level;
+    if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
+    else (void)persistence_write_profile(audio_persistence);
+  }
 }
 
 static void ui_audio_set_fx_level(int value) {
-  audio_set_fx_volume(ui_clamp_percent(value));
-  ui_audio_levels_save();
+  int level=ui_clamp_percent(value);
+  audio_set_fx_volume(level);
+  if(audio_persistence){
+    audio_persistence->preferences.fx_volume=(uint8_t)level;
+    if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
+    else (void)persistence_write_profile(audio_persistence);
+  }
 }
 
 static void ui_audio_open(Persistence *persistence, const Game *game, UI *ui) {
