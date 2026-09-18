@@ -147,7 +147,7 @@ static void app_render_base(Gfx*g,const Game*game,UI*ui){
   }else{
     render_board_and_sidebar(g,game,ui);
   }
-  if(ui->screen!=SCR_ABOUT)draw_language_selector(g,ui);
+  if(ui->screen==SCR_TITLE)draw_language_selector(g,ui);
 }
 static bool save_frame(Gfx*g,const char*path){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,g->width,g->height,32,SDL_PIXELFORMAT_ARGB8888);if(!s)return false;bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&SDL_SaveBMP(s,path)==0;SDL_FreeSurface(s);return ok;}
 
