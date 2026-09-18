@@ -1,3 +1,9 @@
+#if !defined(_WIN32)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "game.h"
 #include "human.h"
 
@@ -8,6 +14,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #define QUALITY_CORPUS_PER_DIFFICULTY 1000
 #define FULL_MASK UINT16_C(0x03fe)
@@ -194,9 +203,16 @@ static int compare_unsigned(const void *left, const void *right) {
 }
 
 static double wall_ms(void) {
+#if defined(_WIN32)
+  LARGE_INTEGER frequency, counter;
+  assert(QueryPerformanceFrequency(&frequency));
+  assert(QueryPerformanceCounter(&counter));
+  return (double)counter.QuadPart * 1000.0 / (double)frequency.QuadPart;
+#else
   struct timespec value;
-  assert(timespec_get(&value, TIME_UTC) == TIME_UTC);
+  assert(clock_gettime(CLOCK_MONOTONIC, &value) == 0);
   return (double)value.tv_sec * 1000.0 + (double)value.tv_nsec / 1000000.0;
+#endif
 }
 
 static HumanRating expected_rating(GameDifficulty difficulty) {
