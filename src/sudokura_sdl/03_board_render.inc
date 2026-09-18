@@ -223,25 +223,49 @@ static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
 
 static void render_pause_overlay(Gfx*g,const UI*ui);
 
+static void draw_grid_bar(SDL_Renderer *renderer, int x, int y, int w, int h,
+                          SDL_Color color) {
+  if (!renderer || w <= 0 || h <= 0) return;
+  draw_rect(renderer, x, y, w, h, color);
+}
+
 /* =================== RENDER PLAY =================== */
 static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);
   if(app_pause_hides_play(ui)){render_pause_overlay(g,ui);return;}
-  Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
+  Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);GeometryStyle style=geometry_style(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
   draw_round_rect(g->ren,(SDL_Rect){gx-6,gy-6,side+12,side+12},10,th.shadow);
   draw_round_rect(g->ren,(SDL_Rect){L.side.x-6,L.side.y-6,L.side.w+12,L.side.h+12},10,th.shadow);
   draw_round_rect(g->ren,L.side,8,th.btn);draw_rect(g->ren,gx,gy,side,side,th.board);
 
   draw_rect(g->ren,gx,gy+ui->sel_r*cs,side,cs,th.boxhl);draw_rect(g->ren,gx+ui->sel_c*cs,gy,cs,side,th.boxhl);
   int br=(ui->sel_r/3)*3,bc=(ui->sel_c/3)*3;draw_rect(g->ren,gx+bc*cs,gy+br*cs,cs*3,cs*3,(SDL_Color){th.boxhl.r,th.boxhl.g,th.boxhl.b,(Uint8)(th.boxhl.a/2)});
-  for(int i=0;i<=9;i++){int x=gx+(side*i)/9,y=gy+(side*i)/9;SDL_Color col=i%3==0?th.thick:th.thin;draw_line(g->ren,x,gy,x,gy+side,col);draw_line(g->ren,gx,y,gx+side,y,col);}
+  for(int i=0;i<=9;i++){
+    int x=gx+(side*i)/9,y=gy+(side*i)/9;
+    bool major=i%3==0;
+    SDL_Color col=major?th.thick:th.thin;
+    int width=major?style.grid_major_px:style.grid_minor_px;
+    int offset=width/2;
+    draw_grid_bar(g->ren,x-offset,gy,width,side,col);
+    draw_grid_bar(g->ren,gx,y-offset,side,width,col);
+  }
 
   int mx,my;SDL_GetMouseState(&mx,&my);int curV=game->puzzle[IDX(ui->sel_r,ui->sel_c)];
   for(int r=0;r<9;r++)for(int c=0;c<9;c++){
     int x=gx+c*cs,y=gy+r*cs,i=IDX(r,c);bool sel=ui->sel_r==r&&ui->sel_c==c;bool hover=mx>=x&&mx<x+cs&&my>=y&&my<y+cs;int v=game->puzzle[i];
-    if(curV&&v==curV&&!sel)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.samehl);
+    if(curV&&v==curV&&!sel){
+      draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.samehl);
+      SDL_Color match=th.dim;
+      draw_line(g->ren,x+4,y+4,x+cs-5,y+4,match);
+      draw_line(g->ren,x+4,y+cs-5,x+cs-5,y+cs-5,match);
+    }
     if(sel){double t=now_s(),p=0.65+0.35*(0.5*(1.0+sin(t*4.0)));draw_rect(g->ren,x+2,y+2,cs-4,cs-4,(SDL_Color){(Uint8)(th.sel.r*p),(Uint8)(th.sel.g*p),(Uint8)(th.sel.b*p),190});SDL_Color o=th.sel_outline;draw_line(g->ren,x+1,y+1,x+cs-2,y+1,o);draw_line(g->ren,x+cs-2,y+1,x+cs-2,y+cs-2,o);draw_line(g->ren,x+cs-2,y+cs-2,x+1,y+cs-2,o);draw_line(g->ren,x+1,y+cs-2,x+1,y+1,o);}else if(hover)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.hover);
-    if(v&&game_has_conflict(game,r,c))draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.conflict);
+    if(v&&game_has_conflict(game,r,c)){
+      draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.conflict);
+      SDL_Color conflict_mark=th.text_wrong;
+      draw_line(g->ren,x+5,y+5,x+cs-6,y+cs-6,conflict_mark);
+      draw_line(g->ren,x+cs-6,y+5,x+5,y+cs-6,conflict_mark);
+    }
     if(sel||ui->notes_mode){SDL_Color sgrid=(SDL_Color){th.thin.r,th.thin.g,th.thin.b,120};int sub=cs/3;for(int k=1;k<3;k++){draw_line(g->ren,x+k*sub,y+2,x+k*sub,y+cs-2,sgrid);draw_line(g->ren,x+2,y+k*sub,x+cs-2,y+k*sub,sgrid);}}
     if(v){
       bool wrong=game_mode_reveals_correctness(ui->mode)&&!game->fixed[i]&&v!=game->solution[i];SDL_Color col=wrong?th.text_wrong:(game->hinted[i]?hint_text_color(ui):(game->fixed[i]?th.text_given:th.text_edit));
@@ -267,5 +291,12 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;int filled=inner_w*progress/100;if(filled>0)draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);
   char progress_text[64];snprintf(progress_text,sizeof progress_text,"%s %d%%",tr(ui->language,T_PROGRESS),progress);(void)draw_fitted_text(g,progress_text,progress>52?th.bg:th.dim,R.progress,fonts.hud,10);
 
-  if(ui->toast_on){double dt=now_s()-ui->toast_t0;if(dt>2.2)ui->toast_on=false;if(ui->toast_on){SDL_Texture*tt=render_text(g,g->font_small,ui->toast,(SDL_Color){255,255,255,230},&tw,&thh);if(tt){SDL_Rect d={gx+(side-tw)/2,gy-(thh+8),tw,thh};draw_rect(g->ren,d.x-8,d.y-6,tw+16,thh+12,(SDL_Color){0,0,0,110});SDL_RenderCopy(g->ren,tt,NULL,&d);SDL_DestroyTexture(tt);}}}
+  SDL_Rect status=sdl_rect(L.model.status);
+  draw_round_rect(g->ren,status,style.radius_control,th.palette_bg);
+  if(ui->toast_on){
+    double dt=now_s()-ui->toast_t0;
+    if(dt>2.2)ui->toast_on=false;
+    if(ui->toast_on)
+      (void)draw_fitted_text(g,ui->toast,th.btnfg,status,fonts.help,9);
+  }
 }
