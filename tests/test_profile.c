@@ -235,6 +235,48 @@ static void test_corruption_and_truncation(void) {
   assert(profile_load_file(profile_path, &profile) == STORE_CORRUPT);
 }
 
+static void test_previous_copy_recovery(void) {
+  ProfileData original;
+  profile_defaults(&original);
+  original.preferences.language = LANG_ES;
+  SessionState normal = normal_state();
+  assert(profile_slot_set(&original.normal, &normal, true));
+  assert(profile_save_file(profile_path, profile_backup_path, &original) ==
+         STORE_OK);
+
+  ProfileData newer = original;
+  newer.preferences.language = LANG_CA;
+  newer.preferences.music_volume = 44;
+  assert(profile_save_file(profile_path, profile_backup_path, &newer) ==
+         STORE_OK);
+
+  unsigned char bytes[16384];
+  size_t size = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &size) == STORE_OK);
+  assert(size > 32);
+  bytes[size - 1] ^= 0x6d;
+  assert(store_atomic_write(profile_path, NULL, bytes, size) == STORE_OK);
+
+  ProfileData damaged;
+  assert(profile_load_file(profile_path, &damaged) == STORE_CORRUPT);
+
+  ProfileData recovered;
+  assert(profile_recover_previous(profile_path, profile_backup_path,
+                                  &recovered) == STORE_OK);
+  assert(recovered.preferences.language == LANG_ES);
+  assert(recovered.preferences.music_volume == original.preferences.music_volume);
+  assert(recovered.normal.present);
+  assert(!memcmp(&recovered.normal.value.session.game, &normal.game,
+                 sizeof(Game)));
+
+  ProfileData active;
+  ProfileData backup;
+  assert(profile_load_file(profile_path, &active) == STORE_OK);
+  assert(profile_load_file(profile_backup_path, &backup) == STORE_OK);
+  assert(active.preferences.language == LANG_ES);
+  assert(backup.preferences.language == LANG_ES);
+}
+
 static void write_legacy_audio(void) {
   FILE *file = fopen(legacy_audio_path, "wb");
   assert(file);
@@ -252,6 +294,106 @@ static ProfileLegacyPaths legacy_paths(void) {
       .audio_levels_backup_path = legacy_audio_backup,
   };
   return paths;
+}
+
+static void assert_migrated_session_equal(const SessionState *expected,
+                                          const SessionState *actual) {
+  assert(expected && actual);
+  assert(actual->mode == expected->mode);
+  assert(actual->selected_row == expected->selected_row);
+  assert(actual->selected_column == expected->selected_column);
+  assert(actual->notes_mode == expected->notes_mode);
+  assert(actual->strict_mode == expected->strict_mode);
+  assert(actual->manual_paused == expected->manual_paused);
+  assert(actual->status == expected->status);
+  assert(actual->mistakes == expected->mistakes);
+  assert(actual->strikes == expected->strikes);
+  assert(actual->elapsed_ms == expected->elapsed_ms);
+  assert(actual->is_daily == expected->is_daily);
+  assert(actual->daily_year == expected->daily_year);
+  assert(actual->daily_month == expected->daily_month);
+  assert(actual->daily_day == expected->daily_day);
+  assert(!memcmp(&actual->game, &expected->game, sizeof(Game)));
+}
+
+static SessionState won_state(void) {
+  SessionState state = normal_state();
+  for (int i = 0; i < 81; ++i) {
+    state.game.puzzle[i] = state.game.solution[i];
+    state.game.notes[i] = 0;
+  }
+  state.status = SESSION_WON;
+  state.strikes = 1;
+  assert(session_validate(&state));
+  return state;
+}
+
+static SessionState lost_state(void) {
+  SessionState state = normal_state();
+  state.status = SESSION_LOST;
+  state.strikes = 3;
+  assert(session_validate(&state));
+  return state;
+}
+
+static void run_v12_fixture(const SessionState *state) {
+  cleanup();
+
+  Preferences preferences;
+  preferences_defaults(&preferences);
+  preferences.language = LANG_ES;
+  preferences.dark_theme = false;
+  preferences.strict_mode = true;
+  preferences.mode = MODE_TIME;
+  preferences.difficulty = DIFFICULTY_EASY;
+  preferences.audio_enabled = false;
+  assert(preferences_save_file(legacy_preferences_path, &preferences));
+  write_legacy_audio();
+  assert(session_save_file(legacy_session_path, state));
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_OK);
+  assert(migrated);
+  const ProfileSlot *slot = state->is_daily ? &profile.daily : &profile.normal;
+  const SessionState *loaded = profile_slot_session(slot);
+  assert_migrated_session_equal(state, loaded);
+  assert(profile.preferences.language == LANG_ES);
+  assert(!profile.preferences.dark_theme);
+  assert(profile.preferences.strict_mode);
+  assert(!profile.preferences.audio_enabled);
+  assert(profile.preferences.music_volume == 37);
+  assert(profile.preferences.fx_volume == 81);
+  assert(store_file_exists(legacy_session_backup));
+  assert(store_file_exists(legacy_preferences_backup));
+  assert(store_file_exists(legacy_audio_backup));
+}
+
+static void test_v12_fixture_matrix(void) {
+  SessionState active = normal_state();
+  run_v12_fixture(&active);
+
+  SessionState paused = normal_state();
+  paused.manual_paused = true;
+  paused.elapsed_ms += UINT64_C(3210);
+  assert(session_validate(&paused));
+  run_v12_fixture(&paused);
+
+  SessionState won = won_state();
+  run_v12_fixture(&won);
+
+  SessionState lost = lost_state();
+  run_v12_fixture(&lost);
+
+  SessionState daily = daily_state();
+  int playable = first_playable(&daily.game);
+  assert(playable >= 0);
+  daily.game.notes[playable] = (uint16_t)(1u << 4);
+  daily.elapsed_ms = UINT64_C(45678);
+  assert(session_validate(&daily));
+  run_v12_fixture(&daily);
 }
 
 static void test_v12_migration_and_one_time_import(void) {
@@ -378,11 +520,14 @@ int main(void) {
   cleanup();
   test_corruption_and_truncation();
   cleanup();
+  test_previous_copy_recovery();
+  cleanup();
+  test_v12_fixture_matrix();
   test_v12_migration_and_one_time_import();
   test_daily_uses_separate_slot();
   test_corrupt_legacy_inputs_fail_closed();
   test_incompatible_legacy_is_preserved();
   cleanup();
-  puts("v1.3 profile model, slots, bounds, corruption, and v1.2 migration passed");
+  puts("v1.3 profile model, recovery, slots, bounds, and v1.2 fixture migration passed");
   return 0;
 }
