@@ -62,6 +62,9 @@
 #include "session.h"
 #include "seed.h"
 #include "storage.h"
+#include "assets/generated/flag_us.h"
+#include "assets/generated/flag_ar.h"
+#include "assets/generated/flag_ca.h"
 #include "assets/generated/window_icon.h"
 #include "assets/generated/wordmark.h"
 #define N 9
@@ -316,13 +319,6 @@ static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   SessionState state;capture_session(&state,game,ui);
   if(!storage_save_session(&p->storage,p->session_path,&state))return false;
   p->saved=state;ui->has_session=true;p->last_checkpoint_ms=now_ms();return true;
-}
-
-static bool saved_has_progress(const SessionState*state){
-  if(!state||!session_validate(state))return false;
-  if(state->status!=SESSION_ACTIVE||state->elapsed_ms||state->mistakes||state->strikes)return true;
-  for(int i=0;i<81;i++)if(state->game.puzzle[i]!=state->game.initial[i]||state->game.hinted[i]||state->game.notes[i])return true;
-  return false;
 }
 
 static void restore_saved_session(Persistence*p,Game*game,UI*ui){
