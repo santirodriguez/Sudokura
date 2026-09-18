@@ -6,7 +6,7 @@ on:
       ref:
         description: Commit, branch, or tag to package without publishing
         required: true
-        default: upgrade/v1.2.0
+        default: upgrade/v1.3.0
         type: string
   pull_request:
     branches:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   linux:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.2.0'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.3.0'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
@@ -55,7 +55,7 @@ jobs:
           compression-level: 9
 
   windows:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.2.0'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.3.0'
     runs-on: windows-latest
     defaults:
       run:
@@ -99,7 +99,7 @@ jobs:
             dependencies-windows-recursive.txt
 
   macos:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.2.0'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.3.0'
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +132,7 @@ jobs:
             smoke-macos-*.txt
 
   checksums:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.2.0'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'upgrade/v1.3.0'
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
