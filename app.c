@@ -71,6 +71,22 @@ static void mark_terminal(Game *game, AppState *state, double elapsed_s,
   outcome->result = state->result;
 }
 
+AppActionOutcome app_check_terminal(Game *game, AppState *state,
+                                    double elapsed_s) {
+  AppActionOutcome outcome = outcome_none(state);
+  if (!game || !state) return outcome;
+
+  if (state->result != APP_RESULT_NONE ||
+      state->screen == APP_SCREEN_RESULT) {
+    outcome.terminal = true;
+    outcome.result = state->result;
+    return outcome;
+  }
+
+  mark_terminal(game, state, elapsed_s, &outcome);
+  return outcome;
+}
+
 static GameInputResult apply_cell_action(Game *game, AppState *state,
                                          AppAction action) {
   switch (action.kind) {
@@ -132,13 +148,6 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     return outcome;
   }
 
-  if (state->result != APP_RESULT_NONE ||
-      state->screen == APP_SCREEN_RESULT) {
-    outcome.terminal = true;
-    outcome.result = state->result;
-    return outcome;
-  }
-
   if (!game) return outcome;
 
   bool play_action =
@@ -149,14 +158,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
       (!state->session_open || state->screen != APP_SCREEN_PLAY))
     return outcome;
 
-  if (game_mode_lost(state->mode, state->strikes, state->strikes_max,
-                     elapsed_s, state->time_limit_s)) {
-    state->result = APP_RESULT_LOSE;
-    outcome.terminal = true;
-    outcome.no_effect = false;
-    outcome.result = state->result;
-    return outcome;
-  }
+  AppActionOutcome terminal = app_check_terminal(game, state, elapsed_s);
+  if (terminal.terminal) return terminal;
 
   if (action.kind == APP_ACTION_PLACE || action.kind == APP_ACTION_NOTE ||
       action.kind == APP_ACTION_CLEAR) {
