@@ -267,8 +267,13 @@ static bool local_date(int*year,int*month,int*day){
 
 static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
   if(!out||!base||!leaf)return false;
-  int n=snprintf(out,PATH_MAX,"%s%s",base,leaf);
-  return n>=0&&n<PATH_MAX;
+  size_t base_length=strlen(base),leaf_length=strlen(leaf);
+  if(base_length>=PATH_MAX||leaf_length>PATH_MAX-base_length-1){
+    out[0]='\0';return false;
+  }
+  memcpy(out,base,base_length);
+  memcpy(out+base_length,leaf,leaf_length+1);
+  return true;
 }
 
 static void persistence_refresh_normal(Persistence*p){
@@ -362,7 +367,9 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
 
 static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
-  SessionState state;capture_session(&state,game,ui);
+  SessionState state;
+  memset(&state,0,sizeof(state));
+  capture_session(&state,game,ui);
   ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
   if(!profile_slot_set(slot,&state,false))return false;
   if(!state.is_daily)p->saved=state;
