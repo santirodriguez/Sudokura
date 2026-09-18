@@ -2,7 +2,9 @@
 typedef struct {
   SDL_Rect card;
   SDL_Rect title;
-  SDL_Rect toggle;
+  SDL_Rect theme;
+  SDL_Rect language;
+  SDL_Rect sound;
   SDL_Rect music_label;
   SDL_Rect music_minus;
   SDL_Rect music_track;
@@ -11,21 +13,25 @@ typedef struct {
   SDL_Rect fx_minus;
   SDL_Rect fx_track;
   SDL_Rect fx_plus;
+  SDL_Rect reduced_motion;
   SDL_Rect back;
-} AudioPanelLayout;
+} SettingsPanelLayout;
 
 static Persistence *audio_persistence = NULL;
 static Gfx *audio_gfx = NULL;
 static UI *audio_ui = NULL;
-static bool audio_settings_open = false;
+static bool settings_open = false;
 typedef enum {
-  AUDIO_FOCUS_TOGGLE = 0,
-  AUDIO_FOCUS_MUSIC,
-  AUDIO_FOCUS_FX,
-  AUDIO_FOCUS_BACK,
-  AUDIO_FOCUS_COUNT
-} AudioKeyboardFocus;
-static AudioKeyboardFocus audio_keyboard_focus = AUDIO_FOCUS_TOGGLE;
+  SETTINGS_FOCUS_THEME = 0,
+  SETTINGS_FOCUS_LANGUAGE,
+  SETTINGS_FOCUS_SOUND,
+  SETTINGS_FOCUS_MUSIC,
+  SETTINGS_FOCUS_FX,
+  SETTINGS_FOCUS_REDUCED_MOTION,
+  SETTINGS_FOCUS_BACK,
+  SETTINGS_FOCUS_COUNT
+} SettingsKeyboardFocus;
+static SettingsKeyboardFocus settings_keyboard_focus = SETTINGS_FOCUS_THEME;
 static bool ui_home_cue_requested = false;
 
 typedef struct {
@@ -35,7 +41,7 @@ typedef struct {
 } StorageBannerLayout;
 
 static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
-                                                const UI *ui) {
+                                                 const UI *ui) {
   StorageBannerLayout layout;
   memset(&layout, 0, sizeof(layout));
   if (!gfx) return layout;
@@ -88,112 +94,162 @@ static int ui_clamp_percent(int value) {
 }
 
 static void ui_audio_set_music_level(int value) {
-  int level=ui_clamp_percent(value);
+  int level = ui_clamp_percent(value);
   audio_set_music_volume(level);
-  if(audio_persistence){
-    audio_persistence->preferences.music_volume=(uint8_t)level;
-    if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
-    else persistence_stage_preferences(audio_persistence);
+  if (audio_persistence) {
+    audio_persistence->preferences.music_volume = (uint8_t)level;
+    if (audio_ui)
+      (void)save_preferences(audio_persistence, audio_ui);
+    else
+      persistence_stage_preferences(audio_persistence);
   }
 }
 
 static void ui_audio_set_fx_level(int value) {
-  int level=ui_clamp_percent(value);
+  int level = ui_clamp_percent(value);
   audio_set_fx_volume(level);
-  if(audio_persistence){
-    audio_persistence->preferences.fx_volume=(uint8_t)level;
-    if(audio_ui)(void)save_preferences(audio_persistence,audio_ui);
-    else persistence_stage_preferences(audio_persistence);
+  if (audio_persistence) {
+    audio_persistence->preferences.fx_volume = (uint8_t)level;
+    if (audio_ui)
+      (void)save_preferences(audio_persistence, audio_ui);
+    else
+      persistence_stage_preferences(audio_persistence);
   }
 }
 
-static void ui_audio_open(Persistence *persistence, const Game *game, UI *ui) {
-  if (!ui || audio_settings_open || ui->screen != SCR_PLAY) return;
-  audio_keyboard_focus = AUDIO_FOCUS_TOGGLE;
-  clock_pause(ui, PAUSE_MODAL);
-  if (persistence && game) (void)checkpoint_current_session(persistence, game, ui);
+static void ui_settings_cycle_language(int delta) {
+  if (!audio_ui) return;
+  int language = ((int)audio_ui->language + delta) % LANG_COUNT;
+  if (language < 0) language += LANG_COUNT;
+  audio_ui->language = (Language)language;
+  if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
+}
+
+static void ui_settings_toggle_theme(void) {
+  if (!audio_ui) return;
+  audio_ui->dark_theme = !audio_ui->dark_theme;
+  if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
+}
+
+static void ui_settings_toggle_reduced_motion(void) {
+  if (!audio_ui) return;
+  audio_ui->reduced_motion = !audio_ui->reduced_motion;
+  if (audio_ui->reduced_motion) victory_animation_reset();
+  if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
+}
+
+static void ui_settings_open(Persistence *persistence, const Game *game, UI *ui) {
+  if (!ui || settings_open ||
+      (ui->screen != SCR_PLAY && ui->screen != SCR_TITLE))
+    return;
+  bool from_play = ui->screen == SCR_PLAY;
+  settings_keyboard_focus = SETTINGS_FOCUS_THEME;
+  if (from_play) {
+    clock_pause(ui, PAUSE_MODAL);
+    if (persistence && game)
+      (void)checkpoint_current_session(persistence, game, ui);
+  }
   if (!app_open_aux(ui, APP_SCREEN_SETTINGS)) {
-    clock_resume(ui, PAUSE_MODAL);
+    if (from_play) clock_resume(ui, PAUSE_MODAL);
     return;
   }
-  audio_settings_open = true;
+  settings_open = true;
 }
 
-static void ui_audio_close(Persistence *persistence, const Game *game, UI *ui) {
-  if (!ui || !audio_settings_open) return;
-  audio_settings_open = false;
+static void ui_settings_close(Persistence *persistence, const Game *game,
+                              UI *ui) {
+  if (!ui || !settings_open) return;
+  bool returns_to_play = ui->prev_screen == SCR_PLAY;
+  settings_open = false;
   (void)app_return_aux(ui);
-  clock_resume(ui, PAUSE_MODAL);
-  if (persistence && game) (void)checkpoint_current_session(persistence, game, ui);
+  if (returns_to_play) {
+    clock_resume(ui, PAUSE_MODAL);
+    if (persistence && game)
+      (void)checkpoint_current_session(persistence, game, ui);
+  }
 }
 
-static SDL_Rect ui_audio_focus_rect(AudioPanelLayout layout,
-                                    AudioKeyboardFocus focus) {
+static SDL_Rect ui_settings_focus_rect(SettingsPanelLayout layout,
+                                       SettingsKeyboardFocus focus) {
   switch (focus) {
-    case AUDIO_FOCUS_TOGGLE:
-      return layout.toggle;
-    case AUDIO_FOCUS_MUSIC:
+    case SETTINGS_FOCUS_THEME:
+      return layout.theme;
+    case SETTINGS_FOCUS_LANGUAGE:
+      return layout.language;
+    case SETTINGS_FOCUS_SOUND:
+      return layout.sound;
+    case SETTINGS_FOCUS_MUSIC:
       return (SDL_Rect){
           layout.music_minus.x, layout.music_minus.y,
           layout.music_plus.x + layout.music_plus.w - layout.music_minus.x,
           layout.music_minus.h};
-    case AUDIO_FOCUS_FX:
+    case SETTINGS_FOCUS_FX:
       return (SDL_Rect){
           layout.fx_minus.x, layout.fx_minus.y,
           layout.fx_plus.x + layout.fx_plus.w - layout.fx_minus.x,
           layout.fx_minus.h};
-    case AUDIO_FOCUS_BACK:
+    case SETTINGS_FOCUS_REDUCED_MOTION:
+      return layout.reduced_motion;
+    case SETTINGS_FOCUS_BACK:
       return layout.back;
-    case AUDIO_FOCUS_COUNT:
+    case SETTINGS_FOCUS_COUNT:
     default:
       return (SDL_Rect){0, 0, 0, 0};
   }
 }
 
-static AudioPanelLayout ui_audio_panel_layout(const Gfx *gfx) {
-  AudioPanelLayout layout;
+static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
+  SettingsPanelLayout layout;
   memset(&layout, 0, sizeof(layout));
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin * 2;
-  if (width > 500) width = 500;
-  int height = gfx->width < 640 ? 330 : 340;
-  if (height > gfx->height - margin * 2) height = gfx->height - margin * 2;
-  if (height < 280) height = 280;
+  if (width > 540) width = 540;
+  int height = gfx->height - margin * 2;
+  if (height > 520) height = 520;
+  if (height < 420) height = gfx->height - margin * 2;
   layout.card = (SDL_Rect){(gfx->width - width) / 2,
                            (gfx->height - height) / 2, width, height};
+
   int x = layout.card.x + 18;
   int w = layout.card.w - 36;
-  int y = layout.card.y + 14;
-  layout.title = (SDL_Rect){x, y, w, 42};
-  y += 50;
-  layout.toggle = (SDL_Rect){x, y, w, 42};
-  y += 52;
+  int y = layout.card.y + 12;
+  int row_h = layout.card.h < 470 ? 30 : 34;
+  int gap = layout.card.h < 470 ? 4 : 6;
+  int label_h = layout.card.h < 470 ? 16 : 18;
+  int slider_h = layout.card.h < 470 ? 28 : 30;
+  int button_w = layout.card.w < 400 ? 38 : 42;
+  int control_gap = 7;
 
-  int label_h = 24;
-  int control_h = 34;
-  int button_w = 42;
-  int control_gap = 8;
+  layout.title = (SDL_Rect){x, y, w, row_h + 4};
+  y += layout.title.h + gap;
+  layout.theme = (SDL_Rect){x, y, w, row_h};
+  y += row_h + gap;
+  layout.language = (SDL_Rect){x, y, w, row_h};
+  y += row_h + gap;
+  layout.sound = (SDL_Rect){x, y, w, row_h};
+  y += row_h + gap;
+
   layout.music_label = (SDL_Rect){x, y, w, label_h};
-  y += label_h + 3;
-  layout.music_minus = (SDL_Rect){x, y, button_w, control_h};
-  layout.music_plus =
-      (SDL_Rect){x + w - button_w, y, button_w, control_h};
+  y += label_h + 2;
+  layout.music_minus = (SDL_Rect){x, y, button_w, slider_h};
+  layout.music_plus = (SDL_Rect){x + w - button_w, y, button_w, slider_h};
   layout.music_track =
       (SDL_Rect){x + button_w + control_gap, y,
-                 w - button_w * 2 - control_gap * 2, control_h};
-  y += control_h + 10;
+                 w - button_w * 2 - control_gap * 2, slider_h};
+  y += slider_h + gap;
 
   layout.fx_label = (SDL_Rect){x, y, w, label_h};
-  y += label_h + 3;
-  layout.fx_minus = (SDL_Rect){x, y, button_w, control_h};
-  layout.fx_plus = (SDL_Rect){x + w - button_w, y, button_w, control_h};
+  y += label_h + 2;
+  layout.fx_minus = (SDL_Rect){x, y, button_w, slider_h};
+  layout.fx_plus = (SDL_Rect){x + w - button_w, y, button_w, slider_h};
   layout.fx_track =
       (SDL_Rect){x + button_w + control_gap, y,
-                 w - button_w * 2 - control_gap * 2, control_h};
+                 w - button_w * 2 - control_gap * 2, slider_h};
+  y += slider_h + gap;
 
-  int back_h = 40;
-  layout.back = (SDL_Rect){x, layout.card.y + layout.card.h - back_h - 14, w,
-                           back_h};
+  layout.reduced_motion = (SDL_Rect){x, y, w, row_h};
+  layout.back = (SDL_Rect){x, layout.card.y + layout.card.h - row_h - 12,
+                           w, row_h};
   return layout;
 }
 
@@ -203,7 +259,7 @@ static void rc2_draw_slider(Gfx *gfx, Theme theme, Language language,
                             int preferred) {
   char label[64];
   snprintf(label, sizeof label, "%s  %d%%", tr(language, label_key), value);
-  (void)draw_fitted_text(gfx, label, theme.btnfg, label_rect, preferred, 10);
+  (void)draw_fitted_text(gfx, label, theme.btnfg, label_rect, preferred, 9);
 
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
@@ -228,41 +284,53 @@ static void rc2_draw_slider(Gfx *gfx, Theme theme, Language language,
   draw_round_rect(gfx->ren, knob, 5, theme.sel_outline);
 }
 
-static void rc2_render_audio_panel(Gfx *gfx, UI *ui) {
-  if (!audio_settings_open || !gfx || !ui) return;
+static void rc2_settings_button(Gfx *gfx, Theme theme, SDL_Rect rect,
+                                const char *label, bool active,
+                                int preferred) {
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  bool hover = point_in(rect, mx, my);
+  bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Color bg = active ? theme.title : (hover ? theme.hover : theme.btn);
+  SDL_Color fg = active ? theme.bg : theme.btnfg;
+  SDL_Rect face = polish_button_face(gfx, theme, rect, bg, pressed, false);
+  (void)draw_fitted_text(gfx, label, fg, face, preferred, 9);
+}
+
+static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
+  if (!settings_open || !gfx || !ui) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   SDL_Color veil = theme.bg;
-  veil.a = 220;
+  veil.a = 224;
   draw_rect(gfx->ren, 0, 0, gfx->width, gfx->height, veil);
 
-  AudioPanelLayout layout = ui_audio_panel_layout(gfx);
+  SettingsPanelLayout layout = ui_settings_panel_layout(gfx);
   SDL_Rect shadow = layout.card;
   shadow.y += 5;
   draw_round_rect(gfx->ren, shadow, 14, theme.shadow);
   draw_round_rect(gfx->ren, layout.card, 14, theme.palette_bg);
+
   AppGeometry geometry;
   int preferred = 18;
   if (get_geometry(gfx, ui, &geometry))
     preferred = geometry_font_sizes(&geometry, gfx->width, gfx->height).control;
 
-  (void)draw_fitted_text(gfx, tr(ui->language, T_AUDIO), theme.title,
-                         layout.title, preferred + 8, 14);
+  (void)draw_fitted_text(gfx, tr(ui->language, T_SETTINGS), theme.title,
+                         layout.title, preferred + 7, 13);
 
-  int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
-  bool toggle_hover = point_in(layout.toggle, mx, my);
-  bool toggle_pressed = toggle_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  char label[128];
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_THEME),
+           tr(ui->language, ui->dark_theme ? T_DARK : T_LIGHT));
+  rc2_settings_button(gfx, theme, layout.theme, label, false, preferred);
+
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_LANGUAGE),
+           language_name(ui->language));
+  rc2_settings_button(gfx, theme, layout.language, label, false, preferred);
+
   bool enabled = audio_is_enabled();
-  SDL_Color toggle_bg = enabled ? theme.title : theme.btn;
-  if (toggle_hover && !enabled) toggle_bg = theme.hover;
-  SDL_Rect toggle_face = polish_button_face(gfx, theme, layout.toggle, toggle_bg,
-                                            toggle_pressed, false);
-  char toggle_label[96];
-  snprintf(toggle_label, sizeof toggle_label, "%s: %s",
-           tr(ui->language, T_SOUND),
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_SOUND),
            tr(ui->language, enabled ? T_ON : T_OFF));
-  (void)draw_fitted_text(gfx, toggle_label, enabled ? theme.bg : theme.btnfg,
-                         toggle_face, preferred, 10);
+  rc2_settings_button(gfx, theme, layout.sound, label, enabled, preferred);
 
   rc2_draw_slider(gfx, theme, ui->language, layout.music_label,
                   layout.music_minus, layout.music_track, layout.music_plus,
@@ -271,16 +339,16 @@ static void rc2_render_audio_panel(Gfx *gfx, UI *ui) {
                   layout.fx_track, layout.fx_plus, T_FX, audio_fx_volume(),
                   preferred);
 
-  bool back_hover = point_in(layout.back, mx, my);
-  bool back_pressed = back_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-  SDL_Rect back_face = polish_button_face(
-      gfx, theme, layout.back, back_hover ? theme.hover : theme.btn,
-      back_pressed, false);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_BACK), theme.btnfg, back_face,
-                         preferred, 10);
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_REDUCED_MOTION),
+           tr(ui->language, ui->reduced_motion ? T_ON : T_OFF));
+  rc2_settings_button(gfx, theme, layout.reduced_motion, label,
+                      ui->reduced_motion, preferred);
+
+  rc2_settings_button(gfx, theme, layout.back, tr(ui->language, T_BACK),
+                      false, preferred);
 
   SDL_Rect focus_rect =
-      ui_audio_focus_rect(layout, audio_keyboard_focus);
+      ui_settings_focus_rect(layout, settings_keyboard_focus);
   if (focus_rect.w > 0 && focus_rect.h > 0)
     draw_focus_ring(gfx->ren, focus_rect, theme.sel_outline);
 }
@@ -663,14 +731,14 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   app_render_polish(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
   rc2_render_hint_panel(gfx, ui);
-  rc2_render_audio_panel(gfx, ui);
+  rc2_render_settings_panel(gfx, ui);
   rc2_render_storage_banner(gfx, ui);
   rc2_render_generation_overlay(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
   bool entering_home = ui && ui->screen != SCR_TITLE;
-  audio_settings_open = false;
+  settings_open = false;
   go_home_polish(persistence, game, ui);
   if (persistence && ui) refresh_resume_info(persistence, ui);
   if (entering_home) ui_home_cue_requested = true;
