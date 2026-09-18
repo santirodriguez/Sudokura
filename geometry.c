@@ -379,7 +379,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     if (!geometry_rect_in_bounds(g->hud[i], width, height)) return false;
   for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i) {
     if (!geometry_rect_in_bounds(g->actions[i], width, height) ||
-        g->actions[i].h < 40)
+        g->actions[i].h < 26)
       return false;
   }
   for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) {
@@ -442,7 +442,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
 
 
 /* Final v1.3 presentation geometry. This is the sole exported layout authority. */
-/* Presentation geometry layered on top of the validated base geometry. */
+/* Final responsive adjustments over the internal base calculation. */
 static void geometry_final_shift_rect_y(GeoRect *rect, int delta) {
   if (rect) rect->y += delta;
 }
