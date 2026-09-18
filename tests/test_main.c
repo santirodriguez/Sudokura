@@ -20,6 +20,11 @@ static void puzzle_text(const Game *game, char output[82]) {
   output[81] = '\0';
 }
 
+static void fixture_game_new(Game *game, uint64_t seed) {
+  assert(game_new_difficulty_revision(game, seed, DIFFICULTY_MEDIUM,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+}
+
 static int first_playable(const Game *game) {
   for (int i = 0; i < 81; ++i)
     if (!game->fixed[i]) return i;
@@ -176,7 +181,7 @@ static void test_daily(void) {
 }
 
 static void test_actions(void) {
-  Game game; game_new(&game, 42);
+  Game game; fixture_game_new(&game, 42);
   int i = first_playable(&game); assert(i >= 0);
   int row = i / 9, column = i % 9, value = game.solution[i];
   assert(game_toggle_note(&game, row, column, value));
@@ -193,7 +198,7 @@ static void test_actions(void) {
 }
 
 static void test_player_input(void) {
-  Game game; game_new(&game, 99);
+  Game game; fixture_game_new(&game, 99);
   int i = first_playable(&game); assert(i >= 0);
   int row = i / 9, column = i % 9, value = game.solution[i];
   assert(game_apply_input(&game, row, column, value, true, false) == GAME_INPUT_NOTE_ADDED);
@@ -220,7 +225,7 @@ static void test_mode_visibility_policy(void) {
 }
 
 static void test_progress_restart(void) {
-  Game game; game_new(&game, 314159);
+  Game game; fixture_game_new(&game, 314159);
   assert(game_progress_percent(&game) == 0);
   assert(game_fill_percent(&game) == 0);
   int original[81]; memcpy(original, game.initial, sizeof(original));
@@ -253,7 +258,7 @@ static void test_progress_restart(void) {
 }
 
 static void test_bounds(void) {
-  Game game; game_new(&game, 9);
+  Game game; fixture_game_new(&game, 9);
   assert(!game_place(NULL, 0, 0, 1, false)); assert(!game_place(&game, -1, 0, 1, false)); assert(!game_place(&game, 0, 9, 1, false));
   assert(!game_toggle_note(&game, 9, 0, 1)); assert(!game_toggle_note(&game, 0, -1, 1)); assert(!game_hint(&game, -1, -1));
   assert(!game_cell_locked(&game, 9, 9)); assert(!game_has_conflict(&game, 9, 9)); assert(!game_has_conflict(NULL, 0, 0));
@@ -262,7 +267,7 @@ static void test_bounds(void) {
 }
 
 static void test_conflicts_and_end(void) {
-  Game game; game_new(&game, 77); int a = -1, b = -1;
+  Game game; fixture_game_new(&game, 77); int a = -1, b = -1;
   for (int row = 0; row < 9 && a < 0; ++row) for (int column = 0; column < 9; ++column) if (!game.fixed[row * 9 + column]) { if (a < 0) a = row * 9 + column; else if (a / 9 == row) { b = row * 9 + column; break; } }
   assert(a >= 0 && b >= 0); game.puzzle[a] = game.puzzle[b] = 1; assert(game_has_conflict(&game, a / 9, a % 9)); assert(game_conflict_count(&game) >= 2);
   memcpy(game.puzzle, game.solution, sizeof(game.puzzle)); assert(game_is_solved(&game));
