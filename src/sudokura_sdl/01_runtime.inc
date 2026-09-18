@@ -289,9 +289,7 @@ static bool persistence_write_profile(Persistence*p){
   p->profile.preferences=p->preferences;
   StoreStatus status=profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
-  uint64_t written_at=now_ms();
-  save_policy_record_result(&p->save_policy,status,written_at);
-  if(status==STORE_OK)p->last_periodic_checkpoint_ms=written_at;
+  save_policy_record_result(&p->save_policy,status,now_ms());
   return status==STORE_OK;
 }
 
@@ -443,6 +441,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
 
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
   if(!stage_current_session(p,game,ui))return false;
+  p->last_periodic_checkpoint_ms=now_ms();
   return persistence_flush(p);
 }
 
