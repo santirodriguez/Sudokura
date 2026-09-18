@@ -190,7 +190,7 @@ static void finish_terminal_action(UI*ui){
   if(!ui||ui->result==RES_NONE||ui->screen==SCR_END)return;
   clock_pause(ui,PAUSE_END);
   ui->screen=SCR_END;
-  if(ui->result==RES_WIN)victory_animation_start();
+  if(ui->result==RES_WIN&&!ui->reduced_motion)victory_animation_start();
   else victory_animation_reset();
 }
 
@@ -537,6 +537,7 @@ static bool save_preferences(Persistence*p,const UI*ui){
   if(!p||!p->enabled||!ui)return false;
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
+  p->preferences.reduced_motion=ui->reduced_motion;
   p->preferences.strict_mode=ui->strict_mode;
   p->preferences.auto_remove_peer_notes=ui->auto_remove_peer_notes;
   persistence_stage_preferences(p);
