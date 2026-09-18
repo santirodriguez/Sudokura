@@ -42,3 +42,25 @@ int input_digit_value(SDL_Keycode key, SDL_Scancode scancode) {
      physical keypad scancode. Use the scancode as the stable fallback. */
   return keypad_scancode_value(scancode);
 }
+
+
+bool input_key_repeat_allowed(SDL_Keycode key, SDL_Scancode scancode) {
+  if (input_digit_value(key, scancode) >= 0) return false;
+  switch (key) {
+    case SDLK_UP:
+    case SDLK_DOWN:
+    case SDLK_LEFT:
+    case SDLK_RIGHT:
+    case SDLK_w:
+    case SDLK_a:
+    case SDLK_s:
+    case SDLK_d:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool input_mouse_button_is_primary(Uint8 button) {
+  return button == SDL_BUTTON_LEFT;
+}
