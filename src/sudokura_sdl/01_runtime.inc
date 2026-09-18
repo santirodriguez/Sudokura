@@ -377,12 +377,13 @@ static void go_home(Persistence*p,const Game*game,UI*ui){
 
 static void open_info_from_play(Persistence*p,const Game*game,UI*ui,Screen screen){
   clock_pause(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);
-  ui->prev_screen=SCR_PLAY;ui->screen=screen;
+  (void)app_open_aux(ui,screen);
 }
 
 static void return_from_info(Persistence*p,const Game*game,UI*ui){
-  if(ui->prev_screen==SCR_PLAY){ui->screen=SCR_PLAY;clock_resume(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);}
-  else ui->screen=ui->prev_screen;
+  bool returning_to_play=ui&&ui->prev_screen==SCR_PLAY;
+  (void)app_return_aux(ui);
+  if(returning_to_play){clock_resume(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);}
 }
 
 static bool ends_withi(const char* s, const char* suf){
