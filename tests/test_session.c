@@ -345,7 +345,8 @@ static void test_corruption_and_quarantine(void) {
   assert(fseek(file, 8, SEEK_SET) == 0);
   assert(fputc(99, file) != EOF);
   assert(fclose(file) == 0);
-  assert(session_load_file(session_path, &loaded) == STORE_CORRUPT);
+  assert(session_load_file(session_path, &loaded) == STORE_INCOMPATIBLE);
+  assert(store_file_exists(session_path));
 }
 
 int main(void) {
