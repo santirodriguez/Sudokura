@@ -139,6 +139,18 @@ static void test_win_is_terminal(void) {
   assert(state.result == APP_RESULT_WIN);
 }
 
+static void test_idle_terminal_check(void) {
+  Game game;
+  game_new(&game, 8080);
+  AppState state = playing_state(MODE_TIME);
+  AppActionOutcome before = app_check_terminal(&game, &state, 599.999);
+  assert(!before.terminal && state.result == APP_RESULT_NONE);
+
+  AppActionOutcome expired = app_check_terminal(&game, &state, 600.0);
+  assert(expired.terminal && expired.result == APP_RESULT_LOSE);
+  assert(state.result == APP_RESULT_LOSE);
+}
+
 static void test_time_limit_preempts_input(void) {
   Game game;
   game_new(&game, 7);
@@ -250,6 +262,7 @@ int main(void) {
   test_no_change_and_strikes();
   test_grouped_events_stop_at_loss();
   test_win_is_terminal();
+  test_idle_terminal_check();
   test_time_limit_preempts_input();
   test_continue_action();
   test_hint_verify_and_restart();
