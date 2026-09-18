@@ -717,6 +717,16 @@ int game_conflict_count(const Game *game) {
   return count;
 }
 
+int game_wrong_entry_count(const Game *game) {
+  if (!game) return 0;
+  int count = 0;
+  for (int i = 0; i < 81; ++i)
+    if (!game->fixed[i] && game->puzzle[i] != 0 &&
+        game->puzzle[i] != game->solution[i])
+      ++count;
+  return count;
+}
+
 bool game_is_solved(const Game *game) {
   return game && game_board_valid(game->puzzle) &&
          memcmp(game->puzzle, game->solution, sizeof(game->puzzle)) == 0;
