@@ -490,6 +490,15 @@ static bool find_x_wing(HumanState *state, HumanStep *step) {
   return false;
 }
 
+static bool find_next_step(HumanState *state, HumanStep *step) {
+  return find_naked_single(state, step) ||
+         find_hidden_single(state, step) ||
+         find_locked_candidate(state, step) ||
+         find_naked_pair(state, step) ||
+         find_naked_triple(state, step) ||
+         find_x_wing(state, step);
+}
+
 static bool state_solved(const HumanState *state) {
   for (int i = 0; i < HUMAN_CELL_COUNT; ++i)
     if (state->value[i] == 0) return false;
@@ -526,6 +535,42 @@ const char *human_technique_name(HumanTechnique technique) {
   }
 }
 
+bool human_hint_analyze(const int puzzle[HUMAN_CELL_COUNT],
+                        HumanHint *out) {
+  if (!out) return false;
+  memset(out, 0, sizeof(*out));
+  step_reset(&out->reasoning, HUMAN_TECHNIQUE_NONE);
+  step_reset(&out->placement, HUMAN_TECHNIQUE_NONE);
+
+  HumanState state;
+  if (!state_init(&state, puzzle)) {
+    out->status = HUMAN_HINT_INVALID;
+    return true;
+  }
+  if (state_solved(&state)) {
+    out->status = HUMAN_HINT_SOLVED;
+    return true;
+  }
+
+  for (int iteration = 0; iteration < HUMAN_MAX_STEPS; ++iteration) {
+    HumanStep step;
+    if (!find_next_step(&state, &step)) {
+      out->status = HUMAN_HINT_STALLED;
+      return true;
+    }
+    ++out->reasoning_steps;
+    if (out->reasoning_steps == 1) out->reasoning = step;
+    if (step.placement_cell >= 0) {
+      out->placement = step;
+      out->status = HUMAN_HINT_LOGICAL;
+      return true;
+    }
+  }
+
+  out->status = HUMAN_HINT_STALLED;
+  return true;
+}
+
 bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
                                    HumanEvaluation *out,
                                    HumanStep *last_step) {
@@ -545,13 +590,7 @@ bool human_evaluate_with_last_step(const int puzzle[HUMAN_CELL_COUNT],
     }
 
     HumanStep step;
-    bool changed =
-        find_naked_single(&state, &step) ||
-        find_hidden_single(&state, &step) ||
-        find_locked_candidate(&state, &step) ||
-        find_naked_pair(&state, &step) ||
-        find_naked_triple(&state, &step) ||
-        find_x_wing(&state, &step);
+    bool changed = find_next_step(&state, &step);
     if (!changed) {
       out->stalled = true;
       break;
