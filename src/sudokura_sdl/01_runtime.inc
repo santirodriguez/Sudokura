@@ -11,7 +11,7 @@
     Build (Fedora/Debian/Arch package names vary):
       install gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
       gcc -std=c11 -O2 -Wall -Wextra \
-        sudokura_sdl.c audio.c game.c geometry.c i18n.c -o sudokura \
+        sudokura_sdl.c app.c audio.c game.c geometry.c i18n.c -o sudokura \
         $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) \
         -lm
 */
@@ -53,12 +53,14 @@
 #endif
 #include <errno.h>
 
+#include "app.h"
 #include "game.h"
 #include "geometry.h"
 #include "version.h"
 #include "i18n.h"
 #include "session.h"
 #include "seed.h"
+#include "storage.h"
 #include "assets/generated/window_icon.h"
 #include "assets/generated/wordmark.h"
 #define N 9
@@ -98,38 +100,29 @@ static Theme theme_light(void){
 }
 
 typedef GameMode Mode;
-typedef enum {SCR_TITLE=0, SCR_PLAY=1, SCR_END=2, SCR_HELP=3, SCR_ABOUT=4} Screen;
-typedef enum {RES_NONE=0, RES_WIN=1, RES_LOSE=2} Result;
-enum {
-  PAUSE_MANUAL = 1u << 0,
-  PAUSE_FOCUS = 1u << 1,
-  PAUSE_MODAL = 1u << 2,
-  PAUSE_HOME = 1u << 3,
-  PAUSE_END = 1u << 4
-};
+typedef AppScreen Screen;
+typedef AppResult Result;
+typedef AppState UI;
 
-typedef struct {
-  int sel_r, sel_c;
-  bool notes_mode, strict_mode, dark_theme;
-  Language language;
-
-  int mistakes, strikes, strikes_max;
-  double elapsed_base, running_since;
-  double time_limit_s;
-  unsigned pause_reasons;
-
-  bool session_open, has_session, is_daily;
-  int daily_year, daily_month, daily_day;
-
-  char toast[96]; double toast_t0; bool toast_on;
-
-  Screen screen; Screen prev_screen; Mode mode; Result result;
-} UI;
+#define SCR_TITLE APP_SCREEN_HOME
+#define SCR_PLAY APP_SCREEN_PLAY
+#define SCR_END APP_SCREEN_RESULT
+#define SCR_HELP APP_SCREEN_HELP
+#define SCR_ABOUT APP_SCREEN_ABOUT
+#define RES_NONE APP_RESULT_NONE
+#define RES_WIN APP_RESULT_WIN
+#define RES_LOSE APP_RESULT_LOSE
+#define PAUSE_MANUAL APP_PAUSE_MANUAL
+#define PAUSE_FOCUS APP_PAUSE_FOCUS
+#define PAUSE_MODAL APP_PAUSE_MODAL
+#define PAUSE_HOME APP_PAUSE_HOME
+#define PAUSE_END APP_PAUSE_END
 
 typedef struct {
   bool enabled;
   Preferences preferences;
   SessionState saved;
+  StorageOps storage;
   char session_path[PATH_MAX];
   char preferences_path[PATH_MAX];
   double last_checkpoint;
@@ -171,6 +164,9 @@ static void begin_fresh_play(UI*ui){
   ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
   set_mode_params(ui); clock_reset(ui);
 }
+static void victory_animation_start(void);
+static void victory_animation_reset(void);
+
 static void play_input_effect(GameInputResult result,Mode mode){
   AudioEffect effect=AUDIO_EFFECT_NEUTRAL;
   if(result==GAME_INPUT_NO_CHANGE)return;
@@ -179,15 +175,46 @@ static void play_input_effect(GameInputResult result,Mode mode){
   else if(result==GAME_INPUT_WRONG)effect=game_mode_reveals_correctness(mode)?AUDIO_EFFECT_NEGATIVE:AUDIO_EFFECT_NEUTRAL;
   audio_play_effect(effect);
 }
-static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
-  GameInputResult result=game_apply_input(game,row,column,value,notes_mode,ui->strict_mode);
-  play_input_effect(result,ui->mode);
-  if(result==GAME_INPUT_WRONG&&game_mode_reveals_correctness(ui->mode)){
-    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_WRONG));
-  }else if(result==GAME_INPUT_STRICT_REJECTED){
+
+static void finish_terminal_action(UI*ui){
+  if(!ui||ui->result==RES_NONE||ui->screen==SCR_END)return;
+  clock_pause(ui,PAUSE_END);
+  ui->screen=SCR_END;
+  if(ui->result==RES_WIN)victory_animation_start();
+  else victory_animation_reset();
+}
+
+static bool apply_action_outcome(UI*ui,AppActionOutcome outcome){
+  play_input_effect(outcome.input,ui->mode);
+  if(outcome.error&&game_mode_reveals_correctness(ui->mode))
+    show_toast(ui,tr(ui->language,T_WRONG));
+  else if(outcome.input==GAME_INPUT_STRICT_REJECTED)
     show_toast(ui,tr(ui->language,T_ILLEGAL));
-  }
-  return result!=GAME_INPUT_NO_CHANGE&&result!=GAME_INPUT_LOCKED;
+  if(outcome.terminal)finish_terminal_action(ui);
+  return outcome.changed||outcome.terminal;
+}
+
+static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
+  AppAction action={
+    .kind=notes_mode?APP_ACTION_NOTE:(value==0?APP_ACTION_CLEAR:APP_ACTION_PLACE),
+    .row=row,.column=column,.value=value
+  };
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  return apply_action_outcome(ui,outcome);
+}
+
+static bool apply_hint_action(Game*game,UI*ui,int row,int column){
+  AppAction action={.kind=APP_ACTION_HINT,.row=row,.column=column};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.changed)show_toast(ui,tr(ui->language,T_HINT_USED));
+  if(outcome.terminal)finish_terminal_action(ui);
+  return outcome.changed||outcome.terminal;
+}
+
+static int apply_verify_action(Game*game,UI*ui){
+  AppAction action={.kind=APP_ACTION_VERIFY};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  return outcome.detail;
 }
 
 /* ===== Font discovery (robust, cross-platform) ===== */
@@ -239,7 +266,10 @@ static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
 
 static void persistence_init(Persistence*p){
   if(!p)return;
-  memset(p,0,sizeof(*p));preferences_defaults(&p->preferences);
+  memset(p,0,sizeof(*p));
+  p->storage.save_session=session_save_file;
+  p->storage.save_preferences=preferences_save_file;
+  preferences_defaults(&p->preferences);
   char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
   if(!base)return;
   bool paths_ok=pref_path(p->session_path,base,"session.dat")&&
@@ -263,7 +293,8 @@ static bool save_preferences(Persistence*p,const UI*ui){
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
   p->preferences.strict_mode=ui->strict_mode;
-  return preferences_save_file(p->preferences_path,&p->preferences);
+  return storage_save_preferences(&p->storage,p->preferences_path,
+                                  &p->preferences);
 }
 
 static SessionStatus runtime_session_status(const Game*game,const UI*ui){
@@ -288,7 +319,7 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
 static bool save_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;capture_session(&state,game,ui);
-  if(!session_save_file(p->session_path,&state))return false;
+  if(!storage_save_session(&p->storage,p->session_path,&state))return false;
   p->saved=state;ui->has_session=true;p->last_checkpoint=now_s();return true;
 }
 
