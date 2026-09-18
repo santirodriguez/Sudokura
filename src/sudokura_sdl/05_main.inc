@@ -575,6 +575,9 @@ int main(int argc, char **argv) {
   set_mode_params(&ui);
   apply_window_preferences(&g, &persistence.preferences);
   refresh_resume_info(&persistence, &ui);
+  home_focus = ui.normal_resume.can_continue
+                   ? HOME_FOCUS_CONTINUE
+                   : HOME_FOCUS_NEW;
 
   bool running = true;
   SDL_Event e;
