@@ -3,19 +3,15 @@
 
 #include "game.h"
 #include "i18n.h"
+#include "store_status.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
 #define SUDOKURA_SAVE_FORMAT_VERSION 1u
-
-typedef enum {
-  STORE_OK = 0,
-  STORE_NOT_FOUND,
-  STORE_CORRUPT,
-  STORE_INCOMPATIBLE,
-  STORE_IO_ERROR
-} StoreStatus;
+#define SUDOKURA_SESSION_MAX_ELAPSED_MS UINT64_C(31536000000)
+#define SUDOKURA_DEFAULT_WINDOW_WIDTH 1024
+#define SUDOKURA_DEFAULT_WINDOW_HEIGHT 720
 
 typedef enum {
   SESSION_ACTIVE = 0,
@@ -48,6 +44,14 @@ typedef struct {
   GameMode mode;
   GameDifficulty difficulty;
   bool audio_enabled;
+  uint8_t music_volume;
+  uint8_t fx_volume;
+  bool reduced_motion;
+  int32_t window_x;
+  int32_t window_y;
+  uint32_t window_width;
+  uint32_t window_height;
+  bool window_maximized;
 } Preferences;
 
 void preferences_defaults(Preferences *preferences);
