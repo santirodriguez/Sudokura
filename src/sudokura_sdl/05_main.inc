@@ -818,6 +818,8 @@ int main(int argc, char **argv) {
             clear_hint_preview(&ui);
             continue;
           }
+          if (hint_panel_blocks_point(&g, &ui, x, y))
+            continue;
         }
         if (point_in(language_rect(&g, &ui), x, y)) {
           if (!left) continue;
