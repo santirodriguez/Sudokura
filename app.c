@@ -34,6 +34,7 @@ void app_state_init(AppState *state) {
   state->sel_c = 4;
   state->language = LANG_EN;
   state->dark_theme = true;
+  state->reduced_motion = false;
   state->mode = MODE_CLASSIC;
   state->strikes_max = 3;
   state->screen = APP_SCREEN_HOME;
