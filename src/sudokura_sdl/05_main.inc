@@ -261,7 +261,7 @@ int main(int argc, char **argv) {
             ui.pause_reasons = PAUSE_MODAL;
             audio_settings_open = true;
           }
-          app_render(&g, &game, &ui);
+          app_render_ui(&g, &game, &ui);
           char path[PATH_MAX], filename[160];
           int filename_length = snprintf(
               filename, sizeof(filename), "%dx%d-%s-%s-%s.bmp", g.width,
