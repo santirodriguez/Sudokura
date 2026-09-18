@@ -341,9 +341,12 @@ static void hint_preview_text(const UI *ui, char *buffer, size_t size) {
   TextKey format = ui->hint_preview.reasoning_steps <= 1
                        ? T_HINT_DIRECT_FMT
                        : T_HINT_CHAIN_FMT;
-  snprintf(buffer, size, tr(ui->language, format), technique,
+  char deduction[220];
+  snprintf(deduction, sizeof(deduction), tr(ui->language, format), technique,
            placement->placement_value, placement->placement_cell / 9 + 1,
            placement->placement_cell % 9 + 1);
+  snprintf(buffer, size, "%s\n%s", deduction,
+           tr(ui->language, T_HINT_MARKER_LEGEND));
 }
 
 static void hint_panel_button(Gfx *gfx, Theme theme, SDL_Rect rect,
