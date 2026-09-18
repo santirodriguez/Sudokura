@@ -1,5 +1,4 @@
 #include "geometry.h"
-#include "src/sudokura_sdl/ui_geometry.inc"
 
 #include <assert.h>
 #include <stdio.h>
