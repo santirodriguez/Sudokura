@@ -216,6 +216,8 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
                          controls.palette_label, fonts.help, 10);
 
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
   for (int number = 1; number <= 9; ++number) {
     SDL_Rect rect = controls.pal[number - 1];
     bool hover = point_in(rect, mx, my);
