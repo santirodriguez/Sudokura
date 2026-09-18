@@ -144,7 +144,7 @@ static void render_pause_overlay(Gfx*g,const UI*ui);
 /* =================== RENDER PLAY =================== */
 static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);
-  if(ui->pause_reasons&PAUSE_USER_VISIBLE){render_pause_overlay(g,ui);return;}
+  ifapp_pause_hides_play(ui){render_pause_overlay(g,ui);return;}
   Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
   draw_round_rect(g->ren,(SDL_Rect){gx-6,gy-6,side+12,side+12},10,th.shadow);
   draw_round_rect(g->ren,(SDL_Rect){L.side.x-6,L.side.y-6,L.side.w+12,L.side.h+12},10,th.shadow);
