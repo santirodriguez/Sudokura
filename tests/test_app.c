@@ -127,6 +127,42 @@ static void test_grouped_events_stop_at_loss(void) {
   assert(state.result == APP_RESULT_LOSE);
 }
 
+static void test_loss_retry_preserves_identity(void) {
+  Game game;
+  fixture_game_new(&game, UINT64_C(0xfeedbeef));
+  uint64_t seed = game.seed;
+  uint32_t revision = game.generator_revision;
+  GameDifficulty difficulty = game.difficulty;
+  int initial[SUDOKU_CELLS];
+  memcpy(initial, game.initial, sizeof(initial));
+
+  AppState state = playing_state(MODE_STRIKES);
+  state.strikes = 2;
+  state.mistakes = 2;
+  int index = first_playable(&game);
+  assert(index >= 0);
+
+  AppAction wrong = {
+      .kind = APP_ACTION_PLACE,
+      .row = index / 9,
+      .column = index % 9,
+      .value = wrong_value(&game, index),
+  };
+  AppActionOutcome loss = app_apply_action(&game, &state, wrong, 12.0);
+  assert(loss.terminal && loss.result == APP_RESULT_LOSE);
+
+  AppAction retry = {.kind = APP_ACTION_RESTART};
+  AppActionOutcome restarted = app_apply_action(&game, &state, retry, 12.1);
+  assert(restarted.changed && restarted.result == APP_RESULT_NONE);
+  assert(game.seed == seed);
+  assert(game.generator_revision == revision);
+  assert(game.difficulty == difficulty);
+  assert(!memcmp(game.initial, initial, sizeof(initial)));
+  assert(!memcmp(game.puzzle, initial, sizeof(initial)));
+  assert(state.result == APP_RESULT_NONE);
+  assert(state.mistakes == 0 && state.strikes == 0);
+}
+
 static void test_win_is_terminal(void) {
   Game game;
   fixture_game_new(&game, 77);
@@ -269,6 +305,7 @@ int main(void) {
   test_navigation_contract();
   test_no_change_and_strikes();
   test_grouped_events_stop_at_loss();
+  test_loss_retry_preserves_identity();
   test_win_is_terminal();
   test_idle_terminal_check();
   test_time_limit_preempts_input();
