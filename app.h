@@ -49,6 +49,10 @@ typedef struct {
   double toast_t0;
   bool toast_on;
 
+  bool generating;
+  unsigned generation_attempt;
+  unsigned generation_max_attempts;
+
   AppScreen screen, prev_screen;
   GameMode mode;
   AppResult result;
