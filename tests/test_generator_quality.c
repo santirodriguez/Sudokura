@@ -237,6 +237,13 @@ static uint64_t run_v3_corpus(GameDifficulty difficulty) {
     GameGenerationResult result = game_generate_difficulty(
         &game, seed, difficulty, SUDOKURA_GENERATOR_REVISION, &control);
     double finish = wall_ms();
+    if (result != GAME_GENERATION_OK) {
+      fprintf(stderr,
+              "quality generation failure difficulty=%d index=%d seed=%" PRIu64
+              " result=%d attempts=%u budget=%u\n",
+              (int)difficulty, index, seed, (int)result, counter.attempts,
+              game_generation_attempt_budget(difficulty));
+    }
     assert(result == GAME_GENERATION_OK);
     assert(counter.attempts >= 1 &&
            counter.attempts <= game_generation_attempt_budget(difficulty));
