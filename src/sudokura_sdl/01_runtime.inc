@@ -426,7 +426,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
       slot->value.session.daily_year==state.daily_year &&
       slot->value.session.daily_month==state.daily_month &&
       slot->value.session.daily_day==state.daily_day;
-  bool assisted=same_identity&&slot->value.assisted;
+  bool assisted=ui->assisted||(same_identity&&slot->value.assisted);
   bool valid=same_identity
                  ? profile_slot_set_runtime(slot,&state,assisted)
                  : profile_slot_set(slot,&state,assisted);
@@ -457,6 +457,8 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;
   bool normal_continue=session_can_continue(&p->saved);
   ui->has_session=true;
+  ui->assisted=slot->value.assisted;ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
   if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
   else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
@@ -476,6 +478,8 @@ static GameGenerationResult start_new_session_base(
   if(result!=GAME_GENERATION_OK)return result;
   *game=generated;
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
+  ui->assisted=false;ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
   begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
   return GAME_GENERATION_OK;
@@ -494,6 +498,8 @@ static GameGenerationResult start_daily_session_base(
   if(result!=GAME_GENERATION_OK)return result;
   *game=generated;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
+  ui->assisted=false;ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
   begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
   return GAME_GENERATION_OK;
@@ -510,7 +516,9 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
   if(!outcome.changed)return;
-  ui->sel_r=4;ui->sel_c=4;set_mode_params(ui);clock_reset(ui);
+  ui->sel_r=4;ui->sel_c=4;ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
+  set_mode_params(ui);clock_reset(ui);
   (void)checkpoint_current_session(p,game,ui);
 }
 
