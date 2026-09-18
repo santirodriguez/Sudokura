@@ -20,7 +20,7 @@ GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
 	assets/generated/flag_ca.c assets/generated/flag_ca.h
 .PHONY: all test test-ui quality clean assets
 all: sudokura
-sudokura: sudokura_sdl.c app.c app.h app_clock.c app_clock.h profile.c profile.h save_policy.c save_policy.h store_io.c store_io.h store_status.h storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_geometry.inc src/sudokura_sdl/polish_ui.inc src/sudokura_sdl/about_overlay.inc src/sudokura_sdl/rc2_ui.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) audio.c audio.h input.c input.h progress.c progress.h version.h game.h human.h geometry.h i18n.h session.h session.c seed.h seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
+sudokura: sudokura_sdl.c app.c app.h app_clock.c app_clock.h profile.c profile.h save_policy.c save_policy.h store_io.c store_io.h store_status.h storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/polish_ui.inc src/sudokura_sdl/rc2_ui.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) audio.c audio.h input.c input.h progress.c progress.h version.h game.h human.h geometry.h i18n.h session.h session.c seed.h seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) sudokura_sdl.c app.c app_clock.c audio.c profile.c save_policy.c store_io.c session.c seed.c progress.c input.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c -o $@ $(SDL_LIBS) -lm
 tests/test_main: tests/test_main.c $(CORE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_main.c $(CORE) -o $@
@@ -50,7 +50,7 @@ tests/test_progress: tests/test_progress.c progress.c progress.h game.c game.h s
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_progress.c progress.c game.c human.c session.c store_io.c -o $@
 tests/test_geometry_ui: tests/test_geometry_ui.c geometry.c geometry.h src/sudokura_sdl/ui_geometry.inc
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_geometry_ui.c geometry.c -o $@
-tests/test_text_fit: tests/test_text_fit.c src/sudokura_sdl/ui_geometry.inc geometry.c i18n.c
+tests/test_text_fit: tests/test_text_fit.c geometry.c i18n.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_text_fit.c geometry.c i18n.c -o $@ $(SDL_TEST_LIBS)
 tests/test_audio: tests/test_audio.c audio.c audio.h $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS) -lm
