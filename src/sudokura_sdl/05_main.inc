@@ -151,13 +151,10 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
 
 static bool open_global_info_key(Persistence *persistence, const Game *game,
                                  UI *ui, SDL_Keycode key) {
-  Screen target;
-  if (key == SDLK_F1)
-    target = SCR_HELP;
-  else if (key == SDLK_F2)
-    target = SCR_ABOUT;
-  else
-    return false;
+  InputInfoShortcut shortcut = input_info_shortcut(key);
+  if (shortcut == INPUT_INFO_NONE) return false;
+  Screen target =
+      shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT;
 
   ui_button_click();
   if (ui->screen == target) return true;
