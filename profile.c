@@ -639,6 +639,8 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   return STORE_OK;
 }
 
+static bool profiles_equal(const ProfileData *a, const ProfileData *b);
+
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
                                      ProfileData *profile) {
