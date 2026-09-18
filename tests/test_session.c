@@ -218,9 +218,12 @@ static void test_daily_and_results(void) {
   assert(!session_validate(&lost));
 
   SessionState incompatible_win = make_state();
-  for (int i = 0; i < 81; ++i)
+  for (int i = 0; i < 81; ++i) {
     if (!incompatible_win.game.fixed[i])
       incompatible_win.game.puzzle[i] = incompatible_win.game.solution[i];
+    incompatible_win.game.notes[i] = 0;
+    incompatible_win.game.hinted[i] = 0;
+  }
   incompatible_win.status = SESSION_WON;
   incompatible_win.mode = MODE_STRIKES;
   incompatible_win.strikes = 3;
