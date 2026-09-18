@@ -24,4 +24,14 @@ typedef enum {
 
 InputInfoShortcut input_info_shortcut(SDL_Keycode key);
 
+typedef enum {
+  INPUT_PLAY_NONE = 0,
+  INPUT_PLAY_UNDO,
+  INPUT_PLAY_REDO,
+  INPUT_PLAY_VERIFY
+} InputPlayShortcut;
+
+InputPlayShortcut input_play_shortcut(SDL_Keycode key, SDL_Keymod modifiers);
+const char *input_primary_modifier_label(void);
+
 #endif
