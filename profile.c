@@ -566,9 +566,13 @@ static bool profile_validate_runtime(const ProfileData *profile) {
   return true;
 }
 
-StoreStatus profile_save_file(const char *path, const char *backup_path,
-                              const ProfileData *profile) {
-  if (!path || !profile || !profile_validate_runtime(profile))
+static StoreStatus profile_save_encoded(const char *path,
+                                        const char *backup_path,
+                                        const ProfileData *profile,
+                                        bool canonical) {
+  if (!path || !profile ||
+      !(canonical ? profile_validate(profile)
+                  : profile_validate_runtime(profile)))
     return STORE_IO_ERROR;
 
   unsigned char data[PROFILE_MAX_FILE_SIZE];
@@ -585,6 +589,17 @@ StoreStatus profile_save_file(const char *path, const char *backup_path,
   put_u32(data + 14, crc32_bytes(payload, payload_size));
   return store_atomic_write(path, backup_path, data,
                             PROFILE_HEADER_SIZE + payload_size);
+}
+
+StoreStatus profile_save_file(const char *path, const char *backup_path,
+                              const ProfileData *profile) {
+  return profile_save_encoded(path, backup_path, profile, true);
+}
+
+StoreStatus profile_save_runtime_file(const char *path,
+                                      const char *backup_path,
+                                      const ProfileData *profile) {
+  return profile_save_encoded(path, backup_path, profile, false);
 }
 
 StoreStatus profile_load_file(const char *path, ProfileData *profile) {
