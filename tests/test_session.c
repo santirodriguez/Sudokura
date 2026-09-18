@@ -54,8 +54,8 @@ static void put_u32_test(unsigned char *data, uint32_t value) {
 static SessionState make_state(void) {
   SessionState state;
   memset(&state, 0, sizeof(state));
-  game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
-                      DIFFICULTY_HARD);
+  assert(game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
+                             DIFFICULTY_HARD));
   state.mode = MODE_STRIKES;
   state.selected_row = 4;
   state.selected_column = 5;
@@ -192,6 +192,28 @@ static void test_session_roundtrip(void) {
   assert(loaded.elapsed_ms == state.elapsed_ms);
 }
 
+static void test_revision2_session_compatibility(void) {
+  SessionState state;
+  memset(&state, 0, sizeof(state));
+  assert(game_new_difficulty_revision(
+      &state.game, UINT64_C(42), DIFFICULTY_MEDIUM,
+      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  state.mode = MODE_CLASSIC;
+  state.selected_row = 4;
+  state.selected_column = 4;
+  state.status = SESSION_ACTIVE;
+  state.elapsed_ms = UINT64_C(3210);
+  assert(session_validate(&state));
+  assert(session_save_file(session_path, &state));
+
+  SessionState loaded;
+  assert(session_load_file(session_path, &loaded) == STORE_OK);
+  assert(loaded.game.generator_revision == SUDOKURA_GENERATOR_REVISION_LEGACY);
+  assert(loaded.game.seed == state.game.seed);
+  assert(!memcmp(loaded.game.initial, state.game.initial,
+                 sizeof(state.game.initial)));
+}
+
 static void test_daily_and_results(void) {
   SessionState daily;
   memset(&daily, 0, sizeof(daily));
@@ -301,7 +323,7 @@ static void test_incompatible_generator_revision(void) {
   assert(fclose(file) == 0);
 
   put_u32_test(bytes + STORE_HEADER_SIZE_TEST,
-               SUDOKURA_GENERATOR_REVISION - 1u);
+               SUDOKURA_GENERATOR_REVISION + 1u);
   uint32_t crc = crc32_bytes_test(bytes + STORE_HEADER_SIZE_TEST,
                                   SESSION_PAYLOAD_SIZE_TEST);
   put_u32_test(bytes + 14, crc);
