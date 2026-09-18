@@ -15,6 +15,9 @@ export SUDOKURA_TEST_FONT="$font"
 
 make assets
 make WERROR=-Werror test test-ui
+echo "generator benchmark host: $(uname -a)"
+gcc --version | head -1
+make WERROR=-Werror quality
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
