@@ -271,6 +271,8 @@ static bool apply_reveal_action(Game*game,UI*ui,int row,int column){
 static int apply_verify_action(Game*game,UI*ui){
   AppAction action={.kind=APP_ACTION_VERIFY};
   AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.revealed)ui->assisted=true;
+  clear_hint_preview(ui);
   return outcome.detail;
 }
 
@@ -572,6 +574,7 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
 
 static void go_home_base(Persistence*p,const Game*game,UI*ui){
   if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)checkpoint_current_session(p,game,ui);}
+  clear_hint_preview(ui);
   ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
   ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
   ui->notes_mode=false;set_mode_params(ui);
