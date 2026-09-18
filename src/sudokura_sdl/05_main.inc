@@ -113,10 +113,112 @@ static bool restart_current_session_confirmed(Persistence *p,
   return confirmed;
 }
 
+typedef struct {
+  Gfx *gfx;
+  const Game *game;
+  UI *ui;
+  unsigned rendered_attempt;
+} GenerationUiContext;
+
+static bool generation_ui_continue(void *userdata, unsigned attempt,
+                                   unsigned max_attempts) {
+  GenerationUiContext *context = (GenerationUiContext *)userdata;
+  if (!context || !context->gfx || !context->ui) return false;
+
+  SDL_PumpEvents();
+  if (SDL_HasEvent(SDL_QUIT)) return false;
+  const Uint8 *keys = SDL_GetKeyboardState(NULL);
+  if (keys && keys[SDL_SCANCODE_ESCAPE]) return false;
+
+  unsigned shown_attempt = attempt + 1u;
+  if (context->rendered_attempt != shown_attempt) {
+    context->rendered_attempt = shown_attempt;
+    context->ui->generation_attempt = shown_attempt;
+    context->ui->generation_max_attempts = max_attempts;
+    app_frame(context->gfx, context->game, context->ui);
+  }
+  return true;
+}
+
+static GameGenerationResult generate_normal_with_ui(
+    Persistence *p, Game *game, UI *ui, Gfx *g) {
+  if (!p || !game || !ui || !g) return GAME_GENERATION_INVALID;
+  GenerationUiContext context = {g, game, ui, 0};
+  GameGenerationControl control = {generation_ui_continue, &context};
+  ui->generating = true;
+  ui->generation_attempt = 1;
+  ui->generation_max_attempts =
+      game_generation_attempt_budget(p->preferences.difficulty);
+  app_frame(g, game, ui);
+  GameGenerationResult result = start_new_session(p, game, ui, &control);
+  ui->generating = false;
+  ui->generation_attempt = 0;
+  ui->generation_max_attempts = 0;
+  return result;
+}
+
+static GameGenerationResult generate_daily_with_ui(
+    Persistence *p, Game *game, UI *ui, Gfx *g,
+    int year, int month, int day) {
+  if (!p || !game || !ui || !g) return GAME_GENERATION_INVALID;
+  GenerationUiContext context = {g, game, ui, 0};
+  GameGenerationControl control = {generation_ui_continue, &context};
+  ui->generating = true;
+  ui->generation_attempt = 1;
+  ui->generation_max_attempts =
+      game_generation_attempt_budget(DIFFICULTY_MEDIUM);
+  app_frame(g, game, ui);
+  GameGenerationResult result =
+      start_daily_session(p, game, ui, year, month, day, &control);
+  ui->generating = false;
+  ui->generation_attempt = 0;
+  ui->generation_max_attempts = 0;
+  return result;
+}
+
+static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
+                                   Gfx *g) {
+  for (;;) {
+    GameGenerationResult result = generate_normal_with_ui(p, game, ui, g);
+    if (result == GAME_GENERATION_OK) return true;
+    if (result == GAME_GENERATION_CANCELLED) {
+      show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
+      return false;
+    }
+    if (result != GAME_GENERATION_EXHAUSTED) {
+      (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                                     tr(ui->language, T_GENERATION_FAILED),
+                                     tr(ui->language, T_PROFILE_IO_ERROR),
+                                     g->win);
+      return false;
+    }
+    bool retry = confirm_box(g->win, tr(ui->language, T_GENERATION_FAILED),
+                             tr(ui->language, T_GENERATION_FAILED_BODY),
+                             tr(ui->language, T_RETRY),
+                             tr(ui->language, T_CANCEL));
+    if (!retry) return false;
+  }
+}
+
+static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
+                                     Gfx *g, int year, int month, int day) {
+  GameGenerationResult result =
+      generate_daily_with_ui(p, game, ui, g, year, month, day);
+  if (result == GAME_GENERATION_OK) return true;
+  if (result == GAME_GENERATION_CANCELLED) {
+    show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
+    return false;
+  }
+  (void)SDL_ShowSimpleMessageBox(
+      SDL_MESSAGEBOX_WARNING, tr(ui->language, T_GENERATION_FAILED),
+      tr(ui->language, T_GENERATION_FAILED_BODY), g->win);
+  return false;
+}
+
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   if (replace_saved_session_confirmed(p, ui, g, false)) {
     victory_animation_reset();
-    start_new_session(p, game, ui);
+    (void)start_new_game_with_ui(p, game, ui, g);
   }
 }
 
@@ -129,7 +231,7 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
     return;
   }
   if (replace_saved_session_confirmed(p, ui, g, true))
-    (void)start_daily_session(p, game, ui, year, month, day);
+    (void)start_daily_game_with_ui(p, game, ui, g, year, month, day);
 }
 
 static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
@@ -551,7 +653,7 @@ int main(int argc, char **argv) {
             victory_animation_reset();
             if (ui.result == RES_WIN) {
               if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
-                start_new_session(&persistence, &game, &ui);
+                (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
             } else if (restart_current_session_confirmed(
                            &persistence, &game, &ui, &g)) {
               restart_current_session(&persistence, &game, &ui);
@@ -715,7 +817,7 @@ int main(int argc, char **argv) {
             victory_animation_reset();
             if (ui.result == RES_WIN) {
               if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
-                start_new_session(&persistence, &game, &ui);
+                (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
             } else if (restart_current_session_confirmed(
                            &persistence, &game, &ui, &g)) {
               restart_current_session(&persistence, &game, &ui);
