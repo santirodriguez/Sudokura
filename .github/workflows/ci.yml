@@ -26,25 +26,25 @@ jobs:
         run: |
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_main.c game.c geometry.c i18n.c -o tests/test_main_san
+            tests/test_main.c game.c human.c geometry.c i18n.c -o tests/test_main_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_app.c app.c game.c -o tests/test_app_san
+            tests/test_app.c app.c game.c human.c -o tests/test_app_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_clock.c app_clock.c app.c game.c -o tests/test_clock_san
+            tests/test_clock.c app_clock.c app.c game.c human.c -o tests/test_clock_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_save_policy.c save_policy.c -o tests/test_save_policy_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_session.c game.c session.c store_io.c -o tests/test_session_san
+            tests/test_session.c game.c human.c session.c store_io.c -o tests/test_session_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_profile.c profile.c session.c store_io.c game.c -o tests/test_profile_san
+            tests/test_profile.c profile.c session.c store_io.c game.c human.c -o tests/test_profile_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c -o tests/test_live_save_san
+            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o tests/test_live_save_san
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san
