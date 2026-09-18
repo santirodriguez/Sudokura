@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const int test_font_sizes[] = {
     10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 30,
