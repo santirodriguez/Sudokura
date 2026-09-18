@@ -8,21 +8,13 @@
 
 #define SUDOKURA_PROFILE_CONTAINER_VERSION 2u
 #define SUDOKURA_PROFILE_CONTENT_VERSION 1u
-#define SUDOKURA_PREFERENCES_CONTENT_VERSION 1u
-#define SUDOKURA_SESSION_CONTENT_VERSION 2u
-#define SUDOKURA_HISTORY_LIMIT 64u
+#define SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY 1u
+#define SUDOKURA_PREFERENCES_CONTENT_VERSION 2u
+#define SUDOKURA_SESSION_CONTENT_VERSION_LEGACY 2u
+#define SUDOKURA_SESSION_CONTENT_VERSION 3u
 #define SUDOKURA_RESULT_LIMIT 128u
 
-typedef struct {
-  uint8_t row;
-  uint8_t column;
-  uint8_t before_value;
-  uint8_t after_value;
-  uint16_t before_notes;
-  uint16_t after_notes;
-  uint8_t before_hinted;
-  uint8_t after_hinted;
-} ProfileEdit;
+typedef GameEdit ProfileEdit;
 
 typedef struct {
   SessionState session;
