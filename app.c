@@ -11,6 +11,22 @@ static AppActionOutcome outcome_none(const AppState *state) {
   return outcome;
 }
 
+static void history_push(GameEdit history[SUDOKURA_HISTORY_LIMIT],
+                         uint16_t *count, const GameEdit *edit) {
+  if (!history || !count || !edit) return;
+  if (*count == SUDOKURA_HISTORY_LIMIT) {
+    memmove(history, history + 1,
+            (SUDOKURA_HISTORY_LIMIT - 1u) * sizeof(history[0]));
+    --*count;
+  }
+  history[(*count)++] = *edit;
+}
+
+static void history_record(AppState *state, const GameEdit *edit) {
+  history_push(state->undo, &state->undo_count, edit);
+  state->redo_count = 0;
+}
+
 void app_state_init(AppState *state) {
   if (!state) return;
   memset(state, 0, sizeof(*state));
@@ -92,20 +108,53 @@ AppActionOutcome app_check_terminal(Game *game, AppState *state,
 }
 
 static GameInputResult apply_cell_action(Game *game, AppState *state,
-                                         AppAction action) {
+                                         AppAction action, GameEdit *edit) {
   switch (action.kind) {
     case APP_ACTION_PLACE:
-      return game_apply_input(game, action.row, action.column, action.value,
-                              false, state->strict_mode);
+      return game_apply_input_recorded(
+          game, action.row, action.column, action.value, false,
+          state->strict_mode, state->auto_remove_peer_notes, edit);
     case APP_ACTION_NOTE:
-      return game_apply_input(game, action.row, action.column, action.value,
-                              true, state->strict_mode);
+      return game_apply_input_recorded(
+          game, action.row, action.column, action.value, true,
+          state->strict_mode, false, edit);
     case APP_ACTION_CLEAR:
-      return game_apply_input(game, action.row, action.column, 0, false,
-                              state->strict_mode);
+      return game_apply_input_recorded(
+          game, action.row, action.column, 0, false,
+          state->strict_mode, false, edit);
     default:
       return GAME_INPUT_NO_CHANGE;
   }
+}
+
+static AppActionOutcome apply_history_action(Game *game, AppState *state,
+                                             bool redo, double elapsed_s) {
+  AppActionOutcome outcome = outcome_none(state);
+  GameEdit *source = redo ? state->redo : state->undo;
+  uint16_t *source_count = redo ? &state->redo_count : &state->undo_count;
+  GameEdit *destination = redo ? state->undo : state->redo;
+  uint16_t *destination_count =
+      redo ? &state->undo_count : &state->redo_count;
+
+  if (*source_count == 0) {
+    outcome.blocked = true;
+    return outcome;
+  }
+
+  GameEdit edit = source[*source_count - 1u];
+  if (!game_apply_edit(game, &edit, redo)) {
+    outcome.blocked = true;
+    return outcome;
+  }
+
+  --*source_count;
+  history_push(destination, destination_count, &edit);
+  state->sel_r = edit.row;
+  state->sel_c = edit.column;
+  outcome.changed = true;
+  outcome.no_effect = false;
+  if (redo) mark_terminal(game, state, elapsed_s, &outcome);
+  return outcome;
 }
 
 AppActionOutcome app_apply_action(Game *game, AppState *state,
@@ -126,6 +175,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     state->mistakes = 0;
     state->strikes = 0;
     state->notes_mode = false;
+    state->undo_count = 0;
+    state->redo_count = 0;
     state->elapsed_ms = 0;
     state->running_since_ms = 0;
     state->pause_reasons = 0;
@@ -156,7 +207,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
 
   bool play_action =
       action.kind == APP_ACTION_PLACE || action.kind == APP_ACTION_NOTE ||
-      action.kind == APP_ACTION_CLEAR || action.kind == APP_ACTION_HINT ||
+      action.kind == APP_ACTION_CLEAR || action.kind == APP_ACTION_UNDO ||
+      action.kind == APP_ACTION_REDO || action.kind == APP_ACTION_HINT ||
       action.kind == APP_ACTION_VERIFY;
   if (play_action &&
       (!state->session_open || state->screen != APP_SCREEN_PLAY))
@@ -165,9 +217,15 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
   AppActionOutcome terminal = app_check_terminal(game, state, elapsed_s);
   if (terminal.terminal) return terminal;
 
+  if (action.kind == APP_ACTION_UNDO)
+    return apply_history_action(game, state, false, elapsed_s);
+  if (action.kind == APP_ACTION_REDO)
+    return apply_history_action(game, state, true, elapsed_s);
+
   if (action.kind == APP_ACTION_PLACE || action.kind == APP_ACTION_NOTE ||
       action.kind == APP_ACTION_CLEAR) {
-    outcome.input = apply_cell_action(game, state, action);
+    GameEdit edit;
+    outcome.input = apply_cell_action(game, state, action, &edit);
     outcome.changed =
         outcome.input == GAME_INPUT_CORRECT ||
         outcome.input == GAME_INPUT_WRONG ||
@@ -184,15 +242,23 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
       if (state->mode == MODE_STRIKES) ++state->strikes;
     }
 
-    if (outcome.changed) mark_terminal(game, state, elapsed_s, &outcome);
+    if (outcome.changed) {
+      history_record(state, &edit);
+      mark_terminal(game, state, elapsed_s, &outcome);
+    }
     return outcome;
   }
 
   if (action.kind == APP_ACTION_HINT) {
-    outcome.changed = game_hint(game, action.row, action.column);
+    GameEdit edit;
+    outcome.changed =
+        game_hint_recorded(game, action.row, action.column, &edit);
     outcome.revealed = outcome.changed;
     outcome.no_effect = !outcome.changed;
-    if (outcome.changed) mark_terminal(game, state, elapsed_s, &outcome);
+    if (outcome.changed) {
+      history_record(state, &edit);
+      mark_terminal(game, state, elapsed_s, &outcome);
+    }
     return outcome;
   }
 
@@ -203,8 +269,5 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     return outcome;
   }
 
-  /* Undo/redo are Phase 4 features. Their semantic identities live here
-     now, but no empty UI controls are exposed before those implementations
-     exist. */
   return outcome;
 }
