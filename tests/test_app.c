@@ -186,7 +186,9 @@ static int preferences_save_calls = 0;
 
 static bool fake_session_save(const char *path, const SessionState *state) {
   ++session_save_calls;
-  return path && state && false;
+  (void)path;
+  (void)state;
+  return false;
 }
 
 static bool fake_preferences_save(const char *path,
