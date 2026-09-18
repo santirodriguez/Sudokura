@@ -153,6 +153,28 @@ static void test_time_limit_preempts_input(void) {
   assert(game.puzzle[index] == before);
 }
 
+static void test_continue_action(void) {
+  Game game;
+  game_new(&game, 55);
+  AppState state;
+  app_state_init(&state);
+  state.has_session = true;
+  state.result = APP_RESULT_NONE;
+
+  AppAction action = {.kind = APP_ACTION_CONTINUE};
+  AppActionOutcome active = app_apply_action(&game, &state, action, 3.0);
+  assert(active.changed && !active.terminal);
+  assert(state.session_open && state.screen == APP_SCREEN_PLAY);
+
+  state.session_open = false;
+  state.screen = APP_SCREEN_HOME;
+  state.result = APP_RESULT_LOSE;
+  AppActionOutcome finished = app_apply_action(&game, &state, action, 4.0);
+  assert(finished.changed && finished.terminal);
+  assert(state.session_open && state.screen == APP_SCREEN_RESULT);
+  assert(finished.result == APP_RESULT_LOSE);
+}
+
 static void test_hint_verify_and_restart(void) {
   Game game;
   game_new(&game, 314159);
@@ -223,6 +245,7 @@ int main(void) {
   test_grouped_events_stop_at_loss();
   test_win_is_terminal();
   test_time_limit_preempts_input();
+  test_continue_action();
   test_hint_verify_and_restart();
   test_storage_is_substitutable();
   puts("application action sequencing, terminality, navigation, and storage substitution passed");
