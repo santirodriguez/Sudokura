@@ -70,3 +70,29 @@ InputInfoShortcut input_info_shortcut(SDL_Keycode key) {
   if (key == SDLK_F2) return INPUT_INFO_ABOUT;
   return INPUT_INFO_NONE;
 }
+
+
+static bool input_primary_modifier_active(SDL_Keymod modifiers) {
+#if defined(__APPLE__)
+  return (modifiers & KMOD_GUI) != 0;
+#else
+  return (modifiers & KMOD_CTRL) != 0;
+#endif
+}
+
+InputPlayShortcut input_play_shortcut(SDL_Keycode key, SDL_Keymod modifiers) {
+  if (!input_primary_modifier_active(modifiers)) return INPUT_PLAY_NONE;
+  bool shifted = (modifiers & KMOD_SHIFT) != 0;
+  if (key == SDLK_z) return shifted ? INPUT_PLAY_REDO : INPUT_PLAY_UNDO;
+  if (key == SDLK_y) return INPUT_PLAY_REDO;
+  if (key == SDLK_RETURN || key == SDLK_KP_ENTER) return INPUT_PLAY_VERIFY;
+  return INPUT_PLAY_NONE;
+}
+
+const char *input_primary_modifier_label(void) {
+#if defined(__APPLE__)
+  return "Cmd";
+#else
+  return "Ctrl";
+#endif
+}
