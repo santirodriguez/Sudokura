@@ -146,6 +146,27 @@ static bool hint_step_has_cell(const int *cells, int count, int cell) {
   return false;
 }
 
+static void draw_hint_candidate_mask(Gfx *g, SDL_Rect rect,
+                                     uint16_t mask, SDL_Color color) {
+  if (!g || mask == 0) return;
+  int sub_w = rect.w / 3, sub_h = rect.h / 3;
+  for (int value = 1; value <= 9; ++value) {
+    if (!(mask & (uint16_t)(1u << value))) continue;
+    char label[2] = {(char)('0' + value), '\0'};
+    int tw = 0, th = 0;
+    SDL_Texture *texture =
+        render_text(g, g->font_note, label, color, &tw, &th);
+    if (!texture) continue;
+    int index = value - 1;
+    SDL_Rect dst = {
+        rect.x + (index % 3) * sub_w + (sub_w - tw) / 2,
+        rect.y + (index / 3) * sub_h + (sub_h - th) / 2,
+        tw, th};
+    SDL_RenderCopy(g->ren, texture, NULL, &dst);
+    SDL_DestroyTexture(texture);
+  }
+}
+
 static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
                                   int cell, SDL_Rect rect) {
   if (!g || !ui || !ui->hint_preview_active) return;
@@ -153,9 +174,15 @@ static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
   bool source = hint->status == HUMAN_HINT_LOGICAL &&
                 hint_step_has_cell(hint->reasoning.source_cells,
                                    hint->reasoning.source_count, cell);
-  bool affected = hint->status == HUMAN_HINT_LOGICAL &&
-                  hint_step_has_cell(hint->reasoning.affected_cells,
-                                     hint->reasoning.affected_count, cell);
+  int affected_index = -1;
+  if (hint->status == HUMAN_HINT_LOGICAL) {
+    for (int i = 0; i < hint->reasoning.affected_count; ++i)
+      if (hint->reasoning.affected_cells[i] == cell) {
+        affected_index = i;
+        break;
+      }
+  }
+  bool affected = affected_index >= 0;
   bool target = hint->status == HUMAN_HINT_LOGICAL &&
                 hint->placement.placement_cell == cell;
   bool contradiction =
@@ -181,6 +208,17 @@ static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
     SDL_SetRenderDrawColor(g->ren, marker.r, marker.g, marker.b, 255);
     SDL_RenderDrawRect(g->ren, &target_box);
   }
+
+  uint16_t candidate_mask = 0;
+  if (source) candidate_mask |= hint->reasoning.value_mask;
+  if (affected)
+    candidate_mask |= hint->reasoning.affected_masks[affected_index];
+  if (target && hint->placement.placement_value >= 1 &&
+      hint->placement.placement_value <= 9)
+    candidate_mask |=
+        (uint16_t)(1u << hint->placement.placement_value);
+  if (candidate_mask)
+    draw_hint_candidate_mask(g, rect, candidate_mask, marker);
 }
 
 static void render_pause_overlay(Gfx*g,const UI*ui);
