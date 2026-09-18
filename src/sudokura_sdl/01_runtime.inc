@@ -388,13 +388,15 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
   app_clock_restore(ui,s->elapsed_ms,now_ms());
   ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;
-  ui->has_session=session_can_continue(&p->saved);
+  bool normal_continue=session_can_continue(&p->saved);
+  ui->has_session=true;
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
   if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
   else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
   else ui->result=RES_NONE;
   AppAction continue_action={.kind=APP_ACTION_CONTINUE};
   (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
+  ui->has_session=normal_continue;
   p->last_checkpoint_ms=now_ms();
 }
 
