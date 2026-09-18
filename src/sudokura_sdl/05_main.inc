@@ -13,6 +13,34 @@ static void home_move_focus(const UI *ui, int direction) {
 
 static void ui_button_click(void) { audio_play_effect(AUDIO_EFFECT_CLICK); }
 
+typedef enum {
+  SAVE_GATE_BACK = 0,
+  SAVE_GATE_SAVED,
+  SAVE_GATE_DISCARD
+} SaveGateResult;
+
+static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
+
+static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g, UI *ui,
+                                      unsigned dirty_mask,
+                                      TextKey prompt_key) {
+  if (!p || !g || !ui ||
+      (p->save_policy.dirty_mask & dirty_mask) == 0)
+    return SAVE_GATE_SAVED;
+  if (persistence_flush(p)) return SAVE_GATE_SAVED;
+
+  for (;;) {
+    int choice = choice_box(g->win, tr(ui->language, T_UNSAVED_TITLE),
+                            tr(ui->language, prompt_key),
+                            tr(ui->language, T_BACK),
+                            tr(ui->language, T_RETRY_SAVE),
+                            tr(ui->language, T_DISCARD));
+    if (choice == 0) return SAVE_GATE_BACK;
+    if (choice == 2) return SAVE_GATE_DISCARD;
+    if (persistence_flush(p)) return SAVE_GATE_SAVED;
+  }
+}
+
 static void home_set_language(Persistence *p, UI *ui, Language language) {
   ui->language = language;
   (void)save_preferences(p, ui);
@@ -51,6 +79,12 @@ static void home_cycle_difficulty(Persistence *p, UI *ui, int delta) {
 static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
                                             bool daily) {
   if (!p) return true;
+  unsigned dirty_bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
+  SaveGateResult gate =
+      resolve_unsaved(p, g, ui, dirty_bit, T_UNSAVED_REPLACE);
+  if (gate == SAVE_GATE_BACK) return false;
+  if (gate == SAVE_GATE_DISCARD) return true;
+
   const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   const SessionState *saved = profile_slot_session(slot);
   return !saved || !session_has_meaningful_progress(saved) ||
@@ -127,7 +161,7 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
       (void)save_preferences(p, ui);
       break;
     case HOME_FOCUS_QUIT:
-      *running = false;
+      if (request_exit(p, game, ui, g)) *running = false;
       break;
     default:
       break;
