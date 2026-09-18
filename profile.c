@@ -9,7 +9,6 @@
 
 #define PROFILE_HEADER_SIZE 18u
 #define PROFILE_MAX_FILE_SIZE 16384u
-#define PROFILE_NOTES_MASK UINT16_C(0x03fe)
 #define PROFILE_MAX_COUNTER UINT32_C(1000000)
 
 static const unsigned char profile_magic[8] = {
@@ -122,11 +121,7 @@ static uint32_t get_u32(const unsigned char *data) {
 }
 
 static bool valid_edit(const ProfileEdit *edit) {
-  return edit && edit->row < 9 && edit->column < 9 &&
-         edit->before_value <= 9 && edit->after_value <= 9 &&
-         (edit->before_notes & (uint16_t)~PROFILE_NOTES_MASK) == 0 &&
-         (edit->after_notes & (uint16_t)~PROFILE_NOTES_MASK) == 0 &&
-         edit->before_hinted <= 1 && edit->after_hinted <= 1;
+  return game_edit_valid(edit);
 }
 
 static bool valid_profile_session_common(const ProfileSession *slot,
@@ -148,6 +143,15 @@ static bool valid_profile_session_common(const ProfileSession *slot,
     if (!valid_edit(&slot->undo[i])) return false;
   for (uint16_t i = 0; i < slot->redo_count; ++i)
     if (!valid_edit(&slot->redo[i])) return false;
+
+  Game undo_game = slot->session.game;
+  for (uint16_t i = slot->undo_count; i > 0; --i)
+    if (!game_apply_edit(&undo_game, &slot->undo[i - 1u], false)) return false;
+
+  Game redo_game = slot->session.game;
+  for (uint16_t i = slot->redo_count; i > 0; --i)
+    if (!game_apply_edit(&redo_game, &slot->redo[i - 1u], true)) return false;
+
   return true;
 }
 
@@ -259,13 +263,15 @@ static void encode_preferences(ProfileWriter *writer,
   writer_u32(writer, preferences->window_width);
   writer_u32(writer, preferences->window_height);
   writer_u8(writer, preferences->window_maximized ? 1u : 0u);
+  writer_u8(writer, preferences->auto_remove_peer_notes ? 1u : 0u);
 }
 
 static StoreStatus decode_preferences(ProfileReader *reader,
                                       Preferences *preferences) {
   uint16_t version = reader_u16(reader);
   if (!reader->ok) return STORE_CORRUPT;
-  if (version != SUDOKURA_PREFERENCES_CONTENT_VERSION)
+  if (version != SUDOKURA_PREFERENCES_CONTENT_VERSION &&
+      version != SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
 
   Preferences loaded;
@@ -284,14 +290,17 @@ static StoreStatus decode_preferences(ProfileReader *reader,
   loaded.window_width = reader_u32(reader);
   loaded.window_height = reader_u32(reader);
   uint8_t maximized = reader_u8(reader);
+  uint8_t auto_remove =
+      version == SUDOKURA_PREFERENCES_CONTENT_VERSION ? reader_u8(reader) : 0u;
   loaded.dark_theme = dark != 0;
   loaded.strict_mode = strict != 0;
   loaded.audio_enabled = audio != 0;
   loaded.reduced_motion = reduced != 0;
   loaded.window_maximized = maximized != 0;
+  loaded.auto_remove_peer_notes = auto_remove != 0;
 
   if (!reader->ok || dark > 1 || strict > 1 || audio > 1 || reduced > 1 ||
-      maximized > 1 || !preferences_validate(&loaded))
+      maximized > 1 || auto_remove > 1 || !preferences_validate(&loaded))
     return STORE_CORRUPT;
   *preferences = loaded;
   return STORE_OK;
@@ -306,9 +315,11 @@ static void encode_edit(ProfileWriter *writer, const ProfileEdit *edit) {
   writer_u16(writer, edit->after_notes);
   writer_u8(writer, edit->before_hinted);
   writer_u8(writer, edit->after_hinted);
+  writer_u8(writer, edit->peer_note_value);
+  writer_u32(writer, edit->peer_notes_removed);
 }
 
-static ProfileEdit decode_edit(ProfileReader *reader) {
+static ProfileEdit decode_edit(ProfileReader *reader, bool legacy) {
   ProfileEdit edit;
   memset(&edit, 0, sizeof(edit));
   edit.row = reader_u8(reader);
@@ -319,6 +330,10 @@ static ProfileEdit decode_edit(ProfileReader *reader) {
   edit.after_notes = reader_u16(reader);
   edit.before_hinted = reader_u8(reader);
   edit.after_hinted = reader_u8(reader);
+  if (!legacy) {
+    edit.peer_note_value = reader_u8(reader);
+    edit.peer_notes_removed = reader_u32(reader);
+  }
   return edit;
 }
 
@@ -362,8 +377,10 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
                                   bool expected_daily) {
   uint16_t version = reader_u16(reader);
   if (!reader->ok) return STORE_CORRUPT;
-  if (version != SUDOKURA_SESSION_CONTENT_VERSION)
+  if (version != SUDOKURA_SESSION_CONTENT_VERSION &&
+      version != SUDOKURA_SESSION_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
+  bool legacy_history = version == SUDOKURA_SESSION_CONTENT_VERSION_LEGACY;
 
   uint32_t generator_revision = reader_u32(reader);
   uint64_t seed = reader_u64(reader);
@@ -428,13 +445,13 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   if (!reader->ok || loaded.undo_count > SUDOKURA_HISTORY_LIMIT)
     return STORE_CORRUPT;
   for (uint16_t i = 0; i < loaded.undo_count; ++i)
-    loaded.undo[i] = decode_edit(reader);
+    loaded.undo[i] = decode_edit(reader, legacy_history);
 
   loaded.redo_count = reader_u16(reader);
   if (!reader->ok || loaded.redo_count > SUDOKURA_HISTORY_LIMIT)
     return STORE_CORRUPT;
   for (uint16_t i = 0; i < loaded.redo_count; ++i)
-    loaded.redo[i] = decode_edit(reader);
+    loaded.redo[i] = decode_edit(reader, legacy_history);
 
   if (!reader->ok || !valid_profile_session(&loaded, expected_daily))
     return STORE_CORRUPT;
