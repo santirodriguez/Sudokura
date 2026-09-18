@@ -149,6 +149,36 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
                                    tr(ui->language, T_LINK_ERROR), g->win);
 }
 
+static bool open_global_info_key(Persistence *persistence, const Game *game,
+                                 UI *ui, SDL_Keycode key) {
+  Screen target;
+  if (key == SDLK_F1)
+    target = SCR_HELP;
+  else if (key == SDLK_F2)
+    target = SCR_ABOUT;
+  else
+    return false;
+
+  ui_button_click();
+  if (ui->screen == target) return true;
+  if (ui->screen == SCR_PLAY)
+    open_info_from_play(persistence, game, ui, target);
+  else
+    (void)app_open_aux(ui, target);
+  return true;
+}
+
+static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
+  if (!ui || ui->screen != SCR_PLAY || ui->result != RES_NONE ||
+      ui->pause_reasons != 0)
+    return false;
+  AppActionOutcome outcome = app_check_terminal(game, ui, elapsed_time(ui));
+  if (!outcome.terminal) return false;
+  finish_terminal_action(ui);
+  (void)save_current_session(persistence, game, ui);
+  return true;
+}
+
 int main(int argc, char **argv) {
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
@@ -168,7 +198,7 @@ int main(int argc, char **argv) {
   memset(&game, 0, sizeof(game));
   UI ui;
   app_state_init(&ui);
-  ui.running_since = now_s();
+  app_clock_reset(&ui, now_ms());
   set_mode_params(&ui);
   home_difficulty = DIFFICULTY_MEDIUM;
 
@@ -273,7 +303,11 @@ int main(int argc, char **argv) {
   bool running = true;
   SDL_Event e;
   while (running) {
+    (void)settle_terminal(&persistence, &game, &ui);
     while (SDL_PollEvent(&e)) {
+      if (e.type != SDL_QUIT &&
+          settle_terminal(&persistence, &game, &ui))
+        continue;
       if (e.type == SDL_QUIT) {
         if (ui.session_open)
           (void)save_current_session(&persistence, &game, &ui);
@@ -281,22 +315,25 @@ int main(int argc, char **argv) {
         continue;
       }
       if (e.type == SDL_WINDOWEVENT) {
-        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
           apply_window_resize(&g, e.window.data1, e.window.data2);
-        else if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
-                 ui.session_open && ui.result == RES_NONE) {
-          clock_pause(&ui, PAUSE_FOCUS);
-          (void)save_current_session(&persistence, &game, &ui);
-        } else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED &&
+        } else if ((e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+                    e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
+                    e.window.event == SDL_WINDOWEVENT_HIDDEN) &&
                    ui.session_open && ui.result == RES_NONE) {
-          clock_resume(&ui, PAUSE_FOCUS);
-          (void)save_current_session(&persistence, &game, &ui);
+          if (clock_pause(&ui, PAUSE_FOCUS))
+            (void)save_current_session(&persistence, &game, &ui);
         }
+        /* Focus recovery intentionally leaves PAUSE_FOCUS set. The board stays
+           hidden until the player explicitly resumes, so a stopped Time
+           Attack clock cannot be used to inspect the puzzle. */
         continue;
       }
       if (e.type == SDL_KEYDOWN) {
         SDL_Keycode k = e.key.keysym.sym;
         SDL_Keymod mod = SDL_GetModState();
+        if (open_global_info_key(&persistence, &game, &ui, k))
+          continue;
         if (k == SDLK_l) {
           ui_button_click();
           home_cycle_language(&persistence, &ui, 1);
@@ -350,12 +387,6 @@ int main(int argc, char **argv) {
             ui_button_click();
             ui.dark_theme = !ui.dark_theme;
             (void)save_preferences(&persistence, &ui);
-          } else if (k == SDLK_F1) {
-            ui_button_click();
-            (void)app_open_aux(&ui, SCR_HELP);
-          } else if (k == SDLK_F2) {
-            ui_button_click();
-            (void)app_open_aux(&ui, SCR_ABOUT);
           } else if (k == SDLK_m) {
             ui_button_click();
             home_cycle_mode(&persistence, &ui, 1);
@@ -392,11 +423,11 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.pause_reasons) {
-          if ((ui.pause_reasons & PAUSE_MANUAL) &&
+          if ((ui.pause_reasons & PAUSE_USER_VISIBLE) &&
               (k == SDLK_p || k == SDLK_RETURN || k == SDLK_KP_ENTER)) {
             ui_button_click();
-            clock_resume(&ui, PAUSE_MANUAL);
-            (void)save_current_session(&persistence, &game, &ui);
+            if (resume_user_pause(&ui))
+              (void)save_current_session(&persistence, &game, &ui);
           } else if (k == SDLK_ESCAPE) {
             ui_button_click();
             go_home(&persistence, &game, &ui);
@@ -462,8 +493,11 @@ int main(int argc, char **argv) {
 
       if (e.type == SDL_MOUSEBUTTONDOWN) {
         int x = e.button.x, y = e.button.y;
+        bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
+        if (!left && !right) continue;
         if (point_in(language_rect(&g, &ui), x, y)) {
+          if (!left) continue;
           for (int language = 0; language < LANG_COUNT; ++language) {
             if (point_in(language_segment(&g, &ui, language), x, y)) {
               ui_button_click();
@@ -475,6 +509,7 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.screen == SCR_TITLE) {
+          if (!left) continue;
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
           bool handled = false;
@@ -533,6 +568,7 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.screen == SCR_END) {
+          if (!left) continue;
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
           if (point_in(sdl_rect(a.end_buttons[0]), x, y)) {
@@ -550,6 +586,7 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.screen == SCR_HELP || ui.screen == SCR_ABOUT) {
+          if (!left) continue;
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
           if (ui.screen == SCR_ABOUT) {
@@ -570,13 +607,13 @@ int main(int argc, char **argv) {
           continue;
         }
         if (ui.pause_reasons) {
-          if (ui.pause_reasons & PAUSE_MANUAL) {
+          if (left && (ui.pause_reasons & PAUSE_USER_VISIBLE)) {
             AppGeometry a;
             if (get_geometry(&g, &ui, &a)) {
               if (point_in(sdl_rect(a.pause_buttons[0]), x, y)) {
                 ui_button_click();
-                clock_resume(&ui, PAUSE_MANUAL);
-                (void)save_current_session(&persistence, &game, &ui);
+                if (resume_user_pause(&ui))
+                  (void)save_current_session(&persistence, &game, &ui);
               } else if (point_in(sdl_rect(a.pause_buttons[1]), x, y)) {
                 ui_button_click();
                 go_home(&persistence, &game, &ui);
@@ -610,6 +647,7 @@ int main(int argc, char **argv) {
               (void)save_current_session(&persistence, &game, &ui);
           }
         } else {
+          if (!left) continue;
           SidebarRects controls;
           compute_sidebar_rects(&layout, &controls);
           if (layout.model.hud_count > 4 &&
@@ -681,23 +719,9 @@ int main(int argc, char **argv) {
       }
     }
 
-    if (ui.screen == SCR_PLAY && ui.pause_reasons == 0) {
-      bool solved = game_is_solved(&game);
-      bool lost = game_mode_lost(ui.mode, ui.strikes, ui.strikes_max,
-                                 elapsed_time(&ui), ui.time_limit_s);
-      if (solved || lost) {
-        clock_pause(&ui, PAUSE_END);
-        ui.result = solved ? RES_WIN : RES_LOSE;
-        ui.screen = SCR_END;
-        if (solved)
-          victory_animation_start();
-        else
-          victory_animation_reset();
-        (void)save_current_session(&persistence, &game, &ui);
-      }
-    }
+    (void)settle_terminal(&persistence, &game, &ui);
     if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
-        now_s() - persistence.last_checkpoint >= 10.0)
+        now_ms() - persistence.last_checkpoint_ms >= UINT64_C(10000))
       (void)save_current_session(&persistence, &game, &ui);
     app_frame(&g, &game, &ui);
   }
