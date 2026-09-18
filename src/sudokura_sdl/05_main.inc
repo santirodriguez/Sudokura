@@ -304,7 +304,7 @@ int main(int argc, char **argv) {
   SDL_Event e;
   while (running) {
     (void)settle_terminal(&persistence, &game, &ui);
-    while (SDL_PollEvent(&e)) {
+    while (ui_poll_event(&e)) {
       if (e.type != SDL_QUIT &&
           settle_terminal(&persistence, &game, &ui))
         continue;
