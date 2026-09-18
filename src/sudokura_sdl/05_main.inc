@@ -113,12 +113,10 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
       home_daily_game(p, game, ui, g);
       break;
     case HOME_FOCUS_HELP:
-      ui->prev_screen = SCR_TITLE;
-      ui->screen = SCR_HELP;
+      (void)app_open_aux(ui, SCR_HELP);
       break;
     case HOME_FOCUS_ABOUT:
-      ui->prev_screen = SCR_TITLE;
-      ui->screen = SCR_ABOUT;
+      (void)app_open_aux(ui, SCR_ABOUT);
       break;
     case HOME_FOCUS_THEME:
       ui->dark_theme = !ui->dark_theme;
@@ -169,14 +167,7 @@ int main(int argc, char **argv) {
   Game game;
   memset(&game, 0, sizeof(game));
   UI ui;
-  memset(&ui, 0, sizeof(ui));
-  ui.sel_r = 4;
-  ui.sel_c = 4;
-  ui.language = LANG_EN;
-  ui.dark_theme = true;
-  ui.mode = MODE_CLASSIC;
-  ui.screen = SCR_TITLE;
-  ui.prev_screen = SCR_TITLE;
+  app_state_init(&ui);
   ui.running_since = now_s();
   set_mode_params(&ui);
   home_difficulty = DIFFICULTY_MEDIUM;
@@ -360,12 +351,10 @@ int main(int argc, char **argv) {
             (void)save_preferences(&persistence, &ui);
           } else if (k == SDLK_F1) {
             ui_button_click();
-            ui.prev_screen = SCR_TITLE;
-            ui.screen = SCR_HELP;
+            (void)app_open_aux(&ui, SCR_HELP);
           } else if (k == SDLK_F2) {
             ui_button_click();
-            ui.prev_screen = SCR_TITLE;
-            ui.screen = SCR_ABOUT;
+            (void)app_open_aux(&ui, SCR_ABOUT);
           } else if (k == SDLK_m) {
             ui_button_click();
             home_cycle_mode(&persistence, &ui, 1);
@@ -450,10 +439,8 @@ int main(int argc, char **argv) {
           (void)save_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_h) {
           ui_button_click();
-          if (game_hint(&game, r, c)) {
-            show_toast(&ui, tr(ui.language, T_HINT_USED));
+          if (apply_hint_action(&game, &ui, r, c))
             (void)save_current_session(&persistence, &game, &ui);
-          }
         } else if (k == SDLK_DELETE || k == SDLK_BACKSPACE || k == SDLK_0 ||
                    k == SDLK_KP_0) {
           if (apply_player_input(&game, &ui, r, c, 0, false))
@@ -527,13 +514,11 @@ int main(int argc, char **argv) {
           } else if (point_in(sdl_rect(a.home_secondary[0]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_HELP;
-            ui.prev_screen = SCR_TITLE;
-            ui.screen = SCR_HELP;
+            (void)app_open_aux(&ui, SCR_HELP);
           } else if (point_in(sdl_rect(a.home_secondary[1]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_ABOUT;
-            ui.prev_screen = SCR_TITLE;
-            ui.screen = SCR_ABOUT;
+            (void)app_open_aux(&ui, SCR_ABOUT);
           } else if (point_in(sdl_rect(a.home_secondary[2]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_THEME;
@@ -649,10 +634,8 @@ int main(int argc, char **argv) {
             }
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
             ui_button_click();
-            if (game_hint(&game, ui.sel_r, ui.sel_c)) {
-              show_toast(&ui, tr(ui.language, T_HINT_USED));
+            if (apply_hint_action(&game, &ui, ui.sel_r, ui.sel_c))
               (void)save_current_session(&persistence, &game, &ui);
-            }
           } else if (point_in(controls.btn[PLAY_ACTION_NOTES], x, y)) {
             ui_button_click();
             ui.notes_mode = !ui.notes_mode;
@@ -661,7 +644,7 @@ int main(int argc, char **argv) {
             (void)save_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_VERIFY], x, y)) {
             ui_button_click();
-            int conflicts = game_conflict_count(&game);
+            int conflicts = apply_verify_action(&game, &ui);
             if (conflicts == 0) {
               show_toast(&ui, tr(ui.language, T_NO_CONFLICTS));
             } else {
