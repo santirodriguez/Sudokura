@@ -40,6 +40,8 @@ tests/test_live_save: tests/test_live_save.c profile.c profile.h save_policy.c s
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o $@
 tests/test_human: tests/test_human.c human.c human.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_human.c human.c -o $@
+tests/test_human_calibration: tests/test_human_calibration.c human.c human.h tests/fixtures/human_difficulty_20240415.csv
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_human_calibration.c human.c -o $@
 tests/test_generator_quality: tests/test_generator_quality.c game.c game.h human.c human.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_generator_quality.c game.c human.c -o $@
 tests/test_seed: tests/test_seed.c seed.c seed.h
@@ -58,9 +60,10 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input
 	./tests/test_text_fit
 	./tests/test_audio
 	./tests/test_input
-quality: tests/test_generator_quality
+quality: tests/test_generator_quality tests/test_human_calibration
 	./tests/test_generator_quality
-test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui
+	./tests/test_human_calibration
+test: tests/test_main tests/test_app tests/test_clock tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
