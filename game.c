@@ -349,7 +349,10 @@ static int v3_min_clues(GameDifficulty difficulty) {
 }
 
 static int v3_max_clues(GameDifficulty difficulty) {
-  static const int maximum[DIFFICULTY_COUNT] = {47, 39, 32};
+  /* These are search bounds only. Human technique requirements define the
+     public difficulty label. Medium may legitimately need a locked candidate
+     before it reaches the legacy-style mid-30s clue count. */
+  static const int maximum[DIFFICULTY_COUNT] = {47, 45, 32};
   return maximum[difficulty];
 }
 
