@@ -163,6 +163,19 @@ static void test_profile_roundtrip(void) {
   assert(loaded.normal.value.undo[0].after_value == 4);
   assert(loaded.result_count == 1);
   assert(loaded.results[0].status == SESSION_LOST);
+
+  SessionState changed_normal = normal;
+  changed_normal.selected_row = 7;
+  changed_normal.elapsed_ms += UINT64_C(1000);
+  assert(profile_slot_set(&loaded.normal, &changed_normal, false));
+  assert(profile_save_file(profile_path, profile_backup_path, &loaded) ==
+         STORE_OK);
+
+  ProfileData reloaded;
+  assert(profile_load_file(profile_path, &reloaded) == STORE_OK);
+  assert(reloaded.normal.value.session.selected_row == 7);
+  assert(reloaded.daily.present);
+  assert(!memcmp(&reloaded.daily.value.session.game, &daily.game, sizeof(Game)));
 }
 
 static void test_bounds_and_future_container(void) {
@@ -287,6 +300,37 @@ static void test_daily_uses_separate_slot(void) {
   assert(profile.daily.value.session.is_daily);
 }
 
+static void test_corrupt_legacy_inputs_fail_closed(void) {
+  cleanup();
+
+  FILE *file = fopen(legacy_preferences_path, "wb");
+  assert(file);
+  assert(fwrite("bad", 1, 3, file) == 3);
+  assert(fclose(file) == 0);
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_CORRUPT);
+  assert(!migrated);
+  assert(store_file_exists(legacy_preferences_path));
+  assert(store_file_exists(legacy_preferences_backup));
+  assert(!store_file_exists(profile_path));
+
+  cleanup();
+  file = fopen(legacy_audio_path, "wb");
+  assert(file);
+  assert(fwrite("not-audio", 1, 9, file) == 9);
+  assert(fclose(file) == 0);
+  paths = legacy_paths();
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_CORRUPT);
+  assert(store_file_exists(legacy_audio_path));
+  assert(store_file_exists(legacy_audio_backup));
+  assert(!store_file_exists(profile_path));
+}
+
 static void test_incompatible_legacy_is_preserved(void) {
   cleanup();
   SessionState state = normal_state();
@@ -325,6 +369,7 @@ int main(void) {
   cleanup();
   test_v12_migration_and_one_time_import();
   test_daily_uses_separate_slot();
+  test_corrupt_legacy_inputs_fail_closed();
   test_incompatible_legacy_is_preserved();
   cleanup();
   puts("v1.3 profile model, slots, bounds, corruption, and v1.2 migration passed");
