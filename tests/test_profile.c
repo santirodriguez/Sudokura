@@ -122,6 +122,7 @@ static void test_profile_roundtrip(void) {
   profile.preferences.music_volume = 31;
   profile.preferences.fx_volume = 72;
   profile.preferences.reduced_motion = true;
+  profile.preferences.auto_remove_peer_notes = true;
   profile.preferences.window_x = 40;
   profile.preferences.window_y = 50;
   profile.preferences.window_width = 1280;
@@ -133,16 +134,20 @@ static void test_profile_roundtrip(void) {
   assert(profile_slot_set(&profile.normal, &normal, true));
   assert(profile_slot_set(&profile.daily, &daily, false));
 
+  int hinted_cell = -1;
+  for (int i = 0; i < 81; ++i)
+    if (normal.game.hinted[i]) { hinted_cell = i; break; }
+  assert(hinted_cell >= 0);
   profile.normal.value.undo_count = 1;
   profile.normal.value.undo[0] = (ProfileEdit){
-      .row = 1,
-      .column = 2,
+      .row = (uint8_t)(hinted_cell / 9),
+      .column = (uint8_t)(hinted_cell % 9),
       .before_value = 0,
-      .after_value = 4,
+      .after_value = (uint8_t)normal.game.solution[hinted_cell],
       .before_notes = 0,
       .after_notes = 0,
       .before_hinted = 0,
-      .after_hinted = 0,
+      .after_hinted = 1,
   };
 
   profile.result_count = 1;
@@ -170,13 +175,15 @@ static void test_profile_roundtrip(void) {
   assert(loaded.preferences.music_volume == 31);
   assert(loaded.preferences.fx_volume == 72);
   assert(loaded.preferences.reduced_motion);
+  assert(loaded.preferences.auto_remove_peer_notes);
   assert(loaded.preferences.window_width == 1280);
   assert(loaded.normal.present && loaded.daily.present);
   assert(!memcmp(&loaded.normal.value.session.game, &normal.game, sizeof(Game)));
   assert(!memcmp(&loaded.daily.value.session.game, &daily.game, sizeof(Game)));
   assert(loaded.normal.value.assisted);
   assert(loaded.normal.value.undo_count == 1);
-  assert(loaded.normal.value.undo[0].after_value == 4);
+  assert(loaded.normal.value.undo[0].after_value ==
+         normal.game.solution[hinted_cell]);
   assert(loaded.result_count == 1);
   assert(loaded.results[0].status == SESSION_LOST);
 
