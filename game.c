@@ -555,5 +555,5 @@ bool game_is_solved(const Game *game) {
 bool game_mode_lost(GameMode mode, int strikes, int strikes_max,
                     double elapsed, double limit) {
   return (mode == MODE_STRIKES && strikes >= strikes_max) ||
-         (mode == MODE_TIME && limit > 0 && elapsed > limit);
+         (mode == MODE_TIME && limit > 0 && elapsed >= limit);
 }
