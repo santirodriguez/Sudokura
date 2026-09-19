@@ -172,9 +172,6 @@ jobs:
           name: checksums
           path: |
             artifacts/SHA256SUMS.txt
-            artifacts/artifact-manifest-linux.json
-            artifacts/artifact-manifest-windows.json
-            artifacts/artifact-manifest-macos-arm64.json
             artifacts/artifact-manifest-*.json
             artifacts/build-provenance-*.txt
 
@@ -205,4 +202,5 @@ jobs:
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-x86_64-unsigned.zip
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-arm64-unsigned.zip
             artifacts/SHA256SUMS.txt
+            artifacts/artifact-manifest-*.json
           body_path: docs/RELEASE_NOTES_${{ needs.version.outputs.version }}.md
