@@ -28,7 +28,9 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 30s AppDir/usr/bin/sudokura 
 artifact="Sudokura-v${VERSION}-linux-x86_64.AppImage"
 VERSION="$VERSION" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
   --runtime-file "$APPIMAGE_RUNTIME" AppDir "$artifact"
-grep -Fxq "X-AppImage-Version=$VERSION" AppDir/usr/share/applications/sudokura.desktop
+# appimagetool writes X-AppImage-Version into the root desktop entry that
+# becomes part of the AppImage; linuxdeploy initially creates it as a symlink.
+grep -Fxq "X-AppImage-Version=$VERSION" AppDir/sudokura.desktop
 chmod +x "$artifact"
 test -x "$artifact"
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy APPIMAGE_EXTRACT_AND_RUN=1 timeout 30s "./$artifact" --smoke-test
