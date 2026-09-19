@@ -725,16 +725,6 @@ static void return_from_info(Persistence*p,const Game*game,UI*ui){
   if(returning_to_play){clock_resume(ui,PAUSE_MODAL);(void)checkpoint_current_session(p,game,ui);}
 }
 
-static bool ends_withi(const char* s, const char* suf){
-  size_t ns=strlen(s), ms=strlen(suf); if(ms>ns) return false;
-  for(size_t i=0;i<ms;i++){
-    char a=s[ns-ms+i], b=suf[i];
-    if(a>='A'&&a<='Z') a=(char)(a-'A'+'a');
-    if(b>='A'&&b<='Z') b=(char)(b-'A'+'a');
-    if(a!=b) return false;
-  }
-  return true;
-}
 static bool try_open_font_path(const char* path){
   if(!path) return false;
   TTF_Font* tmp = TTF_OpenFont(path, 18);

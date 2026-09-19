@@ -94,7 +94,8 @@ static SDL_Texture*text_cache_get(Gfx*g,TTF_Font*f,const char*txt,
        entry->wrap_w==wrap_w&&text_cache_color_equal(entry->color,col)&&
        strcmp(entry->text,txt)==0){
       entry->stamp=text_cache_stamp++;
-      if(w)*w=entry->logical_w;if(h)*h=entry->logical_h;
+      if(w)*w=entry->logical_w;
+      if(h)*h=entry->logical_h;
       return entry->texture;
     }
     if(!entry->texture){oldest=i;break;}
@@ -124,7 +125,8 @@ static SDL_Texture*text_cache_get(Gfx*g,TTF_Font*f,const char*txt,
   entry->stamp=text_cache_stamp++;
   memcpy(entry->text,txt,length+1);
   SDL_FreeSurface(surface);
-  if(w)*w=entry->logical_w;if(h)*h=entry->logical_h;
+  if(w)*w=entry->logical_w;
+  if(h)*h=entry->logical_h;
   return entry->texture;
 }
 

@@ -56,7 +56,8 @@ static bool get_exe_dir(char out[PATH_MAX]){
   return path_copy(out,PATH_MAX,buf);
 #else
   char buf[PATH_MAX];ssize_t n=readlink("/proc/self/exe",buf,sizeof(buf)-1);
-  if(n<=0)return false;buf[n]='\0';
+  if(n<=0)return false;
+  buf[n]='\0';
   char*slash=strrchr(buf,'/');if(!slash)return false;*slash='\0';
   return path_copy(out,PATH_MAX,buf);
 #endif
