@@ -42,7 +42,7 @@ jobs:
   linux:
     needs: resolve
     env:
-      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
+      SUDOKURA_SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -81,7 +81,7 @@ jobs:
   windows:
     needs: resolve
     env:
-      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
+      SUDOKURA_SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
     runs-on: windows-latest
     defaults:
       run:
@@ -134,7 +134,7 @@ jobs:
   macos:
     needs: resolve
     env:
-      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
+      SUDOKURA_SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
