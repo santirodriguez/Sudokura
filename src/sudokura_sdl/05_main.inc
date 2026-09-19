@@ -440,32 +440,71 @@ static const char *persistence_startup_error(const Persistence *p,
   return NULL;
 }
 
+static bool saved_window_display(const Preferences *preferences,
+                                 int *display_index,
+                                 SDL_Rect *usable_out) {
+  if (!preferences || preferences->window_x == INT32_MIN ||
+      preferences->window_y == INT32_MIN)
+    return false;
+  int count = SDL_GetNumVideoDisplays();
+  DesktopRect saved = {
+      preferences->window_x, preferences->window_y,
+      (int)preferences->window_width, (int)preferences->window_height};
+  for (int i = 0; i < count; ++i) {
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(i, &usable) != 0) continue;
+    DesktopRect display = {usable.x, usable.y, usable.w, usable.h};
+    if (desktop_rect_has_visible_area(saved, display, 64)) {
+      if (display_index) *display_index = i;
+      if (usable_out) *usable_out = usable;
+      return true;
+    }
+  }
+  return false;
+}
+
 static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
   if (!g || !g->win || !preferences) return;
-  if (preferences->window_width >= 320 && preferences->window_height >= 240)
-    SDL_SetWindowSize(g->win, (int)preferences->window_width,
-                     (int)preferences->window_height);
-  if (preferences->window_x != INT32_MIN &&
-      preferences->window_y != INT32_MIN)
+  int display = 0;
+  SDL_Rect usable = {0, 0, 0, 0};
+  bool saved_visible = saved_window_display(preferences, &display, &usable);
+  if (!saved_visible && SDL_GetDisplayUsableBounds(display, &usable) != 0)
+    usable = (SDL_Rect){0, 0, 1920, 1080};
+
+  int width = (int)preferences->window_width;
+  int height = (int)preferences->window_height;
+  (void)geometry_normalize_window_size(width, height, &width, &height);
+  if (usable.w > 0 && width > usable.w) width = usable.w;
+  if (usable.h > 0 && height > usable.h) height = usable.h;
+  (void)geometry_normalize_window_size(width, height, &width, &height);
+  SDL_SetWindowSize(g->win, width, height);
+
+  if (saved_visible) {
     SDL_SetWindowPosition(g->win, preferences->window_x,
                          preferences->window_y);
-  if (preferences->window_maximized)
-    SDL_MaximizeWindow(g->win);
+  } else {
+    SDL_SetWindowPosition(g->win, SDL_WINDOWPOS_CENTERED_DISPLAY(display),
+                          SDL_WINDOWPOS_CENTERED_DISPLAY(display));
+  }
   SDL_PumpEvents();
-  (void)SDL_GetRendererOutputSize(g->ren, &g->width, &g->height);
+  (void)gfx_refresh_metrics(g);
+  gfx_capture_restored_bounds(g);
+  if (preferences->window_maximized) {
+    SDL_MaximizeWindow(g->win);
+    SDL_PumpEvents();
+    (void)gfx_refresh_metrics(g);
+  }
 }
 
 static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
   if (!p || !p->enabled || !g || !g->win || !ui) return;
-  int x = 0, y = 0, width = 0, height = 0;
-  SDL_GetWindowPosition(g->win, &x, &y);
-  SDL_GetWindowSize(g->win, &width, &height);
+  gfx_capture_restored_bounds(g);
   Uint32 flags = SDL_GetWindowFlags(g->win);
-  p->preferences.window_x = x;
-  p->preferences.window_y = y;
-  if (width >= 320 && height >= 240) {
-    p->preferences.window_width = (uint32_t)width;
-    p->preferences.window_height = (uint32_t)height;
+  if (g->restored_bounds_valid) {
+    p->preferences.window_x = g->restored_x;
+    p->preferences.window_y = g->restored_y;
+    p->preferences.window_width = (uint32_t)g->restored_width;
+    p->preferences.window_height = (uint32_t)g->restored_height;
   }
   p->preferences.window_maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
   (void)save_preferences(p, ui);
@@ -742,9 +781,34 @@ int main(int argc, char **argv) {
           running = false;
         continue;
       }
+      if (e.type == SDL_RENDER_DEVICE_RESET ||
+          e.type == SDL_RENDER_TARGETS_RESET) {
+        (void)gfx_refresh_metrics(&g);
+        if (!app_rebuild_renderer_resources(&g))
+          fprintf(stderr, "renderer resource rebuild failed: %s\n",
+                  SDL_GetError());
+        continue;
+      }
       if (e.type == SDL_WINDOWEVENT) {
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
           apply_window_resize(&g, e.window.data1, e.window.data2);
+          capture_window_preferences(&persistence, &g, &ui);
+        } else if (e.window.event == SDL_WINDOWEVENT_MOVED ||
+                   e.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
+                   e.window.event == SDL_WINDOWEVENT_RESTORED) {
+          (void)gfx_refresh_metrics(&g);
+          gfx_capture_restored_bounds(&g);
+          capture_window_preferences(&persistence, &g, &ui);
+#if SDL_VERSION_ATLEAST(2,0,18)
+        } else if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+          (void)gfx_refresh_metrics(&g);
+          if (!app_rebuild_renderer_resources(&g))
+            fprintf(stderr, "display-scale resource rebuild failed: %s\n",
+                    SDL_GetError());
+          capture_window_preferences(&persistence, &g, &ui);
+#endif
+        } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
+          g.dirty = true;
         } else if ((e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
                     e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
                     e.window.event == SDL_WINDOWEVENT_HIDDEN) &&

@@ -32,13 +32,24 @@ static void draw_focus_ring(SDL_Renderer*r,SDL_Rect rc,SDL_Color c){
     draw_line(r,x2,y2,x1,y2,c);draw_line(r,x1,y2,x1,y1,c);
   }
 }
+static int gfx_to_logical(const Gfx*g,int physical){
+  return desktop_unscale_value(physical,g?g->metrics.scale_milli:1000);
+}
+static int gfx_to_physical(const Gfx*g,int logical){
+  return desktop_scale_value(logical,g?g->metrics.scale_milli:1000);
+}
 static SDL_Texture*render_text(Gfx*g,TTF_Font*f,const char*txt,SDL_Color col,int*w,int*h){
   SDL_Surface*s=TTF_RenderUTF8_Blended(f,txt,col);if(!s)return NULL;
-  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);if(w)*w=s->w;if(h)*h=s->h;SDL_FreeSurface(s);return t;
+  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);
+  if(w)*w=gfx_to_logical(g,s->w);if(h)*h=gfx_to_logical(g,s->h);
+  SDL_FreeSurface(s);return t;
 }
 static SDL_Texture*render_text_wrapped(Gfx*g,TTF_Font*f,const char*txt,SDL_Color col,int wrap_w,int*w,int*h){
-  SDL_Surface*s=TTF_RenderUTF8_Blended_Wrapped(f,txt,col,wrap_w);if(!s)return NULL;
-  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);if(w)*w=s->w;if(h)*h=s->h;SDL_FreeSurface(s);return t;
+  int physical_wrap=gfx_to_physical(g,wrap_w);
+  SDL_Surface*s=TTF_RenderUTF8_Blended_Wrapped(f,txt,col,(Uint32)physical_wrap);if(!s)return NULL;
+  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);
+  if(w)*w=gfx_to_logical(g,s->w);if(h)*h=gfx_to_logical(g,s->h);
+  SDL_FreeSurface(s);return t;
 }
 static bool point_in(SDL_Rect r,int x,int y){return x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h;}
 static GeometryMode geometry_mode(Mode mode){return(GeometryMode)mode;}
@@ -49,10 +60,13 @@ static void update_font_tiers(Gfx*g,const UI*ui){AppGeometry a;if(!get_geometry(
 static bool draw_fitted_text(Gfx*g,const char*text,SDL_Color color,SDL_Rect r,int preferred,int minimum){
   for(int i=FONT_CACHE_COUNT-1;i>=0;i--){
     if(font_cache_sizes[i]>preferred||font_cache_sizes[i]<minimum)continue;
-    int w=0,h=0;
-    if(TTF_SizeUTF8(g->fonts[i],text,&w,&h)==0&&w<=r.w-8&&h<=r.h-4){
+    int physical_w=0,physical_h=0;
+    if(TTF_SizeUTF8(g->fonts[i],text,&physical_w,&physical_h)==0){
+      int w=gfx_to_logical(g,physical_w),h=gfx_to_logical(g,physical_h);
+      if(w>r.w-8||h>r.h-4)continue;
       SDL_Texture*t=render_text(g,g->fonts[i],text,color,&w,&h);if(!t)return false;
       SDL_Rect d={r.x+(r.w-w)/2,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);return true;
+    }
     }
   }
   return false;

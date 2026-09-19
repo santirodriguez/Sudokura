@@ -87,6 +87,19 @@ static void persistence_init(Persistence *persistence) {
   audio_apply_preferences(persistence);
 }
 
+static bool app_rebuild_renderer_resources(Gfx *gfx) {
+  if (!gfx || !gfx->ren) return false;
+  if (!app_rebuild_base_textures(gfx)) return false;
+  if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
+  app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
+                                       sudokura_icon_width,
+                                       sudokura_icon_height);
+  if (!app_icon_texture)
+    fprintf(stderr, "compact icon texture: %s\n", SDL_GetError());
+  gfx->dirty = true;
+  return app_icon_texture != NULL;
+}
+
 static bool app_init(Gfx *gfx, const char *font_cli) {
   if (!app_init_base(gfx, font_cli)) return false;
   audio_gfx = gfx;

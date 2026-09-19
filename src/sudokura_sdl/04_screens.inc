@@ -183,28 +183,163 @@ static void app_render_base(Gfx*g,const Game*game,UI*ui){
 }
 static bool save_frame(Gfx*g,const char*path){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,g->width,g->height,32,SDL_PIXELFORMAT_ARGB8888);if(!s)return false;bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&SDL_SaveBMP(s,path)==0;SDL_FreeSurface(s);return ok;}
 
-static void app_shutdown_base(Gfx*g){
+static void gfx_close_fonts(Gfx*g){
   if(!g)return;
-  if(g->wordmark)SDL_DestroyTexture(g->wordmark);
+  for(int i=0;i<FONT_CACHE_COUNT;i++){
+    if(g->fonts[i])TTF_CloseFont(g->fonts[i]);
+    g->fonts[i]=NULL;
+  }
+  g->font_big=g->font_small=g->font_note=g->font_cell=g->font_body=NULL;
+}
+
+static bool gfx_open_fonts(Gfx*g){
+  if(!g||!g->font_path[0])return false;
+  gfx_close_fonts(g);
+  for(int i=0;i<FONT_CACHE_COUNT;i++){
+    int physical_size=desktop_scale_value(font_cache_sizes[i],
+                                           g->metrics.scale_milli);
+    g->fonts[i]=TTF_OpenFont(g->font_path,physical_size);
+    if(!g->fonts[i]){
+      fprintf(stderr,"font %d@%d: %s\n",font_cache_sizes[i],physical_size,
+              TTF_GetError());
+      gfx_close_fonts(g);
+      return false;
+    }
+  }
+  g->font_big=cached_font(g,44);g->font_small=cached_font(g,20);
+  g->font_note=cached_font(g,12);g->font_cell=cached_font(g,28);
+  g->font_body=cached_font(g,18);
+  return true;
+}
+
+static bool gfx_refresh_metrics(Gfx*g){
+  if(!g||!g->win||!g->ren)return false;
+  int logical_w=0,logical_h=0,output_w=0,output_h=0;
+  SDL_GetWindowSize(g->win,&logical_w,&logical_h);
+  if(logical_w<=0||logical_h<=0)return false;
+  if(SDL_GetRendererOutputSize(g->ren,&output_w,&output_h)!=0||
+     output_w<=0||output_h<=0){
+    output_w=logical_w;output_h=logical_h;
+  }
+  DesktopMetrics next;
+  if(!desktop_metrics_compute(logical_w,logical_h,output_w,output_h,&next))
+    return false;
+  int old_scale=g->metrics.scale_milli;
+  g->metrics=next;g->width=logical_w;g->height=logical_h;
+  g->output_width=output_w;g->output_height=output_h;
+  if(SDL_RenderSetLogicalSize(g->ren,logical_w,logical_h)!=0){
+    fprintf(stderr,"SDL_RenderSetLogicalSize: %s\n",SDL_GetError());
+    return false;
+  }
+  if(old_scale>0&&old_scale!=next.scale_milli&&g->font_path[0]&&
+     !gfx_open_fonts(g))
+    return false;
+  g->dirty=true;
+  return true;
+}
+
+static void gfx_capture_restored_bounds(Gfx*g){
+  if(!g||!g->win)return;
+  Uint32 flags=SDL_GetWindowFlags(g->win);
+  if(flags&(SDL_WINDOW_MAXIMIZED|SDL_WINDOW_MINIMIZED|SDL_WINDOW_FULLSCREEN|
+            SDL_WINDOW_FULLSCREEN_DESKTOP))return;
+  int x=0,y=0,w=0,h=0;
+  SDL_GetWindowPosition(g->win,&x,&y);SDL_GetWindowSize(g->win,&w,&h);
+  if(w<=0||h<=0)return;
+  g->restored_x=x;g->restored_y=y;g->restored_width=w;g->restored_height=h;
+  g->restored_bounds_valid=true;
+}
+
+static void app_destroy_base_textures(Gfx*g){
+  if(!g)return;
+  if(g->wordmark){SDL_DestroyTexture(g->wordmark);g->wordmark=NULL;}
   for(int i=0;i<LANG_COUNT;i++){
     if(language_flags[i])SDL_DestroyTexture(language_flags[i]);
     language_flags[i]=NULL;
   }
-  for(int i=0;i<FONT_CACHE_COUNT;i++)if(g->fonts[i])TTF_CloseFont(g->fonts[i]);
+}
+
+static SDL_Texture*texture_from_rgba(SDL_Renderer*renderer,const unsigned char*rgba,unsigned int width,unsigned int height){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormatFrom((void*)rgba,(int)width,(int)height,32,(int)width*4,SDL_PIXELFORMAT_RGBA32);if(!s)return NULL;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FreeSurface(s);return t;}
+
+static bool app_rebuild_base_textures(Gfx*g){
+  if(!g||!g->ren)return false;
+  app_destroy_base_textures(g);
+  SDL_Surface*word=SDL_CreateRGBSurfaceWithFormatFrom(
+      (void*)sudokura_wordmark_rgba,(int)sudokura_wordmark_width,
+      (int)sudokura_wordmark_height,32,(int)sudokura_wordmark_width*4,
+      SDL_PIXELFORMAT_RGBA32);
+  if(word){g->wordmark=SDL_CreateTextureFromSurface(g->ren,word);SDL_FreeSurface(word);}
+  language_flags[LANG_EN]=texture_from_rgba(g->ren,sudokura_flag_us_rgba,
+      sudokura_flag_us_width,sudokura_flag_us_height);
+  language_flags[LANG_ES]=texture_from_rgba(g->ren,sudokura_flag_ar_rgba,
+      sudokura_flag_ar_width,sudokura_flag_ar_height);
+  language_flags[LANG_CA]=texture_from_rgba(g->ren,sudokura_flag_ca_rgba,
+      sudokura_flag_ca_width,sudokura_flag_ca_height);
+  return g->wordmark&&language_flags[LANG_EN]&&language_flags[LANG_ES]&&
+         language_flags[LANG_CA];
+}
+
+static void app_shutdown_base(Gfx*g){
+  if(!g)return;
+  app_destroy_base_textures(g);
+  gfx_close_fonts(g);
   if(g->ren)SDL_DestroyRenderer(g->ren);
   if(g->win)SDL_DestroyWindow(g->win);
   memset(g,0,sizeof(*g));
   if(TTF_WasInit())TTF_Quit();
   SDL_Quit();
 }
-static SDL_Texture*texture_from_rgba(SDL_Renderer*renderer,const unsigned char*rgba,unsigned int width,unsigned int height){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormatFrom((void*)rgba,(int)width,(int)height,32,(int)width*4,SDL_PIXELFORMAT_RGBA32);if(!s)return NULL;SDL_Texture*t=SDL_CreateTextureFromSurface(renderer,s);SDL_FreeSurface(s);return t;}
+
 static bool app_init_base(Gfx*g,const char*font_cli){
-  memset(g,0,sizeof(*g));g->width=1024;g->height=720;SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){fprintf(stderr,"SDL_Init: %s\n",SDL_GetError());return false;}if(TTF_Init()!=0){fprintf(stderr,"TTF_Init: %s\n",TTF_GetError());app_shutdown_base(g);return false;}
-  g->win=SDL_CreateWindow(SUDOKURA_NAME_VERSION,SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,g->width,g->height,SDL_WINDOW_RESIZABLE);if(!g->win){fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());app_shutdown_base(g);return false;}SDL_SetWindowMinimumSize(g->win,360,480);g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);if(!g->ren){fprintf(stderr,"SDL_CreateRenderer: %s\n",SDL_GetError());app_shutdown_base(g);return false;}
-  SDL_Surface*icon=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_icon_rgba,(int)sudokura_icon_width,(int)sudokura_icon_height,32,(int)sudokura_icon_width*4,SDL_PIXELFORMAT_RGBA32);if(icon){SDL_SetWindowIcon(g->win,icon);SDL_FreeSurface(icon);}SDL_Surface*word=SDL_CreateRGBSurfaceWithFormatFrom((void*)sudokura_wordmark_rgba,(int)sudokura_wordmark_width,(int)sudokura_wordmark_height,32,(int)sudokura_wordmark_width*4,SDL_PIXELFORMAT_RGBA32);if(word){g->wordmark=SDL_CreateTextureFromSurface(g->ren,word);SDL_FreeSurface(word);}if(!g->wordmark){fprintf(stderr,"wordmark texture: %s\n",SDL_GetError());app_shutdown_base(g);return false;}
-  language_flags[LANG_EN]=texture_from_rgba(g->ren,sudokura_flag_us_rgba,sudokura_flag_us_width,sudokura_flag_us_height);language_flags[LANG_ES]=texture_from_rgba(g->ren,sudokura_flag_ar_rgba,sudokura_flag_ar_width,sudokura_flag_ar_height);language_flags[LANG_CA]=texture_from_rgba(g->ren,sudokura_flag_ca_rgba,sudokura_flag_ca_width,sudokura_flag_ca_height);
-  char font_path[PATH_MAX]={0};const char*fpath=find_font_path_dynamic(font_path,font_cli);if(!fpath){fprintf(stderr,"%s\n",tr(LANG_EN,T_FONT_ERROR));app_shutdown_base(g);return false;}for(int i=0;i<FONT_CACHE_COUNT;i++){g->fonts[i]=TTF_OpenFont(fpath,font_cache_sizes[i]);if(!g->fonts[i]){fprintf(stderr,"font %d: %s\n",font_cache_sizes[i],TTF_GetError());app_shutdown_base(g);return false;}}
-  g->font_big=cached_font(g,44);g->font_small=cached_font(g,20);g->font_note=cached_font(g,12);g->font_cell=cached_font(g,28);g->font_body=cached_font(g,18);return true;
+  memset(g,0,sizeof(*g));g->width=SUDOKURA_DEFAULT_WINDOW_WIDTH;
+  g->height=SUDOKURA_DEFAULT_WINDOW_HEIGHT;g->dirty=true;
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");
+  if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){
+    fprintf(stderr,"SDL_Init: %s\n",SDL_GetError());return false;
+  }
+  if(TTF_Init()!=0){
+    fprintf(stderr,"TTF_Init: %s\n",TTF_GetError());app_shutdown_base(g);
+    return false;
+  }
+  Uint32 window_flags=SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI;
+  g->win=SDL_CreateWindow(SUDOKURA_NAME_VERSION,SDL_WINDOWPOS_CENTERED,
+      SDL_WINDOWPOS_CENTERED,g->width,g->height,window_flags);
+  if(!g->win){
+    fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());
+    app_shutdown_base(g);return false;
+  }
+  SDL_SetWindowMinimumSize(g->win,360,480);
+  g->ren=SDL_CreateRenderer(g->win,-1,
+      SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
+  if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);
+  if(!g->ren){
+    fprintf(stderr,"SDL_CreateRenderer: %s\n",SDL_GetError());
+    app_shutdown_base(g);return false;
+  }
+  SDL_RendererInfo info;
+  if(SDL_GetRendererInfo(g->ren,&info)==0)
+    g->software_renderer=(info.flags&SDL_RENDERER_SOFTWARE)!=0;
+  if(!gfx_refresh_metrics(g)){app_shutdown_base(g);return false;}
+
+  SDL_Surface*icon=SDL_CreateRGBSurfaceWithFormatFrom(
+      (void*)sudokura_icon_rgba,(int)sudokura_icon_width,
+      (int)sudokura_icon_height,32,(int)sudokura_icon_width*4,
+      SDL_PIXELFORMAT_RGBA32);
+  if(icon){SDL_SetWindowIcon(g->win,icon);SDL_FreeSurface(icon);}
+
+  char font_path[PATH_MAX]={0};
+  const char*fpath=find_font_path_dynamic(font_path,font_cli);
+  if(!fpath||!path_copy(g->font_path,sizeof(g->font_path),fpath)){
+    fprintf(stderr,"%s\n",tr(LANG_EN,T_FONT_ERROR));
+    app_shutdown_base(g);return false;
+  }
+  if(!gfx_open_fonts(g)){app_shutdown_base(g);return false;}
+  if(!app_rebuild_base_textures(g)){
+    fprintf(stderr,"presentation textures: %s\n",SDL_GetError());
+    app_shutdown_base(g);return false;
+  }
+  gfx_capture_restored_bounds(g);
+  return true;
 }
 
 static bool make_directory(const char*path){char part[PATH_MAX];size_t length=strlen(path);if(length==0||length>=sizeof(part))return false;if(!path_copy(part,sizeof(part),path))return false;for(size_t i=1;i<=length;i++)if(part[i]=='/'||part[i]=='\\'||part[i]=='\0'){char saved=part[i];part[i]='\0';if(part[0]){
@@ -214,4 +349,12 @@ static bool make_directory(const char*path){char part[PATH_MAX];size_t length=st
   if(mkdir(part,0755)!=0&&errno!=EEXIST)return false;
 #endif
 }part[i]=saved;}return true;}
-static void apply_window_resize(Gfx*g,int requested_width,int requested_height){int width=0,height=0;bool changed=geometry_normalize_window_size(requested_width,requested_height,&width,&height);if(changed)SDL_SetWindowSize(g->win,width,height);SDL_GetWindowSize(g->win,&g->width,&g->height);}
+static void apply_window_resize(Gfx*g,int requested_width,int requested_height){
+  if(!g||!g->win)return;
+  int width=0,height=0;
+  bool changed=geometry_normalize_window_size(requested_width,requested_height,
+                                               &width,&height);
+  if(changed)SDL_SetWindowSize(g->win,width,height);
+  (void)gfx_refresh_metrics(g);
+  gfx_capture_restored_bounds(g);
+}

@@ -52,6 +52,7 @@
 
 #include "app.h"
 #include "app_clock.h"
+#include "desktop.h"
 #include "game.h"
 #include "geometry.h"
 #include "version.h"
@@ -73,7 +74,25 @@
 /* =================== GUI & THEME =================== */
 enum { FONT_CACHE_COUNT=23 };
 static const int font_cache_sizes[FONT_CACHE_COUNT]={10,12,13,14,15,16,18,20,22,24,28,30,32,36,38,42,44,48,52,56,60,64,72};
-typedef struct { SDL_Window* win; SDL_Renderer* ren; TTF_Font* fonts[FONT_CACHE_COUNT]; TTF_Font* font_big; TTF_Font* font_small; TTF_Font* font_note; TTF_Font* font_cell; TTF_Font* font_body; SDL_Texture* wordmark; int width, height; } Gfx;
+typedef struct {
+  SDL_Window* win;
+  SDL_Renderer* ren;
+  TTF_Font* fonts[FONT_CACHE_COUNT];
+  TTF_Font* font_big;
+  TTF_Font* font_small;
+  TTF_Font* font_note;
+  TTF_Font* font_cell;
+  TTF_Font* font_body;
+  SDL_Texture* wordmark;
+  int width, height;
+  int output_width, output_height;
+  DesktopMetrics metrics;
+  bool software_renderer;
+  bool dirty;
+  char font_path[PATH_MAX];
+  int restored_x, restored_y, restored_width, restored_height;
+  bool restored_bounds_valid;
+} Gfx;
 
 typedef struct {
   SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;
