@@ -10,13 +10,21 @@
 #include <assert.h>
 #include <stdio.h>
 
+static void init_dummy_audio(unsigned missing_assets) {
+  audio_test_set_missing_assets(missing_assets);
+  assert(audio_init());
+  assert(audio_device_available());
+  assert(audio_is_available());
+  assert(audio_is_enabled());
+}
+
 int main(void) {
   assert(SDL_setenv("SDL_AUDIODRIVER", "dummy", 1) == 0);
   assert(SDL_Init(0) == 0);
 
-  assert(audio_init());
-  assert(audio_is_available());
-  assert(audio_is_enabled());
+  init_dummy_audio(0);
+  assert(audio_music_available());
+  assert(audio_fx_available());
   assert(audio_music_volume() == AUDIO_DEFAULT_MUSIC_VOLUME);
   assert(audio_fx_volume() == AUDIO_DEFAULT_FX_VOLUME);
 
@@ -60,16 +68,51 @@ int main(void) {
   audio_update();
   assert(Mix_PlayingMusic());
 
+  audio_set_music_volume(37);
+  audio_set_fx_volume(73);
   audio_set_enabled(false);
+  audio_test_force_device_loss();
+  assert(!audio_device_available());
+  assert(!audio_is_available());
   assert(!audio_is_enabled());
-  assert(!Mix_PlayingMusic());
+  audio_test_retry_now();
+  audio_update();
+  assert(audio_device_available());
+  assert(audio_is_available());
+  assert(!audio_is_enabled());
+  assert(audio_music_volume() == 37);
+  assert(audio_fx_volume() == 73);
   audio_set_enabled(true);
-  assert(audio_is_enabled());
   audio_update();
   assert(Mix_PlayingMusic());
-
   audio_shutdown();
+
+  init_dummy_audio(AUDIO_TEST_MISSING_MAIN_MUSIC);
+  assert(audio_music_available());
+  assert(audio_fx_available());
+  audio_set_context(AUDIO_CONTEXT_MAIN);
+  audio_update();
+  assert(!Mix_PlayingMusic());
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_set_context(AUDIO_CONTEXT_FAIL);
+  audio_update();
+  assert(Mix_PlayingMusic());
+  audio_shutdown();
+
+  init_dummy_audio(AUDIO_TEST_MISSING_ALL_OGG);
+  assert(!audio_music_available());
+  assert(audio_fx_available());
+  audio_set_context(AUDIO_CONTEXT_MAIN);
+  audio_update();
+  assert(!Mix_PlayingMusic());
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_play_result(AUDIO_RESULT_WIN);
+  audio_cancel_result();
+  assert(audio_is_available());
+  audio_shutdown();
+
+  audio_test_set_missing_assets(0);
   SDL_Quit();
-  puts("SDL_mixer audio tests passed for volumes, result cues, contexts, pause and mute recovery");
+  puts("SDL_mixer audio tests passed for preferences, partial resources, device recovery, contexts and optional-audio operation");
   return 0;
 }
