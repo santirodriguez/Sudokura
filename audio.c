@@ -8,15 +8,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { AUDIO_PATH_CAPACITY = 4096, AUDIO_SAMPLE_RATE = 44100 };
+enum {
+  AUDIO_PATH_CAPACITY = 4096,
+  AUDIO_SAMPLE_RATE = 44100,
+  AUDIO_REOPEN_DELAY_MS = 2000,
+  AUDIO_DEVICE_EVENT_REOPEN_MS = 250
+};
 
 typedef struct {
   bool initialized;
   bool subsystem_initialized;
+  bool mixer_initialized;
   bool mixer_open;
-  bool available;
+  bool assets_loaded;
   bool enabled;
   bool focus_paused;
+  bool subsystem_error_logged;
+  bool device_error_logged;
+  bool ogg_error_logged;
+  bool music_error_logged;
+  bool effect_error_logged;
+  Uint64 reopen_at_ms;
   AudioContext context;
   AudioContext playing_context;
   bool playing_context_valid;
@@ -37,6 +49,10 @@ static AudioState audio_state = {
     .music_volume = AUDIO_DEFAULT_MUSIC_VOLUME,
     .fx_volume = AUDIO_DEFAULT_FX_VOLUME,
 };
+
+#ifdef SUDOKURA_AUDIO_TESTING
+static unsigned audio_test_missing_assets = 0;
+#endif
 
 static int audio_clamp_percent(int value) {
   if (value < 0) return 0;
@@ -123,6 +139,7 @@ static void audio_free_assets(void) {
   audio_state.win_jingle = NULL;
   audio_state.fail_jingle = NULL;
   audio_free_effects();
+  audio_state.assets_loaded = false;
 }
 
 static bool audio_make_effect(AudioEffect effect, int start_hz, int end_hz,
@@ -176,10 +193,146 @@ static void audio_build_effects(void) {
       {AUDIO_EFFECT_LEAVE, 520, 300, 85, 80},
   };
   for (unsigned i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {
+    if (audio_state.effects[specs[i].effect]) continue;
     if (!audio_make_effect(specs[i].effect, specs[i].start_hz, specs[i].end_hz,
                            specs[i].duration_ms, specs[i].relative_volume))
       fprintf(stderr, "audio effect generation failed: %s\n", Mix_GetError());
   }
+}
+
+static bool audio_test_asset_missing(unsigned bit) {
+#ifdef SUDOKURA_AUDIO_TESTING
+  return (audio_test_missing_assets & bit) != 0;
+#else
+  (void)bit;
+  return false;
+#endif
+}
+
+static Mix_Music *audio_load_music_asset(const char *filename,
+                                         unsigned test_missing_bit) {
+  if (audio_test_asset_missing(test_missing_bit)) return NULL;
+  char path[AUDIO_PATH_CAPACITY];
+  if (!audio_resolve(path, filename)) {
+    fprintf(stderr, "audio music asset missing: %s\n", filename);
+    return NULL;
+  }
+  Mix_Music *music = Mix_LoadMUS(path);
+  if (!music)
+    fprintf(stderr, "audio music asset unavailable (%s): %s\n", filename,
+            Mix_GetError());
+  return music;
+}
+
+static Mix_Chunk *audio_load_chunk_asset(const char *filename,
+                                         unsigned test_missing_bit) {
+  if (audio_test_asset_missing(test_missing_bit)) return NULL;
+  char path[AUDIO_PATH_CAPACITY];
+  if (!audio_resolve(path, filename)) {
+    fprintf(stderr, "audio jingle asset missing: %s\n", filename);
+    return NULL;
+  }
+  Mix_Chunk *chunk = Mix_LoadWAV(path);
+  if (!chunk)
+    fprintf(stderr, "audio jingle asset unavailable (%s): %s\n", filename,
+            Mix_GetError());
+  return chunk;
+}
+
+static void audio_load_assets(void) {
+  if (audio_state.assets_loaded || !audio_state.mixer_open) return;
+  audio_state.assets_loaded = true;
+
+  int codecs = Mix_Init(MIX_INIT_OGG);
+  if (!audio_state.mixer_initialized) audio_state.mixer_initialized = true;
+  bool ogg_ready = (codecs & MIX_INIT_OGG) != 0;
+  if (!ogg_ready && !audio_state.ogg_error_logged) {
+    fprintf(stderr,
+            "audio OGG resources unavailable; generated effects remain enabled: %s\n",
+            Mix_GetError());
+    audio_state.ogg_error_logged = true;
+  }
+
+  if (ogg_ready) {
+    audio_state.main_loop =
+        audio_load_music_asset("music-main.ogg", 1u << 0);
+    audio_state.fail_loop =
+        audio_load_music_asset("music-fail.ogg", 1u << 1);
+    audio_state.win_jingle =
+        audio_load_chunk_asset("jingle-win.ogg", 1u << 2);
+    audio_state.fail_jingle =
+        audio_load_chunk_asset("jingle-fail.ogg", 1u << 3);
+  }
+
+  if (audio_state.win_jingle)
+    Mix_VolumeChunk(audio_state.win_jingle, MIX_MAX_VOLUME);
+  if (audio_state.fail_jingle)
+    Mix_VolumeChunk(audio_state.fail_jingle, MIX_MAX_VOLUME);
+  audio_build_effects();
+}
+
+static bool audio_has_music_resource(void) {
+  return audio_state.main_loop != NULL || audio_state.fail_loop != NULL;
+}
+
+static bool audio_has_fx_resource(void) {
+  if (audio_state.win_jingle || audio_state.fail_jingle) return true;
+  for (int i = 0; i < AUDIO_EFFECT_COUNT; ++i)
+    if (audio_state.effects[i]) return true;
+  return false;
+}
+
+static bool audio_has_any_resource(void) {
+  return audio_has_music_resource() || audio_has_fx_resource();
+}
+
+static void audio_schedule_reopen(Uint64 delay_ms) {
+  audio_state.reopen_at_ms = SDL_GetTicks64() + delay_ms;
+}
+
+static void audio_close_device(void) {
+  if (!audio_state.mixer_open) return;
+  Mix_HaltChannel(-1);
+  Mix_HaltMusic();
+  Mix_CloseAudio();
+  audio_state.mixer_open = false;
+  audio_state.pending_channel = -1;
+  audio_state.playing_context_valid = false;
+}
+
+static bool audio_prepare_subsystem(void) {
+  if (audio_state.subsystem_initialized) return true;
+  if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+    if (!audio_state.subsystem_error_logged) {
+      fprintf(stderr, "audio device unavailable; continuing silently: %s\n",
+              SDL_GetError());
+      audio_state.subsystem_error_logged = true;
+    }
+    audio_schedule_reopen(AUDIO_REOPEN_DELAY_MS);
+    return false;
+  }
+  audio_state.subsystem_initialized = true;
+  audio_state.subsystem_error_logged = false;
+  return true;
+}
+
+static bool audio_open_device(void) {
+  if (audio_state.mixer_open) return true;
+  if (!audio_prepare_subsystem()) return false;
+  if (Mix_OpenAudio(AUDIO_SAMPLE_RATE, MIX_DEFAULT_FORMAT, 2, 1024) != 0) {
+    if (!audio_state.device_error_logged) {
+      fprintf(stderr, "audio device unavailable; continuing silently: %s\n",
+              Mix_GetError());
+      audio_state.device_error_logged = true;
+    }
+    audio_schedule_reopen(AUDIO_REOPEN_DELAY_MS);
+    return false;
+  }
+  audio_state.mixer_open = true;
+  audio_state.device_error_logged = false;
+  audio_load_assets();
+  audio_apply_volumes();
+  return true;
 }
 
 static Mix_Music *audio_context_music(AudioContext context) {
@@ -188,7 +341,7 @@ static Mix_Music *audio_context_music(AudioContext context) {
 }
 
 static void audio_start_music(void) {
-  if (!audio_state.available || !audio_state.enabled ||
+  if (!audio_state.mixer_open || !audio_state.enabled ||
       audio_state.focus_paused || audio_state.pending_channel >= 0)
     return;
 
@@ -202,64 +355,27 @@ static void audio_start_music(void) {
   if (Mix_PlayMusic(music, -1) == 0) {
     audio_state.playing_context = audio_state.context;
     audio_state.playing_context_valid = true;
+    audio_state.music_error_logged = false;
   } else {
-    fprintf(stderr, "audio music: %s\n", Mix_GetError());
+    if (!audio_state.music_error_logged) {
+      fprintf(stderr, "audio music playback unavailable: %s\n", Mix_GetError());
+      audio_state.music_error_logged = true;
+    }
     audio_state.playing_context_valid = false;
   }
 }
 
 bool audio_init(void) {
-  if (audio_state.initialized) return audio_state.available;
+  if (audio_state.initialized) return audio_is_available();
   audio_state.initialized = true;
   audio_state.enabled = true;
   audio_state.context = AUDIO_CONTEXT_MAIN;
   audio_state.pending_channel = -1;
   audio_state.music_volume = AUDIO_DEFAULT_MUSIC_VOLUME;
   audio_state.fx_volume = AUDIO_DEFAULT_FX_VOLUME;
-
-  if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-    fprintf(stderr, "audio disabled: %s\n", SDL_GetError());
-    return false;
-  }
-  audio_state.subsystem_initialized = true;
-
-  if ((Mix_Init(MIX_INIT_OGG) & MIX_INIT_OGG) == 0) {
-    fprintf(stderr, "audio OGG support unavailable: %s\n", Mix_GetError());
-    return false;
-  }
-  if (Mix_OpenAudio(AUDIO_SAMPLE_RATE, MIX_DEFAULT_FORMAT, 2, 1024) != 0) {
-    fprintf(stderr, "audio disabled: %s\n", Mix_GetError());
-    return false;
-  }
-  audio_state.mixer_open = true;
-
-  char main_path[AUDIO_PATH_CAPACITY], fail_path[AUDIO_PATH_CAPACITY];
-  char win_path[AUDIO_PATH_CAPACITY], fail_jingle_path[AUDIO_PATH_CAPACITY];
-  if (!audio_resolve(main_path, "music-main.ogg") ||
-      !audio_resolve(fail_path, "music-fail.ogg") ||
-      !audio_resolve(win_path, "jingle-win.ogg") ||
-      !audio_resolve(fail_jingle_path, "jingle-fail.ogg")) {
-    fprintf(stderr, "audio assets are missing; continuing without audio\n");
-    return false;
-  }
-
-  audio_state.main_loop = Mix_LoadMUS(main_path);
-  audio_state.fail_loop = Mix_LoadMUS(fail_path);
-  audio_state.win_jingle = Mix_LoadWAV(win_path);
-  audio_state.fail_jingle = Mix_LoadWAV(fail_jingle_path);
-  if (!audio_state.main_loop || !audio_state.fail_loop ||
-      !audio_state.win_jingle || !audio_state.fail_jingle) {
-    fprintf(stderr, "audio asset decode failed: %s\n", Mix_GetError());
-    audio_free_assets();
-    return false;
-  }
-
-  Mix_VolumeChunk(audio_state.win_jingle, MIX_MAX_VOLUME);
-  Mix_VolumeChunk(audio_state.fail_jingle, MIX_MAX_VOLUME);
-  audio_build_effects();
-  audio_state.available = true;
-  audio_apply_volumes();
-  return true;
+  audio_state.reopen_at_ms = 0;
+  (void)audio_open_device();
+  return audio_is_available();
 }
 
 void audio_shutdown(void) {
@@ -270,7 +386,7 @@ void audio_shutdown(void) {
   }
   audio_free_assets();
   if (audio_state.mixer_open) Mix_CloseAudio();
-  Mix_Quit();
+  if (audio_state.mixer_initialized) Mix_Quit();
   if (audio_state.subsystem_initialized) SDL_QuitSubSystem(SDL_INIT_AUDIO);
   memset(&audio_state, 0, sizeof(audio_state));
   audio_state.enabled = true;
@@ -279,7 +395,19 @@ void audio_shutdown(void) {
   audio_state.fx_volume = AUDIO_DEFAULT_FX_VOLUME;
 }
 
-bool audio_is_available(void) { return audio_state.available; }
+bool audio_is_available(void) {
+  return audio_state.mixer_open && audio_has_any_resource();
+}
+
+bool audio_device_available(void) { return audio_state.mixer_open; }
+
+bool audio_music_available(void) {
+  return audio_state.mixer_open && audio_has_music_resource();
+}
+
+bool audio_fx_available(void) {
+  return audio_state.mixer_open && audio_has_fx_resource();
+}
 
 bool audio_is_enabled(void) { return audio_state.enabled; }
 
@@ -300,7 +428,7 @@ void audio_set_fx_volume(int percent) {
 void audio_set_enabled(bool enabled) {
   if (audio_state.enabled == enabled) return;
   audio_state.enabled = enabled;
-  if (!audio_state.available) return;
+  if (!audio_state.mixer_open) return;
   if (!enabled) {
     Mix_HaltChannel(-1);
     Mix_HaltMusic();
@@ -324,32 +452,47 @@ void audio_set_context(AudioContext context) {
 }
 
 void audio_play_result(AudioResultCue cue) {
-  if (!audio_state.available || !audio_state.enabled) return;
+  if (!audio_state.mixer_open || !audio_state.enabled) return;
   Mix_Chunk *chunk = cue == AUDIO_RESULT_FAIL ? audio_state.fail_jingle
                                               : audio_state.win_jingle;
   audio_state.context =
       cue == AUDIO_RESULT_FAIL ? AUDIO_CONTEXT_FAIL : AUDIO_CONTEXT_MAIN;
+  audio_state.playing_context_valid = false;
+  if (!chunk) {
+    audio_start_music();
+    return;
+  }
   Mix_HaltChannel(-1);
   Mix_HaltMusic();
-  audio_state.playing_context_valid = false;
   audio_state.pending_channel = Mix_PlayChannel(-1, chunk, 0);
   if (audio_state.pending_channel < 0) {
-    fprintf(stderr, "audio jingle: %s\n", Mix_GetError());
+    if (!audio_state.effect_error_logged) {
+      fprintf(stderr, "audio result playback unavailable: %s\n", Mix_GetError());
+      audio_state.effect_error_logged = true;
+    }
     audio_start_music();
+  } else {
+    audio_state.effect_error_logged = false;
   }
 }
 
 void audio_play_effect(AudioEffect effect) {
-  if (!audio_state.available || !audio_state.enabled || audio_state.focus_paused ||
-      effect < 0 || effect >= AUDIO_EFFECT_COUNT || !audio_state.effects[effect])
+  if (!audio_state.mixer_open || !audio_state.enabled ||
+      audio_state.focus_paused || effect < 0 || effect >= AUDIO_EFFECT_COUNT ||
+      !audio_state.effects[effect])
     return;
-  if (Mix_PlayChannel(-1, audio_state.effects[effect], 0) < 0)
-    fprintf(stderr, "audio effect: %s\n", Mix_GetError());
+  if (Mix_PlayChannel(-1, audio_state.effects[effect], 0) < 0) {
+    if (!audio_state.effect_error_logged) {
+      fprintf(stderr, "audio effect playback unavailable: %s\n", Mix_GetError());
+      audio_state.effect_error_logged = true;
+    }
+  } else {
+    audio_state.effect_error_logged = false;
+  }
 }
 
 void audio_cancel_result(void) {
-  if (!audio_state.available) return;
-  if (audio_state.pending_channel >= 0)
+  if (audio_state.mixer_open && audio_state.pending_channel >= 0)
     Mix_HaltChannel(audio_state.pending_channel);
   audio_state.pending_channel = -1;
   audio_start_music();
@@ -358,7 +501,7 @@ void audio_cancel_result(void) {
 void audio_set_focus_paused(bool paused) {
   if (audio_state.focus_paused == paused) return;
   audio_state.focus_paused = paused;
-  if (!audio_state.available || !audio_state.enabled) return;
+  if (!audio_state.mixer_open || !audio_state.enabled) return;
   if (paused) {
     Mix_PauseMusic();
     Mix_Pause(-1);
@@ -369,8 +512,25 @@ void audio_set_focus_paused(bool paused) {
   }
 }
 
+void audio_notify_device_removed(void) {
+  if (!audio_state.initialized) return;
+  audio_close_device();
+  audio_schedule_reopen(AUDIO_DEVICE_EVENT_REOPEN_MS);
+}
+
+void audio_notify_device_added(void) {
+  if (!audio_state.initialized || audio_state.mixer_open) return;
+  audio_schedule_reopen(0);
+}
+
 void audio_update(void) {
-  if (!audio_state.available || !audio_state.enabled) return;
+  if (!audio_state.initialized) return;
+  if (!audio_state.mixer_open) {
+    if (SDL_GetTicks64() >= audio_state.reopen_at_ms)
+      (void)audio_open_device();
+    if (!audio_state.mixer_open) return;
+  }
+  if (!audio_state.enabled) return;
   if (audio_state.pending_channel >= 0 &&
       !Mix_Playing(audio_state.pending_channel)) {
     audio_state.pending_channel = -1;
@@ -379,3 +539,17 @@ void audio_update(void) {
     audio_start_music();
   }
 }
+
+#ifdef SUDOKURA_AUDIO_TESTING
+void audio_test_set_missing_assets(unsigned mask) {
+  audio_test_missing_assets = mask;
+}
+
+void audio_test_force_device_loss(void) {
+  audio_notify_device_removed();
+}
+
+void audio_test_retry_now(void) {
+  audio_state.reopen_at_ms = 0;
+}
+#endif
