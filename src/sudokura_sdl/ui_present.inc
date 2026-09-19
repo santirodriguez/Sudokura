@@ -723,9 +723,13 @@ static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
 static void rc2_draw_slider(Gfx *gfx, Theme theme, Language language,
                             SDL_Rect label_rect, SDL_Rect minus, SDL_Rect track,
                             SDL_Rect plus, TextKey label_key, int value,
-                            int preferred) {
-  char label[64];
-  snprintf(label, sizeof label, "%s  %d%%", tr(language, label_key), value);
+                            bool available, int preferred) {
+  char label[96];
+  if (available)
+    snprintf(label, sizeof label, "%s  %d%%", tr(language, label_key), value);
+  else
+    snprintf(label, sizeof label, "%s  %d%% · %s", tr(language, label_key),
+             value, tr(language, T_UNAVAILABLE));
   (void)draw_fitted_text(gfx, label, theme.btnfg, label_rect, preferred, 9);
 
   int mx = 0, my = 0;
@@ -795,16 +799,23 @@ static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
   rc2_settings_button(gfx, theme, layout.language, label, false, preferred);
 
   bool enabled = audio_is_enabled();
-  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_SOUND),
-           tr(ui->language, enabled ? T_ON : T_OFF));
-  rc2_settings_button(gfx, theme, layout.sound, label, enabled, preferred);
+  bool available = audio_is_available();
+  if (enabled && !available)
+    snprintf(label, sizeof label, "%s: %s · %s", tr(ui->language, T_SOUND),
+             tr(ui->language, T_ON), tr(ui->language, T_UNAVAILABLE));
+  else
+    snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_SOUND),
+             tr(ui->language, enabled ? T_ON : T_OFF));
+  rc2_settings_button(gfx, theme, layout.sound, label,
+                      enabled && available, preferred);
 
   rc2_draw_slider(gfx, theme, ui->language, layout.music_label,
                   layout.music_minus, layout.music_track, layout.music_plus,
-                  T_MUSIC, audio_music_volume(), preferred);
+                  T_MUSIC, audio_music_volume(), audio_music_available(),
+                  preferred);
   rc2_draw_slider(gfx, theme, ui->language, layout.fx_label, layout.fx_minus,
                   layout.fx_track, layout.fx_plus, T_FX, audio_fx_volume(),
-                  preferred);
+                  audio_fx_available(), preferred);
 
   snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_REDUCED_MOTION),
            tr(ui->language, ui->reduced_motion ? T_ON : T_OFF));
