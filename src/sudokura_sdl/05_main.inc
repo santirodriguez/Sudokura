@@ -386,6 +386,7 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
     case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
+    case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_flush(p);return true;
     default:
       if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
       return false;
@@ -512,80 +513,162 @@ int main(int argc, char **argv) {
     ui.screen = SCR_PLAY;
     app_frame(&g, &game, &ui);
     if (screenshot_dir) {
-      const int sizes[][2] = {{640, 480},  {800, 600},  {1024, 720},
-                              {1366, 768}, {1920, 1080}, {2560, 1440},
-                              {3440, 1440}, {360, 640}, {390, 844},
-                              {412, 915}};
-      const char *names[] = {"title", "play", "help", "about",
-                             "result", "pause", "settings"};
-      if (!make_directory(screenshot_dir)) {
-        fprintf(stderr, "cannot create screenshot directory: %s\n",
-                screenshot_dir);
-        app_shutdown(&g);
-        return 1;
+      enum {
+        REVIEW_HOME_EMPTY=0, REVIEW_HOME_SAVE, REVIEW_NOTES, REVIEW_CONFLICT,
+        REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
+        REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT, REVIEW_STATE_COUNT
+      };
+      const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
+      const char*state_names[REVIEW_STATE_COUNT]={
+        "home-empty","home-save","notes","conflict","hint","save-error",
+        "pause","loss","win","help","settings","about"
+      };
+      if(!make_directory(screenshot_dir)){
+        fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
+        app_shutdown(&g);return 1;
       }
-      for (unsigned n = 0; n < sizeof(sizes) / sizeof(sizes[0]); ++n) {
-        for (int variant = 0; variant < 7; ++variant) {
-          SDL_SetWindowMinimumSize(g.win, 1, 1);
-          SDL_SetWindowSize(g.win, sizes[n][0], sizes[n][1]);
-          SDL_PumpEvents();
-          SDL_GetRendererOutputSize(g.ren, &g.width, &g.height);
-          if (g.width != sizes[n][0] || g.height != sizes[n][1]) {
-            fprintf(stderr, "renderer refused %dx%d (got %dx%d)\n",
-                    sizes[n][0], sizes[n][1], g.width, g.height);
-            app_shutdown(&g);
-            return 1;
+      char manifest_path[PATH_MAX];
+      if(!path_join(manifest_path,sizeof(manifest_path),screenshot_dir,"MANIFEST.tsv",'/')){
+        app_shutdown(&g);return 1;
+      }
+      FILE*manifest=fopen(manifest_path,"wb");
+      if(!manifest){fprintf(stderr,"cannot create UI review manifest\n");app_shutdown(&g);return 1;}
+      fprintf(manifest,"file\twidth\theight\tstate\tlanguage\ttheme\tfocus\tfx\tfy\tfw\tfh\n");
+
+      Game review_base=game;
+      Persistence review_persistence;memset(&review_persistence,0,sizeof(review_persistence));
+      save_policy_init(&review_persistence.save_policy);
+      review_persistence.enabled=true;
+      audio_persistence=&review_persistence;audio_gfx=&g;audio_ui=&ui;
+
+      for(unsigned n=0;n<sizeof(sizes)/sizeof(sizes[0]);++n){
+        for(int state=0;state<REVIEW_STATE_COUNT;++state){
+          SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,sizes[n][0],sizes[n][1]);
+          SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
+          if(g.width!=sizes[n][0]||g.height!=sizes[n][1]){
+            fprintf(stderr,"renderer refused %dx%d (got %dx%d)\n",sizes[n][0],sizes[n][1],g.width,g.height);
+            fclose(manifest);app_shutdown(&g);return 1;
           }
-          ui.language = (Language)((n + variant) % LANG_COUNT);
-          ui.dark_theme = ((n + variant) & 1) == 0;
-          ui.result = RES_NONE;
-          ui.pause_reasons = 0;
-          ui.is_daily = false;
-          settings_open = false;
-          victory_animation_reset();
-          if (variant == 0)
-            ui.screen = SCR_TITLE;
-          else if (variant == 1)
-            ui.screen = SCR_PLAY;
-          else if (variant == 2)
-            ui.screen = SCR_HELP;
-          else if (variant == 3)
-            ui.screen = SCR_ABOUT;
-          else if (variant == 4) {
-            ui.screen = SCR_END;
-            ui.result = RES_WIN;
-          } else if (variant == 5) {
-            ui.screen = SCR_PLAY;
-            ui.pause_reasons = PAUSE_MANUAL;
-          } else {
-            ui.screen = APP_SCREEN_SETTINGS;
-            ui.prev_screen = SCR_PLAY;
-            ui.pause_reasons = PAUSE_MODAL;
-            settings_open = true;
+
+          game=review_base;app_state_init(&ui);set_mode_params(&ui);
+          ui.session_open=true;ui.has_session=false;
+          ui.language=(Language)((n+state)%LANG_COUNT);
+          ui.dark_theme=((n*REVIEW_STATE_COUNT+state)&1)==0;
+          ui.reduced_motion=true;
+          settings_open=false;settings_slider_drag=SETTINGS_DRAG_NONE;
+          info_keyboard_focus=INFO_FOCUS_BACK;result_keyboard_focus=0;
+          pause_keyboard_focus=0;hint_keyboard_focus=HINT_FOCUS_PRIMARY;
+          play_keyboard_focus=-1;
+          save_policy_init(&review_persistence.save_policy);
+
+          const char*focus="none";SDL_Rect focus_rect={0,0,0,0};
+          AppGeometry geometry;
+          if(!get_geometry(&g,&ui,&geometry)){fclose(manifest);app_shutdown(&g);return 1;}
+
+          switch(state){
+            case REVIEW_HOME_EMPTY:
+              ui.screen=SCR_TITLE;home_focus=HOME_FOCUS_NEW;focus="new-game";
+              focus_rect=sdl_rect(geometry.home_primary[0]);break;
+            case REVIEW_HOME_SAVE:
+              ui.screen=SCR_TITLE;ui.has_session=true;ui.normal_resume.present=true;
+              ui.normal_resume.can_continue=true;ui.normal_resume.mode=MODE_CLASSIC;
+              ui.normal_resume.difficulty=DIFFICULTY_MEDIUM;ui.normal_resume.elapsed_ms=754000;
+              home_focus=HOME_FOCUS_CONTINUE;focus="continue";
+              focus_rect=sdl_rect(geometry.home_primary[1]);break;
+            case REVIEW_NOTES:
+              ui.screen=SCR_PLAY;ui.notes_mode=true;ui.sel_r=0;ui.sel_c=0;
+              game.fixed[0]=0;game.puzzle[0]=0;game.notes[0]=(1u<<1)|(1u<<3)|(1u<<7);
+              play_keyboard_focus=PLAY_FOCUS_NOTES;focus="notes";
+              focus_rect=play_focus_rect(&g,&ui,play_keyboard_focus);break;
+            case REVIEW_CONFLICT:
+              ui.screen=SCR_PLAY;ui.sel_r=0;ui.sel_c=1;
+              game.fixed[0]=game.fixed[1]=0;game.puzzle[0]=5;game.puzzle[1]=5;
+              play_keyboard_focus=PLAY_FOCUS_VERIFY;focus="verify";
+              focus_rect=play_focus_rect(&g,&ui,play_keyboard_focus);break;
+            case REVIEW_HINT:
+              ui.screen=SCR_PLAY;ui.hint_preview_active=true;
+              ui.hint_preview.status=HUMAN_HINT_STALLED;ui.hint_verify_required=false;
+              hint_keyboard_focus=HINT_FOCUS_REVEAL;focus="hint-reveal";
+              focus_rect=hint_focus_rect(&g,&ui,hint_keyboard_focus);break;
+            case REVIEW_SAVE_ERROR:
+              ui.screen=SCR_PLAY;
+              save_policy_mark(&review_persistence.save_policy,SAVE_DIRTY_NORMAL,now_ms());
+              save_policy_record_result(&review_persistence.save_policy,STORE_IO_ERROR,now_ms());
+              play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;focus="retry-save";
+              focus_rect=storage_banner_layout(&g,&ui).retry;break;
+            case REVIEW_PAUSE:
+              ui.screen=SCR_PLAY;ui.pause_reasons=PAUSE_MANUAL;pause_keyboard_focus=1;focus="pause-menu";
+              focus_rect=sdl_rect(geometry.pause_buttons[1]);break;
+            case REVIEW_LOSS:
+              ui.screen=SCR_END;ui.result=RES_LOSE;result_keyboard_focus=0;focus="retry";
+              focus_rect=sdl_rect(geometry.end_buttons[0]);break;
+            case REVIEW_WIN:
+              ui.screen=SCR_END;ui.result=RES_WIN;result_keyboard_focus=1;focus="home";
+              focus_rect=sdl_rect(geometry.end_buttons[1]);break;
+            case REVIEW_HELP:
+              ui.screen=SCR_HELP;info_keyboard_focus=INFO_FOCUS_BACK;focus="back";
+              focus_rect=back_rect(&g,&ui);break;
+            case REVIEW_SETTINGS:{
+              ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
+              settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_MUSIC;focus="music";
+              SettingsPanelLayout p=ui_settings_panel_layout(&g);
+              focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);break;
+            }
+            case REVIEW_ABOUT:
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_0;focus="about-github";
+              focus_rect=sdl_rect(geometry.about_links[0]);break;
           }
-          app_render_ui(&g, &game, &ui);
-          char path[PATH_MAX], filename[160];
-          int filename_length = snprintf(
-              filename, sizeof(filename), "%dx%d-%s-%s-%s.bmp", g.width,
-              g.height, names[variant], language_name(ui.language),
-              ui.dark_theme ? "dark" : "light");
-          if (filename_length < 0 ||
-              (size_t)filename_length >= sizeof(filename) ||
-              !path_join(path, sizeof(path), screenshot_dir, filename, '/')) {
-            fprintf(stderr, "screenshot path is too long: %s\n",
-                    screenshot_dir);
-            app_shutdown(&g);
-            return 1;
+
+          app_render_ui(&g,&game,&ui);
+          char filename[192],path[PATH_MAX];
+          snprintf(filename,sizeof(filename),"%dx%d-%s-%s-%s.bmp",g.width,g.height,
+                   state_names[state],language_name(ui.language),ui.dark_theme?"dark":"light");
+          if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
+            fclose(manifest);app_shutdown(&g);return 1;
           }
-          if (!save_frame(&g, path)) {
-            fprintf(stderr, "screenshot: %s\n", SDL_GetError());
-            app_shutdown(&g);
-            return 1;
-          }
+          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
+                  filename,g.width,g.height,state_names[state],language_name(ui.language),
+                  ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
+                  focus_rect.w,focus_rect.h);
         }
       }
-      settings_open = false;
-      printf("rendered 70 UI review screenshots to %s\n", screenshot_dir);
+
+      const int audit_w=1024,audit_h=768;
+      const int audit_states[3]={REVIEW_HELP,REVIEW_SETTINGS,REVIEW_ABOUT};
+      for(int language=0;language<LANG_COUNT;++language)for(int dark=0;dark<2;++dark)
+        for(int a=0;a<3;++a){
+          int state=audit_states[a];
+          SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,audit_w,audit_h);
+          SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
+          game=review_base;app_state_init(&ui);set_mode_params(&ui);
+          ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
+          ui.session_open=true;settings_open=false;info_keyboard_focus=INFO_FOCUS_BACK;
+          AppGeometry geometry;if(!get_geometry(&g,&ui,&geometry)){fclose(manifest);app_shutdown(&g);return 1;}
+          const char*focus="back";SDL_Rect focus_rect=back_rect(&g,&ui);
+          if(state==REVIEW_HELP){ui.screen=SCR_HELP;}
+          else if(state==REVIEW_SETTINGS){
+            ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
+            settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
+            SettingsPanelLayout p=ui_settings_panel_layout(&g);
+            focus="reduced-motion";focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);
+          }else{
+            ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
+            focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
+          }
+          app_render_ui(&g,&game,&ui);
+          char filename[192],path[PATH_MAX];
+          snprintf(filename,sizeof(filename),"audit-%s-%s-%s.bmp",state_names[state],
+                   language_name(ui.language),ui.dark_theme?"dark":"light");
+          if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
+            fclose(manifest);app_shutdown(&g);return 1;
+          }
+          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
+                  filename,g.width,g.height,state_names[state],language_name(ui.language),
+                  ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
+                  focus_rect.w,focus_rect.h);
+        }
+      fclose(manifest);settings_open=false;audio_persistence=NULL;
+      printf("rendered 78 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
@@ -906,6 +989,7 @@ int main(int argc, char **argv) {
         bool right = e.button.button == SDL_BUTTON_RIGHT;
         if (!left && !right) continue;
         if (left && storage_retry_hit(&g, &ui, x, y)) {
+          play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;
           ui_button_click();
           (void)persistence_flush(&persistence);
           continue;

@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sudokura-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -99,3 +103,25 @@ jobs:
             make zip unzip
       - name: Build and validate Windows package
         run: packaging/ci/package-windows.sh
+
+  ui-review:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ui-review]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev fonts-dejavu-core
+      - run: make assets && make WERROR=-Werror all
+      - run: python3 scripts/validate_contrast.py
+      - name: Render Phase 5 diagnostic UI matrix
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: ./sudokura --render-screenshots ui-review
+      - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase5-ui-review
+          path: ui-review
+          retention-days: 7

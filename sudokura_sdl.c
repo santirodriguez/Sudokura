@@ -1,9 +1,8 @@
 /* Sudokura SDL application composition.
 
    Core/runtime modules are compiled as normal C translation units. The SDL
-   presentation remains split into internal fragments, but their order and
-   active render path are explicit here: base screens -> presentation polish
-   -> final controls/settings/audio -> input -> main loop.
+   presentation has one explicit UI surface after base-screen helpers:
+   base helpers -> consolidated UI presentation -> audio/input -> main loop.
 */
 #include "session.h"
 #include "seed.h"
@@ -15,8 +14,7 @@
 #include "src/sudokura_sdl/02_font_discovery.inc"
 #include "src/sudokura_sdl/03_board_render.inc"
 #include "src/sudokura_sdl/04_screens.inc"
-#include "src/sudokura_sdl/polish_ui.inc"
-#include "src/sudokura_sdl/rc2_ui.inc"
+#include "src/sudokura_sdl/ui_present.inc"
 #include "src/sudokura_sdl/audio_ui.inc"
 #include "src/sudokura_sdl/input_ui.inc"
 

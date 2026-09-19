@@ -58,6 +58,7 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
     if (shortcut != INPUT_INFO_NONE) {
       audio_play_effect(AUDIO_EFFECT_CLICK);
       settings_open = false;
+      info_keyboard_focus = INFO_FOCUS_BACK;
       (void)app_open_aux(audio_ui,
                          shortcut == INPUT_INFO_HELP ? SCR_HELP : SCR_ABOUT);
       return true;

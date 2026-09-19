@@ -63,7 +63,7 @@ make test-ui
 
 `make test` covers gameplay, deterministic generation, persistence, localization, seed handling, geometry, and dedicated UI geometry invariants. `make test-ui` checks SDL_ttf text fitting, SDL2_mixer audio transitions, and top-row/numeric-keypad input mapping. CI also builds with warnings as errors and runs sanitizers on Linux.
 
-For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 70 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
+For diagnostic UI review, `./sudokura --render-screenshots DIR` produces the Phase 5 temporary state/language/theme matrix plus a semantic manifest. These are test artifacts and are not used as release screenshots.
 
 ## Audio credits
 
