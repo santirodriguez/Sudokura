@@ -590,21 +590,33 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
 
   const GameDifficulty difficulties[3]={
       DIFFICULTY_EASY,DIFFICULTY_MEDIUM,DIFFICULTY_HARD};
-  const uint64_t seeds[3]={
+  const uint64_t seed_base[3]={
       UINT64_C(0x60010001),UINT64_C(0x60020002),UINT64_C(0x60030003)};
-  double generation_ms[3]={0,0,0};
-  Game generated[3];
-  for(int i=0;i<3;i++){
-    double start=wall_clock_ms();
-    if(!game_new_difficulty_revision(&generated[i],seeds[i],difficulties[i],
-                                     SUDOKURA_GENERATOR_REVISION)){
-      fprintf(stderr,"desktop benchmark generation failed at %d\n",i);
-      return 1;
+  double generation_samples[3][5];
+  double generation_p50[3]={0,0,0};
+  double generation_max[3]={0,0,0};
+  Game benchmark_game;
+  memset(&benchmark_game,0,sizeof(benchmark_game));
+  for(int difficulty=0;difficulty<3;difficulty++){
+    for(int sample=0;sample<5;sample++){
+      Game generated;
+      uint64_t seed=seed_base[difficulty]+(uint64_t)sample*UINT64_C(0x101);
+      double start=wall_clock_ms();
+      if(!game_new_difficulty_revision(&generated,seed,difficulties[difficulty],
+                                       SUDOKURA_GENERATOR_REVISION)){
+        fprintf(stderr,"desktop benchmark generation failed at %d/%d\n",
+                difficulty,sample);
+        return 1;
+      }
+      generation_samples[difficulty][sample]=wall_clock_ms()-start;
+      if(difficulty==1&&sample==2)benchmark_game=generated;
     }
-    generation_ms[i]=wall_clock_ms()-start;
+    sort_doubles(generation_samples[difficulty],5);
+    generation_p50[difficulty]=generation_samples[difficulty][2];
+    generation_max[difficulty]=generation_samples[difficulty][4];
   }
 
-  *game=generated[1];
+  *game=benchmark_game;
   ui->mode=MODE_CLASSIC;ui->strict_mode=false;ui->sel_r=4;ui->sel_c=4;
   ui->is_daily=false;ui->result=RES_NONE;ui->pause_reasons=0;
   begin_fresh_play(ui);ui->reduced_motion=true;
@@ -652,7 +664,11 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
   clock_t cpu_start=clock();double idle_start=wall_clock_ms();
   while(wall_clock_ms()-idle_start<1000.0){
     SDL_Event event;
-    if(SDL_WaitEventTimeout(&event,100)){
+    int timeout=desktop_wait_timeout_ms(g,ui);
+    double remaining=1000.0-(wall_clock_ms()-idle_start);
+    if(remaining<timeout)timeout=(int)remaining;
+    if(timeout<1)timeout=1;
+    if(SDL_WaitEventTimeout(&event,timeout)){
       while(SDL_PollEvent(&event)){}
     }
     app_tick(g,game,ui);
@@ -662,26 +678,39 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
   double idle_cpu_percent=idle_wall>0.0?idle_cpu_ms*100.0/idle_wall:0.0;
 
   long rss_before=desktop_benchmark_rss_kb();
+  long rss_after_warmup=-1,rss_after_repeat=-1;
   const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640}};
-  for(int i=0;i<48;i++){
-    ui->language=(Language)(i%LANG_COUNT);ui->dark_theme=(i&1)!=0;
-    SDL_SetWindowSize(g->win,sizes[i%4][0],sizes[i%4][1]);
-    SDL_PumpEvents();
-    apply_window_resize(g,sizes[i%4][0],sizes[i%4][1]);
-    app_frame(g,game,ui);
+  for(int pass=0;pass<2;pass++){
+    for(int i=0;i<48;i++){
+      ui->language=(Language)(i%LANG_COUNT);ui->dark_theme=(i&1)!=0;
+      SDL_SetWindowSize(g->win,sizes[i%4][0],sizes[i%4][1]);
+      SDL_PumpEvents();
+      apply_window_resize(g,sizes[i%4][0],sizes[i%4][1]);
+      SDL_Event discarded;
+      while(SDL_PollEvent(&discarded)){}
+      app_frame(g,game,ui);
+    }
+    if(pass==0)rss_after_warmup=desktop_benchmark_rss_kb();
+    else rss_after_repeat=desktop_benchmark_rss_kb();
   }
-  long rss_after=desktop_benchmark_rss_kb();
 
-  printf("desktop_benchmark_version=1\n");
+  printf("desktop_benchmark_version=2\n");
   printf("startup_first_home_ms=%.3f\n",startup_ms);
   printf("input_render_p50_ms=%.3f\n",input_samples[15]);
   printf("idle_cpu_percent=%.3f\n",idle_cpu_percent);
-  printf("generation_easy_ms=%.3f\n",generation_ms[0]);
-  printf("generation_medium_ms=%.3f\n",generation_ms[1]);
-  printf("generation_hard_ms=%.3f\n",generation_ms[2]);
+  printf("generation_easy_p50_ms=%.3f\n",generation_p50[0]);
+  printf("generation_easy_max_ms=%.3f\n",generation_max[0]);
+  printf("generation_medium_p50_ms=%.3f\n",generation_p50[1]);
+  printf("generation_medium_max_ms=%.3f\n",generation_max[1]);
+  printf("generation_hard_p50_ms=%.3f\n",generation_p50[2]);
+  printf("generation_hard_max_ms=%.3f\n",generation_max[2]);
   printf("save_p50_ms=%.3f\n",save_samples[3]);
   printf("rss_before_kb=%ld\n",rss_before);
-  printf("rss_after_kb=%ld\n",rss_after);
+  printf("rss_after_warmup_kb=%ld\n",rss_after_warmup);
+  printf("rss_after_repeat_kb=%ld\n",rss_after_repeat);
+  printf("rss_repeat_delta_kb=%ld\n",
+         rss_after_warmup>=0&&rss_after_repeat>=0
+             ?rss_after_repeat-rss_after_warmup:-1L);
   printf("text_cache_entries=%d\n",text_cache_entry_count());
   printf("text_cache_capacity=%d\n",TEXT_CACHE_CAPACITY);
   printf("renderer=%s\n",g->software_renderer?"software":"accelerated");

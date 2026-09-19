@@ -16,15 +16,20 @@ for raw in args.report.read_text(encoding="utf-8").splitlines():
 required={
     "desktop_benchmark_version","startup_first_home_ms",
     "input_render_p50_ms","idle_cpu_percent",
-    "generation_easy_ms","generation_medium_ms","generation_hard_ms",
-    "save_p50_ms","rss_before_kb","rss_after_kb",
+    "generation_easy_p50_ms","generation_easy_max_ms",
+    "generation_medium_p50_ms","generation_medium_max_ms",
+    "generation_hard_p50_ms","generation_hard_max_ms",
+    "save_p50_ms","rss_before_kb","rss_after_warmup_kb",
+    "rss_after_repeat_kb","rss_repeat_delta_kb",
     "text_cache_entries","text_cache_capacity","renderer","scale_milli",
 }
 missing=sorted(required-values.keys())
 assert not missing,f"missing benchmark fields: {missing}"
-assert values["desktop_benchmark_version"]=="1"
+assert values["desktop_benchmark_version"]=="2"
 for key in ("startup_first_home_ms","input_render_p50_ms","idle_cpu_percent",
-            "generation_easy_ms","generation_medium_ms","generation_hard_ms",
+            "generation_easy_p50_ms","generation_easy_max_ms",
+            "generation_medium_p50_ms","generation_medium_max_ms",
+            "generation_hard_p50_ms","generation_hard_max_ms",
             "save_p50_ms"):
     assert float(values[key])>=0.0,(key,values[key])
 entries=int(values["text_cache_entries"])
