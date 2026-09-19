@@ -86,6 +86,7 @@ typedef enum {
   T_FX,
   T_ON,
   T_OFF,
+  T_UNAVAILABLE,
   T_ABOUT_SEEDS,
   T_ABOUT_STACK,
   T_ABOUT_MUSIC,
