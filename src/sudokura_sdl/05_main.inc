@@ -891,21 +891,14 @@ int main(int argc, char **argv) {
         }
         if (ui.hint_preview_active) {
           if (k == SDLK_TAB) {
-            hint_move_focus(&ui,(mod&KMOD_SHIFT)?-1:1);
+            hint_move_focus(&ui, shifted ? -1 : 1);
             continue;
           }
           if (input_activation_key(k)) {
-            (void)activate_hint_focus(&persistence,&game,&ui);
+            (void)activate_hint_focus(&persistence, &game, &ui);
             continue;
           }
-          if (k == SDLK_TAB) {
-          play_move_focus(&game,&ui,shifted?-1:1);
-          continue;
-        }
-        if (input_activation_key(k) && play_keyboard_focus >= 0) {
-          if (activate_play_focus(&persistence,&game,&ui,&g)) continue;
-        }
-        if (k == SDLK_ESCAPE) {
+          if (k == SDLK_ESCAPE) {
             ui_button_click();
             clear_hint_preview(&ui);
             continue;
@@ -925,6 +918,13 @@ int main(int argc, char **argv) {
             continue;
           }
         }
+        if (k == SDLK_TAB) {
+          play_move_focus(&game, &ui, shifted ? -1 : 1);
+          continue;
+        }
+        if (input_activation_key(k) && play_keyboard_focus >= 0) {
+          if (activate_play_focus(&persistence, &game, &ui, &g)) continue;
+        }
         if (k == SDLK_ESCAPE) {
           ui_button_click();
           go_home(&persistence, &game, &ui);
@@ -939,6 +939,7 @@ int main(int argc, char **argv) {
         }
         else if (k == SDLK_p) {
           ui_button_click();
+          pause_keyboard_focus=0;
           clock_pause(&ui, PAUSE_MANUAL);
           (void)checkpoint_current_session(&persistence, &game, &ui);
         } else if (k == SDLK_t) {
@@ -1005,16 +1006,19 @@ int main(int argc, char **argv) {
             continue;
           }
           if (hint_verify_hit(&g, &ui, x, y)) {
+            hint_keyboard_focus=HINT_FOCUS_PRIMARY;
             ui_button_click();
             verify_current_entries(&persistence, &game, &ui);
             continue;
           }
           if (hint_reveal_hit(&g, &ui, x, y)) {
+            hint_keyboard_focus=HINT_FOCUS_REVEAL;
             ui_button_click();
             (void)reveal_selected_cell(&persistence, &game, &ui);
             continue;
           }
           if (hint_cancel_hit(&g, &ui, x, y)) {
+            hint_keyboard_focus=HINT_FOCUS_CANCEL;
             ui_button_click();
             clear_hint_preview(&ui);
             continue;
