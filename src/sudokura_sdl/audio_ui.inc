@@ -6,10 +6,11 @@ static bool audio_ui_seen = false;
 
 static void audio_apply_preferences(Persistence *persistence) {
   if (!persistence) return;
-  audio_set_enabled(persistence->preferences.audio_enabled);
+  /* Apply the complete persisted mix before any screen transition can start
+     playback. The first app tick selects the context and may then play. */
   audio_set_music_volume(persistence->preferences.music_volume);
   audio_set_fx_volume(persistence->preferences.fx_volume);
-  audio_set_context(AUDIO_CONTEXT_MAIN);
+  audio_set_enabled(persistence->preferences.audio_enabled);
 }
 
 static void audio_toggle(Persistence *persistence) {
