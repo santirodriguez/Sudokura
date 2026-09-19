@@ -523,9 +523,10 @@ static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
 }
 
 static double wall_clock_ms(void){
-  struct timespec ts;
-  if(timespec_get(&ts,TIME_UTC)!=TIME_UTC)return 0.0;
-  return (double)ts.tv_sec*1000.0+(double)ts.tv_nsec/1000000.0;
+  Uint64 frequency=SDL_GetPerformanceFrequency();
+  if(frequency==0)return 0.0;
+  Uint64 counter=SDL_GetPerformanceCounter();
+  return (double)counter*1000.0/(double)frequency;
 }
 
 static void sort_doubles(double*values,int count){
