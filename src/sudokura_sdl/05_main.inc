@@ -338,7 +338,7 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
                                    tr(ui->language, T_LINK_ERROR), g->win);
 }
 
-static void info_focus_reset(void){info_keyboard_focus=INFO_FOCUS_BACK;}
+static void info_focus_reset(void){info_keyboard_focus=INFO_FOCUS_BACK;help_scroll_reset();}
 static void info_move_focus(const UI*ui,int direction){
   int count=ui&&ui->screen==SCR_ABOUT?INFO_FOCUS_COUNT:1;
   info_keyboard_focus=input_focus_step(info_keyboard_focus,count,direction);
@@ -535,7 +535,7 @@ int main(int argc, char **argv) {
       }
       FILE*manifest=fopen(manifest_path,"wb");
       if(!manifest){fprintf(stderr,"cannot create UI review manifest\n");app_shutdown(&g);return 1;}
-      fprintf(manifest,"file\twidth\theight\tstate\tlanguage\ttheme\tfocus\tfx\tfy\tfw\tfh\n");
+      fprintf(manifest,"file\twidth\theight\tstate\tlanguage\ttheme\tfocus\tfx\tfy\tfw\tfh\tscroll\tscroll_max\n");
 
       Game review_base=game;
       Persistence review_persistence;memset(&review_persistence,0,sizeof(review_persistence));
@@ -558,6 +558,7 @@ int main(int argc, char **argv) {
           ui.dark_theme=((n*REVIEW_STATE_COUNT+state)&1)==0;
           ui.reduced_motion=true;
           settings_open=false;settings_slider_drag=SETTINGS_DRAG_NONE;
+          help_scroll_reset();
           info_keyboard_focus=INFO_FOCUS_BACK;result_keyboard_focus=0;
           pause_keyboard_focus=0;hint_keyboard_focus=HINT_FOCUS_PRIMARY;
           play_keyboard_focus=-1;
@@ -628,10 +629,10 @@ int main(int argc, char **argv) {
           if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
             fclose(manifest);app_shutdown(&g);return 1;
           }
-          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
+          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
                   filename,g.width,g.height,state_names[state],language_name(ui.language),
                   ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
-                  focus_rect.w,focus_rect.h);
+                  focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
         }
       }
 
@@ -644,10 +645,16 @@ int main(int argc, char **argv) {
           SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
           game=review_base;app_state_init(&ui);set_mode_params(&ui);
           ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
-          ui.session_open=true;settings_open=false;info_keyboard_focus=INFO_FOCUS_BACK;
+          ui.session_open=true;settings_open=false;help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;
           AppGeometry geometry;if(!get_geometry(&g,&ui,&geometry)){fclose(manifest);app_shutdown(&g);return 1;}
           const char*focus="back";SDL_Rect focus_rect=back_rect(&g,&ui);
-          if(state==REVIEW_HELP){ui.screen=SCR_HELP;}
+          const char*audit_state=state_names[state];
+          if(state==REVIEW_HELP){
+            ui.screen=SCR_HELP;
+            app_render_ui(&g,&game,&ui);
+            help_scroll_set(help_scroll_max_px);
+            audit_state="help-bottom";
+          }
           else if(state==REVIEW_SETTINGS){
             ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
             settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
@@ -659,15 +666,15 @@ int main(int argc, char **argv) {
           }
           app_render_ui(&g,&game,&ui);
           char filename[192],path[PATH_MAX];
-          snprintf(filename,sizeof(filename),"audit-%s-%s-%s.bmp",state_names[state],
+          snprintf(filename,sizeof(filename),"audit-%s-%s-%s.bmp",audit_state,
                    language_name(ui.language),ui.dark_theme?"dark":"light");
           if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
             fclose(manifest);app_shutdown(&g);return 1;
           }
-          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
-                  filename,g.width,g.height,state_names[state],language_name(ui.language),
+          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                  filename,g.width,g.height,audit_state,language_name(ui.language),
                   ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
-                  focus_rect.w,focus_rect.h);
+                  focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
         }
       fclose(manifest);settings_open=false;audio_persistence=NULL;
       printf("rendered 78 diagnostic UI review screenshots to %s\n",screenshot_dir);
@@ -825,9 +832,21 @@ int main(int argc, char **argv) {
           if (k == SDLK_ESCAPE) {
             ui_button_click();
             return_from_info(&persistence, &game, &ui);
-          } else if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
-                     k == SDLK_UP || k == SDLK_DOWN) {
-            int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
+          } else if (ui.screen == SCR_HELP &&
+                     (k == SDLK_UP || k == SDLK_DOWN ||
+                      k == SDLK_PAGEUP || k == SDLK_PAGEDOWN ||
+                      k == SDLK_HOME || k == SDLK_END)) {
+            if(k==SDLK_HOME)help_scroll_set(0);
+            else if(k==SDLK_END)help_scroll_set(help_scroll_max_px);
+            else if(k==SDLK_PAGEUP)help_scroll_by(-220);
+            else if(k==SDLK_PAGEDOWN)help_scroll_by(220);
+            else help_scroll_by(k==SDLK_UP?-44:44);
+          } else if (k == SDLK_TAB) {
+            info_move_focus(&ui,(mod&KMOD_SHIFT)?-1:1);
+          } else if (ui.screen == SCR_ABOUT &&
+                     (k == SDLK_LEFT || k == SDLK_RIGHT ||
+                      k == SDLK_UP || k == SDLK_DOWN)) {
+            int direction=(k==SDLK_LEFT||k==SDLK_UP)?-1:1;
             info_move_focus(&ui,direction);
           } else if (input_activation_key(k)) {
             (void)activate_info_focus(&persistence,&game,&ui,&g);
@@ -984,6 +1003,13 @@ int main(int argc, char **argv) {
             (void)stage_current_session(&persistence, &game, &ui);
           }
         }
+        continue;
+      }
+
+      if (e.type == SDL_MOUSEWHEEL && ui.screen == SCR_HELP) {
+        int wheel=e.wheel.y;
+        if(e.wheel.direction==SDL_MOUSEWHEEL_FLIPPED)wheel=-wheel;
+        help_scroll_by(-wheel*48);
         continue;
       }
 

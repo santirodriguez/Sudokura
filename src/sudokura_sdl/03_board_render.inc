@@ -71,8 +71,17 @@ enum{
   INFO_FOCUS_COUNT
 };
 static int info_keyboard_focus=INFO_FOCUS_BACK;
+static int help_scroll_px=0;
+static int help_scroll_max_px=0;
 static int result_keyboard_focus=0;
 static int pause_keyboard_focus=0;
+static void help_scroll_reset(void){help_scroll_px=0;help_scroll_max_px=0;}
+static void help_scroll_set(int value){
+  if(value<0)value=0;
+  if(value>help_scroll_max_px)value=help_scroll_max_px;
+  help_scroll_px=value;
+}
+static void help_scroll_by(int delta){help_scroll_set(help_scroll_px+delta);}
 static GameDifficulty home_difficulty=DIFFICULTY_MEDIUM;
 static SDL_Texture*language_flags[LANG_COUNT]={NULL,NULL,NULL};
 static bool victory_animation_active=false;

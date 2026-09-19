@@ -6,7 +6,6 @@ static void render_pause_overlay(Gfx*g,const UI*ui){
   int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=point_in(resume,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),menu_pressed=point_in(menu,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
 }
 
-static void blit_wrapped(Gfx*g,int x,int y,int w,int max_h,const char*text,SDL_Color col){int tw,thh;SDL_Texture*t=render_text_wrapped(g,g->font_body,text,col,w,&tw,&thh);if(t){int visible=thh<max_h?thh:max_h;SDL_Rect source={0,0,tw,visible},d={x,y,tw,visible};SDL_RenderCopy(g->ren,t,&source,&d);SDL_DestroyTexture(t);}}
 static void render_help(Gfx*g,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
@@ -14,7 +13,7 @@ static void render_help(Gfx*g,UI*ui){
   AppGeometry a;
   if(!get_geometry(g,ui,&a))return;
   SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
-  int tw,thh;
+  int tw=0,thh=0;
   SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);
   if(T){
     SDL_Rect d={heading.x,heading.y,tw,thh};
@@ -25,7 +24,39 @@ static void render_help(Gfx*g,UI*ui){
   const char*modifier=input_primary_modifier_label();
   snprintf(help_text,sizeof help_text,tr(ui->language,T_HELP_BODY),
            modifier,modifier,modifier,modifier);
-  blit_wrapped(g,body.x,body.y,body.w,body.h,help_text,th.dim);
+
+  int text_w=body.w-12;
+  if(text_w<16)text_w=body.w;
+  SDL_Texture*body_texture=
+      render_text_wrapped(g,g->font_body,help_text,th.dim,text_w,&tw,&thh);
+  help_scroll_max_px=thh>body.h?thh-body.h:0;
+  help_scroll_set(help_scroll_px);
+  if(body_texture){
+    int available=thh-help_scroll_px;
+    int visible=available<body.h?available:body.h;
+    if(visible>0){
+      SDL_Rect source={0,help_scroll_px,tw,visible};
+      SDL_Rect dest={body.x,body.y,tw,visible};
+      SDL_Rect previous;
+      SDL_RenderGetClipRect(g->ren,&previous);
+      SDL_RenderSetClipRect(g->ren,&body);
+      SDL_RenderCopy(g->ren,body_texture,&source,&dest);
+      SDL_RenderSetClipRect(g->ren,previous.w||previous.h?&previous:NULL);
+    }
+    SDL_DestroyTexture(body_texture);
+  }
+
+  if(help_scroll_max_px>0){
+    SDL_Rect rail={body.x+body.w-5,body.y,4,body.h};
+    SDL_Color rail_color=th.btn;rail_color.a=150;
+    draw_round_rect(g->ren,rail,2,rail_color);
+    int thumb_h=body.h*body.h/(thh>0?thh:body.h);
+    if(thumb_h<28)thumb_h=28;
+    if(thumb_h>body.h)thumb_h=body.h;
+    int travel=body.h-thumb_h;
+    int thumb_y=body.y+(help_scroll_max_px?help_scroll_px*travel/help_scroll_max_px:0);
+    draw_round_rect(g->ren,(SDL_Rect){rail.x,thumb_y,rail.w,thumb_h},2,th.sel_outline);
+  }
   draw_back_button(g,ui,th,info_keyboard_focus==INFO_FOCUS_BACK);
 }
 

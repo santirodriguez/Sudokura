@@ -25,7 +25,7 @@ for size in SIZES:
     assert sum((int(r["width"]),int(r["height"]))==size for r in matrix)==12
 assert {r["language"] for r in rows}==LANGS
 assert {r["theme"] for r in rows}==THEMES
-for state in ("help","settings","about"):
+for state in ("help-bottom","settings","about"):
     subset=[r for r in audit if r["state"]==state]
     assert len(subset)==6,state
     assert {(r["language"],r["theme"]) for r in subset}=={(l,t) for l in LANGS for t in THEMES}
@@ -36,10 +36,14 @@ for r in rows:
     assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
     assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     assert r["focus"]!="none",r["file"]
+    scroll,scroll_max=int(r["scroll"]),int(r["scroll_max"])
+    assert 0<=scroll<=scroll_max,(r["file"],scroll,scroll_max)
+    if r["state"]=="help-bottom":
+        assert scroll_max>0 and scroll==scroll_max,(r["file"],scroll,scroll_max)
     data=by_name[r["file"]].read_bytes();assert data[:2]==b"BM" and len(data)>=54,r["file"]
     offset=struct.unpack_from("<I",data,10)[0];bw,bh=struct.unpack_from("<ii",data,18)
     assert (bw,abs(bh))==(w,h),(r["file"],bw,bh,w,h)
     pixels=data[offset:];assert len(pixels)>w*h,r["file"]
     sample=pixels[::max(1,len(pixels)//12000)]
     assert len(set(sample))>=8,f"blank-looking frame: {r['file']}"
-print("validated 78 diagnostic BMPs, semantic focus bounds, required states, viewports, EN/ES/CA and both themes")
+print("validated 78 diagnostic BMPs, semantic focus/scroll bounds, required states, viewports, EN/ES/CA and both themes")
