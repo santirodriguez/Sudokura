@@ -162,6 +162,7 @@ jobs:
           SDL_RENDER_VSYNC: '0'
         run: |
           git worktree add /tmp/sudokura-v12 v1.2.0
+          make -C /tmp/sudokura-v12 assets
           make -C /tmp/sudokura-v12 WERROR=-Werror
           /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v12-smoke.txt /tmp/sudokura-v12/sudokura --smoke-test
       - uses: actions/upload-artifact@v4

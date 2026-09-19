@@ -180,14 +180,30 @@ static void app_render_base(Gfx*g,const Game*game,UI*ui){
   if(ui->screen==SCR_TITLE)draw_language_selector(g,ui);
 }
 static bool save_frame(Gfx*g,const char*path){
-  int width=g&&g->output_width>0?g->output_width:(g?g->width:0);
-  int height=g&&g->output_height>0?g->output_height:(g?g->height:0);
-  if(!g||width<=0||height<=0)return false;
-  SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);
-  if(!s)return false;
-  bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&
-          SDL_SaveBMP(s,path)==0;
-  SDL_FreeSurface(s);return ok;
+  if(!g||!g->ren||g->width<=0||g->height<=0)return false;
+  int output_w=g->output_width>0?g->output_width:g->width;
+  int output_h=g->output_height>0?g->output_height:g->height;
+  SDL_Surface*physical=SDL_CreateRGBSurfaceWithFormat(
+      0,output_w,output_h,32,SDL_PIXELFORMAT_ARGB8888);
+  if(!physical)return false;
+  bool read_ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,
+                                    physical->pixels,physical->pitch)==0;
+  if(!read_ok){SDL_FreeSurface(physical);return false;}
+  SDL_Surface*logical=physical;
+  if(output_w!=g->width||output_h!=g->height){
+    logical=SDL_CreateRGBSurfaceWithFormat(
+        0,g->width,g->height,32,SDL_PIXELFORMAT_ARGB8888);
+    if(!logical){SDL_FreeSurface(physical);return false;}
+    SDL_Rect src={0,0,output_w,output_h};
+    SDL_Rect dst={0,0,g->width,g->height};
+    if(SDL_BlitScaled(physical,&src,logical,&dst)!=0){
+      SDL_FreeSurface(logical);SDL_FreeSurface(physical);return false;
+    }
+  }
+  bool ok=SDL_SaveBMP(logical,path)==0;
+  if(logical!=physical)SDL_FreeSurface(logical);
+  SDL_FreeSurface(physical);
+  return ok;
 }
 
 static void gfx_close_fonts(Gfx*g){
