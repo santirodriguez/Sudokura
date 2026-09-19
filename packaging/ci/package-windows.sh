@@ -182,16 +182,36 @@ grep -Fq "$VERSION" <<<"$installer_product"
 
 install_dir="$PWD/installcheck/Sudokura con espacios á漢"
 mkdir -p "$(dirname "$install_dir")"
+
+# The installer owns application files only. SDL_GetPrefPath keeps saves and
+# settings in the roaming per-user profile; prove maintenance reinstall and
+# uninstall do not erase that profile before Phase 8 performs the real v1.2
+# upgrade acceptance on a clean Windows environment.
+profile_dir="$(cygpath -u "$APPDATA")/santirodriguez/Sudokura"
+mkdir -p "$profile_dir"
+profile_sentinel="$profile_dir/phase7-installer-profile-sentinel.txt"
+printf 'preserve-user-profile\n' > "$profile_sentinel"
+
 "$PWD/$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER "/DIR=$(cygpath -w "$install_dir")"
 test -s "$install_dir/sudokura.exe"
 test -s "$install_dir/README.txt"
+test -s "$profile_sentinel"
 installed_path="$install_dir:/c/Windows/System32:/c/Windows"
 env PATH="$installed_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$install_dir/sudokura.exe" --smoke-test
+
+# Exercise Inno's existing-AppId maintenance/update path without pretending it
+# substitutes for the real v1.2 -> v1.3 acceptance required in Phase 8.
+"$PWD/$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER "/DIR=$(cygpath -w "$install_dir")"
+test -s "$install_dir/sudokura.exe"
+test -s "$profile_sentinel"
+
 test -s "$install_dir/unins000.exe"
 "$install_dir/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 test ! -e "$install_dir/sudokura.exe"
+test -s "$profile_sentinel"
+rm -f "$profile_sentinel"
 
 sha256sum "$archive" "$installer" > SHA256SUMS-windows.txt
 ./packaging/ci/write-build-provenance.sh windows build-provenance-windows.txt
