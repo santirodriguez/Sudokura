@@ -519,15 +519,186 @@ static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   return gate != SAVE_GATE_BACK;
 }
 
+static double wall_clock_ms(void){
+  struct timespec ts;
+  if(timespec_get(&ts,TIME_UTC)!=TIME_UTC)return 0.0;
+  return (double)ts.tv_sec*1000.0+(double)ts.tv_nsec/1000000.0;
+}
+
+static void sort_doubles(double*values,int count){
+  for(int i=1;i<count;i++){
+    double value=values[i];int j=i-1;
+    while(j>=0&&values[j]>value){values[j+1]=values[j];j--;}
+    values[j+1]=value;
+  }
+}
+
+static long desktop_benchmark_rss_kb(void){
+#if defined(__linux__)
+  FILE*f=fopen("/proc/self/statm","r");
+  if(!f)return -1;
+  long total=0,resident=0;
+  int ok=fscanf(f,"%ld %ld",&total,&resident);
+  fclose(f);
+  if(ok!=2)return -1;
+  long page=sysconf(_SC_PAGESIZE);
+  if(page<=0)return -1;
+  return resident*(page/1024);
+#else
+  return -1;
+#endif
+}
+
+static int desktop_wait_timeout_ms(const Gfx*g,const UI*ui){
+  if(!g||!ui)return 250;
+  if(victory_animation_active||ui->toast_on)return g->software_renderer?34:16;
+  if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
+     !app_pause_hides_play(ui)&&!ui->reduced_motion)
+    return g->software_renderer?34:16;
+  if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
+     ui->pause_reasons==0)
+    return 250;
+  return 250;
+}
+
+static bool desktop_dynamic_frame_due(const UI*ui){
+  if(!ui)return false;
+  if(victory_animation_active||ui->toast_on)return true;
+  if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
+     !app_pause_hides_play(ui)&&!ui->reduced_motion)
+    return true;
+  if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
+     ui->pause_reasons==0)
+    return true;
+  return false;
+}
+
+static int benchmark_editable_cell(const Game*game){
+  if(!game)return -1;
+  for(int i=0;i<81;i++)if(!game->fixed[i])return i;
+  return -1;
+}
+
+static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
+  if(!g||!game||!ui)return 1;
+  ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->reduced_motion=true;
+  app_frame(g,game,ui);
+  double startup_ms=wall_clock_ms()-process_start_ms;
+
+  const GameDifficulty difficulties[3]={
+      DIFFICULTY_EASY,DIFFICULTY_MEDIUM,DIFFICULTY_HARD};
+  const uint64_t seeds[3]={
+      UINT64_C(0x60010001),UINT64_C(0x60020002),UINT64_C(0x60030003)};
+  double generation_ms[3]={0,0,0};
+  Game generated[3];
+  for(int i=0;i<3;i++){
+    double start=wall_clock_ms();
+    if(!game_new_difficulty_revision(&generated[i],seeds[i],difficulties[i],
+                                     SUDOKURA_GENERATOR_REVISION)){
+      fprintf(stderr,"desktop benchmark generation failed at %d\n",i);
+      return 1;
+    }
+    generation_ms[i]=wall_clock_ms()-start;
+  }
+
+  *game=generated[1];
+  ui->mode=MODE_CLASSIC;ui->strict_mode=false;ui->sel_r=4;ui->sel_c=4;
+  ui->is_daily=false;ui->result=RES_NONE;ui->pause_reasons=0;
+  begin_fresh_play(ui);ui->reduced_motion=true;
+  int cell=benchmark_editable_cell(game);
+  if(cell<0)return 1;
+  ui->sel_r=cell/9;ui->sel_c=cell%9;
+  app_frame(g,game,ui);
+
+  double input_samples[31];
+  for(int i=0;i<31;i++){
+    GameEdit edit;
+    int value=game->solution[cell];
+    double start=wall_clock_ms();
+    GameInputResult result=game_apply_input_recorded(
+        game,cell/9,cell%9,value,false,false,false,&edit);
+    if(result!=GAME_INPUT_CORRECT)return 1;
+    app_frame(g,game,ui);
+    input_samples[i]=wall_clock_ms()-start;
+    if(!game_apply_edit(game,&edit,false))return 1;
+  }
+  sort_doubles(input_samples,31);
+
+  ProfileData profile;
+  profile_defaults(&profile);
+  SessionState session;
+  memset(&session,0,sizeof(session));
+  session.game=*game;session.mode=MODE_CLASSIC;
+  session.selected_row=ui->sel_r;session.selected_column=ui->sel_c;
+  session.status=SESSION_ACTIVE;session.elapsed_ms=UINT64_C(123456);
+  if(!profile_slot_set_runtime(&profile.normal,&session,false))return 1;
+  const char*save_path=".sudokura-desktop-benchmark.dat";
+  const char*backup_path=".sudokura-desktop-benchmark.dat.bak";
+  (void)store_remove_file(save_path);(void)store_remove_file(backup_path);
+  double save_samples[7];
+  for(int i=0;i<7;i++){
+    double start=wall_clock_ms();
+    if(profile_save_runtime_file(save_path,backup_path,&profile)!=STORE_OK)
+      return 1;
+    save_samples[i]=wall_clock_ms()-start;
+  }
+  sort_doubles(save_samples,7);
+  (void)store_remove_file(save_path);(void)store_remove_file(backup_path);
+
+  ui->screen=SCR_TITLE;ui->session_open=false;g->dirty=true;app_frame(g,game,ui);
+  clock_t cpu_start=clock();double idle_start=wall_clock_ms();
+  while(wall_clock_ms()-idle_start<1000.0){
+    SDL_Event event;
+    if(SDL_WaitEventTimeout(&event,100)){
+      while(SDL_PollEvent(&event)){}
+    }
+    app_tick(g,game,ui);
+  }
+  double idle_wall=wall_clock_ms()-idle_start;
+  double idle_cpu_ms=(double)(clock()-cpu_start)*1000.0/CLOCKS_PER_SEC;
+  double idle_cpu_percent=idle_wall>0.0?idle_cpu_ms*100.0/idle_wall:0.0;
+
+  long rss_before=desktop_benchmark_rss_kb();
+  const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640}};
+  for(int i=0;i<48;i++){
+    ui->language=(Language)(i%LANG_COUNT);ui->dark_theme=(i&1)!=0;
+    SDL_SetWindowSize(g->win,sizes[i%4][0],sizes[i%4][1]);
+    SDL_PumpEvents();
+    apply_window_resize(g,sizes[i%4][0],sizes[i%4][1]);
+    app_frame(g,game,ui);
+  }
+  long rss_after=desktop_benchmark_rss_kb();
+
+  printf("desktop_benchmark_version=1\n");
+  printf("startup_first_home_ms=%.3f\n",startup_ms);
+  printf("input_render_p50_ms=%.3f\n",input_samples[15]);
+  printf("idle_cpu_percent=%.3f\n",idle_cpu_percent);
+  printf("generation_easy_ms=%.3f\n",generation_ms[0]);
+  printf("generation_medium_ms=%.3f\n",generation_ms[1]);
+  printf("generation_hard_ms=%.3f\n",generation_ms[2]);
+  printf("save_p50_ms=%.3f\n",save_samples[3]);
+  printf("rss_before_kb=%ld\n",rss_before);
+  printf("rss_after_kb=%ld\n",rss_after);
+  printf("text_cache_entries=%d\n",text_cache_entry_count());
+  printf("text_cache_capacity=%d\n",TEXT_CACHE_CAPACITY);
+  printf("renderer=%s\n",g->software_renderer?"software":"accelerated");
+  printf("scale_milli=%d\n",g->metrics.scale_milli);
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
   bool smoke_test = false;
+  bool desktop_benchmark = false;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--font") && i + 1 < argc)
       font_cli = argv[++i];
     else if (!strcmp(argv[i], "--smoke-test"))
       smoke_test = true;
+    else if (!strcmp(argv[i], "--desktop-benchmark"))
+      desktop_benchmark = true;
     else if (!strcmp(argv[i], "--render-screenshots") && i + 1 < argc)
       screenshot_dir = argv[++i];
   }
@@ -541,6 +712,12 @@ int main(int argc, char **argv) {
   app_clock_reset(&ui, now_ms());
   set_mode_params(&ui);
   home_difficulty = DIFFICULTY_MEDIUM;
+
+  if(desktop_benchmark){
+    int result=run_desktop_benchmark(&g,&game,&ui,process_start_ms);
+    app_shutdown(&g);
+    return result;
+  }
 
   if (smoke_test || screenshot_dir) {
     if (!game_new(&game, 110u)) {
@@ -771,8 +948,11 @@ int main(int argc, char **argv) {
   bool running = true;
   SDL_Event e;
   while (running) {
-    (void)settle_terminal(&persistence, &game, &ui);
-    while (ui_poll_event(&e)) {
+    if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
+    int wait_ms=g.dirty?0:desktop_wait_timeout_ms(&g,&ui);
+    for(int have_event=ui_wait_event_timeout(&e,wait_ms);
+        have_event;have_event=ui_poll_event(&e)){
+      g.dirty=true;
       if (e.type != SDL_QUIT &&
           settle_terminal(&persistence, &game, &ui))
         continue;
@@ -1390,17 +1570,21 @@ int main(int argc, char **argv) {
       }
     }
 
-    (void)settle_terminal(&persistence, &game, &ui);
+    if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     uint64_t checkpoint_now = now_ms();
     if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
         checkpoint_now - persistence.last_periodic_checkpoint_ms >=
             SUDOKURA_AUTOSAVE_MAX_MS) {
       (void)checkpoint_current_session(&persistence, &game, &ui);
+      g.dirty=true;
     } else if (save_policy_checkpoint_due(&persistence.save_policy,
                                           checkpoint_now)) {
       (void)persistence_flush(&persistence);
+      g.dirty=true;
     }
-    app_frame(&g, &game, &ui);
+    if(desktop_dynamic_frame_due(&ui))g.dirty=true;
+    if(g.dirty)app_frame(&g,&game,&ui);
+    else app_tick(&g,&game,&ui);
   }
 
   app_shutdown(&g);

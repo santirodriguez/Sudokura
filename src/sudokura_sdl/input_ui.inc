@@ -224,55 +224,70 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
   return true;
 }
 
-static int ui_poll_event(SDL_Event *event) {
-  while (SDL_PollEvent(event)) {
-    if (ui_handle_settings_panel_event(event)) continue;
+static bool ui_prepare_event(SDL_Event *event) {
+  if(!event)return false;
+  if(audio_gfx)audio_gfx->dirty=true;
+  if (ui_handle_settings_panel_event(event)) return false;
 
-    if (event->type == SDL_KEYDOWN) {
-      SDL_Keycode key = event->key.keysym.sym;
-      if (event->key.repeat &&
-          !input_key_repeat_allowed(key, event->key.keysym.scancode))
-        continue;
-      int digit = input_digit_value(key, event->key.keysym.scancode);
+  if (event->type == SDL_KEYDOWN) {
+    SDL_Keycode key = event->key.keysym.sym;
+    if (event->key.repeat &&
+        !input_key_repeat_allowed(key, event->key.keysym.scancode))
+      return false;
+    int digit = input_digit_value(key, event->key.keysym.scancode);
 
-      if (key == SDLK_v) {
-        audio_toggle(audio_persistence);
-        continue;
-      }
-
-      if (audio_ui && audio_ui->screen == SCR_ABOUT && digit == 4) {
-        ui_open_url(ui_support_url(audio_ui->language));
-        continue;
-      }
-
-      if (digit >= 0 && ui_keypad_scancode(event->key.keysym.scancode))
-        event->key.keysym.sym = (SDL_Keycode)(SDLK_0 + digit);
-      return 1;
+    if (key == SDLK_v) {
+      audio_toggle(audio_persistence);
+      return false;
     }
 
-    if (event->type == SDL_MOUSEBUTTONDOWN && audio_gfx && audio_ui &&
-        audio_ui->screen == SCR_ABOUT) {
-      int x = event->button.x, y = event->button.y;
-      AppGeometry geometry;
-      if (get_geometry(audio_gfx, audio_ui, &geometry)) {
-        if (point_in(sdl_rect(geometry.about_study_link), x, y)) {
-          if (event->button.button == SDL_BUTTON_LEFT) {
-            info_keyboard_focus = INFO_FOCUS_STUDY;
-            ui_open_url("https://doi.org/10.1002/gps.5085");
-          }
-          continue;
-        }
-        if (point_in(sdl_rect(geometry.about_links[3]), x, y)) {
-          if (event->button.button == SDL_BUTTON_LEFT) {
-            info_keyboard_focus = INFO_FOCUS_LINK_3;
-            ui_open_url(ui_support_url(audio_ui->language));
-          }
-          continue;
-        }
-      }
+    if (audio_ui && audio_ui->screen == SCR_ABOUT && digit == 4) {
+      ui_open_url(ui_support_url(audio_ui->language));
+      return false;
     }
 
-    return 1;
+    if (digit >= 0 && ui_keypad_scancode(event->key.keysym.scancode))
+      event->key.keysym.sym = (SDL_Keycode)(SDLK_0 + digit);
+    return true;
   }
+
+  if (event->type == SDL_MOUSEBUTTONDOWN && audio_gfx && audio_ui &&
+      audio_ui->screen == SCR_ABOUT) {
+    int x = event->button.x, y = event->button.y;
+    AppGeometry geometry;
+    if (get_geometry(audio_gfx, audio_ui, &geometry)) {
+      if (point_in(sdl_rect(geometry.about_study_link), x, y)) {
+        if (event->button.button == SDL_BUTTON_LEFT) {
+          info_keyboard_focus = INFO_FOCUS_STUDY;
+          ui_open_url("https://doi.org/10.1002/gps.5085");
+        }
+        return false;
+      }
+      if (point_in(sdl_rect(geometry.about_links[3]), x, y)) {
+        if (event->button.button == SDL_BUTTON_LEFT) {
+          info_keyboard_focus = INFO_FOCUS_LINK_3;
+          ui_open_url(ui_support_url(audio_ui->language));
+        }
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+static int ui_poll_event(SDL_Event *event) {
+  while (SDL_PollEvent(event))
+    if (ui_prepare_event(event)) return 1;
+  return 0;
+}
+
+static int ui_wait_event_timeout(SDL_Event *event,int timeout_ms) {
+  if(!event)return 0;
+  if(timeout_ms<0)timeout_ms=0;
+  if(!SDL_WaitEventTimeout(event,timeout_ms))return 0;
+  do{
+    if(ui_prepare_event(event))return 1;
+  }while(SDL_PollEvent(event));
   return 0;
 }

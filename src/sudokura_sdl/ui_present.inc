@@ -55,10 +55,8 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
                       centered ? rect.y + (rect.h - th) / 2 : rect.y + 1,
                       tw, th};
       SDL_RenderCopy(gfx->ren, texture, NULL, &dst);
-      SDL_DestroyTexture(texture);
       return true;
     }
-    SDL_DestroyTexture(texture);
   }
 
   /* The supported geometry matrix must fit above. If a platform font is
@@ -71,17 +69,13 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
   if (!texture) return false;
   int visible_w = tw < rect.w - 4 ? tw : rect.w - 4;
   int visible_h = th < rect.h - 2 ? th : rect.h - 2;
-  if (visible_w <= 0 || visible_h <= 0) {
-    SDL_DestroyTexture(texture);
-    return false;
-  }
-  SDL_Rect source = {0, 0, visible_w, visible_h};
+  if (visible_w <= 0 || visible_h <= 0) return false;
+  SDL_Rect source = gfx_physical_rect(gfx,0,0,visible_w,visible_h);
   SDL_Rect destination = {
       rect.x + 4,
       centered ? rect.y + (rect.h - visible_h) / 2 : rect.y + 1,
       visible_w, visible_h};
   SDL_RenderCopy(gfx->ren, texture, &source, &destination);
-  SDL_DestroyTexture(texture);
   return true;
 }
 
@@ -1282,6 +1276,7 @@ static void rc2_render_generation_overlay(Gfx *gfx, UI *ui) {
 }
 
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
+  text_cache_sync(gfx,ui);
   app_render_base(gfx, game, ui);
   if (ui->screen == SCR_TITLE)
     polish_render_home(gfx, ui);

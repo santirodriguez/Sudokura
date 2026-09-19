@@ -18,7 +18,6 @@ static void render_help(Gfx*g,UI*ui){
   if(T){
     SDL_Rect d={heading.x,heading.y,tw,thh};
     SDL_RenderCopy(g->ren,T,NULL,&d);
-    SDL_DestroyTexture(T);
   }
   char help_text[2048];
   const char*modifier=input_primary_modifier_label();
@@ -35,7 +34,7 @@ static void render_help(Gfx*g,UI*ui){
     int available=thh-help_scroll_px;
     int visible=available<body.h?available:body.h;
     if(visible>0){
-      SDL_Rect source={0,help_scroll_px,tw,visible};
+      SDL_Rect source=gfx_physical_rect(g,0,help_scroll_px,tw,visible);
       SDL_Rect dest={body.x,body.y,tw,visible};
       SDL_Rect previous;
       SDL_RenderGetClipRect(g->ren,&previous);
@@ -43,7 +42,6 @@ static void render_help(Gfx*g,UI*ui){
       SDL_RenderCopy(g->ren,body_texture,&source,&dest);
       SDL_RenderSetClipRect(g->ren,previous.w||previous.h?&previous:NULL);
     }
-    SDL_DestroyTexture(body_texture);
   }
 
   if(help_scroll_max_px>0){
@@ -181,10 +179,20 @@ static void app_render_base(Gfx*g,const Game*game,UI*ui){
   }
   if(ui->screen==SCR_TITLE)draw_language_selector(g,ui);
 }
-static bool save_frame(Gfx*g,const char*path){SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,g->width,g->height,32,SDL_PIXELFORMAT_ARGB8888);if(!s)return false;bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&SDL_SaveBMP(s,path)==0;SDL_FreeSurface(s);return ok;}
+static bool save_frame(Gfx*g,const char*path){
+  int width=g&&g->output_width>0?g->output_width:(g?g->width:0);
+  int height=g&&g->output_height>0?g->output_height:(g?g->height:0);
+  if(!g||width<=0||height<=0)return false;
+  SDL_Surface*s=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);
+  if(!s)return false;
+  bool ok=SDL_RenderReadPixels(g->ren,NULL,SDL_PIXELFORMAT_ARGB8888,s->pixels,s->pitch)==0&&
+          SDL_SaveBMP(s,path)==0;
+  SDL_FreeSurface(s);return ok;
+}
 
 static void gfx_close_fonts(Gfx*g){
   if(!g)return;
+  text_cache_clear();
   for(int i=0;i<FONT_CACHE_COUNT;i++){
     if(g->fonts[i])TTF_CloseFont(g->fonts[i]);
     g->fonts[i]=NULL;

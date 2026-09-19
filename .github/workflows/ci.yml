@@ -126,3 +126,50 @@ jobs:
           name: phase5-ui-review
           path: ui-review
           retention-days: 7
+
+  desktop-benchmark:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-benchmark]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev fonts-dejavu-core time
+      - run: |
+          uname -a | tee desktop-host.txt
+          cc --version | head -1 | tee -a desktop-host.txt
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' | tee -a desktop-host.txt || true
+      - run: make assets && make WERROR=-Werror all
+      - name: Measure v1.3 desktop paths
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: |
+          ./sudokura --desktop-benchmark | tee desktop-v13.txt
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v13-smoke.txt ./sudokura --smoke-test
+          python3 scripts/validate_desktop_benchmark.py desktop-v13.txt
+      - name: Measure v1.2 smoke baseline on the same runner
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: |
+          git worktree add /tmp/sudokura-v12 v1.2.0
+          make -C /tmp/sudokura-v12 WERROR=-Werror
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v12-smoke.txt /tmp/sudokura-v12/sudokura --smoke-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase6-desktop-benchmark
+          path: |
+            desktop-host.txt
+            desktop-v13.txt
+            desktop-v13-smoke.txt
+            desktop-v12-smoke.txt
+          retention-days: 14

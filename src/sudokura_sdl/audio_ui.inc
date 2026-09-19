@@ -89,6 +89,7 @@ static void persistence_init(Persistence *persistence) {
 
 static bool app_rebuild_renderer_resources(Gfx *gfx) {
   if (!gfx || !gfx->ren) return false;
+  text_cache_clear();
   if (!app_rebuild_base_textures(gfx)) return false;
   if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
   app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
@@ -127,10 +128,15 @@ static void app_shutdown(Gfx *gfx) {
   app_shutdown_base(gfx);
 }
 
-static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
+static void app_tick(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_ui = ui;
   audio_sync_ui(game, ui);
+}
+
+static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
+  app_tick(gfx,game,ui);
   app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);
+  gfx->dirty=false;
 }
