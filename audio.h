@@ -30,6 +30,9 @@ typedef enum {
 bool audio_init(void);
 void audio_shutdown(void);
 bool audio_is_available(void);
+bool audio_device_available(void);
+bool audio_music_available(void);
+bool audio_fx_available(void);
 bool audio_is_enabled(void);
 void audio_set_enabled(bool enabled);
 void audio_set_context(AudioContext context);
@@ -38,9 +41,26 @@ void audio_play_effect(AudioEffect effect);
 void audio_cancel_result(void);
 void audio_set_focus_paused(bool paused);
 void audio_update(void);
+void audio_notify_device_removed(void);
+void audio_notify_device_added(void);
 int audio_music_volume(void);
 int audio_fx_volume(void);
 void audio_set_music_volume(int percent);
 void audio_set_fx_volume(int percent);
+
+#ifdef SUDOKURA_AUDIO_TESTING
+enum {
+  AUDIO_TEST_MISSING_MAIN_MUSIC = 1u << 0,
+  AUDIO_TEST_MISSING_FAIL_MUSIC = 1u << 1,
+  AUDIO_TEST_MISSING_WIN_JINGLE = 1u << 2,
+  AUDIO_TEST_MISSING_FAIL_JINGLE = 1u << 3,
+  AUDIO_TEST_MISSING_ALL_OGG =
+      AUDIO_TEST_MISSING_MAIN_MUSIC | AUDIO_TEST_MISSING_FAIL_MUSIC |
+      AUDIO_TEST_MISSING_WIN_JINGLE | AUDIO_TEST_MISSING_FAIL_JINGLE
+};
+void audio_test_set_missing_assets(unsigned mask);
+void audio_test_force_device_loss(void);
+void audio_test_retry_now(void);
+#endif
 
 #endif
