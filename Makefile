@@ -55,7 +55,7 @@ tests/test_desktop: tests/test_desktop.c desktop.c desktop.h
 tests/test_text_fit: tests/test_text_fit.c geometry.c i18n.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_text_fit.c geometry.c i18n.c -o $@ $(SDL_TEST_LIBS)
 tests/test_audio: tests/test_audio.c audio.c audio.h $(AUDIO_ASSETS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS) -lm
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_AUDIO_TESTING $(SDL_TEST_CFLAGS) tests/test_audio.c audio.c -o $@ $(SDL_TEST_LIBS) -lm
 tests/test_input: tests/test_input.c input.c input.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_input.c input.c -o $@
 tests/test_i18n: tests/test_i18n.c i18n.c i18n.h
