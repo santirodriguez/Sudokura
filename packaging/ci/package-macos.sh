@@ -87,4 +87,16 @@ if awk '/^[[:space:]]+\//{print $1}' "dependencies-macos-${ARCH}.txt" | grep -Ev
 ditto -c -k --sequesterRsrc --keepParent Sudokura.app "Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip"
 unzip -t "Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip"; zip_inventory=$(unzip -Z1 "Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip"); grep -q 'Sudokura.app/Contents/MacOS/sudokura' <<<"$zip_inventory"
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fq "Sudokura.app/Contents/Resources/audio/$audio" <<<"$zip_inventory"; done
-shasum -a 256 "Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip" > "SHA256SUMS-macos-${ARCH}.txt"; du -h "Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip"
+artifact="Sudokura-v${VERSION}-macos-${ARCH}-unsigned.zip"
+shasum -a 256 "$artifact" > "SHA256SUMS-macos-${ARCH}.txt"
+./packaging/ci/write-build-provenance.sh "macos-${ARCH}" "build-provenance-macos-${ARCH}.txt"
+baseline=0
+[[ "$ARCH" == arm64 ]] && baseline=6306753
+[[ "$ARCH" == x86_64 ]] && baseline=6458010
+python3 scripts/write_artifact_manifest.py \
+  --platform macos --architecture "$ARCH" \
+  --minimum 'Experimental pending Phase 7.4 and native Phase 8 acceptance' \
+  --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
+  --output "artifact-manifest-macos-${ARCH}.json" \
+  --artifact "$artifact" --baseline "$baseline"
+du -h "$artifact"

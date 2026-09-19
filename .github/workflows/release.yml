@@ -2,6 +2,12 @@ name: Package Sudokura release
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to package without publishing
+        required: true
+        default: upgrade/v1.3.0
+        type: string
   push:
     tags:
       - 'v*'
@@ -9,15 +15,26 @@ on:
 permissions:
   contents: read
 
+env:
+  PACKAGE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+  SUDOKURA_ARTIFACT_KIND: ${{ startsWith(github.ref, 'refs/tags/') && 'release-candidate' || 'preview' }}
+
 jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.PACKAGE_REF }}
+          fetch-depth: 0
       - id: version
-        run: echo "version=$(./scripts/version.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(./scripts/version.sh)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          printf 'package_ref=%s\nsource_commit=%s\nsource_version=%s\n' "$PACKAGE_REF" "$(git rev-parse HEAD)" "$(./scripts/version.sh)"
       - name: Verify release tag matches source version
         if: startsWith(github.ref, 'refs/tags/')
         run: test "$GITHUB_REF_NAME" = "v${{ steps.version.outputs.version }}"
@@ -26,8 +43,10 @@ jobs:
     needs: version
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
@@ -37,7 +56,7 @@ jobs:
       - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
       - run: ./scripts/fetch_linuxdeploy.sh linuxdeploy
       - run: LINUXDEPLOY=$PWD/linuxdeploy packaging/ci/package-linux.sh
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: linux-x86_64
           path: |
@@ -45,7 +64,9 @@ jobs:
             SHA256SUMS-linux.txt
             inventory-linux.txt
             dependencies-linux.txt
-      - uses: actions/upload-artifact@v7
+            artifact-manifest-linux.json
+            build-provenance-linux.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ui-review-screenshots
           path: ui-review
@@ -58,8 +79,10 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
@@ -69,7 +92,7 @@ jobs:
           $go = (Get-Command go -ErrorAction Stop).Source
           "SUDOKURA_GO=$go" >> $env:GITHUB_ENV
           & $go version
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           msystem: MINGW64
           update: true
@@ -82,8 +105,11 @@ jobs:
             mingw-w64-x86_64-ntldd-git
             mingw-w64-x86_64-ttf-dejavu
             make zip unzip
+      - name: Fetch pinned Inno Setup
+        shell: pwsh
+        run: ./scripts/fetch_innosetup.ps1
       - run: packaging/ci/package-windows.sh
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: windows-x86_64
           path: |
@@ -92,6 +118,10 @@ jobs:
             inventory-windows.txt
             dependencies-windows.txt
             dependencies-windows-recursive.txt
+            Sudokura-*-windows-x86_64-setup.exe
+            artifact-manifest-windows.json
+            build-provenance-windows.txt
+            components-windows.txt
 
   macos:
     needs: version
@@ -105,15 +135,17 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
       - run: brew untap aws/tap || true; brew install sdl2 sdl2_ttf sdl2_mixer pkg-config; brew install --cask font-dejavu-sans
       - run: font=$(find "$HOME/Library/Fonts" /Library/Fonts -type f -name DejaVuSans.ttf -print -quit 2>/dev/null); test -n "$font"; test -f "$font"; echo "FONT=$font" >> "$GITHUB_ENV"
       - run: ARCH=${{ matrix.arch }} packaging/ci/package-macos.sh
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: macos-${{ matrix.arch }}
           path: |
@@ -123,20 +155,28 @@ jobs:
             dependencies-macos-*.txt
             architecture-macos-*.txt
             smoke-macos-*.txt
+            artifact-manifest-macos-*.json
+            build-provenance-macos-*.txt
 
   checksums:
     needs: [version, linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: artifacts
           merge-multiple: true
       - run: cat artifacts/SHA256SUMS-*.txt | sort -k2 > artifacts/SHA256SUMS.txt
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: checksums
-          path: artifacts/SHA256SUMS.txt
+          path: |
+            artifacts/SHA256SUMS.txt
+            artifacts/artifact-manifest-linux.json
+            artifacts/artifact-manifest-windows.json
+            artifacts/artifact-manifest-macos-arm64.json
+            artifacts/artifact-manifest-*.json
+            artifacts/build-provenance-*.txt
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -145,12 +185,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Sudokura v${{ needs.version.outputs.version }}
@@ -159,6 +201,7 @@ jobs:
           files: |
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-linux-x86_64.AppImage
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-windows-x86_64.zip
+            artifacts/Sudokura-v${{ needs.version.outputs.version }}-windows-x86_64-setup.exe
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-x86_64-unsigned.zip
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-arm64-unsigned.zip
             artifacts/SHA256SUMS.txt

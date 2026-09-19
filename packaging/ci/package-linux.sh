@@ -13,6 +13,9 @@ install -Dm644 packaging/linux/sudokura.desktop AppDir/usr/share/applications/su
 install -Dm644 assets/generated/sudokura-256.png AppDir/usr/share/icons/hicolor/256x256/apps/sudokura.png
 install -Dm644 "$font" AppDir/usr/bin/DejaVuSans.ttf
 install -Dm644 packaging/licenses/DejaVu-FONT-LICENSE.txt AppDir/usr/bin/DejaVu-FONT-LICENSE.txt
+install -Dm644 LICENSE AppDir/usr/share/doc/sudokura/LICENSE.txt
+install -Dm644 packaging/licenses/DISTRIBUTION-NOTICES.md AppDir/usr/share/doc/sudokura/DISTRIBUTION-NOTICES.md
+install -Dm644 assets/audio/README.md AppDir/usr/share/doc/sudokura/AUDIO-PROVENANCE.md
 install -Dm644 assets/audio/music-main.ogg AppDir/usr/bin/audio/music-main.ogg
 install -Dm644 assets/audio/music-fail.ogg AppDir/usr/bin/audio/music-fail.ogg
 install -Dm644 assets/audio/jingle-win.ogg AppDir/usr/bin/audio/jingle-win.ogg
@@ -27,5 +30,13 @@ find AppDir -type f -printf '%P\n' | sort > inventory-linux.txt
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "usr/bin/audio/$audio" inventory-linux.txt; done
 ldd AppDir/usr/bin/sudokura | tee dependencies-linux.txt
 grep -qi 'SDL2_mixer' dependencies-linux.txt
-sha256sum "Sudokura-v${VERSION}-linux-x86_64.AppImage" > SHA256SUMS-linux.txt
-du -h "Sudokura-v${VERSION}-linux-x86_64.AppImage"
+artifact="Sudokura-v${VERSION}-linux-x86_64.AppImage"
+sha256sum "$artifact" > SHA256SUMS-linux.txt
+./packaging/ci/write-build-provenance.sh linux build-provenance-linux.txt
+python3 scripts/write_artifact_manifest.py \
+  --platform linux --architecture x86_64 \
+  --minimum 'Ubuntu 22.04 x86_64 build baseline; cross-distro acceptance pending Phase 8' \
+  --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
+  --output artifact-manifest-linux.json \
+  --artifact "$artifact" --baseline 9730552
+du -h "$artifact"

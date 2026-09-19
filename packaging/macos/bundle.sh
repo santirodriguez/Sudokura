@@ -2,7 +2,7 @@
 set -euo pipefail
 : "${PREFIX:?set PREFIX to the dependency prefix}"; APP="${1:-Sudokura.app}"; BIN="${2:-sudokura}"
 VERSION=$(./scripts/version.sh)
-rm -rf "$APP"; mkdir -p "$APP/Contents/"{MacOS,Frameworks,Resources/audio}
+rm -rf "$APP"; mkdir -p "$APP/Contents/"{MacOS,Frameworks,Resources/audio,Resources/Documentation}
 cp "$BIN" "$APP/Contents/MacOS/sudokura"
 sed "s/@SUDOKURA_VERSION@/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 cp assets/generated/sudokura.icns "$APP/Contents/Resources/"
@@ -12,6 +12,9 @@ cp assets/audio/music-main.ogg "$APP/Contents/Resources/audio/"
 cp assets/audio/music-fail.ogg "$APP/Contents/Resources/audio/"
 cp assets/audio/jingle-win.ogg "$APP/Contents/Resources/audio/"
 cp assets/audio/jingle-fail.ogg "$APP/Contents/Resources/audio/"
+cp LICENSE "$APP/Contents/Resources/Documentation/LICENSE.txt"
+cp packaging/licenses/DISTRIBUTION-NOTICES.md "$APP/Contents/Resources/Documentation/"
+cp assets/audio/README.md "$APP/Contents/Resources/Documentation/AUDIO-PROVENANCE.md"
 queue=("$PREFIX/lib/libSDL2-2.0.0.dylib" "$PREFIX/lib/libSDL2_ttf-2.0.0.dylib" "$PREFIX/lib/libSDL2_mixer-2.0.0.dylib")
 index=0
 while (( index < ${#queue[@]} )); do

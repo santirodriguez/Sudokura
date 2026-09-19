@@ -11,3 +11,11 @@
 /assets/generated/
 *.AppImage
 *.zip
+/sudokura.exe
+/icon.o
+/zipcheck/
+/installcheck/
+/*.exe
+/artifact-manifest-*.json
+/build-provenance-*.txt
+/components-*.txt
