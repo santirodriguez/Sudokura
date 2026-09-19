@@ -1,3 +1,9 @@
+#if !defined(_WIN32) && !defined(__APPLE__)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 /* Sudokura SDL application composition.
 
    Core/runtime modules are compiled as normal C translation units. The SDL
