@@ -1,6 +1,7 @@
 #include "desktop.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 
 int main(void) {
@@ -23,6 +24,10 @@ int main(void) {
                                         display, 64));
   assert(!desktop_rect_has_visible_area((DesktopRect){2500, 100, 1024, 720},
                                         display, 64));
+  assert(!desktop_rect_has_visible_area(
+      (DesktopRect){INT_MAX - 8, INT_MAX - 8, 1024, 720}, display, 64));
+  assert(!desktop_rect_has_visible_area(
+      (DesktopRect){INT_MIN + 8, INT_MIN + 8, 1024, 720}, display, 64));
 
   puts("desktop HiDPI metrics and window visibility policy passed");
   return 0;

@@ -50,14 +50,14 @@ bool desktop_rect_has_visible_area(DesktopRect window, DesktopRect display,
   if (window.w <= 0 || window.h <= 0 || display.w <= 0 || display.h <= 0)
     return false;
   if (minimum_visible < 1) minimum_visible = 1;
-  int left = window.x > display.x ? window.x : display.x;
-  int top = window.y > display.y ? window.y : display.y;
-  int right_a = window.x + window.w;
-  int right_b = display.x + display.w;
-  int bottom_a = window.y + window.h;
-  int bottom_b = display.y + display.h;
-  int right = right_a < right_b ? right_a : right_b;
-  int bottom = bottom_a < bottom_b ? bottom_a : bottom_b;
+  int64_t left = window.x > display.x ? window.x : display.x;
+  int64_t top = window.y > display.y ? window.y : display.y;
+  int64_t right_a = (int64_t)window.x + window.w;
+  int64_t right_b = (int64_t)display.x + display.w;
+  int64_t bottom_a = (int64_t)window.y + window.h;
+  int64_t bottom_b = (int64_t)display.y + display.h;
+  int64_t right = right_a < right_b ? right_a : right_b;
+  int64_t bottom = bottom_a < bottom_b ? bottom_a : bottom_b;
   return right - left >= minimum_visible &&
          bottom - top >= minimum_visible;
 }
