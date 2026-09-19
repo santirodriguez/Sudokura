@@ -9,6 +9,8 @@ if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
   exit 1
 fi
 VERSION=$SOURCE_VERSION
+SOURCE_COMMIT=$(./scripts/source_commit.sh)
+export SUDOKURA_SOURCE_COMMIT="$SOURCE_COMMIT"
 font=$(fc-match -f '%{file}' 'DejaVu Sans'); test -f "$font"; ./scripts/validate_font.py "$font"
 rm -rf AppDir; install -Dm755 sudokura AppDir/usr/bin/sudokura
 install -Dm644 packaging/linux/sudokura.desktop AppDir/usr/share/applications/sudokura.desktop
@@ -41,6 +43,7 @@ grep -qi 'SDL2_mixer' dependencies-linux.txt
 sha256sum "$artifact" > SHA256SUMS-linux.txt
 ./packaging/ci/write-build-provenance.sh linux build-provenance-linux.txt
 python3 scripts/write_artifact_manifest.py \
+  --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform linux --architecture x86_64 \
   --minimum 'Ubuntu 22.04 x86_64 build baseline; cross-distro acceptance pending Phase 8' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \

@@ -11,6 +11,9 @@ concurrency:
   group: sudokura-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SUDOKURA_SOURCE_COMMIT: ${{ github.sha }}
+
 jobs:
   linux:
     runs-on: ubuntu-latest

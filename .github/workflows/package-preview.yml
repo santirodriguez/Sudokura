@@ -41,6 +41,8 @@ jobs:
           printf 'preview_ref=%s\nsource_commit=%s\nsource_version=%s\n' "$PREVIEW_REF" "$(git rev-parse HEAD)" "$(./scripts/version.sh)"
   linux:
     needs: resolve
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -78,6 +80,8 @@ jobs:
 
   windows:
     needs: resolve
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
     runs-on: windows-latest
     defaults:
       run:
@@ -129,6 +133,8 @@ jobs:
 
   macos:
     needs: resolve
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ resolve.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:

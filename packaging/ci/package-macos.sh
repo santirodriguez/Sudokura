@@ -7,6 +7,8 @@ if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
   exit 1
 fi
 VERSION=$SOURCE_VERSION
+SOURCE_COMMIT=$(./scripts/source_commit.sh)
+export SUDOKURA_SOURCE_COMMIT="$SOURCE_COMMIT"
 test -f "$FONT"; ./scripts/validate_font.py "$FONT"; export SUDOKURA_TEST_FONT="$FONT"
 make assets; make WERROR=-Werror test test-ui all
 FONT_LICENSE="$PWD/packaging/licenses/DejaVu-FONT-LICENSE.txt" PREFIX=$(brew --prefix) packaging/macos/bundle.sh Sudokura.app sudokura
@@ -94,6 +96,7 @@ baseline=0
 [[ "$ARCH" == arm64 ]] && baseline=6306753
 [[ "$ARCH" == x86_64 ]] && baseline=6458010
 python3 scripts/write_artifact_manifest.py \
+  --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform macos --architecture "$ARCH" \
   --minimum 'Experimental pending Phase 7.4 and native Phase 8 acceptance' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \

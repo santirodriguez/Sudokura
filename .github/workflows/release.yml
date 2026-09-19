@@ -41,6 +41,8 @@ jobs:
 
   linux:
     needs: version
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ version.outputs.commit }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -78,6 +80,8 @@ jobs:
 
   windows:
     needs: version
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ version.outputs.commit }}
     runs-on: windows-latest
     defaults:
       run:
@@ -129,6 +133,8 @@ jobs:
 
   macos:
     needs: version
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ version.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:

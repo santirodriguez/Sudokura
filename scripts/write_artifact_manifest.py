@@ -3,10 +3,6 @@ import argparse
 import hashlib
 import json
 import pathlib
-import subprocess
-
-def command(*args):
-    return subprocess.check_output(args, text=True).strip()
 
 def sha256(path):
     digest = hashlib.sha256()
@@ -16,6 +12,8 @@ def sha256(path):
     return digest.hexdigest()
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--version', required=True)
+parser.add_argument('--source-commit', required=True)
 parser.add_argument('--platform', required=True)
 parser.add_argument('--architecture', required=True)
 parser.add_argument('--minimum', required=True)
@@ -27,8 +25,8 @@ args = parser.parse_args()
 if len(args.artifact) != len(args.baseline):
     parser.error('--artifact and --baseline counts must match')
 
-version = command('./scripts/version.sh')
-commit = command('git', 'rev-parse', 'HEAD')
+version = args.version
+commit = args.source_commit
 artifacts = []
 for artifact_name, baseline in zip(args.artifact, args.baseline):
     path = pathlib.Path(artifact_name)

@@ -2,10 +2,11 @@
 set -euo pipefail
 platform=${1:?platform label required}
 output=${2:?output path required}
+source_commit=$(./scripts/source_commit.sh)
 {
   printf 'product=Sudokura\n'
   printf 'version=%s\n' "$(./scripts/version.sh)"
-  printf 'source_commit=%s\n' "$(git rev-parse HEAD)"
+  printf 'source_commit=%s\n' "$source_commit"
   printf 'artifact_kind=%s\n' "${SUDOKURA_ARTIFACT_KIND:-candidate}"
   printf 'platform=%s\n' "$platform"
   printf 'github_run_id=%s\n' "${GITHUB_RUN_ID:-local}"

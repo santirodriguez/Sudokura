@@ -6,6 +6,8 @@ if [[ -n "${VERSION:-}" && "$VERSION" != "$SOURCE_VERSION" ]]; then
   exit 1
 fi
 VERSION=$SOURCE_VERSION
+SOURCE_COMMIT=$(./scripts/source_commit.sh)
+export SUDOKURA_SOURCE_COMMIT="$SOURCE_COMMIT"
 : "${INNO_ISCC:?set INNO_ISCC to the pinned Inno Setup compiler path}"
 
 font=$(pacman -Ql mingw-w64-x86_64-ttf-dejavu | awk '!found && /\/DejaVuSans.ttf$/{value=$2;found=1} END{print value}')
@@ -221,6 +223,7 @@ rm -f "$profile_sentinel"
 sha256sum "$archive" "$installer" > SHA256SUMS-windows.txt
 ./packaging/ci/write-build-provenance.sh windows build-provenance-windows.txt
 python3 scripts/write_artifact_manifest.py \
+  --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform windows --architecture x86_64 \
   --minimum 'Windows 11 x64 candidate support target; Windows 10 x64 pending Phase 8 validation' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
