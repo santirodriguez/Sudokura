@@ -227,6 +227,16 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
   if(audio_gfx)audio_gfx->dirty=true;
+
+  if (event->type == SDL_AUDIODEVICEREMOVED && !event->adevice.iscapture) {
+    audio_notify_device_removed();
+    return false;
+  }
+  if (event->type == SDL_AUDIODEVICEADDED && !event->adevice.iscapture) {
+    audio_notify_device_added();
+    return false;
+  }
+
   if (ui_handle_settings_panel_event(event)) return false;
 
   if (event->type == SDL_KEYDOWN) {
