@@ -48,7 +48,7 @@ for artifact_name, baseline in zip(args.artifact, args.baseline):
             'baseline_bytes': None,
             'delta_bytes': None,
             'delta_percent': None,
-            'note': 'New artifact in v1.3.0; no v1.2 equivalent exists.',
+            'note': f'New artifact in v{version}; no v1.2 equivalent exists.',
         })
     artifacts.append({
         'name': path.name,
