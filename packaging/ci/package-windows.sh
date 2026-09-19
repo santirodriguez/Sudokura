@@ -192,7 +192,9 @@ mkdir -p "$profile_dir"
 profile_sentinel="$profile_dir/phase7-installer-profile-sentinel.txt"
 printf 'preserve-user-profile\n' > "$profile_sentinel"
 
-"$PWD/$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER "/DIR=$(cygpath -w "$install_dir")"
+env MSYS2_ARG_CONV_EXCL='*' "$timeout_bin" 120s "$PWD/$installer" \
+  /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- \
+  "/DIR=$(cygpath -w "$install_dir")"
 test -s "$install_dir/sudokura.exe"
 test -s "$install_dir/README.txt"
 test -s "$profile_sentinel"
@@ -203,12 +205,15 @@ env PATH="$installed_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 
 # Exercise Inno's existing-AppId maintenance/update path without pretending it
 # substitutes for the real v1.2 -> v1.3 acceptance required in Phase 8.
-"$PWD/$installer" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER "/DIR=$(cygpath -w "$install_dir")"
+env MSYS2_ARG_CONV_EXCL='*' "$timeout_bin" 120s "$PWD/$installer" \
+  /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- \
+  "/DIR=$(cygpath -w "$install_dir")"
 test -s "$install_dir/sudokura.exe"
 test -s "$profile_sentinel"
 
 test -s "$install_dir/unins000.exe"
-"$install_dir/unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+env MSYS2_ARG_CONV_EXCL='*' "$timeout_bin" 120s "$install_dir/unins000.exe" \
+  /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 test ! -e "$install_dir/sudokura.exe"
 test -s "$profile_sentinel"
 rm -f "$profile_sentinel"
