@@ -26,7 +26,7 @@ for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do te
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 30s AppDir/usr/bin/sudokura --smoke-test
 "$LINUXDEPLOY" --appdir AppDir
 artifact="Sudokura-v${VERSION}-linux-x86_64.AppImage"
-ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
+VERSION="$VERSION" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
   --runtime-file "$APPIMAGE_RUNTIME" AppDir "$artifact"
 chmod +x "$artifact"
 test -x "$artifact"
