@@ -52,7 +52,7 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: false
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libfuse2 curl fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libfuse2 curl fonts-dejavu-core
       - run: make assets && make WERROR=-Werror test test-ui all
       - run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 ./sudokura --render-screenshots ui-review
       - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
@@ -69,7 +69,10 @@ jobs:
             Sudokura-*.AppImage
             SHA256SUMS-linux.txt
             inventory-linux.txt
-            dependencies-linux.txt
+            dependencies-linux-all.txt
+            external-dependencies-linux.txt
+            abi-linux.txt
+            components-linux.txt
             artifact-manifest-linux.json
             build-provenance-linux.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -77,6 +80,43 @@ jobs:
           name: ui-review-screenshots
           path: ui-review
           compression-level: 9
+
+  linux-ubuntu24:
+    needs: [version, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: linux-x86_64
+          path: candidate
+      - run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb weston dbus-x11
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-ubuntu24-runtime
+          path: linux-runtime-ubuntu24.txt
+
+  linux-fedora44:
+    needs: [version, linux]
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    steps:
+      - run: dnf -y install git findutils coreutils fuse-libs xorg-x11-server-Xvfb weston dbus-daemon
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: linux-x86_64
+          path: candidate
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-fedora44-runtime
+          path: linux-runtime-fedora44.txt
 
   windows:
     needs: version
@@ -135,15 +175,8 @@ jobs:
     needs: version
     env:
       SUDOKURA_SOURCE_COMMIT: ${{ needs.version.outputs.commit }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            arch: x86_64
-          - runner: macos-15
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+      ARCH: arm64
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -154,22 +187,27 @@ jobs:
           cache: false
       - run: brew untap aws/tap || true; brew install sdl2 sdl2_ttf sdl2_mixer pkg-config; brew install --cask font-dejavu-sans
       - run: font=$(find "$HOME/Library/Fonts" /Library/Fonts -type f -name DejaVuSans.ttf -print -quit 2>/dev/null); test -n "$font"; test -f "$font"; echo "FONT=$font" >> "$GITHUB_ENV"
-      - run: ARCH=${{ matrix.arch }} packaging/ci/package-macos.sh
+      - run: packaging/ci/package-macos.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos-arm64
           path: |
-            Sudokura-*.zip
-            SHA256SUMS-*.txt
-            inventory-macos-*.txt
-            dependencies-macos-*.txt
-            architecture-macos-*.txt
-            smoke-macos-*.txt
-            artifact-manifest-macos-*.json
-            build-provenance-macos-*.txt
+            Sudokura-*.dmg
+            SHA256SUMS-macos-arm64.txt
+            inventory-macos-arm64.txt
+            dependencies-macos-arm64.txt
+            architecture-macos-arm64.txt
+            codesign-macos-arm64.txt
+            components-macos-arm64.txt
+            mach-o-audit-macos-arm64.json
+            smoke-macos-arm64-*.txt
+            dmg-verify-macos-arm64.txt
+            size-comparison-macos-arm64.txt
+            artifact-manifest-macos-arm64.json
+            build-provenance-macos-arm64.txt
 
   checksums:
-    needs: [version, linux, windows, macos]
+    needs: [version, linux, linux-ubuntu24, linux-fedora44, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
@@ -187,7 +225,7 @@ jobs:
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [version, linux, windows, macos, checksums]
+    needs: [version, linux, linux-ubuntu24, linux-fedora44, windows, macos, checksums]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -209,8 +247,7 @@ jobs:
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-linux-x86_64.AppImage
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-windows-x86_64.zip
             artifacts/Sudokura-v${{ needs.version.outputs.version }}-windows-x86_64-setup.exe
-            artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-x86_64-unsigned.zip
-            artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-arm64-unsigned.zip
+            artifacts/Sudokura-v${{ needs.version.outputs.version }}-macos-arm64.dmg
             artifacts/SHA256SUMS.txt
             artifacts/artifact-manifest-*.json
           body_path: docs/RELEASE_NOTES_${{ needs.version.outputs.version }}.md

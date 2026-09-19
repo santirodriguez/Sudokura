@@ -19,3 +19,17 @@
 /artifact-manifest-*.json
 /build-provenance-*.txt
 /components-*.txt
+*.dmg
+/dmgroot/
+/macmount/
+/attach.plist
+/linux-runtime-*.txt
+/abi-linux.txt
+/external-dependencies-linux.txt
+/dependencies-linux-all.txt
+/components-linux.txt
+/components-macos-*.txt
+/mach-o-audit-macos-*.json
+/codesign-macos-*.txt
+/dmg-verify-macos-*.txt
+/size-comparison-macos-*.txt

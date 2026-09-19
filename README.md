@@ -39,15 +39,18 @@ A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three
 
 ## Downloads
 
-Published builds are distributed through [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). The v1.2.0 package names are:
+Published builds are distributed through [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). The currently published v1.2.0 release remains available, including its historical Intel and Apple Silicon macOS ZIPs.
 
-- `Sudokura-v1.2.0-linux-x86_64.AppImage`
-- `Sudokura-v1.2.0-windows-x86_64.zip`
-- `Sudokura-v1.2.0-macos-x86_64-unsigned.zip`
-- `Sudokura-v1.2.0-macos-arm64-unsigned.zip`
-- `SHA256SUMS.txt`
+The v1.3.0 candidate narrows and makes platform support explicit:
 
-The macOS packages are unsigned.
+- Windows 11 x64: portable ZIP plus per-user installer.
+- Ubuntu 22.04 and 24.04 x86_64: AppImage.
+- Fedora 44 x86_64: AppImage compatibility target; exact desktop acceptance is recorded separately.
+- macOS 15+ on Apple Silicon/arm64: DMG containing `Sudokura.app`, **experimental until Phase-8 real-device/Gatekeeper acceptance**.
+
+No new v1.3.0 Intel Mac, macOS-before-15, Windows 32-bit, or ARM Linux/Windows package is generated. Systems outside the new candidate scope should use an appropriate older published release; that does not imply new maintenance for v1.2.
+
+The v1.3.0 macOS candidate uses an ad-hoc integrity signature only. It is **not** Developer ID signed or notarized, and the automated headless package smoke is not a substitute for opening a downloaded DMG on a real Mac.
 
 ## Build and test
 

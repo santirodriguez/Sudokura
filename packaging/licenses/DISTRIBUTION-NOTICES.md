@@ -29,3 +29,10 @@ files exposed by the MSYS2 packages that own each bundled DLL.
 
 These reports are part of the candidate audit trail. They are not a claim of
 bit-for-bit reproducibility or a substitute for platform acceptance testing.
+
+
+## Platform package audit
+
+Linux candidates include `COMPONENTS.txt` plus copied Debian copyright files for bundled shared libraries. The AppImage intentionally leaves graphics-driver implementations to the target system and records external system dependencies separately.
+
+The macOS v1.3 candidate is macOS 15+ arm64 only. Its bundle contains a `COMPONENTS.txt` inventory and license material/metadata for Homebrew-owned dylibs. The bundle is relocalized before an **ad-hoc integrity signature** is applied. Ad-hoc signing is not Developer ID signing and is not notarization; real downloaded-DMG acceptance remains a separate gate.

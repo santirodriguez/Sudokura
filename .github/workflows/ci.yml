@@ -16,14 +16,14 @@ env:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libfuse2 curl fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libfuse2 curl fonts-dejavu-core
       - run: make assets
       - run: make WERROR=-Werror test test-ui
       - run: python3 scripts/validate_contrast.py
@@ -90,6 +90,88 @@ jobs:
           APPIMAGETOOL=$PWD/appimagetool \
           APPIMAGE_RUNTIME=$PWD/appimage-runtime \
           packaging/ci/package-linux.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-linux-candidate
+          path: |
+            Sudokura-*.AppImage
+            artifact-manifest-linux.json
+            build-provenance-linux.txt
+            inventory-linux.txt
+            dependencies-linux-all.txt
+            external-dependencies-linux.txt
+            abi-linux.txt
+            components-linux.txt
+            SHA256SUMS-linux.txt
+          retention-days: 7
+
+  linux-ubuntu24:
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-linux-candidate
+          path: candidate
+      - run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb weston dbus-x11
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-linux-ubuntu24-runtime
+          path: linux-runtime-ubuntu24.txt
+          retention-days: 7
+
+  linux-fedora44:
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    steps:
+      - run: dnf -y install git findutils coreutils fuse-libs xorg-x11-server-Xvfb weston dbus-daemon
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-linux-candidate
+          path: candidate
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-linux-fedora44-runtime
+          path: linux-runtime-fedora44.txt
+          retention-days: 7
+
+  macos:
+    runs-on: macos-15
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ github.sha }}
+      ARCH: arm64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: brew untap aws/tap || true; brew install sdl2 sdl2_ttf sdl2_mixer pkg-config; brew install --cask font-dejavu-sans
+      - run: font=$(find "$HOME/Library/Fonts" /Library/Fonts -type f -name DejaVuSans.ttf -print -quit 2>/dev/null); test -n "$font"; test -f "$font"; echo "FONT=$font" >> "$GITHUB_ENV"
+      - run: packaging/ci/package-macos.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-macos-arm64
+          path: |
+            Sudokura-*.dmg
+            SHA256SUMS-macos-arm64.txt
+            artifact-manifest-macos-arm64.json
+            build-provenance-macos-arm64.txt
+            components-macos-arm64.txt
+            inventory-macos-arm64.txt
+            dependencies-macos-arm64.txt
+            architecture-macos-arm64.txt
+            codesign-macos-arm64.txt
+            mach-o-audit-macos-arm64.json
+            smoke-macos-arm64-*.txt
+            dmg-verify-macos-arm64.txt
+            size-comparison-macos-arm64.txt
+          retention-days: 7
 
   windows:
     runs-on: windows-latest
