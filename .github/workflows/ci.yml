@@ -70,6 +70,13 @@ jobs:
           ./tests/test_live_save_san
           rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san
       - run: make WERROR=-Werror
+      - name: Smoke without audio on the software renderer
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: sudokura-no-audio-device
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: ./sudokura --smoke-test
       - run: ldd sudokura && size sudokura && du -h sudokura
 
   windows:
