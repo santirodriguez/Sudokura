@@ -54,8 +54,12 @@ jobs:
       - run: make assets && make WERROR=-Werror test test-ui all
       - run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 ./sudokura --render-screenshots ui-review
       - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
-      - run: ./scripts/fetch_linuxdeploy.sh linuxdeploy
-      - run: LINUXDEPLOY=$PWD/linuxdeploy packaging/ci/package-linux.sh
+      - run: ./scripts/fetch_appimage_toolchain.sh
+      - run: |
+          LINUXDEPLOY=$PWD/linuxdeploy \
+          APPIMAGETOOL=$PWD/appimagetool \
+          APPIMAGE_RUNTIME=$PWD/appimage-runtime \
+          packaging/ci/package-linux.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: linux-x86_64

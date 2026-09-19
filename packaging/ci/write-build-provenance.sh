@@ -20,6 +20,20 @@ output=${2:?output path required}
   python3 --version 2>&1 || true
   printf '\n[pkg-config]\n'
   pkg-config --version 2>&1 || true
+  if [[ -n "${LINUXDEPLOY:-}" || -n "${APPIMAGETOOL:-}" || -n "${APPIMAGE_RUNTIME:-}" ]]; then
+    printf '\n[linux-packaging-tools]\n'
+    if [[ -n "${LINUXDEPLOY:-}" && -x "$LINUXDEPLOY" ]]; then
+      "$LINUXDEPLOY" --version 2>&1 | head -5 || true
+      sha256sum "$LINUXDEPLOY" || true
+    fi
+    if [[ -n "${APPIMAGETOOL:-}" && -x "$APPIMAGETOOL" ]]; then
+      APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" --version 2>&1 | head -5 || true
+      sha256sum "$APPIMAGETOOL" || true
+    fi
+    if [[ -n "${APPIMAGE_RUNTIME:-}" && -f "$APPIMAGE_RUNTIME" ]]; then
+      sha256sum "$APPIMAGE_RUNTIME" || true
+    fi
+  fi
   for module in sdl2 SDL2_ttf SDL2_mixer; do
     printf '%s=' "$module"
     pkg-config --modversion "$module" 2>/dev/null || echo unavailable

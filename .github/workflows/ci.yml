@@ -82,8 +82,11 @@ jobs:
         env:
           SUDOKURA_ARTIFACT_KIND: ci-candidate
         run: |
-          ./scripts/fetch_linuxdeploy.sh linuxdeploy
-          LINUXDEPLOY=$PWD/linuxdeploy packaging/ci/package-linux.sh
+          ./scripts/fetch_appimage_toolchain.sh
+          LINUXDEPLOY=$PWD/linuxdeploy \
+          APPIMAGETOOL=$PWD/appimagetool \
+          APPIMAGE_RUNTIME=$PWD/appimage-runtime \
+          packaging/ci/package-linux.sh
 
   windows:
     runs-on: windows-latest
