@@ -447,12 +447,15 @@ static bool saved_window_display(const Preferences *preferences,
       preferences->window_y == INT32_MIN)
     return false;
   int count = SDL_GetNumVideoDisplays();
-  DesktopRect saved = {
-      preferences->window_x, preferences->window_y,
-      (int)preferences->window_width, (int)preferences->window_height};
   for (int i = 0; i < count; ++i) {
     SDL_Rect usable;
     if (SDL_GetDisplayUsableBounds(i, &usable) != 0) continue;
+    int probe_w=(int)preferences->window_width;
+    int probe_h=(int)preferences->window_height;
+    if(probe_w>usable.w)probe_w=usable.w;
+    if(probe_h>usable.h)probe_h=usable.h;
+    DesktopRect saved = {
+        preferences->window_x, preferences->window_y, probe_w, probe_h};
     DesktopRect display = {usable.x, usable.y, usable.w, usable.h};
     if (desktop_rect_has_visible_area(saved, display, 64)) {
       if (display_index) *display_index = i;
