@@ -301,9 +301,11 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
       home_daily_game(p, game, ui, g);
       break;
     case HOME_FOCUS_HELP:
+      info_keyboard_focus=INFO_FOCUS_BACK;
       (void)app_open_aux(ui, SCR_HELP);
       break;
     case HOME_FOCUS_ABOUT:
+      info_keyboard_focus=INFO_FOCUS_BACK;
       (void)app_open_aux(ui, SCR_ABOUT);
       break;
     case HOME_FOCUS_SETTINGS:
@@ -926,14 +928,15 @@ int main(int argc, char **argv) {
         if (k == SDLK_ESCAPE) {
           ui_button_click();
           go_home(&persistence, &game, &ui);
-        } else if (k == SDLK_UP || k == SDLK_w)
-          ui.sel_r = (ui.sel_r + 8) % 9;
-        else if (k == SDLK_DOWN || k == SDLK_s)
-          ui.sel_r = (ui.sel_r + 1) % 9;
-        else if (k == SDLK_LEFT || k == SDLK_a)
-          ui.sel_c = (ui.sel_c + 8) % 9;
-        else if (k == SDLK_RIGHT || k == SDLK_d)
-          ui.sel_c = (ui.sel_c + 1) % 9;
+        } else if (k == SDLK_UP || k == SDLK_w) {
+          play_keyboard_focus=-1;ui.sel_r = (ui.sel_r + 8) % 9;
+        } else if (k == SDLK_DOWN || k == SDLK_s) {
+          play_keyboard_focus=-1;ui.sel_r = (ui.sel_r + 1) % 9;
+        } else if (k == SDLK_LEFT || k == SDLK_a) {
+          play_keyboard_focus=-1;ui.sel_c = (ui.sel_c + 8) % 9;
+        } else if (k == SDLK_RIGHT || k == SDLK_d) {
+          play_keyboard_focus=-1;ui.sel_c = (ui.sel_c + 1) % 9;
+        }
         else if (k == SDLK_p) {
           ui_button_click();
           clock_pause(&ui, PAUSE_MANUAL);
@@ -996,6 +999,7 @@ int main(int argc, char **argv) {
         }
         if (left && ui.hint_preview_active) {
           if (hint_apply_hit(&g, &ui, x, y)) {
+            hint_keyboard_focus=HINT_FOCUS_PRIMARY;
             ui_button_click();
             (void)apply_current_logic_hint(&persistence, &game, &ui);
             continue;
@@ -1161,6 +1165,7 @@ int main(int argc, char **argv) {
         int cell = side / 9;
         if (side <= 0 || cell <= 0) continue;
         if (x >= gx && x < gx + side && y >= gy && y < gy + side) {
+          play_keyboard_focus=-1;
           int c = (x - gx) / cell, r = (y - gy) / cell;
           ui.sel_r = r;
           ui.sel_c = c;
@@ -1187,6 +1192,7 @@ int main(int argc, char **argv) {
           compute_sidebar_rects(&layout, &controls);
           if (layout.model.hud_count > 4 &&
               point_in(sdl_rect(layout.model.hud[4]), x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_STRICT;
             ui_button_click();
             ui.strict_mode = !ui.strict_mode;
             show_toast(&ui,
@@ -1197,6 +1203,10 @@ int main(int argc, char **argv) {
             SDL_Rect menu_rect, pause_rect;
             menu_pause_rects(controls.btn[PLAY_ACTION_MENU],
                              &menu_rect, &pause_rect);
+            if (point_in(menu_rect, x, y))
+              play_keyboard_focus=PLAY_FOCUS_MENU;
+            else if (point_in(pause_rect, x, y))
+              play_keyboard_focus=PLAY_FOCUS_PAUSE;
             ui_button_click();
             if (point_in(menu_rect, x, y)) {
               go_home(&persistence, &game, &ui);
@@ -1209,9 +1219,9 @@ int main(int argc, char **argv) {
             SDL_Rect undo_rect, redo_rect;
             undo_redo_rects(controls.btn[PLAY_ACTION_PAUSE],
                             &undo_rect, &redo_rect);
-            AppActionKind kind = point_in(undo_rect, x, y)
-                                     ? APP_ACTION_UNDO
-                                     : APP_ACTION_REDO;
+            bool undo_hit=point_in(undo_rect,x,y);
+            AppActionKind kind = undo_hit ? APP_ACTION_UNDO : APP_ACTION_REDO;
+            play_keyboard_focus=undo_hit?PLAY_FOCUS_UNDO:PLAY_FOCUS_REDO;
             ui_button_click();
             if (apply_history_action(&game, &ui, kind)) {
               clear_hint_preview(&ui);
@@ -1221,8 +1231,10 @@ int main(int argc, char **argv) {
             SDL_Rect restart_rect, clear_rect;
             restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],
                                 &restart_rect, &clear_rect);
+            bool clear_hit=point_in(clear_rect,x,y);
+            play_keyboard_focus=clear_hit?PLAY_FOCUS_CLEAR:PLAY_FOCUS_RESTART;
             ui_button_click();
-            if (point_in(clear_rect, x, y)) {
+            if (clear_hit) {
               if (clear_selected_available(&game, &ui)) {
                 if (apply_player_input(&game, &ui, ui.sel_r, ui.sel_c, 0,
                                        false)) {
@@ -1239,28 +1251,34 @@ int main(int argc, char **argv) {
               restart_current_session(&persistence, &game, &ui);
             }
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_HINT;
             ui_button_click();
             (void)prepare_hint_preview(&game, &ui);
             if(ui.hint_preview_active)hint_focus_reset(&ui);
           } else if (point_in(controls.btn[PLAY_ACTION_NOTES], x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_NOTES;
             ui_button_click();
             ui.notes_mode = !ui.notes_mode;
             show_toast(&ui,
                        tr(ui.language, ui.notes_mode ? T_NOTES_ON : T_NOTES_OFF));
             (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_VERIFY], x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_VERIFY;
             ui_button_click();
             verify_current_entries(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_AUDIO], x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_SETTINGS;
             ui_button_click();
             ui_settings_open(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
+            play_keyboard_focus=PLAY_FOCUS_HELP;
             ui_button_click();
             info_focus_reset();
             open_info_from_play(&persistence, &game, &ui, SCR_HELP);
           } else {
             for (int number = 1; number <= 9; ++number) {
               if (point_in(controls.pal[number - 1], x, y)) {
+                play_keyboard_focus=PLAY_FOCUS_NUMBER_1+number-1;
                 if (!palette_number_complete(&game, ui.mode, number)) {
                   if (apply_player_input(&game, &ui, ui.sel_r, ui.sel_c, number,
                                          ui.notes_mode)) {

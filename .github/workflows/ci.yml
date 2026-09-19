@@ -23,6 +23,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev
       - run: make assets
       - run: make WERROR=-Werror test test-ui
+      - run: python3 scripts/validate_contrast.py
       - name: Identify generator benchmark host
         run: |
           uname -a
