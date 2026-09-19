@@ -90,10 +90,17 @@ while IFS= read -r -d '' bundled; do
     echo "cannot map bundled library to build-host package: $base" >&2
     exit 1
   fi
-  source=$(readlink -f "$source")
+  source_real=$(readlink -f "$source")
   owner=$(dpkg-query -S "$source" 2>/dev/null | head -1 || true)
+  if [[ -z "$owner" && "$source_real" != "$source" ]]; then
+    owner=$(dpkg-query -S "$source_real" 2>/dev/null | head -1 || true)
+  fi
+  if [[ -z "$owner" && "$source_real" == /usr/* ]]; then
+    merged_path=${source_real#/usr}
+    owner=$(dpkg-query -S "$merged_path" 2>/dev/null | head -1 || true)
+  fi
   if [[ -z "$owner" ]]; then
-    echo "cannot identify Debian package for bundled library: $source" >&2
+    echo "cannot identify Debian package for bundled library: $source_real" >&2
     exit 1
   fi
   package=${owner%%:*}
