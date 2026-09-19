@@ -42,6 +42,13 @@ for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do
   test -s "AppDir/usr/bin/audio/$audio"
 done
 
+jack_path=$(ldconfig -p 2>/dev/null | awk '$1=="libjack.so.0" {print $NF; exit}')
+if [[ -z "$jack_path" || ! -e "$jack_path" ]]; then
+  echo 'required JACK client library libjack.so.0 is unavailable on the Ubuntu 22.04 build baseline' >&2
+  exit 1
+fi
+install -Dm644 "$(readlink -f "$jack_path")" AppDir/usr/lib/libjack.so.0
+
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 30s AppDir/usr/bin/sudokura --smoke-test
 "$LINUXDEPLOY" --appdir AppDir
 
