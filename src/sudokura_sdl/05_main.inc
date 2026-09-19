@@ -795,7 +795,8 @@ int main(int argc, char **argv) {
       for(unsigned n=0;n<sizeof(sizes)/sizeof(sizes[0]);++n){
         for(int state=0;state<REVIEW_STATE_COUNT;++state){
           SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,sizes[n][0],sizes[n][1]);
-          SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
+          SDL_PumpEvents();
+          if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
           if(g.width!=sizes[n][0]||g.height!=sizes[n][1]){
             fprintf(stderr,"renderer refused %dx%d (got %dx%d)\n",sizes[n][0],sizes[n][1],g.width,g.height);
             fclose(manifest);app_shutdown(&g);return 1;
@@ -891,7 +892,8 @@ int main(int argc, char **argv) {
         for(int a=0;a<3;++a){
           int state=audit_states[a];
           SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,audit_w,audit_h);
-          SDL_PumpEvents();SDL_GetRendererOutputSize(g.ren,&g.width,&g.height);
+          SDL_PumpEvents();
+          if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
           game=review_base;app_state_init(&ui);set_mode_params(&ui);
           ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
           ui.session_open=true;settings_open=false;help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;
