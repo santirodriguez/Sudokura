@@ -4,9 +4,11 @@ set -euo pipefail
 : "${APPIMAGETOOL:?path to appimagetool}"
 : "${APPIMAGE_RUNTIME:?path to pinned AppImage runtime}"
 
-. /etc/os-release
-if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 22.04 ]]; then
-  echo "Linux candidate must be built on Ubuntu 22.04; got ${PRETTY_NAME:-unknown}" >&2
+os_id=$(sh -c '. /etc/os-release; printf "%s" "${ID:-}"')
+os_version_id=$(sh -c '. /etc/os-release; printf "%s" "${VERSION_ID:-}"')
+os_pretty=$(sh -c '. /etc/os-release; printf "%s" "${PRETTY_NAME:-unknown}"')
+if [[ "$os_id" != ubuntu || "$os_version_id" != 22.04 ]]; then
+  echo "Linux candidate must be built on Ubuntu 22.04; got $os_pretty" >&2
   exit 1
 fi
 
