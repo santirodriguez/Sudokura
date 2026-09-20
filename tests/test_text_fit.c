@@ -141,6 +141,19 @@ int main(void) {
         assert(fits(font, tr((Language)language, T_CLEAR), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_RESTART].h));
 
+        /* A save failure replaces the status row. Keep both the warning and
+           its recovery action renderable at every supported viewport. */
+        int save_inset = g.status.h <= 28 ? 2 : 4;
+        int save_retry_w = g.status.w < 300 ? 88 : 118;
+        int save_retry_h = g.status.h - save_inset * 2 - 3;
+        int save_message_w =
+            g.status.w - save_retry_w - save_inset * 3 - 4;
+        int save_message_h = g.status.h - save_inset * 2;
+        assert(fits(font, tr((Language)language, T_SAVE_FAILED), 15, 9,
+                    save_message_w, save_message_h - 2));
+        assert(fits(font, tr((Language)language, T_RETRY_SAVE), 14, 9,
+                    save_retry_w, save_retry_h - 2));
+
         int home_main_h = g.home_primary[1].h * 3 / 5;
         int home_sub_h = g.home_primary[1].h - home_main_h + 1;
         assert(fits(font, tr((Language)language, T_CONTINUE_NORMAL),

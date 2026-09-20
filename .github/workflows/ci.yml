@@ -228,7 +228,11 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_RENDER_VSYNC: '0'
         run: ./sudokura --render-screenshots ui-review
-      - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
+      - name: Validate screenshot matrix and validator regressions
+        shell: bash
+        run: |
+          ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
+          python3 tests/test_screenshot_validator.py ui-review
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: phase5-ui-review
