@@ -49,10 +49,11 @@ append_log() {
 run_captured() {
   local name=$1 output=$2
   shift 2
-  set +e
-  "$@" > "$output" 2>&1
-  captured_status=$?
-  set -e
+  if "$@" > "$output" 2>&1; then
+    captured_status=0
+  else
+    captured_status=$?
+  fi
   printf 'command_%s_exit=%s\n' "$name" "$captured_status" >> "$report"
   append_log "$name" "$output"
 }
@@ -117,10 +118,11 @@ while IFS= read -r -d '' file_path; do
           -e 's/.*(RPATH).*\[\(.*\)\]/rpath=\1/p' \
           -e 's/.*(RUNPATH).*\[\(.*\)\]/runpath=\1/p' \
       >> "$report"
-    set +e
-    resolution=$(LD_LIBRARY_PATH="$bundle_search" ldd -r "$file_path" 2>&1)
-    resolution_status=$?
-    set -e
+    if resolution=$(LD_LIBRARY_PATH="$bundle_search" ldd -r "$file_path" 2>&1); then
+      resolution_status=0
+    else
+      resolution_status=$?
+    fi
     printf '%s\n' "$resolution" >> "$report"
     if [[ "$resolution_status" != 0 ]] ||
        grep -Eq 'not found|undefined symbol' <<<"$resolution"; then
@@ -193,12 +195,10 @@ done
     timeout 45s "$candidate" --appimage-extract-and-run --smoke-test
 )
 pass_stage
-kill "$xvfb_pid" 2>/dev/null || true
-wait "$xvfb_pid" 2>/dev/null || true
-unset xvfb_pid
 
 socket=sudokura-wayland
 weston_started=0
+weston_backend=
 run_stage wayland_session_bus
 mapfile -t dbus_metadata < <(
   dbus-daemon --session --fork --print-address=1 --print-pid=1
@@ -217,16 +217,26 @@ printf 'dbus_session_address_scheme=%s\n' "${dbus_address%%:*}" >> "$report"
 pass_stage
 
 run_stage wayland_compositor
-for backend in headless-backend.so headless; do
+# Ubuntu 22.04's SDL 2.0.20 predates the fix for input-less Wayland
+# compositors. Nest Weston in Xvfb so it advertises a normal wl_seat while
+# Sudokura still exercises SDL's native Wayland client and bundled libdecor.
+for backend in x11-backend.so x11; do
   rm -f "$root/runtime/$socket"
-  env XDG_RUNTIME_DIR="$root/runtime" \
+  rm -f "$root/weston.log" "$root/weston-stdio.log"
+  env DISPLAY="$display" \
+    XDG_RUNTIME_DIR="$root/runtime" \
     DBUS_SESSION_BUS_ADDRESS="$dbus_address" \
     XDG_SESSION_TYPE=wayland \
-    weston --backend="$backend" --socket="$socket" --idle-time=0 \
+    weston --backend="$backend" --renderer=pixman \
+      --socket="$socket" --idle-time=0 \
       --log="$root/weston.log" > "$root/weston-stdio.log" 2>&1 &
   weston_pid=$!
   for _ in $(seq 1 60); do
-    if [[ -S "$root/runtime/$socket" ]]; then weston_started=1; break; fi
+    if [[ -S "$root/runtime/$socket" ]]; then
+      weston_started=1
+      weston_backend=$backend
+      break
+    fi
     if ! kill -0 "$weston_pid" 2>/dev/null; then break; fi
     sleep 0.1
   done
@@ -237,9 +247,11 @@ for backend in headless-backend.so headless; do
 done
 if [[ "$weston_started" != 1 ]]; then
   cat "$root/weston.log" >&2 || true
-  echo 'failed to start headless Wayland compositor' >&2
+  echo 'failed to start nested Wayland compositor' >&2
   exit 1
 fi
+printf 'weston_backend=%s\nwayland_client_transport=native\n' \
+  "$weston_backend" >> "$report"
 append_log weston "$root/weston.log"
 pass_stage
 
@@ -274,16 +286,17 @@ diagnose_wayland_failure() {
   fi
 
   if command -v strace >/dev/null 2>&1; then
-    set +e
-    env -i "${wayland_env[@]}" \
-      LD_LIBRARY_PATH="$bundle_search" \
-      LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
-      WAYLAND_DEBUG=1 \
-      timeout 45s strace -f -s 256 -o "$root/wayland.strace" \
-        "$extracted/usr/bin/sudokura" --smoke-test \
-        > "$root/wayland-strace-stdio.log" 2>&1
-    diagnostic_status=$?
-    set -e
+    if env -i "${wayland_env[@]}" \
+        LD_LIBRARY_PATH="$bundle_search" \
+        LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
+        WAYLAND_DEBUG=1 \
+        timeout 45s strace -f -s 256 -o "$root/wayland.strace" \
+          "$extracted/usr/bin/sudokura" --smoke-test \
+          > "$root/wayland-strace-stdio.log" 2>&1; then
+      diagnostic_status=0
+    else
+      diagnostic_status=$?
+    fi
     printf 'command_wayland_strace_exit=%s\n' "$diagnostic_status" >> "$report"
     append_log wayland_strace_stdio "$root/wayland-strace-stdio.log"
     if [[ -f "$root/wayland.strace" ]]; then
@@ -333,6 +346,9 @@ pass_stage
 kill "$weston_pid" 2>/dev/null || true
 wait "$weston_pid" 2>/dev/null || true
 unset weston_pid
+kill "$xvfb_pid" 2>/dev/null || true
+wait "$xvfb_pid" 2>/dev/null || true
+unset xvfb_pid
 
 if find "$root/cwd" -mindepth 1 -print -quit | grep -q .; then
   echo 'application wrote into foreign working directory after display probes' >&2
