@@ -52,7 +52,7 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: false
-      - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libfuse2 curl fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libdecor-0-plugin-1-cairo libfuse2 curl fonts-dejavu-core
       - run: make assets && make WERROR=-Werror test test-ui all
       - run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 ./sudokura --render-screenshots ui-review
       - run: ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
@@ -92,9 +92,10 @@ jobs:
         with:
           name: linux-x86_64
           path: candidate
-      - run: sudo apt-get update && sudo apt-get install -y libfuse2t64 xvfb weston dbus-x11
+      - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11
       - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
         with:
           name: linux-ubuntu24-runtime
           path: linux-runtime-ubuntu24.txt
@@ -104,7 +105,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: fedora:44
     steps:
-      - run: dnf -y install git findutils coreutils fuse-libs xorg-x11-server-Xvfb weston dbus-daemon
+      - run: dnf -y install git findutils coreutils binutils fuse-libs xorg-x11-server-Xvfb weston dbus-daemon
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.version.outputs.commit }}
@@ -114,6 +115,7 @@ jobs:
           path: candidate
       - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
         with:
           name: linux-fedora44-runtime
           path: linux-runtime-fedora44.txt

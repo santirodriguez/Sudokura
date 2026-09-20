@@ -14,6 +14,29 @@ components_report=components-linux.txt
 : > "$abi_report"
 printf 'file\tpackage\tversion\tcopyright\n' > "$components_report"
 
+test -f "$appdir/AppRun"
+test ! -L "$appdir/AppRun"
+test -x "$appdir/AppRun"
+head -1 "$appdir/AppRun" | grep -Fxq '#!/bin/sh'
+test -f "$appdir/usr/lib/libdecor/plugins-1/libdecor-cairo.so"
+test ! -e "$appdir/usr/lib/libdecor-cairo.so"
+
+appdir_real=$(realpath "$appdir")
+while IFS= read -r -d '' link_path; do
+  target=$(realpath "$link_path")
+  if [[ ! -e "$target" ]]; then
+    echo "broken AppImage symlink: $link_path" >&2
+    exit 1
+  fi
+  case "$target" in
+    "$appdir_real"/*) ;;
+    *)
+      echo "AppImage symlink escapes payload: $link_path -> $target" >&2
+      exit 1
+      ;;
+  esac
+done < <(find "$appdir" -type l -print0)
+
 elfs=()
 while IFS= read -r -d '' file_path; do
   if file -b "$file_path" | grep -q '^ELF '; then
@@ -25,15 +48,31 @@ done < <(find "$appdir" -type f -print0)
 for file_path in "${elfs[@]}"; do
   rel=${file_path#"$appdir/"}
   machine=$(readelf -h "$file_path" | awk -F: '/Machine:/{gsub(/^[[:space:]]+/,"",$2); print $2}')
-  printf '[%s]\nmachine=%s\n' "$rel" "$machine" >> "$abi_report"
+  interpreter=$(readelf -l "$file_path" 2>/dev/null \
+    | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p')
+  rpath=$(readelf -d "$file_path" 2>/dev/null \
+    | sed -n 's/.*(RPATH).*\[\(.*\)\]/\1/p')
+  runpath=$(readelf -d "$file_path" 2>/dev/null \
+    | sed -n 's/.*(RUNPATH).*\[\(.*\)\]/\1/p')
+  needed=$(readelf -d "$file_path" 2>/dev/null \
+    | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | paste -sd, -)
+  printf '[%s]\nmachine=%s\ninterpreter=%s\nrpath=%s\nrunpath=%s\nneeded=%s\n' \
+    "$rel" "$machine" "$interpreter" "$rpath" "$runpath" "$needed" \
+    >> "$abi_report"
   grep -Eq 'X86-64|Advanced Micro Devices X86-64' <<<"$machine"
+
+  if [[ -n "$interpreter" && "$interpreter" != /lib64/ld-linux-x86-64.so.2 ]]; then
+    echo "unexpected ELF interpreter in $rel: $interpreter" >&2
+    exit 1
+  fi
 
   readelf --version-info "$file_path" 2>/dev/null     | grep -oE 'GLIBC_[0-9]+\.[0-9]+'     | sort -Vu     | sed 's/^/glibc=/' >> "$abi_report" || true
 
   if readelf -d "$file_path" 2>/dev/null | grep -q '(NEEDED)'; then
     {
       printf '\n[%s]\n' "$rel"
-      LD_LIBRARY_PATH="$PWD/$appdir/usr/lib:$PWD/$appdir/usr/bin" ldd "$file_path"
+      LD_LIBRARY_PATH="$PWD/$appdir/usr/lib:$PWD/$appdir/usr/lib/libdecor/plugins-1:$PWD/$appdir/usr/bin" \
+        ldd "$file_path"
     } >> "$deps_report"
   fi
 done
@@ -43,6 +82,13 @@ if grep -q 'not found' "$deps_report"; then
   echo 'unresolved ELF dependency in AppImage payload' >&2
   exit 1
 fi
+
+for required in \
+  libSDL2-2.0.so.0 libSDL2_ttf-2.0.so.0 libSDL2_mixer-2.0.so.0 \
+  libFLAC.so.8 libfluidsynth.so.3 libjack.so.0 libmodplug.so.1 \
+  libmpg123.so.0 libopusfile.so.0 libvorbisfile.so.3 libdecor-0.so.0; do
+  test -f "$appdir/usr/lib/$required"
+done
 
 grep -hoE 'GLIBC_[0-9]+\.[0-9]+' "$abi_report"   | cut -d_ -f2 | sort -Vu | tail -1 > .max-glibc-linux
 max_glibc=$(cat .max-glibc-linux)

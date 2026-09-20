@@ -42,15 +42,35 @@ for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do
   test -s "AppDir/usr/bin/audio/$audio"
 done
 
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 30s AppDir/usr/bin/sudokura --smoke-test
+
 jack_path=$(ldconfig -p 2>/dev/null | awk '$1=="libjack.so.0" {print $NF; exit}')
 if [[ -z "$jack_path" || ! -e "$jack_path" ]]; then
   echo 'required JACK client library libjack.so.0 is unavailable on the Ubuntu 22.04 build baseline' >&2
   exit 1
 fi
-install -Dm644 "$(readlink -f "$jack_path")" AppDir/usr/lib/libjack.so.0
+decor_plugin=$(dpkg-query -L libdecor-0-plugin-1-cairo \
+  | awk '/\/libdecor-cairo\.so$/ {print; exit}')
+if [[ -z "$decor_plugin" || ! -f "$decor_plugin" ]]; then
+  echo 'required libdecor Cairo plugin is unavailable on the Ubuntu 22.04 build baseline' >&2
+  exit 1
+fi
 
-SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 30s AppDir/usr/bin/sudokura --smoke-test
-"$LINUXDEPLOY" --appdir AppDir
+"$LINUXDEPLOY" --appdir AppDir \
+  --library "$jack_path" \
+  --library "$decor_plugin"
+
+deployed_decor_plugin=$(find AppDir/usr/lib -type f \
+  -name "$(basename "$decor_plugin")" -print -quit)
+test -n "$deployed_decor_plugin"
+test -f "$deployed_decor_plugin"
+install -d AppDir/usr/lib/libdecor/plugins-1
+decor_plugin_target=AppDir/usr/lib/libdecor/plugins-1/libdecor-cairo.so
+if [[ "$deployed_decor_plugin" != "$decor_plugin_target" ]]; then
+  mv "$deployed_decor_plugin" "$decor_plugin_target"
+fi
+rm -f AppDir/AppRun
+install -Dm755 packaging/linux/AppRun AppDir/AppRun
 
 desktop-file-validate AppDir/sudokura.desktop
 grep -Fxq 'Type=Application' AppDir/sudokura.desktop
@@ -58,6 +78,8 @@ grep -Fxq 'Exec=sudokura' AppDir/sudokura.desktop
 grep -Fxq 'Icon=sudokura' AppDir/sudokura.desktop
 grep -Fxq 'Terminal=false' AppDir/sudokura.desktop
 test -x AppDir/AppRun
+test ! -L AppDir/AppRun
+test -s AppDir/usr/lib/libdecor/plugins-1/libdecor-cairo.so
 test -s AppDir/sudokura.png
 
 ./packaging/ci/audit-linux-bundle.sh AppDir
