@@ -21,6 +21,7 @@ cleanup() {
   fi
   if [[ -n "${weston_pid:-}" ]]; then kill "$weston_pid" 2>/dev/null || true; fi
   if [[ -n "${xvfb_pid:-}" ]]; then kill "$xvfb_pid" 2>/dev/null || true; fi
+  if [[ -n "${dbus_pid:-}" ]]; then kill "$dbus_pid" 2>/dev/null || true; fi
   rm -rf "$root"
   cat "$report"
 }
@@ -35,6 +36,27 @@ pass_stage() {
   printf 'stage_%s=PASS\n' "$current_stage" >> "$report"
 }
 
+append_log() {
+  local name=$1 path=$2
+  printf '\n[%s]\n' "$name" >> "$report"
+  if [[ -s "$path" ]]; then
+    cat "$path" >> "$report"
+  else
+    printf '(no output)\n' >> "$report"
+  fi
+}
+
+run_captured() {
+  local name=$1 output=$2
+  shift 2
+  set +e
+  "$@" > "$output" 2>&1
+  captured_status=$?
+  set -e
+  printf 'command_%s_exit=%s\n' "$name" "$captured_status" >> "$report"
+  append_log "$name" "$output"
+}
+
 candidate="$root/Sudokura prueba á漢.AppImage"
 cp "$artifact" "$candidate"
 chmod +x "$candidate"
@@ -45,6 +67,10 @@ chmod 700 "$root/runtime"
 {
   printf 'label=%s\n' "$label"
   printf 'artifact=%s\n' "$(basename "$artifact")"
+  for command_name in bash sh realpath timeout seq readelf ldd Xvfb weston \
+      dbus-daemon gdb strace; do
+    printf 'command_%s=%s\n' "$command_name" "$(command -v "$command_name")"
+  done
   uname -a
   cat /etc/os-release
 } >> "$report"
@@ -91,10 +117,14 @@ while IFS= read -r -d '' file_path; do
           -e 's/.*(RPATH).*\[\(.*\)\]/rpath=\1/p' \
           -e 's/.*(RUNPATH).*\[\(.*\)\]/runpath=\1/p' \
       >> "$report"
-    resolution=$(LD_LIBRARY_PATH="$bundle_search" ldd "$file_path")
+    set +e
+    resolution=$(LD_LIBRARY_PATH="$bundle_search" ldd -r "$file_path" 2>&1)
+    resolution_status=$?
+    set -e
     printf '%s\n' "$resolution" >> "$report"
-    if grep -q 'not found' <<<"$resolution"; then
-      echo "unresolved off-build-host ELF dependency in $rel" >&2
+    if [[ "$resolution_status" != 0 ]] ||
+       grep -Eq 'not found|undefined symbol' <<<"$resolution"; then
+      echo "unresolved off-build-host ELF dependency or relocation in $rel" >&2
       exit 1
     fi
   fi
@@ -169,10 +199,31 @@ unset xvfb_pid
 
 socket=sudokura-wayland
 weston_started=0
+run_stage wayland_session_bus
+mapfile -t dbus_metadata < <(
+  dbus-daemon --session --fork --print-address=1 --print-pid=1
+)
+if [[ "${#dbus_metadata[@]}" -lt 2 ]] ||
+   [[ -z "${dbus_metadata[0]}" ]] ||
+   [[ ! "${dbus_metadata[1]}" =~ ^[0-9]+$ ]]; then
+  printf '%s\n' "${dbus_metadata[@]}" >&2
+  echo 'failed to start isolated D-Bus session' >&2
+  exit 1
+fi
+dbus_address=${dbus_metadata[0]}
+dbus_pid=${dbus_metadata[1]}
+kill -0 "$dbus_pid"
+printf 'dbus_session_address_scheme=%s\n' "${dbus_address%%:*}" >> "$report"
+pass_stage
+
 run_stage wayland_compositor
 for backend in headless-backend.so headless; do
   rm -f "$root/runtime/$socket"
-  env XDG_RUNTIME_DIR="$root/runtime"     weston --backend="$backend" --socket="$socket" --idle-time=0 --log="$root/weston.log" > /dev/null 2>&1 &
+  env XDG_RUNTIME_DIR="$root/runtime" \
+    DBUS_SESSION_BUS_ADDRESS="$dbus_address" \
+    XDG_SESSION_TYPE=wayland \
+    weston --backend="$backend" --socket="$socket" --idle-time=0 \
+      --log="$root/weston.log" > "$root/weston-stdio.log" 2>&1 &
   weston_pid=$!
   for _ in $(seq 1 60); do
     if [[ -S "$root/runtime/$socket" ]]; then weston_started=1; break; fi
@@ -189,12 +240,94 @@ if [[ "$weston_started" != 1 ]]; then
   echo 'failed to start headless Wayland compositor' >&2
   exit 1
 fi
+append_log weston "$root/weston.log"
 pass_stage
-run_stage wayland
+
+wayland_env=(
+  "${common_env[@]}"
+  "DBUS_SESSION_BUS_ADDRESS=$dbus_address"
+  "XDG_SESSION_TYPE=wayland"
+  "XDG_CURRENT_DESKTOP=Sudokura-CI"
+  "WAYLAND_DISPLAY=$socket"
+  "SDL_VIDEODRIVER=wayland"
+  "SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=1"
+)
+
+diagnose_wayland_failure() {
+  local failed_name=$1 failed_status=$2
+  printf 'wayland_diagnostic_for=%s\nwayland_diagnostic_original_exit=%s\n' \
+    "$failed_name" "$failed_status" >> "$report"
+
+  if command -v gdb >/dev/null 2>&1; then
+    run_captured wayland_gdb "$root/wayland-gdb.log" \
+      env -i "${wayland_env[@]}" \
+        LD_LIBRARY_PATH="$bundle_search" \
+        LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
+        WAYLAND_DEBUG=1 \
+        timeout 45s gdb --quiet --batch \
+          -ex 'set pagination off' \
+          -ex run \
+          -ex 'thread apply all backtrace full' \
+          --args "$extracted/usr/bin/sudokura" --smoke-test
+  else
+    printf 'wayland_gdb=UNAVAILABLE\n' >> "$report"
+  fi
+
+  if command -v strace >/dev/null 2>&1; then
+    set +e
+    env -i "${wayland_env[@]}" \
+      LD_LIBRARY_PATH="$bundle_search" \
+      LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
+      WAYLAND_DEBUG=1 \
+      timeout 45s strace -f -s 256 -o "$root/wayland.strace" \
+        "$extracted/usr/bin/sudokura" --smoke-test \
+        > "$root/wayland-strace-stdio.log" 2>&1
+    diagnostic_status=$?
+    set -e
+    printf 'command_wayland_strace_exit=%s\n' "$diagnostic_status" >> "$report"
+    append_log wayland_strace_stdio "$root/wayland-strace-stdio.log"
+    if [[ -f "$root/wayland.strace" ]]; then
+      tail -n 500 "$root/wayland.strace" > "$root/wayland-strace-tail.log"
+      append_log wayland_strace_tail "$root/wayland-strace-tail.log"
+    fi
+  else
+    printf 'wayland_strace=UNAVAILABLE\n' >> "$report"
+  fi
+
+  run_captured wayland_without_libdecor "$root/wayland-without-libdecor.log" \
+    env -i "${wayland_env[@]}" \
+      SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 \
+      LD_LIBRARY_PATH="$bundle_search" \
+      LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
+      WAYLAND_DEBUG=1 \
+      timeout 45s "$extracted/usr/bin/sudokura" --smoke-test
+}
+
+run_stage wayland_extracted_apprun
 (
   cd "$root/cwd"
-  env -i "${common_env[@]}" WAYLAND_DISPLAY="$socket" SDL_VIDEODRIVER=wayland \
-    timeout 45s "$candidate" --appimage-extract-and-run --smoke-test
+  run_captured wayland_extracted_apprun "$root/wayland-extracted-apprun.log" \
+    env -i "${wayland_env[@]}" \
+      timeout 45s "$extracted/AppRun" --smoke-test
+  if [[ "$captured_status" != 0 ]]; then
+    failure_status=$captured_status
+    diagnose_wayland_failure wayland_extracted_apprun "$failure_status"
+    exit "$failure_status"
+  fi
+)
+pass_stage
+
+run_stage wayland_appimage
+(
+  cd "$root/cwd"
+  run_captured wayland_appimage "$root/wayland-appimage.log" \
+    env -i "${wayland_env[@]}" \
+      timeout 45s "$candidate" --appimage-extract-and-run --smoke-test
+  if [[ "$captured_status" != 0 ]]; then
+    failure_status=$captured_status
+    diagnose_wayland_failure wayland_appimage "$failure_status"
+    exit "$failure_status"
+  fi
 )
 pass_stage
 kill "$weston_pid" 2>/dev/null || true
