@@ -11,6 +11,8 @@ root=$(mktemp -d)
 report="$PWD/linux-runtime-${label}.txt"
 : > "$report"
 current_stage=setup
+machine_id_repaired=0
+machine_id_backup=
 cleanup() {
   status=$?
   if [[ "$status" == 0 ]]; then
@@ -22,6 +24,13 @@ cleanup() {
   if [[ -n "${weston_pid:-}" ]]; then kill "$weston_pid" 2>/dev/null || true; fi
   if [[ -n "${xvfb_pid:-}" ]]; then kill "$xvfb_pid" 2>/dev/null || true; fi
   if [[ -n "${dbus_pid:-}" ]]; then kill "$dbus_pid" 2>/dev/null || true; fi
+  if [[ "$machine_id_repaired" == 1 ]]; then
+    if cat "$machine_id_backup" > /etc/machine-id; then
+      printf 'host_machine_id_restore=PASS\n' >> "$report"
+    else
+      printf 'host_machine_id_restore=FAIL\n' >> "$report"
+    fi
+  fi
   rm -rf "$root"
   cat "$report"
 }
@@ -69,12 +78,33 @@ chmod 700 "$root/runtime"
   printf 'label=%s\n' "$label"
   printf 'artifact=%s\n' "$(basename "$artifact")"
   for command_name in bash sh realpath timeout seq readelf ldd Xvfb weston \
-      dbus-daemon gdb strace; do
+      dbus-daemon dbus-uuidgen gdb strace; do
     printf 'command_%s=%s\n' "$command_name" "$(command -v "$command_name")"
   done
   uname -a
   cat /etc/os-release
 } >> "$report"
+
+run_stage host_machine_id
+machine_id_value=
+if [[ -r /etc/machine-id ]]; then
+  machine_id_value=$(tr -d '\r\n' < /etc/machine-id)
+fi
+if [[ ! "$machine_id_value" =~ ^[[:xdigit:]]{32}$ ]]; then
+  command -v dbus-uuidgen >/dev/null
+  test -e /etc/machine-id
+  test -w /etc/machine-id
+  machine_id_backup="$root/machine-id.original"
+  cp /etc/machine-id "$machine_id_backup"
+  machine_id_repaired=1
+  dbus-uuidgen > /etc/machine-id
+  machine_id_value=$(tr -d '\r\n' < /etc/machine-id)
+  [[ "$machine_id_value" =~ ^[[:xdigit:]]{32}$ ]]
+  printf 'host_machine_id=REPAIRED_FOR_EPHEMERAL_PROBE\n' >> "$report"
+else
+  printf 'host_machine_id=VALID\n' >> "$report"
+fi
+pass_stage
 
 common_env=(
   "PATH=/usr/bin:/bin"
@@ -273,11 +303,11 @@ diagnose_wayland_failure() {
   if command -v gdb >/dev/null 2>&1; then
     run_captured wayland_gdb "$root/wayland-gdb.log" \
       env -i "${wayland_env[@]}" \
-        LD_LIBRARY_PATH="$bundle_search" \
-        LIBDECOR_PLUGIN_DIR="$extracted/usr/lib/libdecor/plugins-1" \
-        WAYLAND_DEBUG=1 \
         timeout 45s gdb --quiet --batch \
           -ex 'set pagination off' \
+          -ex "set environment LD_LIBRARY_PATH $bundle_search" \
+          -ex "set environment LIBDECOR_PLUGIN_DIR $extracted/usr/lib/libdecor/plugins-1" \
+          -ex 'set environment WAYLAND_DEBUG 1' \
           -ex run \
           -ex 'thread apply all backtrace full' \
           --args "$extracted/usr/bin/sudokura" --smoke-test
