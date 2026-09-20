@@ -8,7 +8,7 @@ artifact=$(realpath "$artifact")
 test -x "$artifact"
 
 root=$(mktemp -d)
-report="linux-runtime-${label}.txt"
+report="$PWD/linux-runtime-${label}.txt"
 : > "$report"
 current_stage=setup
 cleanup() {
