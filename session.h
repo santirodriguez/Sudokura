@@ -46,6 +46,8 @@ typedef struct {
   bool audio_enabled;
   uint8_t music_volume;
   uint8_t fx_volume;
+  bool music_muted;
+  bool fx_muted;
   bool reduced_motion;
   bool auto_remove_peer_notes;
   int32_t window_x;
