@@ -2,6 +2,22 @@
 
 Repository screenshots used by release notes and documentation belong in this directory.
 
+## Proposed Sudokura v1.3.0 canonical screenshot
+
+No v1.3.0 canonical screenshot is committed yet. The concrete proposal for user approval is:
+
+- a **real packaged v1.3.0 build**, not a diagnostic/development render;
+- 1366×768 desktop layout;
+- dark theme;
+- English;
+- Classic · Medium in progress;
+- representative player entries/notes with the global speaker visible;
+- only the Sudokura window, with no notifications, usernames, paths, debug text, or other personal information.
+
+After explicit approval, the canonical filename should be `sudokura-v1.3.0.png`.
+
+Do not substitute any `--render-screenshots` diagnostic frame for this image.
+
 ## Sudokura v1.2.0
 
 <p align="center"><a href="sudokura-v1.2.0.png"><img src="sudokura-v1.2.0.png" alt="Sudokura v1.2.0 gameplay" width="900"></a></p>

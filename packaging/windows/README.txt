@@ -22,6 +22,6 @@ Sudokura data after uninstalling, delete that profile directory manually.
 
 Windows reputation warnings
 ---------------------------
-This candidate is not commercially code-signed. Windows may therefore
+Sudokura v1.3.0 is not commercially code-signed. Windows may therefore
 show a reputation/SmartScreen warning. Do not disable Windows protections.
 Verify the published SHA-256 checksum and decide whether to run the package.
