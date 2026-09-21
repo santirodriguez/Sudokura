@@ -206,6 +206,8 @@ void preferences_defaults(Preferences *preferences) {
   preferences->audio_enabled = true;
   preferences->music_volume = 20;
   preferences->fx_volume = 65;
+  preferences->music_muted = false;
+  preferences->fx_muted = false;
   preferences->reduced_motion = false;
   preferences->auto_remove_peer_notes = false;
   preferences->window_x = INT32_MIN;
