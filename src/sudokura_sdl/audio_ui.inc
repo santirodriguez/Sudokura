@@ -10,7 +10,35 @@ static void audio_apply_preferences(Persistence *persistence) {
      playback. The first app tick selects the context and may then play. */
   audio_set_music_volume(persistence->preferences.music_volume);
   audio_set_fx_volume(persistence->preferences.fx_volume);
+  audio_set_music_muted(persistence->preferences.music_muted);
+  audio_set_fx_muted(persistence->preferences.fx_muted);
   audio_set_enabled(persistence->preferences.audio_enabled);
+}
+
+static void audio_store_preferences(Persistence *persistence) {
+  if (!persistence) return;
+  persistence->preferences.audio_enabled = audio_is_enabled();
+  persistence->preferences.music_muted = audio_music_muted();
+  persistence->preferences.fx_muted = audio_fx_muted();
+  if (!persistence->enabled) return;
+  if (audio_ui)
+    (void)save_preferences(persistence, audio_ui);
+  else
+    persistence_stage_preferences(persistence);
+}
+
+static void audio_toggle_music_mute(Persistence *persistence) {
+  bool muted = !audio_music_muted();
+  audio_set_music_muted(muted);
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_store_preferences(persistence);
+}
+
+static void audio_toggle_fx_mute(Persistence *persistence) {
+  bool muted = !audio_fx_muted();
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_set_fx_muted(muted);
+  audio_store_preferences(persistence);
 }
 
 static void audio_toggle(Persistence *persistence) {
@@ -18,14 +46,7 @@ static void audio_toggle(Persistence *persistence) {
   if (enabled) audio_set_enabled(true);
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (!enabled) audio_set_enabled(false);
-  if (!persistence) return;
-  persistence->preferences.audio_enabled = enabled;
-  if (persistence->enabled) {
-    if (audio_ui)
-      (void)save_preferences(persistence, audio_ui);
-    else
-      persistence_stage_preferences(persistence);
-  }
+  audio_store_preferences(persistence);
 }
 
 static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
