@@ -108,3 +108,20 @@ const char *input_primary_modifier_label(void) {
   return "Ctrl";
 #endif
 }
+
+
+InputAudioShortcut input_audio_shortcut(SDL_Keycode key, SDL_Keymod modifiers,
+                                        bool popup_open) {
+  if (key == SDLK_v)
+    return (modifiers & KMOD_SHIFT) != 0 ? INPUT_AUDIO_POPUP
+                                         : INPUT_AUDIO_MASTER;
+  if (!popup_open) return INPUT_AUDIO_NONE;
+  if (key == SDLK_m) return INPUT_AUDIO_MUSIC;
+  if (key == SDLK_f) return INPUT_AUDIO_FX;
+  if (key == SDLK_ESCAPE) return INPUT_AUDIO_CLOSE;
+  return INPUT_AUDIO_NONE;
+}
+
+bool input_audio_press_is_long(Uint64 held_ms) {
+  return held_ms >= UINT64_C(500);
+}
