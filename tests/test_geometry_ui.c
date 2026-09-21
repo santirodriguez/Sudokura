@@ -38,6 +38,22 @@ int main(void) {
       for (int number = 0; number < GEOMETRY_PALETTE_COUNT; ++number)
         assert_rect(g.palette[number], width, height);
 
+      AudioControlGeometry play_audio =
+          geometry_audio_control(width, height, &g, true);
+      AudioControlGeometry screen_audio =
+          geometry_audio_control(width, height, &g, false);
+      assert_rect(play_audio.button, width, height);
+      assert_rect(play_audio.popup, width, height);
+      assert_inside(play_audio.popup, play_audio.music);
+      assert_inside(play_audio.popup, play_audio.fx);
+      assert_rect(screen_audio.button, width, height);
+      assert_rect(screen_audio.popup, width, height);
+      assert_inside(screen_audio.popup, screen_audio.music);
+      assert_inside(screen_audio.popup, screen_audio.fx);
+      assert(play_audio.button.x >= g.play_language.x + g.play_language.w);
+      assert(screen_audio.button.x >=
+             g.screen_language.x + g.screen_language.w);
+
       assert(g.actions[PLAY_ACTION_MENU].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
       assert(g.actions[PLAY_ACTION_ABOUT].x == g.sidebar.x);
@@ -71,6 +87,6 @@ int main(void) {
       }
     }
   }
-  puts("UI geometry tests passed for hierarchical play controls, footer About and four-link About screen");
+  puts("UI geometry tests passed for play controls, global audio geometry and About screen");
   return 0;
 }
