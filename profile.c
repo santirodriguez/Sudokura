@@ -324,6 +324,8 @@ static void encode_preferences(ProfileWriter *writer,
   writer_u32(writer, preferences->window_height);
   writer_u8(writer, preferences->window_maximized ? 1u : 0u);
   writer_u8(writer, preferences->auto_remove_peer_notes ? 1u : 0u);
+  writer_u8(writer, preferences->music_muted ? 1u : 0u);
+  writer_u8(writer, preferences->fx_muted ? 1u : 0u);
 }
 
 static StoreStatus decode_preferences(ProfileReader *reader,
@@ -331,6 +333,7 @@ static StoreStatus decode_preferences(ProfileReader *reader,
   uint16_t version = reader_u16(reader);
   if (!reader->ok) return STORE_CORRUPT;
   if (version != SUDOKURA_PREFERENCES_CONTENT_VERSION &&
+      version != SUDOKURA_PREFERENCES_CONTENT_VERSION_V2 &&
       version != SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
 
@@ -351,16 +354,23 @@ static StoreStatus decode_preferences(ProfileReader *reader,
   loaded.window_height = reader_u32(reader);
   uint8_t maximized = reader_u8(reader);
   uint8_t auto_remove =
-      version == SUDOKURA_PREFERENCES_CONTENT_VERSION ? reader_u8(reader) : 0u;
+      version >= SUDOKURA_PREFERENCES_CONTENT_VERSION_V2 ? reader_u8(reader) : 0u;
+  uint8_t music_muted =
+      version >= SUDOKURA_PREFERENCES_CONTENT_VERSION ? reader_u8(reader) : 0u;
+  uint8_t fx_muted =
+      version >= SUDOKURA_PREFERENCES_CONTENT_VERSION ? reader_u8(reader) : 0u;
   loaded.dark_theme = dark != 0;
   loaded.strict_mode = strict != 0;
   loaded.audio_enabled = audio != 0;
   loaded.reduced_motion = reduced != 0;
   loaded.window_maximized = maximized != 0;
   loaded.auto_remove_peer_notes = auto_remove != 0;
+  loaded.music_muted = music_muted != 0;
+  loaded.fx_muted = fx_muted != 0;
 
   if (!reader->ok || dark > 1 || strict > 1 || audio > 1 || reduced > 1 ||
-      maximized > 1 || auto_remove > 1 || !preferences_validate(&loaded))
+      maximized > 1 || auto_remove > 1 || music_muted > 1 || fx_muted > 1 ||
+      !preferences_validate(&loaded))
     return STORE_CORRUPT;
   *preferences = loaded;
   return STORE_OK;
