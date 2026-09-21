@@ -500,6 +500,9 @@ static SettingsKeyboardFocus settings_keyboard_focus = SETTINGS_FOCUS_THEME;
 typedef enum{SETTINGS_DRAG_NONE=0,SETTINGS_DRAG_MUSIC,SETTINGS_DRAG_FX}SettingsSliderDrag;
 static SettingsSliderDrag settings_slider_drag=SETTINGS_DRAG_NONE;
 static bool ui_home_cue_requested = false;
+static bool audio_control_popup_open = false;
+static bool audio_control_pressed = false;
+static uint64_t audio_control_pressed_at_ms = 0;
 
 typedef struct {
   SDL_Rect banner;
@@ -1286,6 +1289,78 @@ static void rc2_render_generation_overlay(Gfx *gfx, UI *ui) {
                          theme.dim, cancel, 16, 10);
 }
 
+
+static AudioControlGeometry ui_audio_control_geometry(const Gfx *gfx,
+                                                      const UI *ui) {
+  AppGeometry app;
+  memset(&app, 0, sizeof(app));
+  bool play_surface =
+      gfx && ui && ui->screen == SCR_PLAY && get_geometry(gfx, ui, &app);
+  return geometry_audio_control(gfx ? gfx->width : 0, gfx ? gfx->height : 0,
+                                play_surface ? &app : NULL, play_surface);
+}
+
+static void rc2_draw_speaker_icon(Gfx *gfx, Theme theme, SDL_Rect rect,
+                                  bool muted) {
+  if (!gfx || rect.w <= 0 || rect.h <= 0) return;
+  int pad = rect.w < rect.h ? rect.w / 5 : rect.h / 5;
+  if (pad < 5) pad = 5;
+  int cx = rect.x + rect.w / 2;
+  int cy = rect.y + rect.h / 2;
+  SDL_Color color = muted ? theme.dim : theme.btnfg;
+  SDL_Rect box = {rect.x + pad, cy - rect.h / 10,
+                  rect.w / 5, rect.h / 5};
+  draw_rect(gfx->ren, box.x, box.y, box.w, box.h, color);
+  draw_line(gfx->ren, box.x + box.w, box.y,
+            cx, cy - rect.h / 4, color);
+  draw_line(gfx->ren, cx, cy - rect.h / 4,
+            cx, cy + rect.h / 4, color);
+  draw_line(gfx->ren, cx, cy + rect.h / 4,
+            box.x + box.w, box.y + box.h, color);
+  if (!muted) {
+    draw_line(gfx->ren, cx + 4, cy - 7, cx + 8, cy - 3, color);
+    draw_line(gfx->ren, cx + 8, cy - 3, cx + 8, cy + 3, color);
+    draw_line(gfx->ren, cx + 8, cy + 3, cx + 4, cy + 7, color);
+  } else {
+    draw_line(gfx->ren, rect.x + pad, rect.y + pad,
+              rect.x + rect.w - pad, rect.y + rect.h - pad, theme.conflict);
+  }
+}
+
+static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
+  if (!gfx || !ui) return;
+  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
+  AudioControlGeometry geo = ui_audio_control_geometry(gfx, ui);
+  SDL_Rect button = sdl_rect(geo.button);
+  int mx = 0, my = 0;
+  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  bool hover = point_in(button, mx, my);
+  SDL_Color bg = hover ? theme.hover : theme.btn;
+  SDL_Rect face = polish_button_face(gfx, theme, button, bg, false, false);
+  rc2_draw_speaker_icon(gfx, theme, face, !audio_is_enabled());
+
+  if (!audio_control_popup_open) return;
+
+  SDL_Rect popup = sdl_rect(geo.popup);
+  SDL_Rect shadow = popup;
+  shadow.y += 4;
+  draw_round_rect(gfx->ren, shadow, 10, theme.shadow);
+  draw_round_rect(gfx->ren, popup, 10, theme.palette_bg);
+
+  SDL_Rect music = sdl_rect(geo.music);
+  SDL_Rect fx = sdl_rect(geo.fx);
+  rc2_settings_button(gfx, theme, music, tr(ui->language, T_MUSIC),
+                      !audio_music_muted(), 15);
+  rc2_settings_button(gfx, theme, fx, tr(ui->language, T_FX),
+                      !audio_fx_muted(), 15);
+  if (audio_music_muted())
+    draw_line(gfx->ren, music.x + 8, music.y + 7,
+              music.x + music.w - 8, music.y + music.h - 7, theme.conflict);
+  if (audio_fx_muted())
+    draw_line(gfx->ren, fx.x + 8, fx.y + 7,
+              fx.x + fx.w - 8, fx.y + fx.h - 7, theme.conflict);
+}
+
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   text_cache_sync(gfx,ui);
   app_render_base(gfx, game, ui);
@@ -1300,6 +1375,7 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   rc2_render_settings_panel(gfx, ui);
   rc2_render_storage_banner(gfx, ui);
   rc2_render_generation_overlay(gfx, ui);
+  rc2_render_audio_control(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
