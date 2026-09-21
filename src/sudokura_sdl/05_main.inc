@@ -703,6 +703,182 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
   sort_doubles(save_samples,7);
   (void)store_remove_file(save_path);(void)store_remove_file(backup_path);
 
+  /* Phase 8.R2: measure complete user-visible action paths before optimizing.
+     These fixtures stay local to --desktop-benchmark and never touch the user
+     profile. "event" starts immediately before the semantic action call; the
+     final sample ends after SDL_RenderPresent through app_frame(). */
+  enum { LATENCY_SAMPLES=9 };
+  double menu_action_samples[LATENCY_SAMPLES],menu_present_samples[LATENCY_SAMPLES];
+  double continue_action_samples[LATENCY_SAMPLES],continue_present_samples[LATENCY_SAMPLES];
+  double continue_validate_samples[LATENCY_SAMPLES];
+  double verify_action_samples[LATENCY_SAMPLES],verify_present_samples[LATENCY_SAMPLES];
+  double verify_logic_samples[LATENCY_SAMPLES];
+  double new_action_samples[LATENCY_SAMPLES],new_present_samples[LATENCY_SAMPLES];
+  double new_feedback_samples[LATENCY_SAMPLES];
+
+  Persistence latency_p;
+  memset(&latency_p,0,sizeof(latency_p));
+  latency_p.enabled=true;
+  profile_defaults(&latency_p.profile);
+  latency_p.preferences=latency_p.profile.preferences;
+  latency_p.preferences.mode=MODE_CLASSIC;
+  latency_p.preferences.difficulty=DIFFICULTY_MEDIUM;
+  latency_p.profile.preferences=latency_p.preferences;
+  save_policy_init(&latency_p.save_policy);
+  snprintf(latency_p.profile_path,sizeof(latency_p.profile_path),
+           ".sudokura-latency-profile.dat");
+  snprintf(latency_p.profile_backup_path,sizeof(latency_p.profile_backup_path),
+           ".sudokura-latency-profile.dat.bak");
+  (void)store_remove_file(latency_p.profile_path);
+  (void)store_remove_file(latency_p.profile_backup_path);
+
+  SessionState latency_session;
+  memset(&latency_session,0,sizeof(latency_session));
+  latency_session.game=benchmark_game;
+  latency_session.mode=MODE_CLASSIC;
+  latency_session.selected_row=4;
+  latency_session.selected_column=4;
+  latency_session.status=SESSION_ACTIVE;
+  latency_session.elapsed_ms=UINT64_C(123456);
+  if(!profile_slot_set(&latency_p.profile.normal,&latency_session,false))return 1;
+  latency_p.saved=latency_session;
+  latency_p.profile.preferences=latency_p.preferences;
+
+  for(int i=0;i<LATENCY_SAMPLES;i++){
+    Game action_game=benchmark_game;
+    UI action_ui;
+    app_state_init(&action_ui);
+    action_ui.mode=MODE_CLASSIC;
+    action_ui.reduced_motion=true;
+    action_ui.sel_r=4;action_ui.sel_c=4;
+    begin_fresh_play(&action_ui);
+    latency_p.profile.normal.present=true;
+    latency_p.profile.normal.value.session=latency_session;
+    latency_p.profile.normal.value.assisted=false;
+    latency_p.saved=latency_session;
+    save_policy_init(&latency_p.save_policy);
+
+    double event_start=wall_clock_ms();
+    go_home_base(&latency_p,&action_game,&action_ui);
+    double action_done=wall_clock_ms();
+    app_frame(g,&action_game,&action_ui);
+    double present_done=wall_clock_ms();
+    menu_action_samples[i]=action_done-event_start;
+    menu_present_samples[i]=present_done-event_start;
+  }
+
+  for(int i=0;i<LATENCY_SAMPLES;i++){
+    Game action_game=benchmark_game;
+    UI action_ui;
+    app_state_init(&action_ui);
+    action_ui.screen=SCR_TITLE;
+    action_ui.prev_screen=SCR_TITLE;
+    action_ui.reduced_motion=true;
+    latency_p.profile.normal.present=true;
+    latency_p.profile.normal.value.session=latency_session;
+    latency_p.profile.normal.value.assisted=false;
+    latency_p.saved=latency_session;
+    save_policy_init(&latency_p.save_policy);
+
+    double validate_start=wall_clock_ms();
+    if(!session_validate(&latency_p.profile.normal.value.session))return 1;
+    continue_validate_samples[i]=wall_clock_ms()-validate_start;
+
+    double event_start=wall_clock_ms();
+    restore_saved_session(&latency_p,&action_game,&action_ui,false);
+    double action_done=wall_clock_ms();
+    app_frame(g,&action_game,&action_ui);
+    double present_done=wall_clock_ms();
+    continue_action_samples[i]=action_done-event_start;
+    continue_present_samples[i]=present_done-event_start;
+  }
+
+  for(int i=0;i<LATENCY_SAMPLES;i++){
+    Game logic_game=benchmark_game;
+    UI logic_ui;
+    app_state_init(&logic_ui);
+    logic_ui.mode=MODE_CLASSIC;
+    logic_ui.reduced_motion=true;
+    logic_ui.sel_r=4;logic_ui.sel_c=4;
+    begin_fresh_play(&logic_ui);
+    double logic_start=wall_clock_ms();
+    (void)apply_verify_action(&logic_game,&logic_ui);
+    verify_logic_samples[i]=wall_clock_ms()-logic_start;
+
+    Game action_game=benchmark_game;
+    UI action_ui;
+    app_state_init(&action_ui);
+    action_ui.mode=MODE_CLASSIC;
+    action_ui.reduced_motion=true;
+    action_ui.sel_r=4;action_ui.sel_c=4;
+    begin_fresh_play(&action_ui);
+    latency_p.profile.normal.present=true;
+    latency_p.profile.normal.value.session=latency_session;
+    latency_p.profile.normal.value.assisted=false;
+    latency_p.saved=latency_session;
+    save_policy_init(&latency_p.save_policy);
+
+    double event_start=wall_clock_ms();
+    verify_current_entries(&latency_p,&action_game,&action_ui);
+    double action_done=wall_clock_ms();
+    app_frame(g,&action_game,&action_ui);
+    double present_done=wall_clock_ms();
+    verify_action_samples[i]=action_done-event_start;
+    verify_present_samples[i]=present_done-event_start;
+  }
+
+  for(int i=0;i<LATENCY_SAMPLES;i++){
+    Game feedback_game=benchmark_game;
+    UI feedback_ui;
+    app_state_init(&feedback_ui);
+    feedback_ui.screen=SCR_TITLE;
+    feedback_ui.reduced_motion=true;
+    feedback_ui.generating=true;
+    feedback_ui.generation_attempt=1;
+    feedback_ui.generation_max_attempts=
+        game_generation_attempt_budget(DIFFICULTY_MEDIUM);
+    double feedback_start=wall_clock_ms();
+    app_frame(g,&feedback_game,&feedback_ui);
+    new_feedback_samples[i]=wall_clock_ms()-feedback_start;
+
+    Game action_game;
+    memset(&action_game,0,sizeof(action_game));
+    UI action_ui;
+    app_state_init(&action_ui);
+    action_ui.screen=SCR_TITLE;
+    action_ui.reduced_motion=true;
+    latency_p.preferences.mode=MODE_CLASSIC;
+    latency_p.preferences.difficulty=DIFFICULTY_MEDIUM;
+    latency_p.profile.preferences=latency_p.preferences;
+    memset(&latency_p.profile.normal,0,sizeof(latency_p.profile.normal));
+    memset(&latency_p.saved,0,sizeof(latency_p.saved));
+    save_policy_init(&latency_p.save_policy);
+
+    double event_start=wall_clock_ms();
+    GameGenerationResult generated=
+        start_new_session_base(&latency_p,&action_game,&action_ui,NULL);
+    if(generated!=GAME_GENERATION_OK)return 1;
+    double action_done=wall_clock_ms();
+    app_frame(g,&action_game,&action_ui);
+    double present_done=wall_clock_ms();
+    new_action_samples[i]=action_done-event_start;
+    new_present_samples[i]=present_done-event_start;
+  }
+
+  sort_doubles(menu_action_samples,LATENCY_SAMPLES);
+  sort_doubles(menu_present_samples,LATENCY_SAMPLES);
+  sort_doubles(continue_action_samples,LATENCY_SAMPLES);
+  sort_doubles(continue_present_samples,LATENCY_SAMPLES);
+  sort_doubles(continue_validate_samples,LATENCY_SAMPLES);
+  sort_doubles(verify_action_samples,LATENCY_SAMPLES);
+  sort_doubles(verify_present_samples,LATENCY_SAMPLES);
+  sort_doubles(verify_logic_samples,LATENCY_SAMPLES);
+  sort_doubles(new_action_samples,LATENCY_SAMPLES);
+  sort_doubles(new_present_samples,LATENCY_SAMPLES);
+  sort_doubles(new_feedback_samples,LATENCY_SAMPLES);
+  (void)store_remove_file(latency_p.profile_path);
+  (void)store_remove_file(latency_p.profile_backup_path);
+
   ui->screen=SCR_TITLE;ui->session_open=false;g->dirty=true;app_frame(g,game,ui);
   clock_t cpu_start=clock();double idle_start=wall_clock_ms();
   while(wall_clock_ms()-idle_start<1000.0){
@@ -737,8 +913,19 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
     else rss_after_repeat=desktop_benchmark_rss_kb();
   }
 
-  printf("desktop_benchmark_version=2\n");
+  printf("desktop_benchmark_version=3\n");
   printf("startup_first_home_ms=%.3f\n",startup_ms);
+  printf("menu_action_p50_ms=%.3f\n",menu_action_samples[LATENCY_SAMPLES/2]);
+  printf("menu_event_to_present_p50_ms=%.3f\n",menu_present_samples[LATENCY_SAMPLES/2]);
+  printf("continue_validate_p50_ms=%.3f\n",continue_validate_samples[LATENCY_SAMPLES/2]);
+  printf("continue_action_p50_ms=%.3f\n",continue_action_samples[LATENCY_SAMPLES/2]);
+  printf("continue_event_to_present_p50_ms=%.3f\n",continue_present_samples[LATENCY_SAMPLES/2]);
+  printf("verify_logic_p50_ms=%.3f\n",verify_logic_samples[LATENCY_SAMPLES/2]);
+  printf("verify_action_p50_ms=%.3f\n",verify_action_samples[LATENCY_SAMPLES/2]);
+  printf("verify_event_to_present_p50_ms=%.3f\n",verify_present_samples[LATENCY_SAMPLES/2]);
+  printf("new_game_feedback_present_p50_ms=%.3f\n",new_feedback_samples[LATENCY_SAMPLES/2]);
+  printf("new_game_action_p50_ms=%.3f\n",new_action_samples[LATENCY_SAMPLES/2]);
+  printf("new_game_event_to_present_p50_ms=%.3f\n",new_present_samples[LATENCY_SAMPLES/2]);
   printf("input_render_p50_ms=%.3f\n",input_samples[15]);
   printf("idle_cpu_percent=%.3f\n",idle_cpu_percent);
   printf("generation_easy_p50_ms=%.3f\n",generation_p50[0]);
