@@ -688,3 +688,41 @@ bool geometry_compute(int width, int height, GeometryMode mode,
   return geometry_play_valid(geometry, width, height);
 }
 
+
+
+AudioControlGeometry geometry_audio_control(int width, int height,
+                                            const AppGeometry *app,
+                                            bool play_surface) {
+  AudioControlGeometry out;
+  memset(&out, 0, sizeof(out));
+  if (width <= 0 || height <= 0) return out;
+
+  if (play_surface && app) {
+    out.button = app->actions[PLAY_ACTION_AUDIO];
+  } else {
+    int size = width < 420 ? 36 : 40;
+    int margin = width < 420 ? 8 : 12;
+    out.button = (GeoRect){width - margin - size, margin, size, size};
+  }
+
+  int popup_w = width < 260 ? width - 16 : 220;
+  if (popup_w < 140) popup_w = 140;
+  int popup_h = 92;
+  int popup_x = out.button.x + out.button.w - popup_w;
+  if (popup_x < 8) popup_x = 8;
+  if (popup_x + popup_w > width - 8) popup_x = width - 8 - popup_w;
+  int popup_y = out.button.y + out.button.h + 6;
+  if (popup_y + popup_h > height - 8)
+    popup_y = out.button.y - popup_h - 6;
+  if (popup_y < 8) popup_y = 8;
+  out.popup = (GeoRect){popup_x, popup_y, popup_w, popup_h};
+
+  int inset = 8;
+  int gap = 6;
+  int row_h = (popup_h - inset * 2 - gap) / 2;
+  out.music = (GeoRect){popup_x + inset, popup_y + inset,
+                        popup_w - inset * 2, row_h};
+  out.fx = (GeoRect){popup_x + inset, popup_y + inset + row_h + gap,
+                     popup_w - inset * 2, row_h};
+  return out;
+}
