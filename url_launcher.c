@@ -144,6 +144,7 @@ void url_launcher_test_free_environment(char **environment) {
 }
 #endif
 
+#if !defined(__APPLE__)
 static bool executable_path(const char *name, char *out, size_t out_size) {
   const char *path = getenv("PATH");
   if (!path || !path[0]) path = "/usr/local/bin:/usr/bin:/bin";
@@ -162,6 +163,7 @@ static bool executable_path(const char *name, char *out, size_t out_size) {
   }
   return false;
 }
+#endif
 
 static UrlLaunchResult launch_detached(const char *program, char *const argv[],
                                        char *const environment[]) {
