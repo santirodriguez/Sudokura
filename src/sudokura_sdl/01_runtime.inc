@@ -365,7 +365,7 @@ static void resume_info_from_slot(AppResumeInfo*out,const ProfileSlot*slot,
   const SessionState*session=profile_slot_session(slot);
   if(!session||!session_validate_runtime(session))return;
   out->present=true;
-  out->can_continue=session_can_continue(session);
+  out->can_continue=session_can_continue_runtime(session);
   out->completed=session->status!=SESSION_ACTIVE;
   out->assisted=slot->value.assisted;
   out->mode=session->mode;
@@ -631,13 +631,13 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   if(!p||!game||!ui)return;
   const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
   const SessionState*s=profile_slot_session(slot);
-  if(!s||!session_validate(s))return;
+  if(!s||!session_validate_runtime(s))return;
   *game=s->game;ui->mode=s->mode;set_mode_params(ui);
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
   app_clock_restore(ui,s->elapsed_ms,now_ms());
   ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;
-  bool normal_continue=session_can_continue(&p->saved);
+  bool normal_continue=session_can_continue_runtime(&p->saved);
   ui->has_session=true;
   ui->assisted=slot->value.assisted;ui->hint_preview_active=false;ui->hint_verify_required=false;
   ui->undo_count=slot->value.undo_count;ui->redo_count=slot->value.redo_count;
