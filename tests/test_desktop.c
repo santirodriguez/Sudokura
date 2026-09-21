@@ -29,6 +29,37 @@ int main(void) {
   assert(!desktop_rect_has_visible_area(
       (DesktopRect){INT_MIN + 8, INT_MIN + 8, 1024, 720}, display, 64));
 
-  puts("desktop HiDPI metrics and window visibility policy passed");
+  assert(desktop_tick_at_or_after(100u, 100u));
+  assert(desktop_tick_at_or_after(101u, 100u));
+  assert(!desktop_tick_at_or_after(99u, 100u));
+  assert(desktop_tick_at_or_after(2u, UINT32_MAX - 2u));
+  assert(!desktop_tick_at_or_after(UINT32_MAX - 2u, 2u));
+
+  assert(!desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_FOCUS_LOST, DESKTOP_WINDOW_INPUT_FOCUS));
+  assert(desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_FOCUS_LOST, 0));
+  assert(!desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_MINIMIZED, DESKTOP_WINDOW_INPUT_FOCUS));
+  assert(desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_MINIMIZED, DESKTOP_WINDOW_MINIMIZED));
+  assert(!desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_HIDDEN, DESKTOP_WINDOW_INPUT_FOCUS));
+  assert(desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_HIDDEN, DESKTOP_WINDOW_HIDDEN));
+  assert(!desktop_window_event_requires_pause(
+      DESKTOP_WINDOW_EVENT_OTHER, 0));
+  assert(!desktop_window_event_should_pause(
+      99u, 100u, DESKTOP_WINDOW_EVENT_FOCUS_LOST, 0));
+  assert(!desktop_window_event_should_pause(
+      100u, 100u, DESKTOP_WINDOW_EVENT_FOCUS_LOST,
+      DESKTOP_WINDOW_INPUT_FOCUS));
+  assert(desktop_window_event_should_pause(
+      100u, 100u, DESKTOP_WINDOW_EVENT_FOCUS_LOST, 0));
+  assert(desktop_window_event_should_pause(
+      2u, UINT32_MAX - 2u, DESKTOP_WINDOW_EVENT_HIDDEN,
+      DESKTOP_WINDOW_HIDDEN));
+
+  puts("desktop metrics, visibility and focus-pause policy passed");
   return 0;
 }

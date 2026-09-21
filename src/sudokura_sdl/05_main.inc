@@ -1,4 +1,46 @@
 /* =================== MAIN =================== */
+static Uint32 focus_pause_event_floor_ms = 0;
+
+static void window_focus_guard_reset(void) {
+  SDL_PumpEvents();
+  focus_pause_event_floor_ms = SDL_GetTicks() + 1u;
+}
+
+static DesktopWindowEvent desktop_window_event(Uint8 event) {
+  switch (event) {
+    case SDL_WINDOWEVENT_FOCUS_LOST:
+      return DESKTOP_WINDOW_EVENT_FOCUS_LOST;
+    case SDL_WINDOWEVENT_MINIMIZED:
+      return DESKTOP_WINDOW_EVENT_MINIMIZED;
+    case SDL_WINDOWEVENT_HIDDEN:
+      return DESKTOP_WINDOW_EVENT_HIDDEN;
+    default:
+      return DESKTOP_WINDOW_EVENT_OTHER;
+  }
+}
+
+static unsigned desktop_window_state(SDL_Window *window) {
+  Uint32 flags = window ? SDL_GetWindowFlags(window) : 0;
+  unsigned state = 0;
+  if ((flags & SDL_WINDOW_INPUT_FOCUS) != 0)
+    state |= DESKTOP_WINDOW_INPUT_FOCUS;
+  if ((flags & SDL_WINDOW_MINIMIZED) != 0)
+    state |= DESKTOP_WINDOW_MINIMIZED;
+  if ((flags & SDL_WINDOW_HIDDEN) != 0)
+    state |= DESKTOP_WINDOW_HIDDEN;
+  return state;
+}
+
+static bool window_event_requires_focus_pause(const Gfx *gfx,
+                                              const SDL_WindowEvent *event) {
+  if (!gfx || !gfx->win || !event ||
+      event->windowID != SDL_GetWindowID(gfx->win))
+    return false;
+  return desktop_window_event_should_pause(
+      event->timestamp, focus_pause_event_floor_ms,
+      desktop_window_event(event->event), desktop_window_state(gfx->win));
+}
+
 static bool home_focus_available(const UI *ui, int focus) {
   return focus != HOME_FOCUS_CONTINUE || ui->has_session;
 }
@@ -332,7 +374,7 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
   const char *url = about_url(index);
   if (!url) return;
   ui_button_click();
-  if (SDL_OpenURL(url) != 0)
+  if (url_launcher_open(url) != URL_LAUNCH_OK)
     (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
                                    tr(ui->language, T_ABOUT),
                                    tr(ui->language, T_LINK_ERROR), g->win);
@@ -979,6 +1021,7 @@ int main(int argc, char **argv) {
   home_focus = ui.normal_resume.can_continue
                    ? HOME_FOCUS_CONTINUE
                    : HOME_FOCUS_NEW;
+  window_focus_guard_reset();
 
   bool running = true;
   SDL_Event e;
@@ -1024,10 +1067,8 @@ int main(int argc, char **argv) {
 #endif
         } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
           g.dirty = true;
-        } else if ((e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
-                    e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
-                    e.window.event == SDL_WINDOWEVENT_HIDDEN) &&
-                   ui.session_open && ui.result == RES_NONE) {
+        } else if (ui.session_open && ui.result == RES_NONE &&
+                   window_event_requires_focus_pause(&g, &e.window)) {
           if (clock_pause(&ui, PAUSE_FOCUS))
             (void)checkpoint_current_session(&persistence, &game, &ui);
         }

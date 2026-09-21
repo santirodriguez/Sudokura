@@ -62,6 +62,7 @@
 #include "save_policy.h"
 #include "seed.h"
 #include "store_io.h"
+#include "url_launcher.h"
 #include "assets/generated/flag_us.h"
 #include "assets/generated/flag_ar.h"
 #include "assets/generated/flag_ca.h"
@@ -161,6 +162,11 @@ typedef struct {
   SavePolicy save_policy;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
+
+/* Native message boxes can enqueue transient focus events. The SDL shell
+   advances this guard after each modal so those older events cannot pause a
+   session that starts after the dialog closes. */
+static void window_focus_guard_reset(void);
 
 static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
 static double now_s(void){ return (double)now_ms()*0.001; }

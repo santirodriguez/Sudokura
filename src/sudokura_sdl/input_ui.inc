@@ -13,7 +13,7 @@ static const char *ui_support_url(Language language) {
 static void ui_open_url(const char *url) {
   if (!url || !audio_gfx || !audio_ui) return;
   audio_play_effect(AUDIO_EFFECT_CLICK);
-  if (SDL_OpenURL(url) != 0)
+  if (url_launcher_open(url) != URL_LAUNCH_OK)
     (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
                                    tr(audio_ui->language, T_ABOUT),
                                    tr(audio_ui->language, T_LINK_ERROR),

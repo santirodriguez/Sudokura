@@ -63,6 +63,12 @@ jobs:
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o tests/test_live_save_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_desktop.c desktop.c -o tests/test_desktop_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -DSUDOKURA_URL_LAUNCHER_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_url_launcher.c url_launcher.c -o tests/test_url_launcher_san
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san
@@ -71,7 +77,9 @@ jobs:
           ./tests/test_session_san
           ./tests/test_profile_san
           ./tests/test_live_save_san
-          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san
+          ./tests/test_desktop_san
+          ./tests/test_url_launcher_san
+          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san tests/test_desktop_san tests/test_url_launcher_san
       - run: make WERROR=-Werror
       - name: Smoke without audio on the software renderer
         env:

@@ -61,3 +61,30 @@ bool desktop_rect_has_visible_area(DesktopRect window, DesktopRect display,
   return right - left >= minimum_visible &&
          bottom - top >= minimum_visible;
 }
+
+bool desktop_tick_at_or_after(uint32_t event_tick, uint32_t floor_tick) {
+  return event_tick - floor_tick < UINT32_C(0x80000000);
+}
+
+bool desktop_window_event_should_pause(uint32_t event_tick,
+                                       uint32_t floor_tick,
+                                       DesktopWindowEvent event,
+                                       unsigned window_state) {
+  return desktop_tick_at_or_after(event_tick, floor_tick) &&
+         desktop_window_event_requires_pause(event, window_state);
+}
+
+bool desktop_window_event_requires_pause(DesktopWindowEvent event,
+                                         unsigned window_state) {
+  switch (event) {
+    case DESKTOP_WINDOW_EVENT_FOCUS_LOST:
+      return (window_state & DESKTOP_WINDOW_INPUT_FOCUS) == 0;
+    case DESKTOP_WINDOW_EVENT_MINIMIZED:
+      return (window_state & DESKTOP_WINDOW_MINIMIZED) != 0;
+    case DESKTOP_WINDOW_EVENT_HIDDEN:
+      return (window_state & DESKTOP_WINDOW_HIDDEN) != 0;
+    case DESKTOP_WINDOW_EVENT_OTHER:
+    default:
+      return false;
+  }
+}

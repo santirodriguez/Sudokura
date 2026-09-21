@@ -24,11 +24,11 @@ make WERROR=-Werror quality
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
-  sudokura_sdl.c app.c app_clock.c desktop.c audio.c profile.c save_policy.c store_io.c session.c seed.c progress.c input.c \
+  sudokura_sdl.c app.c app_clock.c desktop.c url_launcher.c audio.c profile.c save_policy.c store_io.c session.c seed.c progress.c input.c \
   game.c human.c geometry.c i18n.c \
   assets/generated/window_icon.c assets/generated/wordmark.c \
   assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c icon.o \
-  -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) -lm -mwindows
+  -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) -lshell32 -lm -mwindows
 
 rm -rf dist zipcheck installcheck
 mkdir dist
