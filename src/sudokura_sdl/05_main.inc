@@ -156,7 +156,7 @@ static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
 
   const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   const SessionState *saved = profile_slot_session(slot);
-  return !saved || !session_has_meaningful_progress(saved) ||
+  return !saved || !session_has_meaningful_progress_runtime(saved) ||
          confirm_box(g->win, tr(ui->language, T_NEW_GAME),
                      tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
                      tr(ui->language, T_CANCEL));
@@ -302,7 +302,7 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   victory_animation_reset();
 
   const SessionState *saved = profile_slot_session(&p->profile.daily);
-  if (saved && session_can_continue(saved)) {
+  if (saved && session_can_continue_runtime(saved)) {
     restore_saved_session(p, game, ui, true);
     return;
   }
