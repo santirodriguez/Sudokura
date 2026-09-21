@@ -45,8 +45,12 @@ void audio_notify_device_removed(void);
 void audio_notify_device_added(void);
 int audio_music_volume(void);
 int audio_fx_volume(void);
+bool audio_music_muted(void);
+bool audio_fx_muted(void);
 void audio_set_music_volume(int percent);
 void audio_set_fx_volume(int percent);
+void audio_set_music_muted(bool muted);
+void audio_set_fx_muted(bool muted);
 
 #ifdef SUDOKURA_AUDIO_TESTING
 enum {
