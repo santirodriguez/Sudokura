@@ -37,8 +37,17 @@ int main(void) {
       assert(valid_utf8((const unsigned char *)text));
       assert(strstr(text, "\xEF\xBF\xBD") == NULL);
     }
-    assert(count_token(tr((Language)language, T_HELP_BODY), "%s") == 4);
+    assert(count_token(tr((Language)language, T_HELP_SHORTCUTS_BODY), "%s") == 4);
+    assert(strcmp(tr((Language)language, T_ENABLED),
+                  tr((Language)language, T_DISABLED)) != 0);
+    assert(strcmp(tr((Language)language, T_MUTED),
+                  tr((Language)language, T_DISABLED)) != 0);
+    assert(strstr(tr((Language)language, T_HELP_GOAL_BODY), "9x9") != NULL);
+    assert(*tr((Language)language, T_HELP_MODES_TITLE));
+    assert(*tr((Language)language, T_HELP_CONTROLS_TITLE));
+    assert(*tr((Language)language, T_HELP_HINTS_TITLE));
+    assert(*tr((Language)language, T_HELP_SHORTCUTS_TITLE));
   }
-  puts("EN/ES/CA localization coverage and UTF-8 validation passed");
+  puts("EN/ES/CA semantic states, structured Help and UTF-8 validation passed");
   return 0;
 }

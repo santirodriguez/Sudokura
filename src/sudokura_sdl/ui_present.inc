@@ -805,10 +805,10 @@ static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
   bool available = audio_is_available();
   if (enabled && !available)
     snprintf(label, sizeof label, "%s: %s · %s", tr(ui->language, T_SOUND),
-             tr(ui->language, T_ON), tr(ui->language, T_UNAVAILABLE));
+             tr(ui->language, T_ENABLED), tr(ui->language, T_UNAVAILABLE));
   else
     snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_SOUND),
-             tr(ui->language, enabled ? T_ON : T_OFF));
+             tr(ui->language, enabled ? T_ENABLED : T_MUTED));
   rc2_settings_button(gfx, theme, layout.sound, label,
                       enabled && available, preferred);
 
@@ -821,7 +821,7 @@ static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
                   audio_fx_available(), preferred);
 
   snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_REDUCED_MOTION),
-           tr(ui->language, ui->reduced_motion ? T_ON : T_OFF));
+           tr(ui->language, ui->reduced_motion ? T_ENABLED : T_DISABLED));
   rc2_settings_button(gfx, theme, layout.reduced_motion, label,
                       ui->reduced_motion, preferred);
 
@@ -1359,9 +1359,14 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
 
   SDL_Rect music = sdl_rect(geo.music);
   SDL_Rect fx = sdl_rect(geo.fx);
-  rc2_settings_button(gfx, theme, music, tr(ui->language, T_MUSIC),
+  char music_label[96],fx_label[96];
+  snprintf(music_label,sizeof music_label,"%s: %s",tr(ui->language,T_MUSIC),
+           tr(ui->language,audio_music_muted()?T_MUTED:T_ENABLED));
+  snprintf(fx_label,sizeof fx_label,"%s: %s",tr(ui->language,T_FX),
+           tr(ui->language,audio_fx_muted()?T_MUTED:T_ENABLED));
+  rc2_settings_button(gfx, theme, music, music_label,
                       !audio_music_muted(), 15);
-  rc2_settings_button(gfx, theme, fx, tr(ui->language, T_FX),
+  rc2_settings_button(gfx, theme, fx, fx_label,
                       !audio_fx_muted(), 15);
   if (audio_music_muted())
     draw_line(gfx->ren, music.x + 8, music.y + 7,

@@ -6,6 +6,27 @@ static void render_pause_overlay(Gfx*g,const UI*ui){
   int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=point_in(resume,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),menu_pressed=point_in(menu,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
 }
 
+static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
+                                       SDL_Rect body,int virtual_y,
+                                       int texture_w,int texture_h,
+                                       int scroll_px){
+  if(!texture||texture_w<=0||texture_h<=0)return;
+  int screen_y=body.y+virtual_y-scroll_px;
+  int source_y=0;
+  int visible_h=texture_h;
+  if(screen_y<body.y){
+    source_y=body.y-screen_y;
+    visible_h-=source_y;
+    screen_y=body.y;
+  }
+  int bottom=body.y+body.h;
+  if(screen_y+visible_h>bottom)visible_h=bottom-screen_y;
+  if(visible_h<=0)return;
+  SDL_Rect source=gfx_physical_rect(g,0,source_y,texture_w,visible_h);
+  SDL_Rect dest={body.x,screen_y,texture_w,visible_h};
+  SDL_RenderCopy(g->ren,texture,&source,&dest);
+}
+
 static void render_help(Gfx*g,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
@@ -19,41 +40,72 @@ static void render_help(Gfx*g,UI*ui){
     SDL_Rect d={heading.x,heading.y,tw,thh};
     SDL_RenderCopy(g->ren,T,NULL,&d);
   }
-  char help_text[2048];
+
+  const TextKey titles[]={
+    T_HELP_GOAL_TITLE,T_HELP_MODES_TITLE,T_HELP_CONTROLS_TITLE,
+    T_HELP_HINTS_TITLE,T_HELP_SHORTCUTS_TITLE
+  };
+  const TextKey bodies[]={
+    T_HELP_GOAL_BODY,T_HELP_MODES_BODY,T_HELP_CONTROLS_BODY,
+    T_HELP_HINTS_BODY,T_HELP_SHORTCUTS_BODY
+  };
+  enum{HELP_SECTION_COUNT=5};
+  SDL_Texture*title_texture[HELP_SECTION_COUNT]={0};
+  SDL_Texture*body_texture[HELP_SECTION_COUNT]={0};
+  int title_w[HELP_SECTION_COUNT]={0},title_h[HELP_SECTION_COUNT]={0};
+  int body_w[HELP_SECTION_COUNT]={0},body_h[HELP_SECTION_COUNT]={0};
+  int section_y[HELP_SECTION_COUNT]={0};
+  int text_w=body.w-18;
+  if(text_w<16)text_w=body.w;
   const char*modifier=input_primary_modifier_label();
-  snprintf(help_text,sizeof help_text,tr(ui->language,T_HELP_BODY),
+  char shortcut_text[1200];
+  snprintf(shortcut_text,sizeof shortcut_text,
+           tr(ui->language,T_HELP_SHORTCUTS_BODY),
            modifier,modifier,modifier,modifier);
 
-  int text_w=body.w-12;
-  if(text_w<16)text_w=body.w;
-  SDL_Texture*body_texture=
-      render_text_wrapped(g,g->font_body,help_text,th.dim,text_w,&tw,&thh);
-  help_scroll_max_px=thh>body.h?thh-body.h:0;
-  help_scroll_set(help_scroll_px);
-  if(body_texture){
-    int available=thh-help_scroll_px;
-    int visible=available<body.h?available:body.h;
-    if(visible>0){
-      SDL_Rect source=gfx_physical_rect(g,0,help_scroll_px,tw,visible);
-      SDL_Rect dest={body.x,body.y,tw,visible};
-      SDL_Rect previous;
-      SDL_RenderGetClipRect(g->ren,&previous);
-      SDL_RenderSetClipRect(g->ren,&body);
-      SDL_RenderCopy(g->ren,body_texture,&source,&dest);
-      SDL_RenderSetClipRect(g->ren,previous.w||previous.h?&previous:NULL);
-    }
+  int content_h=0;
+  const int title_gap=5,section_gap=14;
+  for(int i=0;i<HELP_SECTION_COUNT;i++){
+    section_y[i]=content_h;
+    title_texture[i]=render_text_wrapped(
+        g,g->font_body,tr(ui->language,titles[i]),th.title,text_w,
+        &title_w[i],&title_h[i]);
+    const char*body_text=i==HELP_SECTION_COUNT-1
+                              ?shortcut_text
+                              :tr(ui->language,bodies[i]);
+    body_texture[i]=render_text_wrapped(
+        g,g->font_body,body_text,th.dim,text_w,&body_w[i],&body_h[i]);
+    content_h+=title_h[i]+title_gap+body_h[i];
+    if(i+1<HELP_SECTION_COUNT)content_h+=section_gap;
   }
+
+  help_scroll_max_px=content_h>body.h?content_h-body.h:0;
+  help_scroll_set(help_scroll_px);
+  SDL_Rect previous;
+  SDL_RenderGetClipRect(g->ren,&previous);
+  SDL_RenderSetClipRect(g->ren,&body);
+  for(int i=0;i<HELP_SECTION_COUNT;i++){
+    int y=section_y[i];
+    help_draw_scrolled_texture(g,title_texture[i],body,y,title_w[i],
+                               title_h[i],help_scroll_px);
+    y+=title_h[i]+title_gap;
+    help_draw_scrolled_texture(g,body_texture[i],body,y,body_w[i],
+                               body_h[i],help_scroll_px);
+  }
+  SDL_RenderSetClipRect(g->ren,previous.w||previous.h?&previous:NULL);
 
   if(help_scroll_max_px>0){
     SDL_Rect rail={body.x+body.w-5,body.y,4,body.h};
     SDL_Color rail_color=th.btn;rail_color.a=150;
     draw_round_rect(g->ren,rail,2,rail_color);
-    int thumb_h=body.h*body.h/(thh>0?thh:body.h);
+    int thumb_h=body.h*body.h/(content_h>0?content_h:body.h);
     if(thumb_h<28)thumb_h=28;
     if(thumb_h>body.h)thumb_h=body.h;
     int travel=body.h-thumb_h;
-    int thumb_y=body.y+(help_scroll_max_px?help_scroll_px*travel/help_scroll_max_px:0);
-    draw_round_rect(g->ren,(SDL_Rect){rail.x,thumb_y,rail.w,thumb_h},2,th.sel_outline);
+    int thumb_y=body.y+(help_scroll_max_px
+        ?help_scroll_px*travel/help_scroll_max_px:0);
+    draw_round_rect(g->ren,(SDL_Rect){rail.x,thumb_y,rail.w,thumb_h},2,
+                    th.sel_outline);
   }
   draw_back_button(g,ui,th,info_keyboard_focus==INFO_FOCUS_BACK);
 }
