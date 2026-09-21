@@ -60,11 +60,15 @@ int main(void) {
   audio_set_fx_muted(true);
   assert(audio_fx_muted());
   assert(audio_fx_volume() == 80);
-  for (int effect = 0; effect < AUDIO_EFFECT_COUNT; ++effect)
-    audio_play_effect((AudioEffect)effect);
+  Mix_HaltChannel(-1);
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  assert(Mix_Playing(-1) == 0);
   audio_set_fx_muted(false);
   assert(!audio_fx_muted());
   assert(audio_fx_volume() == 80);
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  assert(Mix_Playing(-1) > 0);
+  Mix_HaltChannel(-1);
   for (int effect = 0; effect < AUDIO_EFFECT_COUNT; ++effect)
     audio_play_effect((AudioEffect)effect);
 

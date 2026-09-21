@@ -70,6 +70,18 @@ for r in audit:
             assert int(r["scroll_max"])>0,(r["file"],"compact Help must exercise overflow")
 for r in rows:
     assert r["file"] in by_name,r["file"]
+    audio_visible=int(r["audio_visible"])
+    audio_popup=int(r["audio_popup"])
+    audio_pressed=int(r["audio_pressed"])
+    assert audio_visible in (0,1) and audio_popup in (0,1) and audio_pressed in (0,1),r["file"]
+    if r["state"] in {"hint","pause","settings"}:
+        assert audio_visible==0,(r["file"],"covered surface exposes audio control")
+        assert audio_popup==0,(r["file"],"covered surface retained audio popup")
+        assert audio_pressed==0,(r["file"],"covered surface retained audio press")
+    if r["state"]=="audio-popup":
+        assert audio_visible==1,(r["file"],"audio popup control unexpectedly hidden")
+        assert audio_popup==1,(r["file"],"audio popup did not remain open")
+        assert audio_pressed==0,(r["file"],"audio popup retained pressed state")
     w,h=int(r["width"]),int(r["height"])
     fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
     assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
@@ -94,4 +106,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 114 diagnostic BMPs, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 114 diagnostic BMPs, covered-audio-control policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

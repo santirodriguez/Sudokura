@@ -261,6 +261,7 @@ static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
       return false;
     }
     if (result != GAME_GENERATION_EXHAUSTED) {
+      ui_audio_control_cancel_interaction();
       (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
                                      tr(ui->language, T_GENERATION_FAILED),
                                      tr(ui->language, T_PROFILE_IO_ERROR),
@@ -284,6 +285,7 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
     show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
     return false;
   }
+  ui_audio_control_cancel_interaction();
   (void)SDL_ShowSimpleMessageBox(
       SDL_MESSAGEBOX_WARNING, tr(ui->language, T_GENERATION_FAILED),
       tr(ui->language, T_GENERATION_FAILED_BODY), g->win);
@@ -374,10 +376,12 @@ static void open_about_url(Gfx *g, UI *ui, int index) {
   const char *url = about_url(index);
   if (!url) return;
   ui_button_click();
-  if (url_launcher_open(url) != URL_LAUNCH_OK)
+  if (url_launcher_open(url) != URL_LAUNCH_OK) {
+    ui_audio_control_cancel_interaction();
     (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
                                    tr(ui->language, T_ABOUT),
                                    tr(ui->language, T_LINK_ERROR), g->win);
+  }
 }
 
 static void info_focus_reset(void){info_keyboard_focus=INFO_FOCUS_BACK;help_scroll_reset();}
@@ -1013,7 +1017,7 @@ int main(int argc, char **argv) {
       }
       FILE*manifest=fopen(manifest_path,"wb");
       if(!manifest){fprintf(stderr,"cannot create UI review manifest\n");app_shutdown(&g);return 1;}
-      fprintf(manifest,"file\twidth\theight\tstate\tlanguage\ttheme\tfocus\tfx\tfy\tfw\tfh\tscroll\tscroll_max\n");
+      fprintf(manifest,"file\twidth\theight\tstate\tlanguage\ttheme\tfocus\tfx\tfy\tfw\tfh\tscroll\tscroll_max\taudio_visible\taudio_popup\taudio_pressed\n");
 
       Game review_base=game;
       Persistence review_persistence;memset(&review_persistence,0,sizeof(review_persistence));
@@ -1037,6 +1041,7 @@ int main(int argc, char **argv) {
           ui.dark_theme=((n*REVIEW_STATE_COUNT+state)&1)==0;
           ui.reduced_motion=true;
           settings_open=false;settings_slider_drag=SETTINGS_DRAG_NONE;
+          ui_audio_control_cancel_interaction();
           help_scroll_reset();
           info_keyboard_focus=INFO_FOCUS_BACK;result_keyboard_focus=0;
           pause_keyboard_focus=0;hint_keyboard_focus=HINT_FOCUS_PRIMARY;
@@ -1101,17 +1106,25 @@ int main(int argc, char **argv) {
               focus_rect=sdl_rect(geometry.about_links[0]);break;
           }
 
+          if(state==REVIEW_HINT||state==REVIEW_PAUSE||state==REVIEW_SETTINGS){
+            audio_control_popup_open=true;
+            audio_control_pressed=true;
+            audio_control_pressed_at_ms=now_ms();
+          }
           app_render_ui(&g,&game,&ui);
+          int audio_visible=ui_audio_control_available(&ui)?1:0;
           char filename[192],path[PATH_MAX];
           snprintf(filename,sizeof(filename),"%dx%d-%s-%s-%s.bmp",g.width,g.height,
                    state_names[state],language_name(ui.language),ui.dark_theme?"dark":"light");
           if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
             fclose(manifest);app_shutdown(&g);return 1;
           }
-          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
                   filename,g.width,g.height,state_names[state],language_name(ui.language),
                   ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
-                  focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
+                  focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px,
+                  audio_visible,audio_control_popup_open?1:0,
+                  audio_control_pressed?1:0);
         }
       }
 
@@ -1142,10 +1155,12 @@ int main(int argc, char **argv) {
                 fclose(manifest);app_shutdown(&g);return 1;
               }
               fprintf(manifest,
-                      "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                      "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
                       filename,g.width,g.height,audit_state,language_name(ui.language),
                       ui.dark_theme?"dark":"light","back",focus_rect.x,focus_rect.y,
-                      focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
+                      focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px,
+                      ui_audio_control_available(&ui)?1:0,
+                      audio_control_popup_open?1:0,audio_control_pressed?1:0);
             }
 
       const int audit_w=1024,audit_h=768;
@@ -1158,7 +1173,7 @@ int main(int argc, char **argv) {
             if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
             game=review_base;app_state_init(&ui);set_mode_params(&ui);
             ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
-            ui.session_open=true;settings_open=false;audio_control_popup_open=false;
+            ui.session_open=true;settings_open=false;ui_audio_control_cancel_interaction();
             help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;
             const char*focus="back";SDL_Rect focus_rect={0,0,0,0};
             const char*audit_state=semantic_states[a];
@@ -1166,6 +1181,8 @@ int main(int argc, char **argv) {
             if(!strcmp(audit_state,"settings")){
               ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;
               ui.pause_reasons=PAUSE_MODAL;settings_open=true;
+              audio_control_popup_open=true;audio_control_pressed=true;
+              audio_control_pressed_at_ms=now_ms();
               settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
               SettingsPanelLayout p=ui_settings_panel_layout(&g);
               focus="reduced-motion";
@@ -1195,11 +1212,24 @@ int main(int argc, char **argv) {
               fclose(manifest);app_shutdown(&g);return 1;
             }
             fprintf(manifest,
-                    "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                    "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
                     filename,g.width,g.height,audit_state,language_name(ui.language),
                     ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
-                    focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
+                    focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px,
+                    ui_audio_control_available(&ui)?1:0,
+                    audio_control_popup_open?1:0,audio_control_pressed?1:0);
           }
+      UI audio_policy_probe;
+      app_state_init(&audio_policy_probe);
+      audio_policy_probe.screen=SCR_TITLE;
+      audio_policy_probe.generating=true;
+      audio_control_popup_open=true;audio_control_pressed=true;
+      audio_control_pressed_at_ms=now_ms();
+      if(ui_audio_control_reconcile(&audio_policy_probe)||
+         audio_control_popup_open||audio_control_pressed){
+        fprintf(stderr,"audio control generation-overlay policy regression\n");
+        fclose(manifest);app_shutdown(&g);return 1;
+      }
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
@@ -1223,6 +1253,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     if (!persistence_recover_previous(&persistence)) {
+      ui_audio_control_cancel_interaction();
       (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
                                      tr(ui.language, T_STORAGE_ERROR),
                                      tr(ui.language, T_PROFILE_IO_ERROR),
@@ -1236,6 +1267,7 @@ int main(int argc, char **argv) {
   const char *startup_error =
       persistence_startup_error(&persistence, ui.language);
   if (startup_error) {
+    ui_audio_control_cancel_interaction();
     (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
                                    tr(ui.language, T_STORAGE_ERROR),
                                    startup_error, g.win);

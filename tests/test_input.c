@@ -82,15 +82,25 @@ int main(void) {
   assert(input_play_shortcut(SDLK_z, KMOD_NONE) == INPUT_PLAY_NONE);
   assert(input_play_shortcut(SDLK_z, other) == INPUT_PLAY_NONE);
 
-  assert(input_audio_shortcut(SDLK_v, KMOD_NONE, false) ==
+  assert(input_audio_shortcut(SDLK_v, KMOD_NONE, false, true) ==
          INPUT_AUDIO_MASTER);
-  assert(input_audio_shortcut(SDLK_v, KMOD_SHIFT, false) ==
+  assert(input_audio_shortcut(SDLK_v, KMOD_SHIFT, false, true) ==
          INPUT_AUDIO_POPUP);
-  assert(input_audio_shortcut(SDLK_m, KMOD_NONE, false) == INPUT_AUDIO_NONE);
-  assert(input_audio_shortcut(SDLK_m, KMOD_NONE, true) == INPUT_AUDIO_MUSIC);
-  assert(input_audio_shortcut(SDLK_f, KMOD_NONE, true) == INPUT_AUDIO_FX);
-  assert(input_audio_shortcut(SDLK_ESCAPE, KMOD_NONE, true) ==
+  assert(input_audio_shortcut(SDLK_m, KMOD_NONE, false, true) == INPUT_AUDIO_NONE);
+  assert(input_audio_shortcut(SDLK_m, KMOD_NONE, true, true) == INPUT_AUDIO_MUSIC);
+  assert(input_audio_shortcut(SDLK_f, KMOD_NONE, true, true) == INPUT_AUDIO_FX);
+  assert(input_audio_shortcut(SDLK_ESCAPE, KMOD_NONE, true, true) ==
          INPUT_AUDIO_CLOSE);
+  assert(input_audio_shortcut(SDLK_v, KMOD_NONE, false, false) ==
+         INPUT_AUDIO_MASTER);
+  assert(input_audio_shortcut(SDLK_v, KMOD_SHIFT, false, false) ==
+         INPUT_AUDIO_NONE);
+  assert(input_audio_shortcut(SDLK_m, KMOD_NONE, true, false) ==
+         INPUT_AUDIO_NONE);
+  assert(input_audio_shortcut(SDLK_f, KMOD_NONE, true, false) ==
+         INPUT_AUDIO_NONE);
+  assert(input_audio_shortcut(SDLK_ESCAPE, KMOD_NONE, true, false) ==
+         INPUT_AUDIO_NONE);
   assert(!input_audio_press_is_long(UINT64_C(0)));
   assert(!input_audio_press_is_long(UINT64_C(499)));
   assert(input_audio_press_is_long(UINT64_C(500)));

@@ -60,6 +60,19 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     check(rows, False, "reject out-of-bounds focus")
 
     rows = [dict(row) for row in original]
+    row = next(row for row in rows if row["state"] == "hint")
+    row["audio_visible"] = "1"
+    check(rows, False, "reject visible audio control over Hint")
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows if row["state"] == "pause")
+    row["audio_popup"] = "1"
+    check(rows, False, "reject stale audio popup over Pause")
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows if row["state"] == "settings")
+    row["audio_pressed"] = "1"
+    check(rows, False, "reject stale audio press over Settings")
+
+    rows = [dict(row) for row in original]
     row = next(row for row in rows if row["state"] == "save-error")
     frame = root / row["file"]
     frame.unlink()

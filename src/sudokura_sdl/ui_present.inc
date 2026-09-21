@@ -504,6 +504,26 @@ static bool audio_control_popup_open = false;
 static bool audio_control_pressed = false;
 static uint64_t audio_control_pressed_at_ms = 0;
 
+static void ui_audio_control_cancel_interaction(void) {
+  audio_control_popup_open = false;
+  audio_control_pressed = false;
+  audio_control_pressed_at_ms = 0;
+}
+
+static bool ui_audio_control_available(const UI *ui) {
+  if (!ui) return false;
+  if (ui->hint_preview_active || ui->generating) return false;
+  if (settings_open || ui->screen == APP_SCREEN_SETTINGS) return false;
+  if ((ui->pause_reasons & PAUSE_USER_VISIBLE) != 0) return false;
+  return true;
+}
+
+static bool ui_audio_control_reconcile(const UI *ui) {
+  bool available = ui_audio_control_available(ui);
+  if (!available) ui_audio_control_cancel_interaction();
+  return available;
+}
+
 typedef struct {
   SDL_Rect banner;
   SDL_Rect message;
@@ -1338,7 +1358,7 @@ static void rc2_draw_speaker_icon(Gfx *gfx, Theme theme, SDL_Rect rect,
 }
 
 static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
-  if (!gfx || !ui) return;
+  if (!gfx || !ui || !ui_audio_control_reconcile(ui)) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   AudioControlGeometry geo = ui_audio_control_geometry(gfx, ui);
   SDL_Rect button = sdl_rect(geo.button);

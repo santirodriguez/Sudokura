@@ -36,8 +36,8 @@ static void audio_toggle_music_mute(Persistence *persistence) {
 
 static void audio_toggle_fx_mute(Persistence *persistence) {
   bool muted = !audio_fx_muted();
-  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
   audio_set_fx_muted(muted);
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
   audio_store_preferences(persistence);
 }
 

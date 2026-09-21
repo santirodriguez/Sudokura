@@ -16,6 +16,8 @@
 #include "input.h"
 #include "progress.h"
 
+static void ui_audio_control_cancel_interaction(void);
+
 #include "src/sudokura_sdl/01_runtime.inc"
 #include "src/sudokura_sdl/02_font_discovery.inc"
 #include "src/sudokura_sdl/03_board_render.inc"
