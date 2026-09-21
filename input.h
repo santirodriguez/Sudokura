@@ -38,4 +38,17 @@ typedef enum {
 InputPlayShortcut input_play_shortcut(SDL_Keycode key, SDL_Keymod modifiers);
 const char *input_primary_modifier_label(void);
 
+typedef enum {
+  INPUT_AUDIO_NONE = 0,
+  INPUT_AUDIO_MASTER,
+  INPUT_AUDIO_POPUP,
+  INPUT_AUDIO_MUSIC,
+  INPUT_AUDIO_FX,
+  INPUT_AUDIO_CLOSE
+} InputAudioShortcut;
+
+InputAudioShortcut input_audio_shortcut(SDL_Keycode key, SDL_Keymod modifiers,
+                                        bool popup_open);
+bool input_audio_press_is_long(Uint64 held_ms);
+
 #endif
