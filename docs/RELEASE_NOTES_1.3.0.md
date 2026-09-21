@@ -49,12 +49,13 @@ The macOS 15+ arm64 DMG is ad-hoc integrity signed only, **not** Developer ID si
 ## Validation
 The accepted functional candidate passed warnings-as-errors builds/tests on Linux, Windows, and macOS; Linux sanitizer coverage; generator quality/calibration; package audits; Ubuntu 24.04/Fedora 44 runtime probes; a 114-frame UI review; final desktop benchmark evidence; and real Windows/Linux manual acceptance.
 
-Diagnostic UI renders are validation artifacts only and are not public artwork.
+The release documentation includes a small curated screenshot gallery alongside the canonical user-supplied image.
 
-## Public screenshot
-The canonical v1.3.0 screenshot specification is approved: a **real packaged v1.3.0 build**, 1366×768 desktop layout, dark theme, English, Classic / Medium in progress, with a representative partially played board and the global speaker visible. It contains only the Sudokura window and no personal information. The final PNG is incorporated separately as `docs/images/sudokura-v1.3.0.png`.
+## Screenshots
 
-Do not substitute `--render-screenshots` diagnostic output for this image.
+<p align="center"><a href="images/sudokura-v1.3.0.png"><img src="images/sudokura-v1.3.0.png" alt="Sudokura v1.3.0" width="900"></a></p>
+
+The canonical v1.3.0 screenshot is user-supplied. Additional screenshots cover Home/Continue, Settings, audio controls, compact Notes, and compact Help; see [`docs/images/README.md`](images/README.md).
 
 ## Credits
 Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from OpenGameArt under CC0. Exact mapping: [`assets/audio/README.md`](../assets/audio/README.md).
