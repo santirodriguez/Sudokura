@@ -1,16 +1,44 @@
 #include "audio.h"
 
-static Persistence *audio_persistence = NULL;
-static Gfx *audio_gfx = NULL;
-static UI *audio_ui = NULL;
 static Screen audio_previous_screen = SCR_TITLE;
 static Result audio_previous_result = RES_NONE;
 static bool audio_ui_seen = false;
 
 static void audio_apply_preferences(Persistence *persistence) {
   if (!persistence) return;
+  /* Apply the complete persisted mix before any screen transition can start
+     playback. The first app tick selects the context and may then play. */
+  audio_set_music_volume(persistence->preferences.music_volume);
+  audio_set_fx_volume(persistence->preferences.fx_volume);
+  audio_set_music_muted(persistence->preferences.music_muted);
+  audio_set_fx_muted(persistence->preferences.fx_muted);
   audio_set_enabled(persistence->preferences.audio_enabled);
-  audio_set_context(AUDIO_CONTEXT_MAIN);
+}
+
+static void audio_store_preferences(Persistence *persistence) {
+  if (!persistence) return;
+  persistence->preferences.audio_enabled = audio_is_enabled();
+  persistence->preferences.music_muted = audio_music_muted();
+  persistence->preferences.fx_muted = audio_fx_muted();
+  if (!persistence->enabled) return;
+  if (audio_ui)
+    (void)save_preferences(persistence, audio_ui);
+  else
+    persistence_stage_preferences(persistence);
+}
+
+static void audio_toggle_music_mute(Persistence *persistence) {
+  bool muted = !audio_music_muted();
+  audio_set_music_muted(muted);
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_store_preferences(persistence);
+}
+
+static void audio_toggle_fx_mute(Persistence *persistence) {
+  bool muted = !audio_fx_muted();
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
+  audio_set_fx_muted(muted);
+  audio_store_preferences(persistence);
 }
 
 static void audio_toggle(Persistence *persistence) {
@@ -18,11 +46,7 @@ static void audio_toggle(Persistence *persistence) {
   if (enabled) audio_set_enabled(true);
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (!enabled) audio_set_enabled(false);
-  if (!persistence) return;
-  persistence->preferences.audio_enabled = enabled;
-  if (persistence->enabled)
-    (void)preferences_save_file(persistence->preferences_path,
-                                &persistence->preferences);
+  audio_store_preferences(persistence);
 }
 
 static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
@@ -32,7 +56,8 @@ static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
 
   bool gameplay_context =
       ui->screen == SCR_PLAY ||
-      ((ui->screen == SCR_HELP || ui->screen == SCR_ABOUT) &&
+      ((ui->screen == SCR_HELP || ui->screen == SCR_ABOUT ||
+        ui->screen == APP_SCREEN_SETTINGS) &&
        ui->prev_screen == SCR_PLAY);
   if (!gameplay_context || !game || ui->result != RES_NONE)
     return AUDIO_CONTEXT_MAIN;
@@ -81,8 +106,21 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
 static void persistence_init(Persistence *persistence) {
   persistence_init_base(persistence);
   audio_persistence = persistence;
-  ui_audio_levels_load();
   audio_apply_preferences(persistence);
+}
+
+static bool app_rebuild_renderer_resources(Gfx *gfx) {
+  if (!gfx || !gfx->ren) return false;
+  text_cache_clear();
+  if (!app_rebuild_base_textures(gfx)) return false;
+  if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
+  app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
+                                       sudokura_icon_width,
+                                       sudokura_icon_height);
+  if (!app_icon_texture)
+    fprintf(stderr, "compact icon texture: %s\n", SDL_GetError());
+  gfx->dirty = true;
+  return app_icon_texture != NULL;
 }
 
 static bool app_init(Gfx *gfx, const char *font_cli) {
@@ -99,22 +137,28 @@ static bool app_init(Gfx *gfx, const char *font_cli) {
 
 static void app_shutdown(Gfx *gfx) {
   audio_shutdown();
+  if (audio_persistence)
+    store_writer_lock_release(&audio_persistence->writer_lock);
   if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
   app_icon_texture = NULL;
   audio_persistence = NULL;
   audio_gfx = NULL;
   audio_ui = NULL;
   audio_ui_seen = false;
-  audio_settings_open = false;
+  settings_open = false;
   ui_home_cue_requested = false;
   app_shutdown_base(gfx);
 }
 
-static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
+static void app_tick(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_ui = ui;
   audio_sync_ui(game, ui);
-  (void)app_frame_base;
-  app_render(gfx, game, ui);
+}
+
+static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
+  app_tick(gfx,game,ui);
+  app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);
+  gfx->dirty=false;
 }

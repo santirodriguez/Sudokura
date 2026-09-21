@@ -1,4 +1,5 @@
 #include "game.h"
+#include "human.h"
 
 #include <string.h>
 
@@ -263,12 +264,12 @@ static bool make_solution(GameRng *rng, int solution[81]) {
   return fill_random_solution(rng, solution);
 }
 
-static int target_clues(GameDifficulty difficulty) {
+static int v2_target_clues(GameDifficulty difficulty) {
   static const int targets[DIFFICULTY_COUNT] = {44, 36, 30};
   return targets[difficulty];
 }
 
-static bool difficulty_clues_ok(GameDifficulty difficulty, int clues) {
+static bool v2_difficulty_clues_ok(GameDifficulty difficulty, int clues) {
   if (difficulty == DIFFICULTY_EASY) {
     return clues >= 42 && clues <= 46;
   }
@@ -278,10 +279,10 @@ static bool difficulty_clues_ok(GameDifficulty difficulty, int clues) {
   return clues >= 28 && clues <= 32;
 }
 
-static bool generate_candidate(Game *game, uint64_t internal_seed,
-                               GameDifficulty difficulty) {
+static bool generate_candidate_v2(Game *game, uint64_t internal_seed,
+                                  GameDifficulty difficulty) {
   GameRng rng = {mix64(internal_seed ^
-                       ((uint64_t)SUDOKURA_GENERATOR_REVISION << 56) ^
+                       ((uint64_t)SUDOKURA_GENERATOR_REVISION_LEGACY << 56) ^
                        ((uint64_t)difficulty << 48))};
   if (!make_solution(&rng, game->solution)) {
     return false;
@@ -289,13 +290,11 @@ static bool generate_candidate(Game *game, uint64_t internal_seed,
   memcpy(game->puzzle, game->solution, sizeof(game->puzzle));
 
   int positions[81];
-  for (int i = 0; i < 81; ++i) {
-    positions[i] = i;
-  }
+  for (int i = 0; i < 81; ++i) positions[i] = i;
   shuffle(&rng, positions, 81);
 
   int clues = 81;
-  int target = target_clues(difficulty);
+  int target = v2_target_clues(difficulty);
   for (int i = 0; i < 81 && clues > target; ++i) {
     int index = positions[i];
     int previous = game->puzzle[index];
@@ -306,43 +305,209 @@ static bool generate_candidate(Game *game, uint64_t internal_seed,
       game->puzzle[index] = previous;
     }
   }
-  return difficulty_clues_ok(difficulty, clues);
+  return v2_difficulty_clues_ok(difficulty, clues);
 }
 
-void game_new_difficulty(Game *game, uint64_t seed,
-                         GameDifficulty difficulty) {
-  if (!game) {
-    return;
-  }
-  if (!valid_difficulty(difficulty)) {
-    difficulty = DIFFICULTY_MEDIUM;
-  }
-
-  memset(game, 0, sizeof(*game));
+static void finalize_generated_game(Game *game, uint64_t seed,
+                                    GameDifficulty difficulty,
+                                    uint32_t revision, int score) {
   game->seed = seed;
-  game->generator_revision = SUDOKURA_GENERATOR_REVISION;
+  game->generator_revision = revision;
   game->difficulty = difficulty;
-
-  for (uint64_t attempt = 0;; ++attempt) {
-    uint64_t attempt_seed =
-        mix64(seed ^ (UINT64_C(0x9e3779b97f4a7c15) *
-                      (attempt + UINT64_C(1))));
-    if (generate_candidate(game, attempt_seed, difficulty)) {
-      break;
-    }
-  }
-
   memcpy(game->initial, game->puzzle, sizeof(game->initial));
   for (int i = 0; i < 81; ++i) {
     game->fixed[i] = (unsigned char)(game->initial[i] != 0);
     game->hinted[i] = 0;
     game->notes[i] = 0;
   }
-  game->difficulty_score = game_difficulty_score(game->initial);
+  game->difficulty_score = score;
 }
 
-void game_new(Game *game, uint64_t seed) {
-  game_new_difficulty(game, seed, DIFFICULTY_MEDIUM);
+static bool generate_revision2(Game *out, uint64_t seed,
+                               GameDifficulty difficulty) {
+  enum { LEGACY_MAX_ATTEMPTS = 1000000 };
+  Game candidate;
+  memset(&candidate, 0, sizeof(candidate));
+  for (uint64_t attempt = 0; attempt < LEGACY_MAX_ATTEMPTS; ++attempt) {
+    uint64_t attempt_seed =
+        mix64(seed ^ (UINT64_C(0x9e3779b97f4a7c15) *
+                      (attempt + UINT64_C(1))));
+    if (generate_candidate_v2(&candidate, attempt_seed, difficulty)) {
+      finalize_generated_game(&candidate, seed, difficulty,
+                              SUDOKURA_GENERATOR_REVISION_LEGACY,
+                              game_difficulty_score(candidate.puzzle));
+      *out = candidate;
+      return true;
+    }
+  }
+  return false;
+}
+
+static int v3_min_clues(GameDifficulty difficulty) {
+  static const int minimum[DIFFICULTY_COUNT] = {40, 30, 22};
+  return minimum[difficulty];
+}
+
+static int v3_max_clues(GameDifficulty difficulty) {
+  /* These are search bounds only. Human technique requirements define the
+     public difficulty label. Medium may legitimately need a locked candidate
+     before it reaches the legacy-style mid-30s clue count. */
+  static const int maximum[DIFFICULTY_COUNT] = {47, 45, 32};
+  return maximum[difficulty];
+}
+
+static HumanRating rating_for_difficulty(GameDifficulty difficulty) {
+  switch (difficulty) {
+    case DIFFICULTY_EASY: return HUMAN_RATING_EASY;
+    case DIFFICULTY_MEDIUM: return HUMAN_RATING_MEDIUM;
+    case DIFFICULTY_HARD: return HUMAN_RATING_HARD;
+    default: return HUMAN_RATING_UNSUPPORTED;
+  }
+}
+
+static int human_difficulty_score(const HumanEvaluation *evaluation) {
+  if (!evaluation || !evaluation->solved ||
+      evaluation->rating == HUMAN_RATING_UNSUPPORTED)
+    return -1;
+  return (int)evaluation->rating * 10000 +
+         (int)evaluation->max_technique * 1000 +
+         evaluation->total_steps * 10 + evaluation->elimination_steps;
+}
+
+typedef enum {
+  V3_CANDIDATE_REJECT = 0,
+  V3_CANDIDATE_ACCEPT,
+  V3_CANDIDATE_CANCELLED
+} V3CandidateResult;
+
+static bool generation_should_continue(const GameGenerationControl *control,
+                                       unsigned attempt,
+                                       unsigned max_attempts) {
+  return !control || !control->should_continue ||
+         control->should_continue(control->userdata, attempt, max_attempts);
+}
+
+static V3CandidateResult generate_candidate_v3(
+    Game *candidate, uint64_t internal_seed, GameDifficulty difficulty,
+    const GameGenerationControl *control, unsigned attempt,
+    unsigned max_attempts, HumanEvaluation *accepted_evaluation) {
+  GameRng rng = {mix64(internal_seed ^
+                       ((uint64_t)SUDOKURA_GENERATOR_REVISION << 56) ^
+                       ((uint64_t)difficulty << 48))};
+  if (!make_solution(&rng, candidate->solution)) return V3_CANDIDATE_REJECT;
+  memcpy(candidate->puzzle, candidate->solution, sizeof(candidate->puzzle));
+
+  int positions[81];
+  for (int i = 0; i < 81; ++i) positions[i] = i;
+  shuffle(&rng, positions, 81);
+
+  const int minimum = v3_min_clues(difficulty);
+  const int maximum = v3_max_clues(difficulty);
+  const HumanRating wanted = rating_for_difficulty(difficulty);
+  int clues = 81;
+
+  for (int i = 0; i < 81 && clues > minimum; ++i) {
+    if ((i % 6) == 0 &&
+        !generation_should_continue(control, attempt, max_attempts))
+      return V3_CANDIDATE_CANCELLED;
+
+    int index = positions[i];
+    int previous = candidate->puzzle[index];
+    candidate->puzzle[index] = 0;
+    if (game_solution_count(candidate->puzzle, 2) != 1) {
+      candidate->puzzle[index] = previous;
+      continue;
+    }
+    --clues;
+    if (clues > maximum) continue;
+
+    HumanEvaluation evaluation;
+    if (!human_evaluate(candidate->puzzle, &evaluation) || !evaluation.solved ||
+        evaluation.rating != wanted)
+      continue;
+
+    if (difficulty == DIFFICULTY_MEDIUM &&
+        evaluation.technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] < 1)
+      continue;
+    if (difficulty == DIFFICULTY_HARD &&
+        (evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] +
+         evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
+         evaluation.technique_steps[HUMAN_TECHNIQUE_X_WING]) < 1)
+      continue;
+
+    if (accepted_evaluation) *accepted_evaluation = evaluation;
+    return V3_CANDIDATE_ACCEPT;
+  }
+  return V3_CANDIDATE_REJECT;
+}
+
+bool game_generator_revision_supported(uint32_t revision) {
+  return revision == SUDOKURA_GENERATOR_REVISION_LEGACY ||
+         revision == SUDOKURA_GENERATOR_REVISION;
+}
+
+unsigned game_generation_attempt_budget(GameDifficulty difficulty) {
+  switch (difficulty) {
+    case DIFFICULTY_EASY: return 64u;
+    case DIFFICULTY_MEDIUM: return 256u;
+    case DIFFICULTY_HARD: return 128u;
+    default: return 0u;
+  }
+}
+
+GameGenerationResult game_generate_difficulty(
+    Game *game, uint64_t seed, GameDifficulty difficulty, uint32_t revision,
+    const GameGenerationControl *control) {
+  if (!game || !valid_difficulty(difficulty) ||
+      !game_generator_revision_supported(revision))
+    return GAME_GENERATION_INVALID;
+
+  if (revision == SUDOKURA_GENERATOR_REVISION_LEGACY)
+    return generate_revision2(game, seed, difficulty) ? GAME_GENERATION_OK
+                                                      : GAME_GENERATION_INVALID;
+
+  const unsigned max_attempts = game_generation_attempt_budget(difficulty);
+  for (unsigned attempt = 0; attempt < max_attempts; ++attempt) {
+    if (!generation_should_continue(control, attempt, max_attempts))
+      return GAME_GENERATION_CANCELLED;
+
+    Game candidate;
+    HumanEvaluation evaluation;
+    memset(&candidate, 0, sizeof(candidate));
+    memset(&evaluation, 0, sizeof(evaluation));
+    uint64_t attempt_seed =
+        mix64(seed ^ (UINT64_C(0xd1b54a32d192ed03) *
+                      ((uint64_t)attempt + UINT64_C(1))));
+    V3CandidateResult result =
+        generate_candidate_v3(&candidate, attempt_seed, difficulty, control,
+                              attempt, max_attempts, &evaluation);
+    if (result == V3_CANDIDATE_CANCELLED)
+      return GAME_GENERATION_CANCELLED;
+    if (result != V3_CANDIDATE_ACCEPT) continue;
+
+    finalize_generated_game(&candidate, seed, difficulty, revision,
+                            human_difficulty_score(&evaluation));
+    *game = candidate;
+    return GAME_GENERATION_OK;
+  }
+  return GAME_GENERATION_EXHAUSTED;
+}
+
+bool game_new_difficulty_revision(Game *game, uint64_t seed,
+                                  GameDifficulty difficulty,
+                                  uint32_t revision) {
+  return game_generate_difficulty(game, seed, difficulty, revision, NULL) ==
+         GAME_GENERATION_OK;
+}
+
+bool game_new_difficulty(Game *game, uint64_t seed,
+                         GameDifficulty difficulty) {
+  return game_new_difficulty_revision(game, seed, difficulty,
+                                      SUDOKURA_GENERATOR_REVISION);
+}
+
+bool game_new(Game *game, uint64_t seed) {
+  return game_new_difficulty(game, seed, DIFFICULTY_MEDIUM);
 }
 
 static bool leap_year(int year) {
@@ -359,25 +524,35 @@ static bool valid_date(int year, int month, int day) {
   return day >= 1 && day <= maximum;
 }
 
-bool game_daily_seed(int year, int month, int day, uint64_t *seed_out) {
-  if (!seed_out || !valid_date(year, month, day)) {
+bool game_daily_seed_revision(int year, int month, int day, uint32_t revision,
+                              uint64_t *seed_out) {
+  if (!seed_out || !valid_date(year, month, day) ||
+      !game_generator_revision_supported(revision))
     return false;
-  }
   uint64_t date =
       (uint64_t)year * 10000u + (uint64_t)month * 100u + (uint64_t)day;
   *seed_out =
       mix64(date ^ UINT64_C(0x5355444f4b555241) ^
-            ((uint64_t)SUDOKURA_GENERATOR_REVISION << 32));
+            ((uint64_t)revision << 32));
   return true;
 }
 
-bool game_new_daily(Game *game, int year, int month, int day) {
+bool game_daily_seed(int year, int month, int day, uint64_t *seed_out) {
+  return game_daily_seed_revision(year, month, day,
+                                  SUDOKURA_GENERATOR_REVISION, seed_out);
+}
+
+bool game_new_daily_revision(Game *game, int year, int month, int day,
+                             uint32_t revision) {
   uint64_t seed = 0;
-  if (!game || !game_daily_seed(year, month, day, &seed)) {
+  if (!game || !game_daily_seed_revision(year, month, day, revision, &seed))
     return false;
-  }
-  game_new_difficulty(game, seed, DIFFICULTY_MEDIUM);
-  return true;
+  return game_new_difficulty_revision(game, seed, DIFFICULTY_MEDIUM, revision);
+}
+
+bool game_new_daily(Game *game, int year, int month, int day) {
+  return game_new_daily_revision(game, year, month, day,
+                                 SUDOKURA_GENERATOR_REVISION);
 }
 
 void game_restart(Game *game) {
@@ -470,56 +645,202 @@ bool game_toggle_note(Game *game, int row, int column, int value) {
   return true;
 }
 
-GameInputResult game_apply_input(Game *game, int row, int column, int value,
-                                 bool notes_mode, bool strict) {
-  if (!game || !valid_cell(row, column) || value < 0 || value > 9) {
+static int collect_peer_indices(int row, int column, int peers[20]) {
+  bool seen[SUDOKU_CELLS] = {false};
+  int count = 0;
+  int target = IDX(row, column);
+  seen[target] = true;
+  for (int c = 0; c < 9; ++c) {
+    int index = IDX(row, c);
+    if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+  }
+  for (int r = 0; r < 9; ++r) {
+    int index = IDX(r, column);
+    if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+  }
+  int box_row = row - row % 3;
+  int box_column = column - column % 3;
+  for (int r = box_row; r < box_row + 3; ++r) {
+    for (int c = box_column; c < box_column + 3; ++c) {
+      int index = IDX(r, c);
+      if (!seen[index]) { seen[index] = true; peers[count++] = index; }
+    }
+  }
+  return count;
+}
+
+bool game_edit_valid(const GameEdit *edit) {
+  const uint16_t valid_notes = UINT16_C(0x03fe);
+  if (!edit || edit->row >= 9 || edit->column >= 9 ||
+      edit->before_value > 9 || edit->after_value > 9 ||
+      (edit->before_notes & (uint16_t)~valid_notes) != 0 ||
+      (edit->after_notes & (uint16_t)~valid_notes) != 0 ||
+      edit->before_hinted > 1 || edit->after_hinted > 1 ||
+      edit->peer_note_value > 9)
+    return false;
+  int peers[20];
+  int peer_count = collect_peer_indices(edit->row, edit->column, peers);
+  uint32_t valid_mask = (UINT32_C(1) << peer_count) - UINT32_C(1);
+  if ((edit->peer_notes_removed & ~valid_mask) != 0) return false;
+  if (edit->peer_notes_removed != 0 &&
+      (edit->peer_note_value < 1 || edit->peer_note_value > 9))
+    return false;
+  return true;
+}
+
+static GameInputResult game_apply_input_core(Game *game, int row, int column,
+                                             int value, bool notes_mode,
+                                             bool strict) {
+  if (!game || !valid_cell(row, column) || value < 0 || value > 9)
     return GAME_INPUT_NO_CHANGE;
-  }
   int index = IDX(row, column);
-  if (game_cell_locked(game, row, column)) {
-    return GAME_INPUT_LOCKED;
-  }
+  if (game_cell_locked(game, row, column)) return GAME_INPUT_LOCKED;
 
   if (notes_mode) {
-    if (value < 1 || value > 9 || game->puzzle[index]) {
+    if (value < 1 || value > 9 || game->puzzle[index])
       return GAME_INPUT_NO_CHANGE;
-    }
     bool had_note = (game->notes[index] & (1u << value)) != 0;
-    if (!game_toggle_note(game, row, column, value)) {
+    if (!game_toggle_note(game, row, column, value))
       return GAME_INPUT_NO_CHANGE;
-    }
     return had_note ? GAME_INPUT_NOTE_REMOVED : GAME_INPUT_NOTE_ADDED;
   }
 
   if (value == 0) {
-    if (game->puzzle[index] == 0 && game->notes[index] == 0) {
+    if (game->puzzle[index] == 0 && game->notes[index] == 0)
       return GAME_INPUT_NO_CHANGE;
-    }
     return game_place(game, row, column, 0, false) ? GAME_INPUT_CLEARED
                                                    : GAME_INPUT_NO_CHANGE;
   }
 
-  if (strict && !allowed(game->puzzle, row, column, value)) {
+  if (game->puzzle[index] == value) return GAME_INPUT_NO_CHANGE;
+  if (strict && !allowed(game->puzzle, row, column, value))
     return GAME_INPUT_STRICT_REJECTED;
-  }
-  if (!game_place(game, row, column, value, false)) {
+  if (!game_place(game, row, column, value, false))
     return GAME_INPUT_NO_CHANGE;
-  }
   return value == game->solution[index] ? GAME_INPUT_CORRECT : GAME_INPUT_WRONG;
 }
 
-bool game_hint(Game *game, int row, int column) {
-  if (!game || !valid_cell(row, column)) {
-    return false;
+GameInputResult game_apply_input(Game *game, int row, int column, int value,
+                                 bool notes_mode, bool strict) {
+  return game_apply_input_core(game, row, column, value, notes_mode, strict);
+}
+
+GameInputResult game_apply_input_recorded(Game *game, int row, int column,
+                                          int value, bool notes_mode,
+                                          bool strict, bool remove_peer_notes,
+                                          GameEdit *edit) {
+  if (edit) memset(edit, 0, sizeof(*edit));
+  if (!game || !valid_cell(row, column)) return GAME_INPUT_NO_CHANGE;
+  int index = IDX(row, column);
+  GameEdit staged = {
+      .row = (uint8_t)row,
+      .column = (uint8_t)column,
+      .before_value = (uint8_t)game->puzzle[index],
+      .before_notes = game->notes[index],
+      .before_hinted = game->hinted[index],
+  };
+
+  GameInputResult result =
+      game_apply_input_core(game, row, column, value, notes_mode, strict);
+  bool changed = result == GAME_INPUT_CORRECT || result == GAME_INPUT_WRONG ||
+                 result == GAME_INPUT_CLEARED ||
+                 result == GAME_INPUT_NOTE_ADDED ||
+                 result == GAME_INPUT_NOTE_REMOVED;
+  if (!changed) return result;
+
+  staged.after_value = (uint8_t)game->puzzle[index];
+  staged.after_notes = game->notes[index];
+  staged.after_hinted = game->hinted[index];
+
+  if (remove_peer_notes && !notes_mode && value >= 1 && value <= 9 &&
+      (result == GAME_INPUT_CORRECT || result == GAME_INPUT_WRONG)) {
+    int peers[20];
+    int peer_count = collect_peer_indices(row, column, peers);
+    uint16_t bit = (uint16_t)(1u << value);
+    staged.peer_note_value = (uint8_t)value;
+    for (int p = 0; p < peer_count; ++p) {
+      int peer = peers[p];
+      if (game->puzzle[peer] == 0 && (game->notes[peer] & bit) != 0) {
+        game->notes[peer] &= (uint16_t)~bit;
+        staged.peer_notes_removed |= UINT32_C(1) << p;
+      }
+    }
   }
+
+  if (edit) *edit = staged;
+  return result;
+}
+
+bool game_apply_edit(Game *game, const GameEdit *edit, bool forward) {
+  if (!game || !game_edit_valid(edit)) return false;
+  int index = IDX(edit->row, edit->column);
+  if (game->fixed[index]) return false;
+
+  int expected_value = forward ? edit->before_value : edit->after_value;
+  uint16_t expected_notes = forward ? edit->before_notes : edit->after_notes;
+  unsigned char expected_hinted =
+      forward ? edit->before_hinted : edit->after_hinted;
+  if (game->puzzle[index] != expected_value ||
+      game->notes[index] != expected_notes ||
+      game->hinted[index] != expected_hinted)
+    return false;
+
+  int peers[20];
+  int peer_count = collect_peer_indices(edit->row, edit->column, peers);
+  uint16_t bit = edit->peer_note_value
+                     ? (uint16_t)(1u << edit->peer_note_value)
+                     : 0;
+  for (int p = 0; p < peer_count; ++p) {
+    if ((edit->peer_notes_removed & (UINT32_C(1) << p)) == 0) continue;
+    int peer = peers[p];
+    if (game->puzzle[peer] != 0 || game->fixed[peer] || game->hinted[peer])
+      return false;
+    bool has_note = (game->notes[peer] & bit) != 0;
+    if ((forward && !has_note) || (!forward && has_note)) return false;
+  }
+
+  game->puzzle[index] = forward ? edit->after_value : edit->before_value;
+  game->notes[index] = forward ? edit->after_notes : edit->before_notes;
+  game->hinted[index] = forward ? edit->after_hinted : edit->before_hinted;
+  for (int p = 0; p < peer_count; ++p) {
+    if ((edit->peer_notes_removed & (UINT32_C(1) << p)) == 0) continue;
+    int peer = peers[p];
+    if (forward)
+      game->notes[peer] &= (uint16_t)~bit;
+    else
+      game->notes[peer] |= bit;
+  }
+  return true;
+}
+
+bool game_hint(Game *game, int row, int column) {
+  if (!game || !valid_cell(row, column)) return false;
   int index = IDX(row, column);
   if (game_cell_locked(game, row, column) ||
-      game->puzzle[index] == game->solution[index]) {
+      game->puzzle[index] == game->solution[index])
     return false;
-  }
   game->puzzle[index] = game->solution[index];
   game->notes[index] = 0;
   game->hinted[index] = 1;
+  return true;
+}
+
+bool game_hint_recorded(Game *game, int row, int column, GameEdit *edit) {
+  if (edit) memset(edit, 0, sizeof(*edit));
+  if (!game || !valid_cell(row, column)) return false;
+  int index = IDX(row, column);
+  GameEdit staged = {
+      .row = (uint8_t)row,
+      .column = (uint8_t)column,
+      .before_value = (uint8_t)game->puzzle[index],
+      .before_notes = game->notes[index],
+      .before_hinted = game->hinted[index],
+  };
+  if (!game_hint(game, row, column)) return false;
+  staged.after_value = (uint8_t)game->puzzle[index];
+  staged.after_notes = game->notes[index];
+  staged.after_hinted = game->hinted[index];
+  if (edit) *edit = staged;
   return true;
 }
 
@@ -543,6 +864,16 @@ int game_conflict_count(const Game *game) {
   return count;
 }
 
+int game_wrong_entry_count(const Game *game) {
+  if (!game) return 0;
+  int count = 0;
+  for (int i = 0; i < 81; ++i)
+    if (!game->fixed[i] && game->puzzle[i] != 0 &&
+        game->puzzle[i] != game->solution[i])
+      ++count;
+  return count;
+}
+
 bool game_is_solved(const Game *game) {
   return game && game_board_valid(game->puzzle) &&
          memcmp(game->puzzle, game->solution, sizeof(game->puzzle)) == 0;
@@ -551,5 +882,5 @@ bool game_is_solved(const Game *game) {
 bool game_mode_lost(GameMode mode, int strikes, int strikes_max,
                     double elapsed, double limit) {
   return (mode == MODE_STRIKES && strikes >= strikes_max) ||
-         (mode == MODE_TIME && limit > 0 && elapsed > limit);
+         (mode == MODE_TIME && limit > 0 && elapsed >= limit);
 }

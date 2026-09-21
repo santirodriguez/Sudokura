@@ -1,57 +1,103 @@
-# Sudokura v1.2.0
-
-<p align="center"><img src="assets/branding/source/sudokura-head.png" alt="Sudokura" width="520"></p>
-
-A lightweight desktop Sudoku written in **C11 with SDL2**. Sudokura offers three game modes, three difficulty levels, Daily Puzzle, autosave, notes, hints, themes, and optional adaptive audio in a native interface for Linux, Windows, and macOS.
+# Sudokura
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.2.0.png">
-    <img src="docs/images/sudokura-v1.2.0.png" alt="Sudokura v1.2.0 gameplay" width="900">
+  <img src="assets/branding/source/sudokura-head.png" alt="Sudokura" width="520">
+</p>
+
+<p align="center">
+  <strong>A fast, polished desktop Sudoku for Windows, Linux, and macOS.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/santirodriguez/Sudokura/releases">Downloads</a>
+  ·
+  <a href="docs/RELEASE_NOTES_1.3.0.md">What's new in v1.3.0</a>
+  ·
+  <a href="docs/images/README.md">Screenshots</a>
+  ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+Sudokura combines classic Sudoku with practical desktop features: Daily puzzles, multiple game modes, notes, hints, Undo/Redo, local results, themes, keyboard controls, and English / Español / Català.
+
+**Sudokura runs entirely on your device. Games, settings, and progress are stored locally, and the app sends no telemetry.**
+
+<p align="center">
+  <a href="docs/images/sudokura-v1.3.0.png">
+    <img src="docs/images/sudokura-v1.3.0.png" alt="Sudokura v1.3.0" width="900">
   </a>
 </p>
 
-## Features
+## Highlights
 
-- **Classic, Strikes, and Time Attack** game modes.
-- **Easy, Medium, and Hard** puzzles with a unique solution.
-- Deterministic generator revision 2 with a 64-bit seed space.
-- **Daily Puzzle**, plus exact-puzzle Restart and Retry.
-- **Continue and autosave** for the current board, notes, hints, timer, and game state.
-- **Pause**, focus-safe timing, Notes, Hint, Verify, and Strict/Free input.
-- **Dark and light themes** with responsive desktop and portrait layouts.
-- **English, Español, and Català**.
-- Optional background music, result jingles, and subtle interface feedback, with independent Music/FX levels and global mute via `V`.
-- Mouse, keyboard, and physical numeric-keypad controls.
+- **Classic, Strikes, Time Attack, and Daily Sudoku.**
+- **Easy, Medium, and Hard** puzzles with a unique solution and difficulty based on human-solving techniques.
+- **Notes, Clear, Hint, Verify, Reveal, Undo/Redo, Restart, and Retry.**
+- **Independent normal and Daily saves**, with automatic recovery safeguards.
+- **Dark and light themes**, reduced motion, responsive layouts, and full mouse/keyboard navigation.
+- **English, Español, and Català.**
+- **Optional music and effects** with master, Music, and FX controls.
+- Local result history and comparable personal-best tracking.
 
-## Controls
+## Download
+
+Get the latest builds from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases).
+
+| Platform | Package | Status |
+|---|---|---|
+| **Windows 11 x64** | Installer or portable ZIP | Supported |
+| **Linux x86_64** | AppImage | Supported |
+| **macOS 15+ Apple Silicon** | DMG | Experimental |
+
+Windows builds are not commercially code-signed, so SmartScreen may show a reputation warning. The macOS build is ad-hoc signed and not notarized.
+
+### Linux
+
+```sh
+chmod +x Sudokura-v1.3.0-linux-x86_64.AppImage
+./Sudokura-v1.3.0-linux-x86_64.AppImage
+```
+
+If FUSE is unavailable:
+
+```sh
+./Sudokura-v1.3.0-linux-x86_64.AppImage --appimage-extract-and-run
+```
+
+## Quick controls
 
 | Action | Control |
 |---|---|
-| Select a cell | Mouse, arrows, or WASD |
-| Place / clear a number | 1–9 or numeric keypad; 0, Backspace, or Delete clears |
-| Notes | N, Shift+1–9, right-click, or a cell sub-position |
+| Move | Mouse, arrows, or WASD |
+| Enter number | 1–9 |
+| Clear | 0, Backspace, or Delete |
+| Notes | N · Shift+1–9 · right-click |
+| Undo / Redo | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
 | Hint | H |
-| Strict / Free | M |
-| Pause | P or the Pause button |
-| Theme / language / sound | T / L / V |
-| Continue / Daily from Home | C / D |
-| Help / About / back | F1 / F2 / Escape |
+| Verify | Ctrl+Enter |
+| Pause | P |
+| Theme / Language | T / L |
+| Master audio | V |
+| Music / FX controls | Shift+V or long-press the speaker |
+| Help / About | F1 / F2 |
 
-## Downloads
+Most actions are also available directly from the interface.
 
-Published builds are distributed through [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). The v1.2.0 package names are:
+## Saves and upgrades
 
-- `Sudokura-v1.2.0-linux-x86_64.AppImage`
-- `Sudokura-v1.2.0-windows-x86_64.zip`
-- `Sudokura-v1.2.0-macos-x86_64-unsigned.zip`
-- `Sudokura-v1.2.0-macos-arm64-unsigned.zip`
-- `SHA256SUMS.txt`
+Sudokura keeps its data in the operating system's normal per-user application-data directory. v1.3 preserves compatible v1.2 data during migration and keeps recovery copies so an upgrade does not silently overwrite the previous valid state.
 
-The macOS packages are unsigned.
+For save locations, migration details, rollback guidance, and useful bug-report information, see [Reporting Sudokura issues](docs/REPORTING_ISSUES.md).
 
-## Build and test
+## More screenshots
 
-Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
+A small curated gallery covers Home / Continue, Settings, audio controls, compact Notes, and Help:
+
+[Browse the v1.3.0 screenshot gallery →](docs/images/README.md)
+
+## Build from source
+
+Requirements: a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
 
 ```sh
 make assets
@@ -61,24 +107,22 @@ make test-ui
 ./sudokura
 ```
 
-`make test` covers gameplay, deterministic generation, persistence, localization, seed handling, geometry, and dedicated UI geometry invariants. `make test-ui` checks SDL_ttf text fitting, SDL2_mixer audio transitions, and top-row/numeric-keypad input mapping. CI also builds with warnings as errors and runs sanitizers on Linux.
-
-For diagnostic UI review, `./sudokura --render-screenshots DIR` produces 70 temporary frames across supported layouts. These are test artifacts and are not used as release screenshots.
-
-## Audio credits
-
-Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from [OpenGameArt](https://opengameart.org/content/cozy-puzzle-jingle-result), licensed under **CC0**. See [`assets/audio/README.md`](assets/audio/README.md) for the file mapping.
-
-Interface and input effects are generated at runtime.
-
 ## Documentation
 
-- [v1.2.0 release notes](docs/RELEASE_NOTES_1.2.0.md)
-- [v1.2.0 implementation record](docs/V1.2.0_IMPLEMENTATION.md)
-- [documentation images](docs/images/README.md)
+- [v1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md)
+- [Changelog](CHANGELOG.md)
+- [Implementation record](docs/V1.3.0_IMPLEMENTATION.md)
+- [Issue reporting, saves, and rollback](docs/REPORTING_ISSUES.md)
+- [Screenshot gallery](docs/images/README.md)
 
-## Support Sudokura
+## Credits
+
+Music: **Cozy Puzzle Jingle & Result** by **MintoDog**, from [OpenGameArt](https://opengameart.org/content/cozy-puzzle-jingle-result), licensed under **CC0**.
+
+Language flags are from [lipis/flag-icons](https://github.com/lipis/flag-icons), licensed under MIT.
+
+## Support
 
 If you enjoy Sudokura and want to support its development, [support Sudokura here](https://santiagorodriguez.com/donate/).
 
-GPLv3 — © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)
+GPLv3 · © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)

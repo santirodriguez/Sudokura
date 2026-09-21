@@ -5,6 +5,7 @@
 #endif
 
 #include "session.h"
+#include "store_io.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -145,50 +146,20 @@ static uint32_t get_u32(const unsigned char *data) {
   return value;
 }
 
-static bool sync_file(FILE *file) {
-  if (!file || fflush(file) != 0) return false;
-#if defined(_WIN32)
-  return _commit(_fileno(file)) == 0;
-#else
-  return fsync(fileno(file)) == 0;
-#endif
-}
-
-static bool atomic_replace(const char *temporary, const char *path) {
-#if defined(_WIN32)
-  return MoveFileExA(temporary, path,
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-  return rename(temporary, path) == 0;
-#endif
-}
-
 static bool write_container(const char *path, const unsigned char magic[8],
                             const unsigned char *payload, size_t payload_size) {
   if (!path || !path[0] || !magic || !payload || payload_size > UINT32_MAX)
     return false;
+  if (payload_size > STORE_MAX_FILE_SIZE - STORE_HEADER_SIZE) return false;
 
-  size_t path_length = strlen(path);
-  if (path_length > STORE_MAX_FILE_SIZE - 16) return false;
-  char temporary[STORE_MAX_FILE_SIZE];
-  int written = snprintf(temporary, sizeof(temporary), "%s.tmp", path);
-  if (written < 0 || (size_t)written >= sizeof(temporary)) return false;
-
-  unsigned char header[STORE_HEADER_SIZE];
-  memcpy(header, magic, 8);
-  put_u16(header + 8, (uint16_t)SUDOKURA_SAVE_FORMAT_VERSION);
-  put_u32(header + 10, (uint32_t)payload_size);
-  put_u32(header + 14, crc32_bytes(payload, payload_size));
-
-  FILE *file = fopen(temporary, "wb");
-  if (!file) return false;
-  bool ok = fwrite(header, 1, sizeof(header), file) == sizeof(header) &&
-            fwrite(payload, 1, payload_size, file) == payload_size &&
-            sync_file(file);
-  if (fclose(file) != 0) ok = false;
-  if (ok) ok = atomic_replace(temporary, path);
-  if (!ok) remove(temporary);
-  return ok;
+  unsigned char data[STORE_MAX_FILE_SIZE];
+  memcpy(data, magic, 8);
+  put_u16(data + 8, (uint16_t)SUDOKURA_SAVE_FORMAT_VERSION);
+  put_u32(data + 10, (uint32_t)payload_size);
+  put_u32(data + 14, crc32_bytes(payload, payload_size));
+  memcpy(data + STORE_HEADER_SIZE, payload, payload_size);
+  return store_atomic_write(path, NULL, data,
+                            STORE_HEADER_SIZE + payload_size) == STORE_OK;
 }
 
 static StoreStatus read_container(const char *path,
@@ -202,23 +173,17 @@ static StoreStatus read_container(const char *path,
       maximum_payload_size > STORE_MAX_FILE_SIZE - STORE_HEADER_SIZE)
     return STORE_IO_ERROR;
 
-  errno = 0;
-  FILE *file = fopen(path, "rb");
-  if (!file) return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
-
   unsigned char data[STORE_MAX_FILE_SIZE];
-  size_t size = fread(data, 1, sizeof(data), file);
-  bool read_error = ferror(file) != 0;
-  int extra = 0;
-  if (!read_error && size == sizeof(data)) extra = fgetc(file);
-  if (fclose(file) != 0 || read_error) return STORE_IO_ERROR;
-  if (size == sizeof(data) && extra != EOF) return STORE_CORRUPT;
+  size_t size = 0;
+  StoreStatus status = store_read_file(path, data, sizeof(data), &size);
+  if (status != STORE_OK) return status;
   if (size < STORE_HEADER_SIZE || memcmp(data, expected_magic, 8) != 0)
     return STORE_CORRUPT;
 
   uint16_t version = get_u16(data + 8);
   uint32_t payload_size = get_u32(data + 10);
   uint32_t stored_crc = get_u32(data + 14);
+  if (version > SUDOKURA_SAVE_FORMAT_VERSION) return STORE_INCOMPATIBLE;
   if (version != SUDOKURA_SAVE_FORMAT_VERSION ||
       payload_size < minimum_payload_size || payload_size > maximum_payload_size ||
       size != STORE_HEADER_SIZE + (size_t)payload_size)
@@ -239,12 +204,29 @@ void preferences_defaults(Preferences *preferences) {
   preferences->mode = MODE_CLASSIC;
   preferences->difficulty = DIFFICULTY_MEDIUM;
   preferences->audio_enabled = true;
+  preferences->music_volume = 20;
+  preferences->fx_volume = 65;
+  preferences->music_muted = false;
+  preferences->fx_muted = false;
+  preferences->reduced_motion = false;
+  preferences->auto_remove_peer_notes = false;
+  preferences->window_x = INT32_MIN;
+  preferences->window_y = INT32_MIN;
+  preferences->window_width = SUDOKURA_DEFAULT_WINDOW_WIDTH;
+  preferences->window_height = SUDOKURA_DEFAULT_WINDOW_HEIGHT;
+  preferences->window_maximized = false;
 }
 
 bool preferences_validate(const Preferences *preferences) {
-  return preferences && preferences->language >= LANG_EN &&
-         preferences->language < LANG_COUNT && valid_mode(preferences->mode) &&
-         valid_difficulty(preferences->difficulty);
+  if (!preferences || preferences->language < LANG_EN ||
+      preferences->language >= LANG_COUNT || !valid_mode(preferences->mode) ||
+      !valid_difficulty(preferences->difficulty) ||
+      preferences->music_volume > 100 || preferences->fx_volume > 100)
+    return false;
+  if (preferences->window_width < 320 || preferences->window_width > 16384 ||
+      preferences->window_height < 240 || preferences->window_height > 16384)
+    return false;
+  return true;
 }
 
 static bool game_matches_canonical(const Game *game, const Game *canonical) {
@@ -257,7 +239,7 @@ static bool game_matches_canonical(const Game *game, const Game *canonical) {
          memcmp(game->fixed, canonical->fixed, sizeof(game->fixed)) == 0;
 }
 
-bool session_validate(const SessionState *session) {
+bool session_validate_runtime(const SessionState *session) {
   if (!session || !valid_mode(session->mode) ||
       !valid_difficulty(session->game.difficulty) ||
       !valid_status(session->status) || session->selected_row < 0 ||
@@ -265,12 +247,9 @@ bool session_validate(const SessionState *session) {
       session->selected_column >= 9 || session->mistakes < 0 ||
       session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
       session->strikes > SESSION_MAX_COUNTER ||
-      session->game.generator_revision != SUDOKURA_GENERATOR_REVISION)
+      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
+      !game_generator_revision_supported(session->game.generator_revision))
     return false;
-
-  Game canonical;
-  game_new_difficulty(&canonical, session->game.seed, session->game.difficulty);
-  if (!game_matches_canonical(&session->game, &canonical)) return false;
 
   for (int i = 0; i < 81; ++i) {
     int value = session->game.puzzle[i];
@@ -278,11 +257,11 @@ bool session_validate(const SessionState *session) {
     if (value < 0 || value > 9 || session->game.hinted[i] > 1 ||
         (notes & (uint16_t)~NOTES_VALID_MASK) != 0)
       return false;
-    if (canonical.fixed[i]) {
-      if (value != canonical.initial[i] || session->game.hinted[i] || notes)
+    if (session->game.fixed[i]) {
+      if (value != session->game.initial[i] || session->game.hinted[i] || notes)
         return false;
     } else if (session->game.hinted[i]) {
-      if (value != canonical.solution[i] || notes) return false;
+      if (value != session->game.solution[i] || notes) return false;
     } else if (value != 0 && notes != 0) {
       return false;
     }
@@ -292,8 +271,10 @@ bool session_validate(const SessionState *session) {
     uint64_t daily_seed = 0;
     if (session->mode != MODE_CLASSIC ||
         session->game.difficulty != DIFFICULTY_MEDIUM ||
-        !game_daily_seed(session->daily_year, session->daily_month,
-                         session->daily_day, &daily_seed) ||
+        !game_daily_seed_revision(session->daily_year, session->daily_month,
+                                  session->daily_day,
+                                  session->game.generator_revision,
+                                  &daily_seed) ||
         daily_seed != session->game.seed)
       return false;
   } else if (session->daily_year != 0 || session->daily_month != 0 ||
@@ -306,8 +287,21 @@ bool session_validate(const SessionState *session) {
                              (double)session->elapsed_ms / 1000.0,
                              session->mode == MODE_TIME ? 600.0 : 0.0);
   if (session->status == SESSION_ACTIVE) return !solved && !lost;
-  if (session->status == SESSION_WON) return solved;
+  if (session->status == SESSION_WON) return solved && !lost;
   return !solved && lost;
+}
+
+bool session_validate(const SessionState *session) {
+  if (!session_validate_runtime(session)) return false;
+
+  Game canonical;
+  if (!game_new_difficulty_revision(&canonical, session->game.seed,
+                                    session->game.difficulty,
+                                    session->game.generator_revision))
+    return false;
+  if (!game_matches_canonical(&session->game, &canonical)) return false;
+
+  return true;
 }
 
 bool preferences_save_file(const char *path, const Preferences *preferences) {
@@ -412,7 +406,7 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
   int daily_day = reader_u8(&reader);
 
   if (!reader.ok) return STORE_CORRUPT;
-  if (generator_revision != SUDOKURA_GENERATOR_REVISION)
+  if (!game_generator_revision_supported(generator_revision))
     return STORE_INCOMPATIBLE;
   if (!valid_difficulty(difficulty) || !valid_mode(mode) || notes_mode > 1 ||
       strict_mode > 1 || manual_paused > 1 || is_daily > 1 ||
@@ -421,7 +415,9 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
 
   SessionState loaded;
   memset(&loaded, 0, sizeof(loaded));
-  game_new_difficulty(&loaded.game, seed, difficulty);
+  if (!game_new_difficulty_revision(&loaded.game, seed, difficulty,
+                                    generator_revision))
+    return STORE_CORRUPT;
   loaded.mode = mode;
   loaded.selected_row = selected_row;
   loaded.selected_column = selected_column;
@@ -448,26 +444,14 @@ StoreStatus session_load_file(const char *path, SessionState *session) {
   return STORE_OK;
 }
 
-static bool file_exists(const char *path) {
-#if defined(_WIN32)
-  DWORD attributes = GetFileAttributesA(path);
-  return attributes != INVALID_FILE_ATTRIBUTES &&
-         (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
-#else
-  return access(path, F_OK) == 0;
-#endif
-}
-
-static bool move_without_replace(const char *source, const char *destination) {
-#if defined(_WIN32)
-  return MoveFileExA(source, destination, MOVEFILE_WRITE_THROUGH) != 0;
-#else
-  return rename(source, destination) == 0;
-#endif
-}
-
 bool store_quarantine_corrupt(const char *path) {
-  if (!path || !path[0] || !file_exists(path)) return false;
+  if (!path || !path[0] || !store_file_exists(path)) return false;
+
+  unsigned char data[STORE_MAX_FILE_SIZE];
+  size_t size = 0;
+  if (store_read_file(path, data, sizeof(data), &size) != STORE_OK || size == 0)
+    return false;
+
   char destination[STORE_MAX_FILE_SIZE];
   for (int suffix = 0; suffix < 100; ++suffix) {
     int written = suffix == 0
@@ -475,7 +459,9 @@ bool store_quarantine_corrupt(const char *path) {
                       : snprintf(destination, sizeof(destination), "%s.corrupt.%d",
                                  path, suffix);
     if (written < 0 || (size_t)written >= sizeof(destination)) return false;
-    if (!file_exists(destination) && move_without_replace(path, destination))
+    if (store_file_exists(destination)) continue;
+    if (store_atomic_write(destination, NULL, data, size) == STORE_OK &&
+        store_remove_file(path))
       return true;
   }
   return false;

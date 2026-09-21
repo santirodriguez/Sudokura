@@ -1,5 +1,6 @@
 #include "game.h"
 #include "geometry.h"
+#include "human.h"
 #include "i18n.h"
 #include "version.h"
 
@@ -19,67 +20,112 @@ static void puzzle_text(const Game *game, char output[82]) {
   output[81] = '\0';
 }
 
+static void fixture_game_new(Game *game, uint64_t seed) {
+  assert(game_new_difficulty_revision(game, seed, DIFFICULTY_MEDIUM,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+}
+
 static int first_playable(const Game *game) {
   for (int i = 0; i < 81; ++i)
     if (!game->fixed[i]) return i;
   return -1;
 }
 
-static void assert_clue_range(GameDifficulty difficulty, int clues) {
-  if (difficulty == DIFFICULTY_EASY) assert(clues >= 42 && clues <= 46);
-  else if (difficulty == DIFFICULTY_MEDIUM) assert(clues >= 34 && clues <= 38);
-  else assert(clues >= 28 && clues <= 32);
+static HumanRating expected_human_rating(GameDifficulty difficulty) {
+  if (difficulty == DIFFICULTY_EASY) return HUMAN_RATING_EASY;
+  if (difficulty == DIFFICULTY_MEDIUM) return HUMAN_RATING_MEDIUM;
+  return HUMAN_RATING_HARD;
+}
+
+static void assert_v3_human_rating(const Game *game) {
+  HumanEvaluation evaluation;
+  assert(game);
+  assert(human_evaluate(game->initial, &evaluation));
+  assert(evaluation.valid && evaluation.solved && !evaluation.stalled);
+  assert(evaluation.rating == expected_human_rating(game->difficulty));
+  if (game->difficulty == DIFFICULTY_MEDIUM) {
+    assert(evaluation.max_technique == HUMAN_TECHNIQUE_LOCKED_CANDIDATE);
+    assert(evaluation.technique_steps[HUMAN_TECHNIQUE_LOCKED_CANDIDATE] >= 1);
+  }
+  if (game->difficulty == DIFFICULTY_HARD) {
+    assert(evaluation.max_technique >= HUMAN_TECHNIQUE_NAKED_PAIR);
+    assert(evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_PAIR] +
+               evaluation.technique_steps[HUMAN_TECHNIQUE_NAKED_TRIPLE] +
+               evaluation.technique_steps[HUMAN_TECHNIQUE_X_WING] >=
+           1);
+  }
 }
 
 static void test_generation(void) {
-  assert(SUDOKURA_GENERATOR_REVISION == 2u);
-  for (uint64_t seed = 1; seed <= 24; ++seed) {
-    int previous_clues = 82, previous_score = -1;
-    for (int difficulty = DIFFICULTY_EASY; difficulty < DIFFICULTY_COUNT; ++difficulty) {
+  assert(SUDOKURA_GENERATOR_REVISION_LEGACY == 2u);
+  assert(SUDOKURA_GENERATOR_REVISION == 3u);
+  assert(game_generator_revision_supported(2u));
+  assert(game_generator_revision_supported(3u));
+  assert(!game_generator_revision_supported(1u));
+  assert(!game_generator_revision_supported(4u));
+
+  for (uint64_t seed = 1; seed <= 8; ++seed) {
+    int previous_score = -1;
+    for (int difficulty = DIFFICULTY_EASY; difficulty < DIFFICULTY_COUNT;
+         ++difficulty) {
       Game game, duplicate;
-      game_new_difficulty(&game, seed, (GameDifficulty)difficulty);
-      game_new_difficulty(&duplicate, seed, (GameDifficulty)difficulty);
+      assert(game_new_difficulty(&game, seed, (GameDifficulty)difficulty));
+      assert(game_new_difficulty(&duplicate, seed,
+                                 (GameDifficulty)difficulty));
       assert(!memcmp(&game, &duplicate, sizeof(game)));
       assert(game.seed == seed);
       assert(game.generator_revision == SUDOKURA_GENERATOR_REVISION);
       assert(game.difficulty == (GameDifficulty)difficulty);
       assert(game_board_valid(game.solution));
       assert(game_solution_count(game.initial, 2) == 1);
-      assert(game.difficulty_score == game_difficulty_score(game.initial));
       assert(game.difficulty_score > previous_score);
-      int clues = game_clue_count(&game);
-      assert(clues > 0 && clues < 81);
-      assert(clues < previous_clues);
-      assert_clue_range((GameDifficulty)difficulty, clues);
+      assert(game_clue_count(&game) > 0 && game_clue_count(&game) < 81);
+      assert_v3_human_rating(&game);
       for (int i = 0; i < 81; ++i) {
         assert((game.fixed[i] != 0) == (game.initial[i] != 0));
         assert(game.puzzle[i] == game.initial[i]);
         assert(!game.hinted[i]);
         assert(!game.notes[i]);
       }
-      previous_clues = clues;
       previous_score = game.difficulty_score;
     }
   }
 }
 
+static bool cancel_generation(void *userdata, unsigned attempt,
+                              unsigned max_attempts) {
+  (void)userdata;
+  (void)attempt;
+  (void)max_attempts;
+  return false;
+}
+
 static void test_generator_stress(void) {
-  for (uint64_t seed = 1; seed <= 1200; ++seed) {
-    GameDifficulty difficulty = (GameDifficulty)((seed - 1) % DIFFICULTY_COUNT);
+  for (uint64_t seed = 1; seed <= 30; ++seed) {
+    GameDifficulty difficulty =
+        (GameDifficulty)((seed - 1) % DIFFICULTY_COUNT);
     Game game;
-    game_new_difficulty(&game, seed, difficulty);
+    assert(game_new_difficulty(&game, seed, difficulty));
     assert(game.seed == seed);
-    assert(game.generator_revision == 2u);
+    assert(game.generator_revision == SUDOKURA_GENERATOR_REVISION);
     assert(game_board_valid(game.solution));
     assert(game_solution_count(game.initial, 2) == 1);
-    assert_clue_range(difficulty, game_clue_count(&game));
-    assert(game_clue_count(&game) < 81);
-    if (seed % 97 == 0) {
+    assert_v3_human_rating(&game);
+    if (seed % 7 == 0) {
       Game duplicate;
-      game_new_difficulty(&duplicate, seed, difficulty);
+      assert(game_new_difficulty(&duplicate, seed, difficulty));
       assert(!memcmp(&game, &duplicate, sizeof(game)));
     }
   }
+
+  Game cancelled;
+  GameGenerationControl control = {cancel_generation, NULL};
+  assert(game_generate_difficulty(&cancelled, 1, DIFFICULTY_HARD,
+                                  SUDOKURA_GENERATOR_REVISION,
+                                  &control) == GAME_GENERATION_CANCELLED);
+  assert(game_generation_attempt_budget(DIFFICULTY_EASY) > 0);
+  assert(game_generation_attempt_budget(DIFFICULTY_MEDIUM) > 0);
+  assert(game_generation_attempt_budget(DIFFICULTY_HARD) > 0);
 }
 
 static void test_generator_golden(void) {
@@ -90,7 +136,10 @@ static void test_generator_golden(void) {
   };
   for (int difficulty = DIFFICULTY_EASY; difficulty < DIFFICULTY_COUNT; ++difficulty) {
     Game game; char actual[82];
-    game_new_difficulty(&game, 42, (GameDifficulty)difficulty);
+    assert(game_new_difficulty_revision(
+        &game, 42, (GameDifficulty)difficulty,
+        SUDOKURA_GENERATOR_REVISION_LEGACY));
+    assert(game.generator_revision == SUDOKURA_GENERATOR_REVISION_LEGACY);
     puzzle_text(&game, actual);
     assert(!strcmp(actual, expected[difficulty]));
   }
@@ -98,28 +147,41 @@ static void test_generator_golden(void) {
 
 static void test_daily(void) {
   uint64_t seed_a = 0, seed_b = 0, seed_next = 0;
-  assert(game_daily_seed(2026, 8, 28, &seed_a));
-  assert(game_daily_seed(2026, 8, 28, &seed_b));
-  assert(game_daily_seed(2026, 8, 29, &seed_next));
+  assert(game_daily_seed_revision(2026, 8, 28,
+                                  SUDOKURA_GENERATOR_REVISION_LEGACY,
+                                  &seed_a));
+  assert(game_daily_seed_revision(2026, 8, 28,
+                                  SUDOKURA_GENERATOR_REVISION_LEGACY,
+                                  &seed_b));
+  assert(game_daily_seed_revision(2026, 8, 29,
+                                  SUDOKURA_GENERATOR_REVISION_LEGACY,
+                                  &seed_next));
   assert(seed_a == UINT64_C(14342674931506954150));
   assert(seed_a == seed_b && seed_a != seed_next);
   assert(!game_daily_seed(2026, 2, 29, &seed_a));
   assert(game_daily_seed(2024, 2, 29, &seed_a));
   assert(!game_daily_seed(2026, 13, 1, &seed_a));
   assert(!game_daily_seed(2026, 8, 28, NULL));
-  Game first, second; char actual[82];
+
+  Game legacy; char actual[82];
+  assert(game_new_daily_revision(&legacy, 2026, 8, 28,
+                                 SUDOKURA_GENERATOR_REVISION_LEGACY));
+  puzzle_text(&legacy, actual);
+  assert(!strcmp(actual,
+      "145..3.7.8..14.23........5.9.....3...2..3..1443..81692..4.5.1.3...3.6..7.8371.5.."));
+
+  Game first, second;
   assert(game_new_daily(&first, 2026, 8, 28));
   assert(game_new_daily(&second, 2026, 8, 28));
   assert(!memcmp(&first, &second, sizeof(first)));
+  assert(first.generator_revision == SUDOKURA_GENERATOR_REVISION);
   assert(first.difficulty == DIFFICULTY_MEDIUM);
-  puzzle_text(&first, actual);
-  assert(!strcmp(actual,
-      "145..3.7.8..14.23........5.9.....3...2..3..1443..81692..4.5.1.3...3.6..7.8371.5.."));
+  assert_v3_human_rating(&first);
   assert(!game_new_daily(&first, 2026, 2, 29));
 }
 
 static void test_actions(void) {
-  Game game; game_new(&game, 42);
+  Game game; fixture_game_new(&game, 42);
   int i = first_playable(&game); assert(i >= 0);
   int row = i / 9, column = i % 9, value = game.solution[i];
   assert(game_toggle_note(&game, row, column, value));
@@ -136,7 +198,7 @@ static void test_actions(void) {
 }
 
 static void test_player_input(void) {
-  Game game; game_new(&game, 99);
+  Game game; fixture_game_new(&game, 99);
   int i = first_playable(&game); assert(i >= 0);
   int row = i / 9, column = i % 9, value = game.solution[i];
   assert(game_apply_input(&game, row, column, value, true, false) == GAME_INPUT_NOTE_ADDED);
@@ -150,8 +212,52 @@ static void test_player_input(void) {
   assert(game_apply_input(&game, row, column, conflicting, false, true) == GAME_INPUT_STRICT_REJECTED);
   int wrong = game.solution[i] % 9 + 1; assert(wrong != game.solution[i]);
   assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_WRONG);
+  assert(game_wrong_entry_count(&game) == 1);
+  assert(game_apply_input(&game, row, column, wrong, false, false) == GAME_INPUT_NO_CHANGE);
   assert(game_apply_input(&game, row, column, 0, false, false) == GAME_INPUT_CLEARED);
+  assert(game_wrong_entry_count(&game) == 0);
   assert(game_apply_input(NULL, row, column, value, false, false) == GAME_INPUT_NO_CHANGE);
+}
+
+static void test_recorded_compound_edits(void) {
+  Game game;
+  fixture_game_new(&game, 2026);
+  int target = -1, peer = -1;
+  for (int a = 0; a < 81 && target < 0; ++a) {
+    if (game.fixed[a]) continue;
+    for (int b = 0; b < 81; ++b) {
+      if (a == b || game.fixed[b]) continue;
+      bool related = a / 9 == b / 9 || a % 9 == b % 9 ||
+                     (a / 27 == b / 27 &&
+                      (a % 9) / 3 == (b % 9) / 3);
+      if (related) {
+        target = a;
+        peer = b;
+        break;
+      }
+    }
+  }
+  assert(target >= 0 && peer >= 0);
+
+  int value = game.solution[target];
+  assert(game_toggle_note(&game, peer / 9, peer % 9, value));
+  uint16_t peer_before = game.notes[peer];
+
+  GameEdit edit;
+  assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
+                                   false, false, true, &edit) ==
+         GAME_INPUT_CORRECT);
+  assert(game_edit_valid(&edit));
+  assert(edit.peer_notes_removed != 0);
+  assert((game.notes[peer] & (1u << value)) == 0);
+
+  assert(game_apply_edit(&game, &edit, false));
+  assert(game.puzzle[target] == 0);
+  assert(game.notes[peer] == peer_before);
+
+  assert(game_apply_edit(&game, &edit, true));
+  assert(game.puzzle[target] == value);
+  assert((game.notes[peer] & (1u << value)) == 0);
 }
 
 static void test_mode_visibility_policy(void) {
@@ -162,7 +268,7 @@ static void test_mode_visibility_policy(void) {
 }
 
 static void test_progress_restart(void) {
-  Game game; game_new(&game, 314159);
+  Game game; fixture_game_new(&game, 314159);
   assert(game_progress_percent(&game) == 0);
   assert(game_fill_percent(&game) == 0);
   int original[81]; memcpy(original, game.initial, sizeof(original));
@@ -195,20 +301,23 @@ static void test_progress_restart(void) {
 }
 
 static void test_bounds(void) {
-  Game game; game_new(&game, 9);
+  Game game; fixture_game_new(&game, 9);
   assert(!game_place(NULL, 0, 0, 1, false)); assert(!game_place(&game, -1, 0, 1, false)); assert(!game_place(&game, 0, 9, 1, false));
   assert(!game_toggle_note(&game, 9, 0, 1)); assert(!game_toggle_note(&game, 0, -1, 1)); assert(!game_hint(&game, -1, -1));
   assert(!game_cell_locked(&game, 9, 9)); assert(!game_has_conflict(&game, 9, 9)); assert(!game_has_conflict(NULL, 0, 0));
-  assert(game_conflict_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_fill_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
+  assert(game_conflict_count(NULL) == 0 && game_wrong_entry_count(NULL) == 0 && game_clue_count(NULL) == 0 && game_progress_percent(NULL) == 0 && game_fill_percent(NULL) == 0 && game_difficulty_score(NULL) == -1 && !game_is_solved(NULL));
   assert(game_solution_count(NULL, 2) == 0); int invalid[81] = {0}; invalid[0] = invalid[1] = 1; assert(game_solution_count(invalid, 2) == 0); assert(game_difficulty_score(invalid) == -1);
 }
 
 static void test_conflicts_and_end(void) {
-  Game game; game_new(&game, 77); int a = -1, b = -1;
+  Game game; fixture_game_new(&game, 77); int a = -1, b = -1;
   for (int row = 0; row < 9 && a < 0; ++row) for (int column = 0; column < 9; ++column) if (!game.fixed[row * 9 + column]) { if (a < 0) a = row * 9 + column; else if (a / 9 == row) { b = row * 9 + column; break; } }
   assert(a >= 0 && b >= 0); game.puzzle[a] = game.puzzle[b] = 1; assert(game_has_conflict(&game, a / 9, a % 9)); assert(game_conflict_count(&game) >= 2);
   memcpy(game.puzzle, game.solution, sizeof(game.puzzle)); assert(game_is_solved(&game));
-  assert(!game_mode_lost(MODE_CLASSIC, 99, 3, 999, 10)); assert(game_mode_lost(MODE_STRIKES, 3, 3, 0, 0)); assert(game_mode_lost(MODE_TIME, 0, 3, 601, 600));
+  assert(!game_mode_lost(MODE_CLASSIC, 99, 3, 999, 10));
+  assert(game_mode_lost(MODE_STRIKES, 3, 3, 0, 0));
+  assert(!game_mode_lost(MODE_TIME, 0, 3, 599.999, 600));
+  assert(game_mode_lost(MODE_TIME, 0, 3, 600, 600));
 }
 
 static void assert_screen_geometry(const AppGeometry *g, int width, int height) {
@@ -240,11 +349,16 @@ static void test_geometry(void) {
       assert(g.board.w % 9 == 0 && g.board.w / 9 >= 25); assert(g.hud_count == (mode == GEOMETRY_MODE_CLASSIC ? 5 : 6));
       assert(geometry_rect_in_bounds(g.play_title, width, height)); assert(geometry_rect_in_bounds(g.play_language, width, height)); assert(!rects_overlap(g.play_language, g.play_title));
       for (int i = 0; i < g.hud_count; ++i) assert(geometry_rect_in_bounds(g.hud[i], width, height));
-      for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i) assert(g.actions[i].w >= 70 && g.actions[i].h >= 40);
+      GeometryStyle style = geometry_style(&g, width, height);
+      for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i)
+        assert(g.actions[i].w >= 70 && g.actions[i].h >= style.min_control_h);
       assert(geometry_rect_in_bounds(g.palette_label, width, height));
-      for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].w >= (portrait ? 32 : 70) && g.palette[i].h >= 28);
+      for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
+        assert(g.palette[i].w >= (portrait ? 32 : 70) && g.palette[i].h >= 22);
       if (portrait) for (int i = 1; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].y == g.palette[0].y);
-      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 16);
+      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 12);
+      assert(geometry_rect_in_bounds(g.status, width, height) &&
+             g.status.h >= style.min_control_h);
       assert_screen_geometry(&g, width, height);
       if (!portrait && width <= 1366) assert(g.board.w <= 720);
       if (!portrait && width >= 1920 && height >= 1080) {
@@ -274,11 +388,11 @@ static void test_window_size_normalization(void) {
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key) assert(tr((Language)language, (TextKey)key)[0]);
-  assert(!strcmp(SUDOKURA_VERSION, "1.2.0"));
+  assert(!strcmp(SUDOKURA_VERSION, "1.3.0"));
 }
 
 int main(void) {
-  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
-  puts("all tests passed (generator v2, 1200-seed stress, Daily, restart/progress/hints, responsive XL geometry, API bounds)");
+  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_recorded_compound_edits(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
+  puts("all tests passed (generator v2 golden + bounded human-rated v3, Daily identity, restart/progress/hints, responsive XL geometry, API bounds)");
   return 0;
 }

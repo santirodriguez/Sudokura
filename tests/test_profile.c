@@ -1,0 +1,651 @@
+#include "profile.h"
+#include "store_io.h"
+
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+static const char *profile_path = ".sudokura-profile-test.dat";
+static const char *profile_backup_path = ".sudokura-profile-test.dat.bak";
+static const char *legacy_session_path = ".sudokura-profile-session-v12.dat";
+static const char *legacy_preferences_path = ".sudokura-profile-preferences-v12.dat";
+static const char *legacy_audio_path = ".sudokura-profile-audio-v12.dat";
+static const char *legacy_session_backup = ".sudokura-profile-session-v12.dat.v1.2.bak";
+static const char *legacy_preferences_backup = ".sudokura-profile-preferences-v12.dat.v1.2.bak";
+static const char *legacy_audio_backup = ".sudokura-profile-audio-v12.dat.v1.2.bak";
+
+enum {
+  LEGACY_HEADER_SIZE = 18,
+  LEGACY_SESSION_PAYLOAD_SIZE = 365
+};
+
+static uint32_t crc32_bytes_test(const unsigned char *data, size_t size) {
+  uint32_t crc = UINT32_C(0xffffffff);
+  for (size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      uint32_t mask = (uint32_t)(0u - (crc & 1u));
+      crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & mask);
+    }
+  }
+  return ~crc;
+}
+
+static void put_u16_test(unsigned char *data, uint16_t value) {
+  data[0] = (unsigned char)(value & 0xffu);
+  data[1] = (unsigned char)((value >> 8) & 0xffu);
+}
+
+static void put_u32_test(unsigned char *data, uint32_t value) {
+  for (unsigned shift = 0; shift < 32; shift += 8)
+    data[shift / 8] = (unsigned char)((value >> shift) & 0xffu);
+}
+
+static void cleanup(void) {
+  const char *paths[] = {
+      profile_path, profile_backup_path, legacy_session_path,
+      legacy_preferences_path, legacy_audio_path, legacy_session_backup,
+      legacy_preferences_backup, legacy_audio_backup};
+  for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i)
+    (void)store_remove_file(paths[i]);
+}
+
+static int first_playable(const Game *game) {
+  for (int i = 0; i < 81; ++i)
+    if (!game->fixed[i]) return i;
+  return -1;
+}
+
+static SessionState normal_state_revision(uint32_t revision) {
+  SessionState state;
+  memset(&state, 0, sizeof(state));
+  assert(game_new_difficulty_revision(
+      &state.game, UINT64_C(0x123456789abcdef0), DIFFICULTY_EASY, revision));
+  state.mode = MODE_STRIKES;
+  state.selected_row = 4;
+  state.selected_column = 5;
+  state.notes_mode = true;
+  state.status = SESSION_ACTIVE;
+  state.mistakes = 1;
+  state.strikes = 1;
+  state.elapsed_ms = UINT64_C(543210);
+  int cell = first_playable(&state.game);
+  assert(cell >= 0);
+  assert(game_hint(&state.game, cell / 9, cell % 9));
+  assert(session_validate(&state));
+  return state;
+}
+
+static SessionState normal_state(void) {
+  return normal_state_revision(SUDOKURA_GENERATOR_REVISION);
+}
+
+static SessionState legacy_normal_state(void) {
+  return normal_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
+}
+
+static SessionState daily_state_revision(uint32_t revision) {
+  SessionState state;
+  memset(&state, 0, sizeof(state));
+  assert(game_new_daily_revision(&state.game, 2026, 9, 18, revision));
+  state.mode = MODE_CLASSIC;
+  state.selected_row = 3;
+  state.selected_column = 6;
+  state.status = SESSION_ACTIVE;
+  state.is_daily = true;
+  state.daily_year = 2026;
+  state.daily_month = 9;
+  state.daily_day = 18;
+  state.elapsed_ms = UINT64_C(12345);
+  assert(session_validate(&state));
+  return state;
+}
+
+static SessionState daily_state(void) {
+  return daily_state_revision(SUDOKURA_GENERATOR_REVISION);
+}
+
+static SessionState legacy_daily_state(void) {
+  return daily_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
+}
+
+static void test_profile_roundtrip(void) {
+  ProfileData profile;
+  profile_defaults(&profile);
+  profile.preferences.language = LANG_CA;
+  profile.preferences.dark_theme = false;
+  profile.preferences.strict_mode = true;
+  profile.preferences.mode = MODE_TIME;
+  profile.preferences.difficulty = DIFFICULTY_HARD;
+  profile.preferences.audio_enabled = false;
+  profile.preferences.music_volume = 31;
+  profile.preferences.fx_volume = 72;
+  profile.preferences.music_muted = true;
+  profile.preferences.fx_muted = true;
+  profile.preferences.reduced_motion = true;
+  profile.preferences.auto_remove_peer_notes = true;
+  profile.preferences.window_x = 40;
+  profile.preferences.window_y = 50;
+  profile.preferences.window_width = 1280;
+  profile.preferences.window_height = 800;
+  profile.preferences.window_maximized = true;
+
+  SessionState normal = normal_state();
+  SessionState daily = daily_state();
+  assert(profile_slot_set(&profile.normal, &normal, true));
+  assert(profile_slot_set(&profile.daily, &daily, false));
+
+  int target = -1, peer = -1;
+  for (int a = 0; a < 81 && target < 0; ++a) {
+    if (normal.game.fixed[a] || normal.game.hinted[a] ||
+        normal.game.puzzle[a] != 0)
+      continue;
+    for (int b = 0; b < 81; ++b) {
+      if (a == b || normal.game.fixed[b] || normal.game.hinted[b] ||
+          normal.game.puzzle[b] != 0)
+        continue;
+      bool related = a / 9 == b / 9 || a % 9 == b % 9 ||
+                     (a / 27 == b / 27 &&
+                      (a % 9) / 3 == (b % 9) / 3);
+      if (related) {
+        target = a;
+        peer = b;
+        break;
+      }
+    }
+  }
+  assert(target >= 0 && peer >= 0);
+  int placed = normal.game.solution[target];
+  assert(game_toggle_note(&normal.game, peer / 9, peer % 9, placed));
+  ProfileEdit edit;
+  assert(game_apply_input_recorded(
+             &normal.game, target / 9, target % 9, placed, false, false, true,
+             &edit) == GAME_INPUT_CORRECT);
+  assert(edit.peer_notes_removed != 0);
+  assert(profile_slot_set(&profile.normal, &normal, true));
+  profile.normal.value.undo_count = 1;
+  profile.normal.value.undo[0] = edit;
+
+  profile.result_count = 1;
+  profile.results[0] = (ProfileResult){
+      .seed = normal.game.seed,
+      .generator_revision = normal.game.generator_revision,
+      .difficulty = normal.game.difficulty,
+      .mode = MODE_STRIKES,
+      .status = SESSION_LOST,
+      .assisted = true,
+      .is_daily = false,
+      .elapsed_ms = UINT64_C(550000),
+      .mistakes = 3,
+      .strikes = 3,
+  };
+
+  assert(profile_validate(&profile));
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+
+  ProfileData loaded;
+  assert(profile_load_file(profile_path, &loaded) == STORE_OK);
+  assert(profile_validate(&loaded));
+  assert(loaded.preferences.language == LANG_CA);
+  assert(loaded.preferences.music_volume == 31);
+  assert(loaded.preferences.fx_volume == 72);
+  assert(loaded.preferences.music_muted);
+  assert(loaded.preferences.fx_muted);
+  assert(loaded.preferences.reduced_motion);
+  assert(loaded.preferences.auto_remove_peer_notes);
+  assert(loaded.preferences.window_width == 1280);
+  assert(loaded.normal.present && loaded.daily.present);
+  assert(!memcmp(&loaded.normal.value.session.game, &normal.game, sizeof(Game)));
+  assert(!memcmp(&loaded.daily.value.session.game, &daily.game, sizeof(Game)));
+  assert(loaded.normal.value.assisted);
+  assert(loaded.normal.value.undo_count == 1);
+  assert(loaded.normal.value.undo[0].after_value ==
+         normal.game.solution[target]);
+  assert(loaded.normal.value.undo[0].peer_note_value == placed);
+  assert(loaded.normal.value.undo[0].peer_notes_removed != 0);
+  assert(loaded.result_count == 1);
+  assert(loaded.results[0].status == SESSION_LOST);
+
+  SessionState changed_normal = normal;
+  changed_normal.selected_row = 7;
+  changed_normal.elapsed_ms += UINT64_C(1000);
+  assert(profile_slot_set(&loaded.normal, &changed_normal, false));
+  assert(profile_save_file(profile_path, profile_backup_path, &loaded) ==
+         STORE_OK);
+
+  ProfileData reloaded;
+  assert(profile_load_file(profile_path, &reloaded) == STORE_OK);
+  assert(reloaded.normal.value.session.selected_row == 7);
+  assert(reloaded.daily.present);
+  assert(!memcmp(&reloaded.daily.value.session.game, &daily.game, sizeof(Game)));
+}
+
+static void test_result_history_idempotence_and_summary(void) {
+  ProfileData profile;
+  profile_defaults(&profile);
+
+  ProfileResult result = {
+      .seed = UINT64_C(100),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM,
+      .mode = MODE_CLASSIC,
+      .status = SESSION_WON,
+      .assisted = false,
+      .is_daily = false,
+      .elapsed_ms = UINT64_C(180000),
+  };
+  bool inserted = false;
+  assert(profile_record_result(&profile, &result, &inserted));
+  assert(inserted);
+  assert(profile.result_count == 1);
+
+  inserted = true;
+  assert(profile_record_result(&profile, &result, &inserted));
+  assert(!inserted);
+  assert(profile.result_count == 1);
+
+  ProfileResult faster = result;
+  faster.seed = UINT64_C(101);
+  faster.elapsed_ms = UINT64_C(120000);
+  assert(profile_record_result(&profile, &faster, &inserted));
+  assert(inserted);
+
+  ProfileResult assisted = result;
+  assisted.seed = UINT64_C(102);
+  assisted.assisted = true;
+  assisted.elapsed_ms = UINT64_C(60000);
+  assert(profile_record_result(&profile, &assisted, &inserted));
+  assert(inserted);
+
+  ProfileResult hard = result;
+  hard.seed = UINT64_C(103);
+  hard.difficulty = DIFFICULTY_HARD;
+  hard.elapsed_ms = UINT64_C(30000);
+  assert(profile_record_result(&profile, &hard, &inserted));
+  assert(inserted);
+
+  ProfileResultSummary summary = profile_result_summary(&profile, &result);
+  assert(summary.finished == 3);
+  assert(summary.best_time_available);
+  assert(summary.best_time_ms == UINT64_C(120000));
+
+  ProfileResultSummary assisted_summary =
+      profile_result_summary(&profile, &assisted);
+  assert(assisted_summary.finished == 3);
+  assert(assisted_summary.best_time_available);
+  assert(assisted_summary.best_time_ms == UINT64_C(60000));
+
+  for (unsigned i = 0; i < SUDOKURA_RESULT_LIMIT + 5u; ++i) {
+    ProfileResult item = result;
+    item.seed = UINT64_C(1000) + i;
+    item.elapsed_ms = UINT64_C(200000) + i;
+    assert(profile_record_result(&profile, &item, &inserted));
+  }
+  assert(profile.result_count == SUDOKURA_RESULT_LIMIT);
+  assert(profile.results[profile.result_count - 1u].seed ==
+         UINT64_C(1000) + SUDOKURA_RESULT_LIMIT + 4u);
+  assert(profile_validate(&profile));
+}
+
+static void test_bounds_and_future_container(void) {
+  SessionState state = normal_state();
+  state.elapsed_ms = SUDOKURA_SESSION_MAX_ELAPSED_MS + UINT64_C(1);
+  assert(!session_validate(&state));
+
+  ProfileData profile;
+  profile_defaults(&profile);
+  profile.preferences.music_volume = 101;
+  assert(!profile_validate(&profile));
+  profile.preferences.music_volume = 20;
+  profile.preferences.window_width = 20000;
+  assert(!profile_validate(&profile));
+
+  profile_defaults(&profile);
+  profile.result_count = 1;
+  profile.results[0] = (ProfileResult){
+      .seed = UINT64_C(1),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM,
+      .mode = MODE_CLASSIC,
+      .status = (SessionStatus)-1,
+  };
+  assert(!profile_validate(&profile));
+
+  profile_defaults(&profile);
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+
+  unsigned char bytes[16384];
+  size_t size = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &size) == STORE_OK);
+  put_u16_test(bytes + 8, SUDOKURA_PROFILE_CONTAINER_VERSION + 1u);
+  assert(store_atomic_write(profile_path, NULL, bytes, size) == STORE_OK);
+  assert(profile_load_file(profile_path, &profile) == STORE_INCOMPATIBLE);
+}
+
+static void test_corruption_and_truncation(void) {
+  ProfileData profile;
+  profile_defaults(&profile);
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+
+  unsigned char bytes[16384];
+  size_t size = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &size) == STORE_OK);
+  bytes[size - 1] ^= 0x5a;
+  assert(store_atomic_write(profile_path, NULL, bytes, size) == STORE_OK);
+  assert(profile_load_file(profile_path, &profile) == STORE_CORRUPT);
+
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &size) == STORE_OK);
+  assert(size > 8);
+  assert(store_atomic_write(profile_path, NULL, bytes, size - 7) == STORE_OK);
+  assert(profile_load_file(profile_path, &profile) == STORE_CORRUPT);
+}
+
+static void test_previous_copy_recovery(void) {
+  ProfileData original;
+  profile_defaults(&original);
+  original.preferences.language = LANG_ES;
+  SessionState normal = normal_state();
+  assert(profile_slot_set(&original.normal, &normal, true));
+  assert(profile_save_file(profile_path, profile_backup_path, &original) ==
+         STORE_OK);
+
+  ProfileData newer = original;
+  newer.preferences.language = LANG_CA;
+  newer.preferences.music_volume = 44;
+  assert(profile_save_file(profile_path, profile_backup_path, &newer) ==
+         STORE_OK);
+
+  unsigned char bytes[16384];
+  size_t size = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &size) == STORE_OK);
+  assert(size > 32);
+  bytes[size - 1] ^= 0x6d;
+  assert(store_atomic_write(profile_path, NULL, bytes, size) == STORE_OK);
+
+  ProfileData damaged;
+  assert(profile_load_file(profile_path, &damaged) == STORE_CORRUPT);
+
+  ProfileData recovered;
+  assert(profile_recover_previous(profile_path, profile_backup_path,
+                                  &recovered) == STORE_OK);
+  assert(recovered.preferences.language == LANG_ES);
+  assert(recovered.preferences.music_volume == original.preferences.music_volume);
+  assert(recovered.normal.present);
+  assert(!memcmp(&recovered.normal.value.session.game, &normal.game,
+                 sizeof(Game)));
+
+  ProfileData active;
+  ProfileData backup;
+  assert(profile_load_file(profile_path, &active) == STORE_OK);
+  assert(profile_load_file(profile_backup_path, &backup) == STORE_OK);
+  assert(active.preferences.language == LANG_ES);
+  assert(backup.preferences.language == LANG_ES);
+}
+
+static void write_legacy_audio(void) {
+  FILE *file = fopen(legacy_audio_path, "wb");
+  assert(file);
+  assert(fprintf(file, "SUDOAUDIO1 37 81\n") > 0);
+  assert(fclose(file) == 0);
+}
+
+static ProfileLegacyPaths legacy_paths(void) {
+  ProfileLegacyPaths paths = {
+      .session_path = legacy_session_path,
+      .preferences_path = legacy_preferences_path,
+      .audio_levels_path = legacy_audio_path,
+      .session_backup_path = legacy_session_backup,
+      .preferences_backup_path = legacy_preferences_backup,
+      .audio_levels_backup_path = legacy_audio_backup,
+  };
+  return paths;
+}
+
+static void assert_migrated_session_equal(const SessionState *expected,
+                                          const SessionState *actual) {
+  assert(expected && actual);
+  assert(actual->mode == expected->mode);
+  assert(actual->selected_row == expected->selected_row);
+  assert(actual->selected_column == expected->selected_column);
+  assert(actual->notes_mode == expected->notes_mode);
+  assert(actual->strict_mode == expected->strict_mode);
+  assert(actual->manual_paused == expected->manual_paused);
+  assert(actual->status == expected->status);
+  assert(actual->mistakes == expected->mistakes);
+  assert(actual->strikes == expected->strikes);
+  assert(actual->elapsed_ms == expected->elapsed_ms);
+  assert(actual->is_daily == expected->is_daily);
+  assert(actual->daily_year == expected->daily_year);
+  assert(actual->daily_month == expected->daily_month);
+  assert(actual->daily_day == expected->daily_day);
+  assert(!memcmp(&actual->game, &expected->game, sizeof(Game)));
+}
+
+static SessionState won_state_revision(uint32_t revision) {
+  SessionState state = normal_state_revision(revision);
+  for (int i = 0; i < 81; ++i) {
+    state.game.puzzle[i] = state.game.solution[i];
+    state.game.notes[i] = 0;
+  }
+  state.status = SESSION_WON;
+  state.strikes = 1;
+  assert(session_validate(&state));
+  return state;
+}
+
+static SessionState lost_state_revision(uint32_t revision) {
+  SessionState state = normal_state_revision(revision);
+  state.status = SESSION_LOST;
+  state.strikes = 3;
+  assert(session_validate(&state));
+  return state;
+}
+
+static void run_v12_fixture(const SessionState *state) {
+  cleanup();
+
+  Preferences preferences;
+  preferences_defaults(&preferences);
+  preferences.language = LANG_ES;
+  preferences.dark_theme = false;
+  preferences.strict_mode = true;
+  preferences.mode = MODE_TIME;
+  preferences.difficulty = DIFFICULTY_EASY;
+  preferences.audio_enabled = false;
+  assert(preferences_save_file(legacy_preferences_path, &preferences));
+  write_legacy_audio();
+  assert(session_save_file(legacy_session_path, state));
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_OK);
+  assert(migrated);
+  const ProfileSlot *slot = state->is_daily ? &profile.daily : &profile.normal;
+  const SessionState *loaded = profile_slot_session(slot);
+  assert_migrated_session_equal(state, loaded);
+  assert(profile.preferences.language == LANG_ES);
+  assert(!profile.preferences.dark_theme);
+  assert(profile.preferences.strict_mode);
+  assert(!profile.preferences.audio_enabled);
+  assert(profile.preferences.music_volume == 37);
+  assert(profile.preferences.fx_volume == 81);
+  assert(!profile.preferences.music_muted);
+  assert(!profile.preferences.fx_muted);
+  assert(store_file_exists(legacy_session_backup));
+  assert(store_file_exists(legacy_preferences_backup));
+  assert(store_file_exists(legacy_audio_backup));
+}
+
+static void test_v12_fixture_matrix(void) {
+  SessionState active = legacy_normal_state();
+  run_v12_fixture(&active);
+
+  SessionState paused = legacy_normal_state();
+  paused.manual_paused = true;
+  paused.elapsed_ms += UINT64_C(3210);
+  assert(session_validate(&paused));
+  run_v12_fixture(&paused);
+
+  SessionState won = won_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
+  run_v12_fixture(&won);
+
+  SessionState lost = lost_state_revision(SUDOKURA_GENERATOR_REVISION_LEGACY);
+  run_v12_fixture(&lost);
+
+  SessionState daily = legacy_daily_state();
+  int playable = first_playable(&daily.game);
+  assert(playable >= 0);
+  daily.game.notes[playable] = (uint16_t)(1u << 4);
+  daily.elapsed_ms = UINT64_C(45678);
+  assert(session_validate(&daily));
+  run_v12_fixture(&daily);
+  cleanup();
+}
+
+static void test_v12_migration_and_one_time_import(void) {
+  SessionState state = legacy_normal_state();
+  Preferences preferences;
+  preferences_defaults(&preferences);
+  preferences.language = LANG_ES;
+  preferences.dark_theme = false;
+  preferences.mode = MODE_TIME;
+  preferences.difficulty = DIFFICULTY_EASY;
+  preferences.audio_enabled = true;
+
+  assert(session_save_file(legacy_session_path, &state));
+  assert(preferences_save_file(legacy_preferences_path, &preferences));
+  write_legacy_audio();
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_OK);
+  assert(migrated);
+  assert(profile.normal.present);
+  assert(!profile.daily.present);
+  assert(profile.preferences.language == LANG_ES);
+  assert(profile.preferences.music_volume == 37);
+  assert(profile.preferences.fx_volume == 81);
+  assert(!profile.preferences.music_muted);
+  assert(!profile.preferences.fx_muted);
+  assert(store_file_exists(legacy_session_path));
+  assert(store_file_exists(legacy_preferences_path));
+  assert(store_file_exists(legacy_audio_path));
+  assert(store_file_exists(legacy_session_backup));
+  assert(store_file_exists(legacy_preferences_backup));
+  assert(store_file_exists(legacy_audio_backup));
+
+  write_legacy_audio();
+  migrated = true;
+  ProfileData second;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &second, &migrated) == STORE_OK);
+  assert(!migrated);
+  assert(second.preferences.music_volume == 37);
+  assert(second.preferences.fx_volume == 81);
+}
+
+static void test_daily_uses_separate_slot(void) {
+  cleanup();
+  SessionState daily = legacy_daily_state();
+  assert(session_save_file(legacy_session_path, &daily));
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_OK);
+  assert(migrated);
+  assert(!profile.normal.present);
+  assert(profile.daily.present);
+  assert(profile.daily.value.session.is_daily);
+}
+
+static void test_corrupt_legacy_inputs_fail_closed(void) {
+  cleanup();
+
+  FILE *file = fopen(legacy_preferences_path, "wb");
+  assert(file);
+  assert(fwrite("bad", 1, 3, file) == 3);
+  assert(fclose(file) == 0);
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_CORRUPT);
+  assert(!migrated);
+  assert(store_file_exists(legacy_preferences_path));
+  assert(store_file_exists(legacy_preferences_backup));
+  assert(!store_file_exists(profile_path));
+
+  cleanup();
+  file = fopen(legacy_audio_path, "wb");
+  assert(file);
+  assert(fwrite("not-audio", 1, 9, file) == 9);
+  assert(fclose(file) == 0);
+  paths = legacy_paths();
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) == STORE_CORRUPT);
+  assert(store_file_exists(legacy_audio_path));
+  assert(store_file_exists(legacy_audio_backup));
+  assert(!store_file_exists(profile_path));
+}
+
+static void test_incompatible_legacy_is_preserved(void) {
+  cleanup();
+  SessionState state = legacy_normal_state();
+  assert(session_save_file(legacy_session_path, &state));
+
+  unsigned char bytes[LEGACY_HEADER_SIZE + LEGACY_SESSION_PAYLOAD_SIZE];
+  size_t size = 0;
+  assert(store_read_file(legacy_session_path, bytes, sizeof(bytes), &size) ==
+         STORE_OK);
+  assert(size == sizeof(bytes));
+  put_u32_test(bytes + LEGACY_HEADER_SIZE,
+               SUDOKURA_GENERATOR_REVISION + 1u);
+  put_u32_test(bytes + 14,
+               crc32_bytes_test(bytes + LEGACY_HEADER_SIZE,
+                                LEGACY_SESSION_PAYLOAD_SIZE));
+  assert(store_atomic_write(legacy_session_path, NULL, bytes, size) == STORE_OK);
+
+  ProfileLegacyPaths paths = legacy_paths();
+  ProfileData profile;
+  bool migrated = false;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, &paths,
+                                     &profile, &migrated) ==
+         STORE_INCOMPATIBLE);
+  assert(!migrated);
+  assert(store_file_exists(legacy_session_path));
+  assert(!store_file_exists(profile_path));
+}
+
+int main(void) {
+  cleanup();
+  test_profile_roundtrip();
+  cleanup();
+  test_result_history_idempotence_and_summary();
+  cleanup();
+  test_bounds_and_future_container();
+  cleanup();
+  test_corruption_and_truncation();
+  cleanup();
+  test_previous_copy_recovery();
+  cleanup();
+  test_v12_fixture_matrix();
+  test_v12_migration_and_one_time_import();
+  test_daily_uses_separate_slot();
+  test_corrupt_legacy_inputs_fail_closed();
+  test_incompatible_legacy_is_preserved();
+  cleanup();
+  puts("v1.3 profile model, recovery, slots, bounds, and v1.2 fixture migration passed");
+  return 0;
+}

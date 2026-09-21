@@ -8,6 +8,7 @@
 <key>CFBundleShortVersionString</key><string>@SUDOKURA_VERSION@</string>
 <key>CFBundleVersion</key><string>@SUDOKURA_VERSION@</string>
 <key>CFBundleIconFile</key><string>sudokura.icns</string>
+<key>LSMinimumSystemVersion</key><string>@SUDOKURA_MIN_MACOS@</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>LSApplicationCategoryType</key><string>public.app-category.puzzle-games</string>
 </dict></plist>

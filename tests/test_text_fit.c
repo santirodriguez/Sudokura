@@ -1,6 +1,5 @@
 #include "geometry.h"
 #include "i18n.h"
-#include "src/sudokura_sdl/ui_geometry.inc"
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL_ttf.h>
@@ -11,6 +10,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const int test_font_sizes[] = {
     10, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 30,
@@ -65,7 +65,8 @@ int main(void) {
   assert(TTF_Init() == 0);
 
   const int sizes[][2] = {
-      {640, 480}, {800, 600}, {1024, 720}, {1366, 768}, {1920, 1080},
+      {640, 480}, {800, 600}, {960, 720}, {1280, 960},
+      {1024, 720}, {1366, 768}, {1920, 1080},
       {2560, 1440}, {3440, 1440}, {360, 640}, {390, 844}, {412, 915},
   };
   const TextKey actions[PLAY_ACTION_COUNT] = {
@@ -75,7 +76,7 @@ int main(void) {
       [PLAY_ACTION_HINT] = T_HINT,
       [PLAY_ACTION_NOTES] = T_NOTES,
       [PLAY_ACTION_VERIFY] = T_VERIFY,
-      [PLAY_ACTION_AUDIO] = T_SOUND,
+      [PLAY_ACTION_AUDIO] = T_SETTINGS,
       [PLAY_ACTION_HELP] = T_HELP,
       [PLAY_ACTION_ABOUT] = T_ABOUT,
   };
@@ -87,7 +88,7 @@ int main(void) {
     for (int mode = 0; mode < 3; ++mode) {
       int width = sizes[s][0], height = sizes[s][1];
       AppGeometry g;
-      assert(ui_geometry_compute(width, height, (GeometryMode)mode, &g));
+      assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       GeometryFonts tier = geometry_font_sizes(&g, width, height);
 
       assert_rect(g.play_language, width, height);
@@ -119,9 +120,79 @@ int main(void) {
           assert(fits(font, tr((Language)language, difficulties[i]), tier.control,
                       10, g.home_difficulty[i].w, g.home_difficulty[i].h));
         }
-        for (int i = 0; i < PLAY_ACTION_COUNT; ++i)
+        for (int i = 0; i < PLAY_ACTION_COUNT; ++i) {
+          if (i == PLAY_ACTION_ABOUT) continue;
+          if (i == PLAY_ACTION_AUDIO) continue;
           assert(fits(font, tr((Language)language, actions[i]), tier.control, 10,
                       g.actions[i].w, g.actions[i].h));
+        }
+        AudioControlGeometry play_audio =
+            geometry_audio_control(width, height, &g, true);
+        int settings_width =
+            play_audio.button.x - 4 - g.actions[PLAY_ACTION_AUDIO].x;
+        assert(fits(font, tr((Language)language, T_SETTINGS), tier.control, 10,
+                    settings_width, g.actions[PLAY_ACTION_AUDIO].h));
+
+        int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
+        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap) / 2;
+        assert(fits(font, tr((Language)language, T_MENU), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_MENU].h));
+        assert(fits(font, tr((Language)language, T_PAUSE), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_MENU].h));
+        assert(fits(font, tr((Language)language, T_UNDO), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_PAUSE].h));
+        assert(fits(font, tr((Language)language, T_REDO), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_PAUSE].h));
+        assert(fits(font, tr((Language)language, T_RESTART), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_RESTART].h));
+        assert(fits(font, tr((Language)language, T_CLEAR), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_RESTART].h));
+
+        /* A save failure replaces the status row. Keep both the warning and
+           its recovery action renderable at every supported viewport. */
+        int save_inset = g.status.h <= 28 ? 2 : 4;
+        int save_retry_w = g.status.w < 300 ? 88 : 118;
+        int save_retry_h = g.status.h - save_inset * 2 - 3;
+        int save_message_w =
+            g.status.w - save_retry_w - save_inset * 3 - 4;
+        int save_message_h = g.status.h - save_inset * 2;
+        assert(fits(font, tr((Language)language, T_SAVE_FAILED), 15, 9,
+                    save_message_w, save_message_h - 2));
+        assert(fits(font, tr((Language)language, T_RETRY_SAVE), 14, 9,
+                    save_retry_w, save_retry_h - 2));
+
+        int home_main_h = g.home_primary[1].h * 3 / 5;
+        int home_sub_h = g.home_primary[1].h - home_main_h + 1;
+        assert(fits(font, tr((Language)language, T_CONTINUE_NORMAL),
+                    tier.control, 9, g.home_primary[1].w - 4, home_main_h));
+        assert(fits(font, tr((Language)language, T_CONTINUE_DAILY),
+                    tier.control, 9, g.home_primary[2].w - 4, home_main_h));
+        assert(fits(font, tr((Language)language, T_DAILY_COMPLETE),
+                    tier.control, 9, g.home_primary[2].w - 4, home_main_h));
+        char normal_resume[160];
+        snprintf(normal_resume, sizeof normal_resume, "%s · %s · 99:59",
+                 tr((Language)language, T_TIME_ATTACK),
+                 tr((Language)language, T_HARD));
+        assert(fits(font, normal_resume,
+                    tier.control > 13 ? tier.control - 4 : 10, 9,
+                    g.home_primary[1].w - 4, home_sub_h));
+        char daily_resume[160];
+        snprintf(daily_resume, sizeof daily_resume,
+                 "2026-09-18 · %s · 99:59",
+                 tr((Language)language, T_MEDIUM));
+        assert(fits(font, daily_resume,
+                    tier.control > 13 ? tier.control - 4 : 10, 9,
+                    g.home_primary[2].w - 4, home_sub_h));
+
+        assert(fits(font, tr((Language)language, T_ANOTHER_NORMAL),
+                    tier.control + 2, 9, g.end_buttons[0].w,
+                    g.end_buttons[0].h));
+        assert(fits(font, tr((Language)language, T_RETRY_SAME),
+                    tier.control + 2, 9, g.end_buttons[0].w,
+                    g.end_buttons[0].h));
+        assert(fits(font, tr((Language)language, T_HOME),
+                    tier.control, 9, g.end_buttons[1].w,
+                    g.end_buttons[1].h));
 
         char sample[128];
         snprintf(sample, sizeof sample, "%s: %s", tr((Language)language, T_MODE),
@@ -141,8 +212,12 @@ int main(void) {
                  tr((Language)language, T_HINTS));
         assert(fits(font, sample, tier.hud, 10, g.hud[3].w, g.hud[3].h));
 
-        assert(wrapped_fits(font, tr((Language)language, T_HELP_BODY), tier.body,
-                            10, g.info_body.w, g.info_body.h));
+        char help_text[2048];
+        snprintf(help_text, sizeof help_text,
+                 tr((Language)language, T_HELP_BODY),
+                 "Ctrl", "Ctrl", "Ctrl", "Ctrl");
+        assert(wrapped_fits(font, help_text, tier.body, 10,
+                            g.info_body.w, g.info_body.h));
 
         int intro_version_h = g.about_body.h / 2;
         if (intro_version_h < 20) intro_version_h = g.about_body.h;
@@ -191,17 +266,69 @@ int main(void) {
                       g.about_links[i].h - 3));
         }
 
-        assert(fits(font, tr((Language)language, T_AUDIO), tier.control + 8, 10,
-                    width < 640 ? width - 60 : 420, 42));
+        int hint_margin = g.sidebar.w < 240 ? 7 : 10;
+        int hint_card_h = g.sidebar.h - hint_margin * 2;
+        int hint_button_h = hint_card_h < 430 ? 31 : 36;
+        int hint_body_w = g.sidebar.w - hint_margin * 2 - 20;
+        int hint_body_h = hint_card_h - hint_button_h * 4 - 78;
+        assert(hint_body_w > 8 && hint_body_h > 8);
+        assert(fits(font, tr((Language)language, T_HINT_PREVIEW), 20, 10,
+                    hint_body_w, 32));
+        assert(fits(font, tr((Language)language, T_APPLY), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_VERIFY), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_REVEAL_CELL), 16, 9,
+                    hint_body_w, hint_button_h));
+        assert(fits(font, tr((Language)language, T_CANCEL), 16, 9,
+                    hint_body_w, hint_button_h));
+
+        char hint_message[320];
+        snprintf(hint_message, sizeof hint_message,
+                 tr((Language)language, T_HINT_CHAIN_FMT),
+                 tr((Language)language, T_TECH_LOCKED_CANDIDATE), 9, 9, 9);
+        size_t hint_length = strlen(hint_message);
+        snprintf(hint_message + hint_length,
+                 sizeof hint_message - hint_length, "\n%s",
+                 tr((Language)language, T_HINT_MARKER_LEGEND));
+        assert(wrapped_fits(font, hint_message, 15, 9,
+                            hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_CONTRADICTION),
+                            15, 9, hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_STALLED),
+                            15, 9, hint_body_w, hint_body_h));
+        assert(wrapped_fits(font, tr((Language)language, T_HINT_NEEDS_VERIFY),
+                            15, 9, hint_body_w, hint_body_h));
+
+        int settings_w = width < 640 ? width - 60 : 420;
+        assert(fits(font, tr((Language)language, T_SETTINGS),
+                    tier.control + 8, 10, settings_w, 42));
+        char settings_sample[160];
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_THEME),
+                 tr((Language)language, T_DARK));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_LANGUAGE),
+                 language_name((Language)language));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_SOUND),
+                 tr((Language)language, T_ON));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_REDUCED_MOTION),
+                 tr((Language)language, T_OFF));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
         assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
-                    width < 640 ? width - 60 : 420, 24));
+                    settings_w, 24));
         assert(fits(font, tr((Language)language, T_FX), tier.control, 10,
-                    width < 640 ? width - 60 : 420, 24));
+                    settings_w, 24));
       }
     }
   }
 
   TTF_Quit();
-  puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Audio labels and all responsive tiers");
+  puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Settings labels and all responsive tiers");
   return 0;
 }

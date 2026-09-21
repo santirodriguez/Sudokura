@@ -1,5 +1,4 @@
 #include "geometry.h"
-#include "src/sudokura_sdl/ui_geometry.inc"
 
 #include <assert.h>
 #include <stdio.h>
@@ -28,7 +27,7 @@ int main(void) {
     bool portrait = width < 640;
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
-      assert(ui_geometry_compute(width, height, (GeometryMode)mode, &g));
+      assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert_inside(g.about_study, g.about_study_link);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
@@ -38,6 +37,24 @@ int main(void) {
         assert_rect(g.actions[action], width, height);
       for (int number = 0; number < GEOMETRY_PALETTE_COUNT; ++number)
         assert_rect(g.palette[number], width, height);
+
+      AudioControlGeometry play_audio =
+          geometry_audio_control(width, height, &g, true);
+      AudioControlGeometry screen_audio =
+          geometry_audio_control(width, height, &g, false);
+      assert_rect(play_audio.button, width, height);
+      assert_rect(play_audio.popup, width, height);
+      assert_inside(play_audio.popup, play_audio.music);
+      assert_inside(play_audio.popup, play_audio.fx);
+      assert_rect(screen_audio.button, width, height);
+      assert_rect(screen_audio.popup, width, height);
+      assert_inside(screen_audio.popup, screen_audio.music);
+      assert_inside(screen_audio.popup, screen_audio.fx);
+      assert_inside(g.actions[PLAY_ACTION_AUDIO], play_audio.button);
+      assert(play_audio.button.x - 4 >
+             g.actions[PLAY_ACTION_AUDIO].x + 48);
+      assert(screen_audio.button.x >=
+             g.screen_language.x + g.screen_language.w);
 
       assert(g.actions[PLAY_ACTION_MENU].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
@@ -53,7 +70,11 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_HELP].y + g.actions[PLAY_ACTION_HELP].h <=
              g.palette_label.y);
       assert(g.palette_label.y < g.progress.y);
-      assert(g.progress.y + g.progress.h <= g.actions[PLAY_ACTION_ABOUT].y);
+      assert(g.progress.y + g.progress.h <= g.status.y);
+      assert(g.actions[PLAY_ACTION_ABOUT].x == g.status.x);
+      assert(g.actions[PLAY_ACTION_ABOUT].y == g.status.y);
+      assert(g.actions[PLAY_ACTION_ABOUT].w == g.status.w);
+      assert(g.actions[PLAY_ACTION_ABOUT].h == g.status.h);
 
       if (portrait) {
         assert(g.board.w >= 225);
@@ -68,6 +89,6 @@ int main(void) {
       }
     }
   }
-  puts("UI geometry tests passed for hierarchical play controls, footer About and four-link About screen");
+  puts("UI geometry tests passed for play controls, global audio geometry and About screen");
   return 0;
 }

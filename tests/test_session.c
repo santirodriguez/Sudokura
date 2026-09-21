@@ -1,5 +1,6 @@
 #include "game.h"
 #include "session.h"
+#include "store_io.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -53,8 +54,8 @@ static void put_u32_test(unsigned char *data, uint32_t value) {
 static SessionState make_state(void) {
   SessionState state;
   memset(&state, 0, sizeof(state));
-  game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
-                      DIFFICULTY_HARD);
+  assert(game_new_difficulty(&state.game, UINT64_C(0x123456789abcdef0),
+                             DIFFICULTY_EASY));
   state.mode = MODE_STRIKES;
   state.selected_row = 4;
   state.selected_column = 5;
@@ -128,8 +129,14 @@ static void test_preferences(void) {
   assert(defaults.audio_enabled);
   assert(preferences_validate(&defaults));
 
-  Preferences custom = {
-      LANG_CA, false, true, MODE_TIME, DIFFICULTY_HARD, false};
+  Preferences custom;
+  preferences_defaults(&custom);
+  custom.language = LANG_CA;
+  custom.dark_theme = false;
+  custom.strict_mode = true;
+  custom.mode = MODE_TIME;
+  custom.difficulty = DIFFICULTY_HARD;
+  custom.audio_enabled = false;
   assert(preferences_save_file(preferences_path, &custom));
   Preferences loaded;
   preferences_defaults(&loaded);
@@ -185,6 +192,28 @@ static void test_session_roundtrip(void) {
   assert(loaded.elapsed_ms == state.elapsed_ms);
 }
 
+static void test_revision2_session_compatibility(void) {
+  SessionState state;
+  memset(&state, 0, sizeof(state));
+  assert(game_new_difficulty_revision(
+      &state.game, UINT64_C(42), DIFFICULTY_MEDIUM,
+      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  state.mode = MODE_CLASSIC;
+  state.selected_row = 4;
+  state.selected_column = 4;
+  state.status = SESSION_ACTIVE;
+  state.elapsed_ms = UINT64_C(3210);
+  assert(session_validate(&state));
+  assert(session_save_file(session_path, &state));
+
+  SessionState loaded;
+  assert(session_load_file(session_path, &loaded) == STORE_OK);
+  assert(loaded.game.generator_revision == SUDOKURA_GENERATOR_REVISION_LEGACY);
+  assert(loaded.game.seed == state.game.seed);
+  assert(!memcmp(loaded.game.initial, state.game.initial,
+                 sizeof(state.game.initial)));
+}
+
 static void test_daily_and_results(void) {
   SessionState daily;
   memset(&daily, 0, sizeof(daily));
@@ -216,22 +245,39 @@ static void test_daily_and_results(void) {
   assert(session_validate(&lost));
   lost.strikes = 2;
   assert(!session_validate(&lost));
+
+  SessionState incompatible_win = make_state();
+  for (int i = 0; i < 81; ++i) {
+    if (!incompatible_win.game.fixed[i])
+      incompatible_win.game.puzzle[i] = incompatible_win.game.solution[i];
+    incompatible_win.game.notes[i] = 0;
+    incompatible_win.game.hinted[i] = 0;
+  }
+  incompatible_win.status = SESSION_WON;
+  incompatible_win.mode = MODE_STRIKES;
+  incompatible_win.strikes = 3;
+  assert(!session_validate(&incompatible_win));
+
+  incompatible_win.mode = MODE_TIME;
+  incompatible_win.strikes = 0;
+  incompatible_win.elapsed_ms = UINT64_C(600000);
+  assert(!session_validate(&incompatible_win));
+  incompatible_win.elapsed_ms = UINT64_C(599999);
+  assert(session_validate(&incompatible_win));
 }
 
 static void test_time_attack_loss_boundary(void) {
   SessionState timed = make_state();
   timed.mode = MODE_TIME;
   timed.strikes = 0;
-  timed.elapsed_ms = UINT64_C(600000);
+  timed.elapsed_ms = UINT64_C(599999);
   timed.status = SESSION_ACTIVE;
   assert(session_validate(&timed));
 
-  timed.status = SESSION_LOST;
+  timed.elapsed_ms = UINT64_C(600000);
   assert(!session_validate(&timed));
 
-  /* capture_session() rounds upward, so any runtime loss just over 600 s
-     serializes beyond the strict > 600 s validation boundary. */
-  timed.elapsed_ms = UINT64_C(600001);
+  timed.status = SESSION_LOST;
   assert(session_validate(&timed));
   assert(session_save_file(session_path, &timed));
 
@@ -239,7 +285,7 @@ static void test_time_attack_loss_boundary(void) {
   memset(&loaded, 0, sizeof(loaded));
   assert(session_load_file(session_path, &loaded) == STORE_OK);
   assert(loaded.status == SESSION_LOST);
-  assert(loaded.elapsed_ms == UINT64_C(600001));
+  assert(loaded.elapsed_ms == UINT64_C(600000));
 }
 
 static void test_semantic_rejections(void) {
@@ -277,7 +323,7 @@ static void test_incompatible_generator_revision(void) {
   assert(fclose(file) == 0);
 
   put_u32_test(bytes + STORE_HEADER_SIZE_TEST,
-               SUDOKURA_GENERATOR_REVISION - 1u);
+               SUDOKURA_GENERATOR_REVISION + 1u);
   uint32_t crc = crc32_bytes_test(bytes + STORE_HEADER_SIZE_TEST,
                                   SESSION_PAYLOAD_SIZE_TEST);
   put_u32_test(bytes + 14, crc);
@@ -322,7 +368,8 @@ static void test_corruption_and_quarantine(void) {
   assert(fseek(file, 8, SEEK_SET) == 0);
   assert(fputc(99, file) != EOF);
   assert(fclose(file) == 0);
-  assert(session_load_file(session_path, &loaded) == STORE_CORRUPT);
+  assert(session_load_file(session_path, &loaded) == STORE_INCOMPATIBLE);
+  assert(store_file_exists(session_path));
 }
 
 int main(void) {
@@ -331,6 +378,7 @@ int main(void) {
   assert(session_load_file(session_path, &missing) == STORE_NOT_FOUND);
   test_preferences();
   test_session_roundtrip();
+  test_revision2_session_compatibility();
   test_daily_and_results();
   test_time_attack_loss_boundary();
   test_semantic_rejections();

@@ -209,7 +209,7 @@ static void set_compatibility_aliases(AppGeometry *g) {
   g->pause_button = g->pause_buttons[0];
 }
 
-bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) {
+static bool geometry_compute_base(int width, int height, GeometryMode mode, AppGeometry *g) {
   bool portrait = width >= 360 && height >= 640 && width < 640;
   if (!g || !geometry_window_size_supported(width, height) ||
       mode < GEOMETRY_MODE_CLASSIC || mode > GEOMETRY_MODE_TIME)
@@ -337,7 +337,7 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *g) 
 
   common_screens(width, height, portrait, g);
   set_compatibility_aliases(g);
-  return geometry_play_valid(g, width, height);
+  return true;
 }
 
 GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
@@ -363,13 +363,41 @@ GeometryFonts geometry_font_sizes(const AppGeometry *g, int width, int height) {
   return f;
 }
 
+GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
+  (void)height;
+  GeometryStyle style = {4, 6, 10, 16, 7, 14, 26, 1, 3};
+  if (!g) return style;
+  bool portrait = width < 640;
+  bool xl = width >= 1600 && g->board.w >= 810;
+  if (portrait) {
+    style.space_xs = 3;
+    style.space_sm = 4;
+    style.space_md = 8;
+    style.space_lg = 12;
+    style.radius_control = 6;
+    style.radius_panel = 10;
+    style.min_control_h = 28;
+    style.grid_major_px = 3;
+  } else if (xl) {
+    style.space_xs = 6;
+    style.space_sm = 8;
+    style.space_md = 14;
+    style.space_lg = 22;
+    style.radius_control = 9;
+    style.radius_panel = 16;
+    style.grid_major_px = 4;
+  }
+  return style;
+}
+
 bool geometry_play_valid(const AppGeometry *g, int width, int height) {
   if (!g || !geometry_rect_in_bounds(g->board, width, height) ||
       !geometry_rect_in_bounds(g->sidebar, width, height) ||
       !geometry_rect_in_bounds(g->play_language, width, height) ||
       !geometry_rect_in_bounds(g->play_title, width, height) ||
       !geometry_rect_in_bounds(g->palette_label, width, height) ||
-      !geometry_rect_in_bounds(g->progress, width, height))
+      !geometry_rect_in_bounds(g->progress, width, height) ||
+      !geometry_rect_in_bounds(g->status, width, height))
     return false;
 
   bool portrait = width < 640;
@@ -379,12 +407,12 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     if (!geometry_rect_in_bounds(g->hud[i], width, height)) return false;
   for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i) {
     if (!geometry_rect_in_bounds(g->actions[i], width, height) ||
-        g->actions[i].h < 40)
+        g->actions[i].h < 26)
       return false;
   }
   for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) {
     if (!geometry_rect_in_bounds(g->palette[i], width, height) ||
-        g->palette[i].h < 28 || g->palette[i].w < (portrait ? 32 : 70))
+        g->palette[i].h < 22 || g->palette[i].w < (portrait ? 32 : 70))
       return false;
   }
 
@@ -438,4 +466,290 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       overlaps(g->about_study, g->about_credits))
     return false;
   return true;
+}
+
+
+/* Final v1.3 presentation geometry. This is the sole exported layout authority. */
+/* Final responsive adjustments over the internal base calculation. */
+static void geometry_final_shift_rect_y(GeoRect *rect, int delta) {
+  if (rect) rect->y += delta;
+}
+
+static int geometry_final_rect_bottom(GeoRect rect) { return rect.y + rect.h; }
+
+static void geometry_final_grid(GeoRect *items, int start, int count, int x, int y,
+                    int width, int height, int columns, int gap) {
+  int cell_w = (width - (columns - 1) * gap) / columns;
+  for (int i = 0; i < count; ++i) {
+    items[start + i] =
+        (GeoRect){x + (i % columns) * (cell_w + gap),
+                  y + (i / columns) * (height + gap), cell_w, height};
+  }
+}
+
+static int geometry_final_place_action_rows(AppGeometry *geometry, int x, int y, int width,
+                                int menu_h, int row_h, int gap) {
+  geometry->actions[PLAY_ACTION_MENU] = (GeoRect){x, y, width, menu_h};
+  y += menu_h + gap;
+  geometry_final_grid(geometry->actions, PLAY_ACTION_PAUSE, 2, x, y, width, row_h, 2, gap);
+  y += row_h + gap;
+  geometry_final_grid(geometry->actions, PLAY_ACTION_HINT, 3, x, y, width, row_h, 3, gap);
+  y += row_h + gap;
+  geometry_final_grid(geometry->actions, PLAY_ACTION_AUDIO, 2, x, y, width, row_h, 2, gap);
+  return y + row_h;
+}
+
+static bool geometry_final_play_rects_in_bounds(const AppGeometry *geometry, int width,
+                                    int height) {
+  for (int i = 0; i < GEOMETRY_ACTION_COUNT; ++i)
+    if (!geometry_rect_in_bounds(geometry->actions[i], width, height))
+      return false;
+  for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
+    if (!geometry_rect_in_bounds(geometry->palette[i], width, height))
+      return false;
+  return geometry_rect_in_bounds(geometry->board, width, height) &&
+         geometry_rect_in_bounds(geometry->palette_label, width, height) &&
+         geometry_rect_in_bounds(geometry->progress, width, height);
+}
+
+static bool geometry_final_layout_portrait_play(int width, int height,
+                                    AppGeometry *geometry) {
+  int margin = 8;
+  int shell_w = width - margin * 2;
+  bool compact = height < 760;
+  int section_gap = compact ? 4 : 6;
+  int action_gap = compact ? 2 : 3;
+  int action_h = compact ? 28 : 32;
+  int menu_h = compact ? 28 : 34;
+  int status_h = compact ? 28 : 32;
+  int hud_item_h = compact ? 20 : 22;
+  int hud_rows = (geometry->hud_count + 2) / 3;
+  int hud_gap = 3;
+  int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
+  int palette_label_h = compact ? 14 : 16;
+  int palette_h = compact ? 30 : 34;
+  int progress_h = compact ? 18 : 22;
+  int actions_h = menu_h + action_h * 3 + action_gap * 3;
+
+  geometry->play_language = (GeoRect){margin, margin, shell_w, 38};
+  geometry->play_title = (GeoRect){margin, margin + 42, shell_w, 24};
+  int board_y = geometry_final_rect_bottom(geometry->play_title) + 4;
+  int reserve = section_gap + hud_h + section_gap + actions_h + section_gap +
+                palette_label_h + 2 + palette_h + section_gap + progress_h +
+                section_gap + status_h + margin;
+  int board = height - board_y - reserve;
+  if (board > shell_w) board = shell_w;
+  board -= board % 9;
+  if (board < 225) return false;
+  geometry->board = (GeoRect){(width - board) / 2, board_y, board, board};
+
+  int y = geometry_final_rect_bottom(geometry->board) + section_gap;
+  geometry_final_grid(geometry->hud, 0, geometry->hud_count, margin, y, shell_w,
+          hud_item_h, 3, hud_gap);
+  y += hud_h + section_gap;
+  y = geometry_final_place_action_rows(geometry, margin, y, shell_w, menu_h, action_h,
+                           action_gap);
+  y += section_gap;
+  geometry->palette_label = (GeoRect){margin, y, shell_w, palette_label_h};
+  y += palette_label_h + 2;
+  geometry_final_grid(geometry->palette, 0, GEOMETRY_PALETTE_COUNT, margin, y, shell_w,
+          palette_h, GEOMETRY_PALETTE_COUNT, 2);
+  y += palette_h + section_gap;
+  geometry->progress = (GeoRect){margin, y, shell_w, progress_h};
+  int status_y = height - margin - status_h;
+  if (geometry_final_rect_bottom(geometry->progress) + section_gap > status_y)
+    return false;
+  geometry->status = (GeoRect){margin, status_y, shell_w, status_h};
+  geometry->actions[PLAY_ACTION_ABOUT] = geometry->status;
+  int sidebar_y = geometry_final_rect_bottom(geometry->board) + 2;
+  geometry->sidebar = (GeoRect){margin, sidebar_y, shell_w,
+                                height - margin - sidebar_y};
+  return geometry_final_play_rects_in_bounds(geometry, width, height);
+}
+
+static bool geometry_final_layout_desktop_play(int width, int height,
+                                   AppGeometry *geometry) {
+  int hud_bottom = geometry_final_rect_bottom(geometry->play_title);
+  for (int i = 0; i < geometry->hud_count; ++i)
+    if (geometry_final_rect_bottom(geometry->hud[i]) > hud_bottom)
+      hud_bottom = geometry_final_rect_bottom(geometry->hud[i]);
+
+  int top = hud_bottom + 4;
+  int bottom = geometry_final_rect_bottom(geometry->sidebar);
+  int remaining = bottom - top;
+  bool xl = width >= 1600 && height >= 900;
+  int section_gap, action_gap, menu_h, row_h, palette_label_h;
+  int palette_item_h, palette_gap, progress_h, status_h;
+
+  if (xl && remaining >= 540) {
+    section_gap = 7;
+    action_gap = 6;
+    menu_h = 50;
+    row_h = 48;
+    palette_label_h = 22;
+    palette_item_h = 44;
+    palette_gap = 6;
+    progress_h = 30;
+    status_h = 42;
+  } else if (remaining >= 390) {
+    section_gap = 5;
+    action_gap = 4;
+    menu_h = 38;
+    row_h = 36;
+    palette_label_h = 18;
+    palette_item_h = 30;
+    palette_gap = 4;
+    progress_h = 24;
+    status_h = 34;
+  } else {
+    section_gap = 2;
+    action_gap = 2;
+    menu_h = 30;
+    row_h = 28;
+    palette_label_h = 12;
+    palette_item_h = 22;
+    palette_gap = 2;
+    progress_h = 18;
+    status_h = 26;
+  }
+
+  int x = geometry->sidebar.x;
+  int w = geometry->sidebar.w;
+  int y = geometry_final_place_action_rows(geometry, x, top, w, menu_h, row_h, action_gap);
+  y += section_gap;
+  geometry->palette_label = (GeoRect){x, y, w, palette_label_h};
+  y += palette_label_h + (section_gap > 2 ? 3 : 2);
+  geometry_final_grid(geometry->palette, 0, GEOMETRY_PALETTE_COUNT, x, y, w,
+          palette_item_h, 3, palette_gap);
+  int palette_h = palette_item_h * 3 + palette_gap * 2;
+  y += palette_h + section_gap;
+  geometry->progress = (GeoRect){x, y, w, progress_h};
+
+  int status_y = bottom - status_h;
+  if (geometry_final_rect_bottom(geometry->progress) + section_gap > status_y)
+    return false;
+  geometry->status = (GeoRect){x, status_y, w, status_h};
+  geometry->actions[PLAY_ACTION_ABOUT] = geometry->status;
+  return geometry_final_play_rects_in_bounds(geometry, width, height);
+}
+
+static int geometry_final_audio_button_size(int width, int height) {
+  int size = width < 640 ? 28 : height;
+  if (size > 40) size = 40;
+  if (size < 28) size = 28;
+  return size;
+}
+
+static void geometry_final_reserve_audio(GeoRect *language, int width) {
+  if (!language || language->w <= 0 || language->h <= 0) return;
+  int size = geometry_final_audio_button_size(width, language->h);
+  int gap = 4;
+  if (language->w > size + gap + 96) language->w -= size + gap;
+}
+
+bool geometry_compute(int width, int height, GeometryMode mode,
+                      AppGeometry *geometry) {
+  if (!geometry_compute_base(width, height, mode, geometry)) return false;
+  _Static_assert(PLAY_ACTION_COUNT == GEOMETRY_ACTION_COUNT,
+                 "play-action geometry mismatch");
+
+  if (width < 640) {
+    if (!geometry_final_layout_portrait_play(width, height, geometry)) return false;
+  } else if (!geometry_final_layout_desktop_play(width, height, geometry)) {
+    return false;
+  }
+
+  geometry_final_reserve_audio(&geometry->screen_language, width);
+
+  if (width < 640) return geometry_play_valid(geometry, width, height);
+
+  int top = geometry->home_logo.y;
+  int bottom = geometry_final_rect_bottom(geometry->home_logo);
+  for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
+    if (geometry_final_rect_bottom(geometry->home_mode[i]) > bottom)
+      bottom = geometry_final_rect_bottom(geometry->home_mode[i]);
+    if (geometry_final_rect_bottom(geometry->home_difficulty[i]) > bottom)
+      bottom = geometry_final_rect_bottom(geometry->home_difficulty[i]);
+  }
+  for (int i = 0; i < GEOMETRY_HOME_PRIMARY_COUNT; ++i)
+    if (geometry_final_rect_bottom(geometry->home_primary[i]) > bottom)
+      bottom = geometry_final_rect_bottom(geometry->home_primary[i]);
+  for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    if (geometry_final_rect_bottom(geometry->home_secondary[i]) > bottom)
+      bottom = geometry_final_rect_bottom(geometry->home_secondary[i]);
+
+  int block_height = bottom - top;
+  int available_top =
+      geometry->screen_language.y + geometry->screen_language.h + 12;
+  int available_bottom = height - 24;
+  int spare = available_bottom - available_top - block_height;
+  if (spare <= 0) return geometry_play_valid(geometry, width, height);
+
+  int target_top = available_top + spare * 2 / 5;
+  int delta = target_top - top;
+  if (delta <= 0) return geometry_play_valid(geometry, width, height);
+
+  geometry_final_shift_rect_y(&geometry->home_logo, delta);
+  geometry_final_shift_rect_y(&geometry->home_mode_label, delta);
+  geometry_final_shift_rect_y(&geometry->home_difficulty_label, delta);
+  for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
+    geometry_final_shift_rect_y(&geometry->home_mode[i], delta);
+    geometry_final_shift_rect_y(&geometry->home_difficulty[i], delta);
+  }
+  for (int i = 0; i < GEOMETRY_HOME_PRIMARY_COUNT; ++i)
+    geometry_final_shift_rect_y(&geometry->home_primary[i], delta);
+  for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    geometry_final_shift_rect_y(&geometry->home_secondary[i], delta);
+
+  return geometry_play_valid(geometry, width, height);
+}
+
+
+
+AudioControlGeometry geometry_audio_control(int width, int height,
+                                            const AppGeometry *app,
+                                            bool play_surface) {
+  AudioControlGeometry out;
+  memset(&out, 0, sizeof(out));
+  if (width <= 0 || height <= 0) return out;
+
+  if (app && play_surface) {
+    GeoRect settings = app->actions[PLAY_ACTION_AUDIO];
+    int size = geometry_final_audio_button_size(width, settings.h);
+    if (size > settings.w / 2) size = settings.w / 2;
+    out.button =
+        (GeoRect){settings.x + settings.w - size,
+                  settings.y + (settings.h - size) / 2, size, size};
+  } else if (app) {
+    GeoRect language = app->screen_language;
+    int size = geometry_final_audio_button_size(width, language.h);
+    out.button =
+        (GeoRect){language.x + language.w + 4,
+                  language.y + (language.h - size) / 2, size, size};
+  } else {
+    int size = width < 420 ? 36 : 40;
+    int margin = width < 420 ? 8 : 12;
+    out.button = (GeoRect){width - margin - size, margin, size, size};
+  }
+
+  int popup_w = width < 260 ? width - 16 : 220;
+  if (popup_w < 140) popup_w = 140;
+  int popup_h = 92;
+  int popup_x = out.button.x + out.button.w - popup_w;
+  if (popup_x < 8) popup_x = 8;
+  if (popup_x + popup_w > width - 8) popup_x = width - 8 - popup_w;
+  int popup_y = out.button.y + out.button.h + 6;
+  if (popup_y + popup_h > height - 8)
+    popup_y = out.button.y - popup_h - 6;
+  if (popup_y < 8) popup_y = 8;
+  out.popup = (GeoRect){popup_x, popup_y, popup_w, popup_h};
+
+  int inset = 8;
+  int gap = 6;
+  int row_h = (popup_h - inset * 2 - gap) / 2;
+  out.music = (GeoRect){popup_x + inset, popup_y + inset,
+                        popup_w - inset * 2, row_h};
+  out.fx = (GeoRect){popup_x + inset, popup_y + inset + row_h + gap,
+                     popup_w - inset * 2, row_h};
+  return out;
 }

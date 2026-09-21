@@ -1,0 +1,12 @@
+#ifndef SUDOKURA_STORE_STATUS_H
+#define SUDOKURA_STORE_STATUS_H
+
+typedef enum {
+  STORE_OK = 0,
+  STORE_NOT_FOUND,
+  STORE_CORRUPT,
+  STORE_INCOMPATIBLE,
+  STORE_IO_ERROR
+} StoreStatus;
+
+#endif

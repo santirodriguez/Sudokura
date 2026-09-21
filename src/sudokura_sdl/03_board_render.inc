@@ -32,13 +32,122 @@ static void draw_focus_ring(SDL_Renderer*r,SDL_Rect rc,SDL_Color c){
     draw_line(r,x2,y2,x1,y2,c);draw_line(r,x1,y2,x1,y1,c);
   }
 }
+enum { TEXT_CACHE_CAPACITY=128, TEXT_CACHE_TEXT_MAX=2048 };
+
+typedef struct {
+  SDL_Texture* texture;
+  TTF_Font* font;
+  SDL_Color color;
+  int wrap_w;
+  int logical_w;
+  int logical_h;
+  uint64_t stamp;
+  bool wrapped;
+  char text[TEXT_CACHE_TEXT_MAX];
+} TextCacheEntry;
+
+static TextCacheEntry text_cache[TEXT_CACHE_CAPACITY];
+static uint64_t text_cache_stamp=1;
+static Language text_cache_language=LANG_COUNT;
+static int text_cache_theme=-1;
+static int text_cache_width=-1,text_cache_height=-1,text_cache_scale=-1;
+
+static int gfx_to_logical(const Gfx*g,int physical){
+  return desktop_unscale_value(physical,g?g->metrics.scale_milli:1000);
+}
+static int gfx_to_physical(const Gfx*g,int logical){
+  return desktop_scale_value(logical,g?g->metrics.scale_milli:1000);
+}
+static SDL_Rect gfx_physical_rect(const Gfx*g,int x,int y,int w,int h){
+  return (SDL_Rect){gfx_to_physical(g,x),gfx_to_physical(g,y),
+                    gfx_to_physical(g,w),gfx_to_physical(g,h)};
+}
+
+static void text_cache_clear(void){
+  for(int i=0;i<TEXT_CACHE_CAPACITY;i++){
+    if(text_cache[i].texture)SDL_DestroyTexture(text_cache[i].texture);
+    memset(&text_cache[i],0,sizeof(text_cache[i]));
+  }
+  text_cache_stamp=1;
+}
+
+static int text_cache_entry_count(void){
+  int count=0;
+  for(int i=0;i<TEXT_CACHE_CAPACITY;i++)if(text_cache[i].texture)count++;
+  return count;
+}
+
+static bool text_cache_color_equal(SDL_Color a,SDL_Color b){
+  return a.r==b.r&&a.g==b.g&&a.b==b.b&&a.a==b.a;
+}
+
+static SDL_Texture*text_cache_get(Gfx*g,TTF_Font*f,const char*txt,
+                                  SDL_Color col,int wrap_w,bool wrapped,
+                                  int*w,int*h){
+  if(!g||!g->ren||!f||!txt||!txt[0])return NULL;
+  size_t length=strlen(txt);
+  if(length>=TEXT_CACHE_TEXT_MAX)return NULL;
+  int oldest=0;
+  for(int i=0;i<TEXT_CACHE_CAPACITY;i++){
+    TextCacheEntry*entry=&text_cache[i];
+    if(entry->texture&&entry->font==f&&entry->wrapped==wrapped&&
+       entry->wrap_w==wrap_w&&text_cache_color_equal(entry->color,col)&&
+       strcmp(entry->text,txt)==0){
+      entry->stamp=text_cache_stamp++;
+      if(w)*w=entry->logical_w;
+      if(h)*h=entry->logical_h;
+      return entry->texture;
+    }
+    if(!entry->texture){oldest=i;break;}
+    if(text_cache[oldest].texture&&entry->stamp<text_cache[oldest].stamp)
+      oldest=i;
+  }
+
+  SDL_Surface*surface=NULL;
+  if(wrapped){
+    int physical_wrap=gfx_to_physical(g,wrap_w);
+    if(physical_wrap<1)physical_wrap=1;
+    surface=TTF_RenderUTF8_Blended_Wrapped(f,txt,col,(Uint32)physical_wrap);
+  }else{
+    surface=TTF_RenderUTF8_Blended(f,txt,col);
+  }
+  if(!surface)return NULL;
+  SDL_Texture*texture=SDL_CreateTextureFromSurface(g->ren,surface);
+  if(!texture){SDL_FreeSurface(surface);return NULL;}
+
+  TextCacheEntry*entry=&text_cache[oldest];
+  if(entry->texture)SDL_DestroyTexture(entry->texture);
+  memset(entry,0,sizeof(*entry));
+  entry->texture=texture;entry->font=f;entry->color=col;
+  entry->wrap_w=wrap_w;entry->wrapped=wrapped;
+  entry->logical_w=gfx_to_logical(g,surface->w);
+  entry->logical_h=gfx_to_logical(g,surface->h);
+  entry->stamp=text_cache_stamp++;
+  memcpy(entry->text,txt,length+1);
+  SDL_FreeSurface(surface);
+  if(w)*w=entry->logical_w;
+  if(h)*h=entry->logical_h;
+  return entry->texture;
+}
+
+static void text_cache_sync(const Gfx*g,const UI*ui){
+  if(!g||!ui)return;
+  int theme=ui->dark_theme?1:0;
+  if(text_cache_language!=ui->language||text_cache_theme!=theme||
+     text_cache_width!=g->width||text_cache_height!=g->height||
+     text_cache_scale!=g->metrics.scale_milli){
+    text_cache_clear();
+    text_cache_language=ui->language;text_cache_theme=theme;
+    text_cache_width=g->width;text_cache_height=g->height;
+    text_cache_scale=g->metrics.scale_milli;
+  }
+}
+
 static SDL_Texture*render_text(Gfx*g,TTF_Font*f,const char*txt,SDL_Color col,int*w,int*h){
-  SDL_Surface*s=TTF_RenderUTF8_Blended(f,txt,col);if(!s)return NULL;
-  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);if(w)*w=s->w;if(h)*h=s->h;SDL_FreeSurface(s);return t;
+  return text_cache_get(g,f,txt,col,0,false,w,h);
 }
 static SDL_Texture*render_text_wrapped(Gfx*g,TTF_Font*f,const char*txt,SDL_Color col,int wrap_w,int*w,int*h){
-  SDL_Surface*s=TTF_RenderUTF8_Blended_Wrapped(f,txt,col,wrap_w);if(!s)return NULL;
-  SDL_Texture*t=SDL_CreateTextureFromSurface(g->ren,s);if(w)*w=s->w;if(h)*h=s->h;SDL_FreeSurface(s);return t;
+  return text_cache_get(g,f,txt,col,wrap_w,true,w,h);
 }
 static bool point_in(SDL_Rect r,int x,int y){return x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h;}
 static GeometryMode geometry_mode(Mode mode){return(GeometryMode)mode;}
@@ -49,11 +158,15 @@ static void update_font_tiers(Gfx*g,const UI*ui){AppGeometry a;if(!get_geometry(
 static bool draw_fitted_text(Gfx*g,const char*text,SDL_Color color,SDL_Rect r,int preferred,int minimum){
   for(int i=FONT_CACHE_COUNT-1;i>=0;i--){
     if(font_cache_sizes[i]>preferred||font_cache_sizes[i]<minimum)continue;
-    int w=0,h=0;
-    if(TTF_SizeUTF8(g->fonts[i],text,&w,&h)==0&&w<=r.w-8&&h<=r.h-4){
-      SDL_Texture*t=render_text(g,g->fonts[i],text,color,&w,&h);if(!t)return false;
-      SDL_Rect d={r.x+(r.w-w)/2,r.y+(r.h-h)/2,w,h};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);return true;
-    }
+    int physical_w=0,physical_h=0;
+    if(TTF_SizeUTF8(g->fonts[i],text,&physical_w,&physical_h)!=0)continue;
+    int w=gfx_to_logical(g,physical_w),h=gfx_to_logical(g,physical_h);
+    if(w>r.w-8||h>r.h-4)continue;
+    SDL_Texture*t=render_text(g,g->fonts[i],text,color,&w,&h);
+    if(!t)return false;
+    SDL_Rect d={r.x+(r.w-w)/2,r.y+(r.h-h)/2,w,h};
+    SDL_RenderCopy(g->ren,t,NULL,&d);
+    return true;
   }
   return false;
 }
@@ -61,10 +174,27 @@ static bool draw_fitted_text(Gfx*g,const char*text,SDL_Color color,SDL_Rect r,in
 enum{
   HOME_FOCUS_LANGUAGE=0,HOME_FOCUS_MODE,HOME_FOCUS_DIFFICULTY,
   HOME_FOCUS_NEW,HOME_FOCUS_CONTINUE,HOME_FOCUS_DAILY,
-  HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_THEME,HOME_FOCUS_QUIT,
+  HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_SETTINGS,HOME_FOCUS_QUIT,
   HOME_FOCUS_COUNT
 };
 static int home_focus=HOME_FOCUS_NEW;
+enum{
+  INFO_FOCUS_BACK=0,INFO_FOCUS_STUDY,INFO_FOCUS_LINK_0,
+  INFO_FOCUS_LINK_1,INFO_FOCUS_LINK_2,INFO_FOCUS_LINK_3,
+  INFO_FOCUS_COUNT
+};
+static int info_keyboard_focus=INFO_FOCUS_BACK;
+static int help_scroll_px=0;
+static int help_scroll_max_px=0;
+static int result_keyboard_focus=0;
+static int pause_keyboard_focus=0;
+static void help_scroll_reset(void){help_scroll_px=0;help_scroll_max_px=0;}
+static void help_scroll_set(int value){
+  if(value<0)value=0;
+  if(value>help_scroll_max_px)value=help_scroll_max_px;
+  help_scroll_px=value;
+}
+static void help_scroll_by(int delta){help_scroll_set(help_scroll_px+delta);}
 static GameDifficulty home_difficulty=DIFFICULTY_MEDIUM;
 static SDL_Texture*language_flags[LANG_COUNT]={NULL,NULL,NULL};
 static bool victory_animation_active=false;
@@ -137,39 +267,146 @@ typedef struct{SDL_Rect btn[9],pal[9],palette_label,progress;int count_btn,count
 static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_compute(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
 static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,sizeof*r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
 static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
-static void draw_back_button(Gfx*g,const UI*ui,Theme th){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);}
+static void draw_back_button(Gfx*g,const UI*ui,Theme th,bool focused){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);if(focused)draw_focus_ring(g->ren,r,th.sel_outline);}
+
+static bool hint_step_has_cell(const int *cells, int count, int cell) {
+  if (!cells || count <= 0) return false;
+  for (int i = 0; i < count; ++i)
+    if (cells[i] == cell) return true;
+  return false;
+}
+
+static void draw_hint_candidate_mask(Gfx *g, SDL_Rect rect,
+                                     uint16_t mask, SDL_Color color) {
+  if (!g || mask == 0) return;
+  int sub_w = rect.w / 3, sub_h = rect.h / 3;
+  for (int value = 1; value <= 9; ++value) {
+    if (!(mask & (uint16_t)(1u << value))) continue;
+    char label[2] = {(char)('0' + value), '\0'};
+    int tw = 0, th = 0;
+    SDL_Texture *texture =
+        render_text(g, g->font_note, label, color, &tw, &th);
+    if (!texture) continue;
+    int index = value - 1;
+    SDL_Rect dst = {
+        rect.x + (index % 3) * sub_w + (sub_w - tw) / 2,
+        rect.y + (index / 3) * sub_h + (sub_h - th) / 2,
+        tw, th};
+    SDL_RenderCopy(g->ren, texture, NULL, &dst);
+  }
+}
+
+static void draw_hint_cell_marker(Gfx *g, const UI *ui, Theme theme,
+                                  int cell, SDL_Rect rect) {
+  if (!g || !ui || !ui->hint_preview_active) return;
+  const HumanHint *hint = &ui->hint_preview;
+  bool source = hint->status == HUMAN_HINT_LOGICAL &&
+                hint_step_has_cell(hint->reasoning.source_cells,
+                                   hint->reasoning.source_count, cell);
+  int affected_index = -1;
+  if (hint->status == HUMAN_HINT_LOGICAL) {
+    for (int i = 0; i < hint->reasoning.affected_count; ++i)
+      if (hint->reasoning.affected_cells[i] == cell) {
+        affected_index = i;
+        break;
+      }
+  }
+  bool affected = affected_index >= 0;
+  bool target = hint->status == HUMAN_HINT_LOGICAL &&
+                hint->placement.placement_cell == cell;
+  bool contradiction =
+      hint->status == HUMAN_HINT_INVALID && hint->contradiction_cell == cell;
+  if (!source && !affected && !target && !contradiction) return;
+
+  SDL_Color marker = contradiction ? theme.text_wrong : theme.sel_outline;
+  SDL_Rect inner = {rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8};
+  if (source) draw_focus_ring(g->ren, inner, marker);
+  if (affected || contradiction) {
+    draw_line(g->ren, inner.x + 2, inner.y + 2,
+              inner.x + inner.w - 3, inner.y + inner.h - 3, marker);
+    draw_line(g->ren, inner.x + inner.w - 3, inner.y + 2,
+              inner.x + 2, inner.y + inner.h - 3, marker);
+  }
+  if (target) {
+    int cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+    int arm = rect.w < rect.h ? rect.w / 5 : rect.h / 5;
+    if (arm < 4) arm = 4;
+    draw_line(g->ren, cx - arm, cy, cx + arm, cy, marker);
+    draw_line(g->ren, cx, cy - arm, cx, cy + arm, marker);
+    SDL_Rect target_box = {rect.x + 7, rect.y + 7, rect.w - 14, rect.h - 14};
+    SDL_SetRenderDrawColor(g->ren, marker.r, marker.g, marker.b, 255);
+    SDL_RenderDrawRect(g->ren, &target_box);
+  }
+
+  uint16_t candidate_mask = 0;
+  if (source) candidate_mask |= hint->reasoning.value_mask;
+  if (affected)
+    candidate_mask |= hint->reasoning.affected_masks[affected_index];
+  if (target && hint->placement.placement_value >= 1 &&
+      hint->placement.placement_value <= 9)
+    candidate_mask |=
+        (uint16_t)(1u << hint->placement.placement_value);
+  if (candidate_mask)
+    draw_hint_candidate_mask(g, rect, candidate_mask, marker);
+}
 
 static void render_pause_overlay(Gfx*g,const UI*ui);
+
+static void draw_grid_bar(SDL_Renderer *renderer, int x, int y, int w, int h,
+                          SDL_Color color) {
+  if (!renderer || w <= 0 || h <= 0) return;
+  draw_rect(renderer, x, y, w, h, color);
+}
 
 /* =================== RENDER PLAY =================== */
 static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);
-  Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
+  if(app_pause_hides_play(ui)){render_pause_overlay(g,ui);return;}
+  Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);GeometryStyle style=geometry_style(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
   draw_round_rect(g->ren,(SDL_Rect){gx-6,gy-6,side+12,side+12},10,th.shadow);
   draw_round_rect(g->ren,(SDL_Rect){L.side.x-6,L.side.y-6,L.side.w+12,L.side.h+12},10,th.shadow);
   draw_round_rect(g->ren,L.side,8,th.btn);draw_rect(g->ren,gx,gy,side,side,th.board);
 
   draw_rect(g->ren,gx,gy+ui->sel_r*cs,side,cs,th.boxhl);draw_rect(g->ren,gx+ui->sel_c*cs,gy,cs,side,th.boxhl);
   int br=(ui->sel_r/3)*3,bc=(ui->sel_c/3)*3;draw_rect(g->ren,gx+bc*cs,gy+br*cs,cs*3,cs*3,(SDL_Color){th.boxhl.r,th.boxhl.g,th.boxhl.b,(Uint8)(th.boxhl.a/2)});
-  for(int i=0;i<=9;i++){int x=gx+(side*i)/9,y=gy+(side*i)/9;SDL_Color col=i%3==0?th.thick:th.thin;draw_line(g->ren,x,gy,x,gy+side,col);draw_line(g->ren,gx,y,gx+side,y,col);}
+  for(int i=0;i<=9;i++){
+    int x=gx+(side*i)/9,y=gy+(side*i)/9;
+    bool major=i%3==0;
+    SDL_Color col=major?th.thick:th.thin;
+    int width=major?style.grid_major_px:style.grid_minor_px;
+    int offset=width/2;
+    draw_grid_bar(g->ren,x-offset,gy,width,side,col);
+    draw_grid_bar(g->ren,gx,y-offset,side,width,col);
+  }
 
   int mx,my;SDL_GetMouseState(&mx,&my);int curV=game->puzzle[IDX(ui->sel_r,ui->sel_c)];
   for(int r=0;r<9;r++)for(int c=0;c<9;c++){
     int x=gx+c*cs,y=gy+r*cs,i=IDX(r,c);bool sel=ui->sel_r==r&&ui->sel_c==c;bool hover=mx>=x&&mx<x+cs&&my>=y&&my<y+cs;int v=game->puzzle[i];
-    if(curV&&v==curV&&!sel)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.samehl);
-    if(sel){double t=now_s(),p=0.65+0.35*(0.5*(1.0+sin(t*4.0)));draw_rect(g->ren,x+2,y+2,cs-4,cs-4,(SDL_Color){(Uint8)(th.sel.r*p),(Uint8)(th.sel.g*p),(Uint8)(th.sel.b*p),190});SDL_Color o=th.sel_outline;draw_line(g->ren,x+1,y+1,x+cs-2,y+1,o);draw_line(g->ren,x+cs-2,y+1,x+cs-2,y+cs-2,o);draw_line(g->ren,x+cs-2,y+cs-2,x+1,y+cs-2,o);draw_line(g->ren,x+1,y+cs-2,x+1,y+1,o);}else if(hover)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.hover);
-    if(v&&game_has_conflict(game,r,c))draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.conflict);
+    if(curV&&v==curV&&!sel){
+      draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.samehl);
+      SDL_Color match=th.dim;
+      draw_line(g->ren,x+4,y+4,x+cs-5,y+4,match);
+      draw_line(g->ren,x+4,y+cs-5,x+cs-5,y+cs-5,match);
+    }
+    if(sel){double p=1.0;if(!ui->reduced_motion){double t=now_s();p=0.65+0.35*(0.5*(1.0+sin(t*4.0)));}draw_rect(g->ren,x+2,y+2,cs-4,cs-4,(SDL_Color){(Uint8)(th.sel.r*p),(Uint8)(th.sel.g*p),(Uint8)(th.sel.b*p),190});SDL_Color o=th.sel_outline;draw_line(g->ren,x+1,y+1,x+cs-2,y+1,o);draw_line(g->ren,x+cs-2,y+1,x+cs-2,y+cs-2,o);draw_line(g->ren,x+cs-2,y+cs-2,x+1,y+cs-2,o);draw_line(g->ren,x+1,y+cs-2,x+1,y+1,o);}else if(hover)draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.hover);
+    if(v&&game_has_conflict(game,r,c)){
+      draw_rect(g->ren,x+2,y+2,cs-4,cs-4,th.conflict);
+      SDL_Color conflict_mark=th.text_wrong;
+      draw_line(g->ren,x+5,y+5,x+cs-6,y+cs-6,conflict_mark);
+      draw_line(g->ren,x+cs-6,y+5,x+5,y+cs-6,conflict_mark);
+    }
     if(sel||ui->notes_mode){SDL_Color sgrid=(SDL_Color){th.thin.r,th.thin.g,th.thin.b,120};int sub=cs/3;for(int k=1;k<3;k++){draw_line(g->ren,x+k*sub,y+2,x+k*sub,y+cs-2,sgrid);draw_line(g->ren,x+2,y+k*sub,x+cs-2,y+k*sub,sgrid);}}
     if(v){
       bool wrong=game_mode_reveals_correctness(ui->mode)&&!game->fixed[i]&&v!=game->solution[i];SDL_Color col=wrong?th.text_wrong:(game->hinted[i]?hint_text_color(ui):(game->fixed[i]?th.text_given:th.text_edit));
       if(game->hinted[i]){SDL_Color marker=hint_text_color(ui);draw_rect(g->ren,x+cs-7,y+3,4,4,marker);}
-      char b[2]={(char)('0'+v),0};int tw,thh;SDL_Texture*t=render_text(g,g->font_cell,b,col,&tw,&thh);if(t){SDL_Rect d={x+(cs-tw)/2,y+(cs-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}
+      char b[2]={(char)('0'+v),0};int tw,thh;SDL_Texture*t=render_text(g,g->font_cell,b,col,&tw,&thh);if(t){SDL_Rect d={x+(cs-tw)/2,y+(cs-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);}
     }else if(game->notes[i]){
-      for(int vv=1;vv<=9;vv++)if(game->notes[i]&(1u<<vv)){char b[2]={(char)('0'+vv),0};int tw,thh;SDL_Texture*t=render_text(g,g->font_note,b,th.dim,&tw,&thh);if(t){int sub=cs/3,q=(vv-1)/3,qq=(vv-1)%3;SDL_Rect d={x+qq*sub+(sub-tw)/2,y+q*sub+(sub-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);SDL_DestroyTexture(t);}}
+      for(int vv=1;vv<=9;vv++)if(game->notes[i]&(1u<<vv)){char b[2]={(char)('0'+vv),0};int tw,thh;SDL_Texture*t=render_text(g,g->font_note,b,th.dim,&tw,&thh);if(t){int sub=cs/3,q=(vv-1)/3,qq=(vv-1)%3;SDL_Rect d={x+qq*sub+(sub-tw)/2,y+q*sub+(sub-thh)/2,tw,thh};SDL_RenderCopy(g->ren,t,NULL,&d);}}
     }
+    draw_hint_cell_marker(g,ui,th,i,(SDL_Rect){x,y,cs,cs});
   }
 
-  SidebarRects R;compute_sidebar_rects(&L,&R);int tw,thh;SDL_Rect title_rect=sdl_rect(L.model.play_title);draw_wordmark(g,title_rect);
+  SidebarRects R;compute_sidebar_rects(&L,&R);
   char hud[GEOMETRY_HUD_COUNT][80]={{0}};double el=elapsed_time(ui);const char*mode_name=tr(ui->language,mode_key(ui->mode));
   if(ui->is_daily)snprintf(hud[0],sizeof hud[0],"%s",tr(ui->language,T_DAILY_SHORT));else snprintf(hud[0],sizeof hud[0],"%s: %s",tr(ui->language,T_MODE),mode_name);
   snprintf(hud[1],sizeof hud[1],"%s: %s",tr(ui->language,T_DIFFICULTY),difficulty_name(ui->language,game->difficulty));
@@ -180,20 +417,15 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   SDL_GetMouseState(&mx,&my);
   for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);bool strict_chip=i==4,hover=strict_chip&&point_in(hr,mx,my);SDL_Color bg=strict_chip&&ui->strict_mode?th.title:(hover?th.hover:th.palette_bg);SDL_Color fg=strict_chip&&ui->strict_mode?th.bg:th.dim;draw_round_rect(g->ren,hr,hr.h/2,bg);(void)draw_fitted_text(g,hud[i],fg,hr,fonts.hud,10);}
 
-  const char*labels[]={tr(ui->language,T_RESTART),tr(ui->language,T_MODE),tr(ui->language,T_HINT),tr(ui->language,T_NOTES),tr(ui->language,T_VERIFY),tr(ui->language,T_SOUND),tr(ui->language,T_HELP),tr(ui->language,T_ABOUT),tr(ui->language,T_MENU)};
-  for(int i=0;i<R.count_btn;i++){SDL_Rect rc=R.btn[i];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),active=(i==3&&ui->notes_mode)||(i==5&&audio_is_enabled());SDL_Color color=active?th.title:pressed?th.sel:hover?th.hover:(i==0?th.title:th.btn);SDL_Rect paint=rc;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}draw_round_rect(g->ren,paint,7,color);(void)draw_fitted_text(g,labels[i],active?th.bg:th.btnfg,paint,fonts.control,10);}
-
-  (void)draw_fitted_text(g,tr(ui->language,T_PALETTE),th.dim,R.palette_label,fonts.help,10);
-  for(int n=1;n<=9;n++){
-    SDL_Rect rc=R.pal[n-1];Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(rc,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),complete=palette_number_complete(game,ui->mode,n),selected=game->puzzle[IDX(ui->sel_r,ui->sel_c)]==n;
-    SDL_Color color=complete?th.btn:(selected?th.title:pressed?th.sel:hover?th.hover:th.palette_bg);SDL_Color fg=complete?th.dim:th.palette_fg;SDL_Rect paint=rc;if(pressed&&!complete&&paint.h>4){paint.y+=2;paint.h-=2;}
-    draw_round_rect(g->ren,paint,7,color);char nb[2]={(char)('0'+n),0};(void)draw_fitted_text(g,nb,fg,paint,fonts.control+4,12);
-    if(complete){int x1=paint.x+paint.w-16,y1=paint.y+paint.h-11;draw_line(g->ren,x1,y1,x1+4,y1+4,th.dim);draw_line(g->ren,x1+4,y1+4,x1+10,y1-4,th.dim);}
-  }
-
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;int filled=inner_w*progress/100;if(filled>0)draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);
   char progress_text[64];snprintf(progress_text,sizeof progress_text,"%s %d%%",tr(ui->language,T_PROGRESS),progress);(void)draw_fitted_text(g,progress_text,progress>52?th.bg:th.dim,R.progress,fonts.hud,10);
 
-  if(ui->toast_on){double dt=now_s()-ui->toast_t0;if(dt>2.2)ui->toast_on=false;if(ui->toast_on){SDL_Texture*tt=render_text(g,g->font_small,ui->toast,(SDL_Color){255,255,255,230},&tw,&thh);if(tt){SDL_Rect d={gx+(side-tw)/2,gy-(thh+8),tw,thh};draw_rect(g->ren,d.x-8,d.y-6,tw+16,thh+12,(SDL_Color){0,0,0,110});SDL_RenderCopy(g->ren,tt,NULL,&d);SDL_DestroyTexture(tt);}}}
-  if(ui->pause_reasons&PAUSE_MANUAL)render_pause_overlay(g,ui);
+  SDL_Rect status=sdl_rect(L.model.status);
+  draw_round_rect(g->ren,status,style.radius_control,th.palette_bg);
+  if(ui->toast_on){
+    double dt=now_s()-ui->toast_t0;
+    if(dt>2.2)ui->toast_on=false;
+    if(ui->toast_on)
+      (void)draw_fitted_text(g,ui->toast,th.btnfg,status,fonts.help,9);
+  }
 }

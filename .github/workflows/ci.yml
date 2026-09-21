@@ -7,18 +7,33 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: sudokura-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SUDOKURA_SOURCE_COMMIT: ${{ github.sha }}
+
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
-      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev
+      - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libdecor-0-plugin-1-cairo libfuse2 curl fonts-dejavu-core
       - run: make assets
       - run: make WERROR=-Werror test test-ui
+      - run: python3 scripts/validate_contrast.py
+      - name: Identify generator benchmark host
+        run: |
+          uname -a
+          cc --version | head -1
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' || true
+      - name: Run generator quality corpus
+        run: make WERROR=-Werror quality
       - name: Run ASan and UBSan core tests
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
@@ -26,15 +41,147 @@ jobs:
         run: |
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_main.c game.c geometry.c i18n.c -o tests/test_main_san
+            tests/test_main.c game.c human.c geometry.c i18n.c -o tests/test_main_san
           cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_session.c game.c session.c -o tests/test_session_san
+            tests/test_app.c app.c game.c human.c -o tests/test_app_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_clock.c app_clock.c app.c game.c human.c -o tests/test_clock_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_save_policy.c save_policy.c -o tests/test_save_policy_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_human.c human.c -o tests/test_human_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_session.c game.c human.c session.c store_io.c -o tests/test_session_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_profile.c profile.c session.c store_io.c game.c human.c -o tests/test_profile_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o tests/test_live_save_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_desktop.c desktop.c -o tests/test_desktop_san
+          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -DSUDOKURA_URL_LAUNCHER_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_url_launcher.c url_launcher.c -o tests/test_url_launcher_san
           ./tests/test_main_san
+          ./tests/test_app_san
+          ./tests/test_clock_san
+          ./tests/test_save_policy_san
+          ./tests/test_human_san
           ./tests/test_session_san
-          rm -f tests/test_main_san tests/test_session_san
+          ./tests/test_profile_san
+          ./tests/test_live_save_san
+          ./tests/test_desktop_san
+          ./tests/test_url_launcher_san
+          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san tests/test_desktop_san tests/test_url_launcher_san
       - run: make WERROR=-Werror
+      - name: Smoke without audio on the software renderer
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: sudokura-no-audio-device
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: ./sudokura --smoke-test
       - run: ldd sudokura && size sudokura && du -h sudokura
+      - name: Build and validate Linux candidate package
+        env:
+          SUDOKURA_ARTIFACT_KIND: ci-candidate
+        run: |
+          ./scripts/fetch_appimage_toolchain.sh
+          LINUXDEPLOY=$PWD/linuxdeploy \
+          APPIMAGETOOL=$PWD/appimagetool \
+          APPIMAGE_RUNTIME=$PWD/appimage-runtime \
+          packaging/ci/package-linux.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-linux-candidate
+          path: |
+            Sudokura-*.AppImage
+            artifact-manifest-linux.json
+            build-provenance-linux.txt
+            inventory-linux.txt
+            dependencies-linux-all.txt
+            external-dependencies-linux.txt
+            abi-linux.txt
+            components-linux.txt
+            SHA256SUMS-linux.txt
+          retention-days: 7
+
+  linux-ubuntu24:
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-linux-candidate
+          path: candidate
+      - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: phase7-linux-ubuntu24-runtime
+          path: linux-runtime-ubuntu24.txt
+          retention-days: 7
+
+  linux-fedora44:
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    steps:
+      - run: dnf -y install git findutils coreutils binutils fuse-libs xorg-x11-server-Xvfb weston dbus-daemon gdb strace
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-linux-candidate
+          path: candidate
+      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: phase7-linux-fedora44-runtime
+          path: linux-runtime-fedora44.txt
+          retention-days: 7
+
+  macos:
+    runs-on: macos-15
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ github.sha }}
+      ARCH: arm64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: brew untap aws/tap || true; brew install sdl2 sdl2_ttf sdl2_mixer pkg-config; brew install --cask font-dejavu-sans
+      - run: font=$(find "$HOME/Library/Fonts" /Library/Fonts -type f -name DejaVuSans.ttf -print -quit 2>/dev/null); test -n "$font"; test -f "$font"; echo "FONT=$font" >> "$GITHUB_ENV"
+      - run: packaging/ci/package-macos.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase7-macos-arm64
+          path: |
+            Sudokura-*.dmg
+            SHA256SUMS-macos-arm64.txt
+            artifact-manifest-macos-arm64.json
+            build-provenance-macos-arm64.txt
+            components-macos-arm64.txt
+            inventory-macos-arm64.txt
+            dependencies-macos-arm64.txt
+            architecture-macos-arm64.txt
+            codesign-macos-arm64.txt
+            mach-o-audit-macos-arm64.json
+            smoke-macos-arm64-*.txt
+            dmg-verify-macos-arm64.txt
+            size-comparison-macos-arm64.txt
+          retention-days: 7
 
   windows:
     runs-on: windows-latest
@@ -42,8 +189,8 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.24.x'
           cache: false
@@ -53,7 +200,7 @@ jobs:
           $go = (Get-Command go -ErrorAction Stop).Source
           "SUDOKURA_GO=$go" >> $env:GITHUB_ENV
           & $go version
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           msystem: MINGW64
           update: true
@@ -66,5 +213,84 @@ jobs:
             mingw-w64-x86_64-ntldd-git
             mingw-w64-x86_64-ttf-dejavu
             make zip unzip
+      - name: Fetch pinned Inno Setup
+        shell: pwsh
+        run: ./scripts/fetch_innosetup.ps1
       - name: Build and validate Windows package
+        env:
+          SUDOKURA_ARTIFACT_KIND: ci-candidate
         run: packaging/ci/package-windows.sh
+
+  ui-review:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ui-review]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev fonts-dejavu-core
+      - run: make assets && make WERROR=-Werror all
+      - run: python3 scripts/validate_contrast.py
+      - name: Render Phase 5 diagnostic UI matrix
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: ./sudokura --render-screenshots ui-review
+      - name: Validate screenshot matrix and validator regressions
+        shell: bash
+        run: |
+          ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
+          python3 tests/test_screenshot_validator.py ui-review
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase5-ui-review
+          path: ui-review
+          retention-days: 7
+
+  desktop-benchmark:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[desktop-benchmark]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev fonts-dejavu-core time
+      - run: |
+          uname -a | tee desktop-host.txt
+          cc --version | head -1 | tee -a desktop-host.txt
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' | tee -a desktop-host.txt || true
+      - run: make assets && make WERROR=-Werror all
+      - name: Measure v1.3 desktop paths
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: |
+          ./sudokura --desktop-benchmark | tee desktop-v13.txt
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v13-smoke.txt ./sudokura --smoke-test
+          python3 scripts/validate_desktop_benchmark.py desktop-v13.txt
+      - name: Measure v1.2 smoke baseline on the same runner
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_RENDER_VSYNC: '0'
+        run: |
+          git worktree add /tmp/sudokura-v12 v1.2.0
+          make -C /tmp/sudokura-v12 assets
+          make -C /tmp/sudokura-v12 WERROR=-Werror
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v12-smoke.txt /tmp/sudokura-v12/sudokura --smoke-test
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase6-desktop-benchmark
+          path: |
+            desktop-host.txt
+            desktop-v13.txt
+            desktop-v13-smoke.txt
+            desktop-v12-smoke.txt
+          retention-days: 14

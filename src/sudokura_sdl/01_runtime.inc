@@ -1,19 +1,16 @@
-/*  Sudokura v1.2 — native Sudoku in C + SDL2
+/*  Sudokura v1.3 development — native Sudoku in C + SDL2
     - Responsive desktop and portrait UI
     - Help & About with localized navigation
     - Notes, hints, verification and Strict/Free input
     - Classic / Strikes / Time Attack plus Daily Puzzle
-    - Autosave, Continue and real pause handling
+    - Autosave, Continue and independent pause reasons
     - Dark/Light theme and offline language selector
     - Optional SDL2_mixer music, jingles and subtle UI feedback
     Author: santirodriguez — https://santiagorodriguez.com
     License: GPLv3
-    Build (Fedora/Debian/Arch package names vary):
-      install gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
-      gcc -std=c11 -O2 -Wall -Wextra \
-        sudokura_sdl.c audio.c game.c geometry.c i18n.c -o sudokura \
-        $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) \
-        -lm
+    Build:
+      install make, gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
+      make
 */
 
 #if !defined(_WIN32)
@@ -53,12 +50,22 @@
 #endif
 #include <errno.h>
 
+#include "app.h"
+#include "app_clock.h"
+#include "desktop.h"
 #include "game.h"
 #include "geometry.h"
 #include "version.h"
 #include "i18n.h"
 #include "session.h"
+#include "profile.h"
+#include "save_policy.h"
 #include "seed.h"
+#include "store_io.h"
+#include "url_launcher.h"
+#include "assets/generated/flag_us.h"
+#include "assets/generated/flag_ar.h"
+#include "assets/generated/flag_ca.h"
 #include "assets/generated/window_icon.h"
 #include "assets/generated/wordmark.h"
 #define N 9
@@ -68,7 +75,25 @@
 /* =================== GUI & THEME =================== */
 enum { FONT_CACHE_COUNT=23 };
 static const int font_cache_sizes[FONT_CACHE_COUNT]={10,12,13,14,15,16,18,20,22,24,28,30,32,36,38,42,44,48,52,56,60,64,72};
-typedef struct { SDL_Window* win; SDL_Renderer* ren; TTF_Font* fonts[FONT_CACHE_COUNT]; TTF_Font* font_big; TTF_Font* font_small; TTF_Font* font_note; TTF_Font* font_cell; TTF_Font* font_body; SDL_Texture* wordmark; int width, height; } Gfx;
+typedef struct {
+  SDL_Window* win;
+  SDL_Renderer* ren;
+  TTF_Font* fonts[FONT_CACHE_COUNT];
+  TTF_Font* font_big;
+  TTF_Font* font_small;
+  TTF_Font* font_note;
+  TTF_Font* font_cell;
+  TTF_Font* font_body;
+  SDL_Texture* wordmark;
+  int width, height;
+  int output_width, output_height;
+  DesktopMetrics metrics;
+  bool software_renderer;
+  bool dirty;
+  char font_path[PATH_MAX];
+  int restored_x, restored_y, restored_width, restored_height;
+  bool restored_bounds_valid;
+} Gfx;
 
 typedef struct {
   SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;
@@ -87,7 +112,7 @@ static Theme theme_dark(void){
 }
 static Theme theme_light(void){
   Theme t={
-    .bg={245,247,252,255}, .board={236,240,248,255}, .thin={150,160,175,200}, .thick={60,80,120,255},
+    .bg={245,247,252,255}, .board={236,240,248,255}, .thin={105,115,135,220}, .thick={60,80,120,255},
     .hover={210,220,245,200}, .sel={180,200,250,160}, .sel_outline={35,55,120,230},
     .text_given={36,41,46,255}, .text_edit={0,110,85,255}, .text_wrong={200,40,40,255},
     .boxhl={200,210,235,160}, .samehl={60,100,200,50}, .shadow={0,0,0,60},
@@ -98,68 +123,70 @@ static Theme theme_light(void){
 }
 
 typedef GameMode Mode;
-typedef enum {SCR_TITLE=0, SCR_PLAY=1, SCR_END=2, SCR_HELP=3, SCR_ABOUT=4} Screen;
-typedef enum {RES_NONE=0, RES_WIN=1, RES_LOSE=2} Result;
-enum {
-  PAUSE_MANUAL = 1u << 0,
-  PAUSE_FOCUS = 1u << 1,
-  PAUSE_MODAL = 1u << 2,
-  PAUSE_HOME = 1u << 3,
-  PAUSE_END = 1u << 4
-};
+typedef AppScreen Screen;
+typedef AppResult Result;
+typedef AppState UI;
 
-typedef struct {
-  int sel_r, sel_c;
-  bool notes_mode, strict_mode, dark_theme;
-  Language language;
-
-  int mistakes, strikes, strikes_max;
-  double elapsed_base, running_since;
-  double time_limit_s;
-  unsigned pause_reasons;
-
-  bool session_open, has_session, is_daily;
-  int daily_year, daily_month, daily_day;
-
-  char toast[96]; double toast_t0; bool toast_on;
-
-  Screen screen; Screen prev_screen; Mode mode; Result result;
-} UI;
+#define SCR_TITLE APP_SCREEN_HOME
+#define SCR_PLAY APP_SCREEN_PLAY
+#define SCR_END APP_SCREEN_RESULT
+#define SCR_HELP APP_SCREEN_HELP
+#define SCR_ABOUT APP_SCREEN_ABOUT
+#define RES_NONE APP_RESULT_NONE
+#define RES_WIN APP_RESULT_WIN
+#define RES_LOSE APP_RESULT_LOSE
+#define PAUSE_MANUAL APP_PAUSE_MANUAL
+#define PAUSE_FOCUS APP_PAUSE_FOCUS
+#define PAUSE_MODAL APP_PAUSE_MODAL
+#define PAUSE_HOME APP_PAUSE_HOME
+#define PAUSE_END APP_PAUSE_END
+#define PAUSE_USER_VISIBLE APP_PAUSE_USER_VISIBLE
 
 typedef struct {
   bool enabled;
   Preferences preferences;
   SessionState saved;
+  ProfileData profile;
+  StoreWriterLock writer_lock;
+  StoreLockStatus lock_status;
+  StoreStatus profile_status;
+  char profile_directory[PATH_MAX];
+  char profile_path[PATH_MAX];
+  char profile_backup_path[PATH_MAX];
   char session_path[PATH_MAX];
   char preferences_path[PATH_MAX];
-  double last_checkpoint;
+  char audio_levels_path[PATH_MAX];
+  char session_v12_backup_path[PATH_MAX];
+  char preferences_v12_backup_path[PATH_MAX];
+  char audio_v12_backup_path[PATH_MAX];
+  SavePolicy save_policy;
+  uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
-static double now_s(void){ return SDL_GetTicks()*0.001; }
-static bool clock_running(const UI*ui){
-  return ui&&ui->session_open&&ui->screen==SCR_PLAY&&ui->pause_reasons==0;
-}
+/* Native message boxes can enqueue transient focus events. The SDL shell
+   advances this guard after each modal so those older events cannot pause a
+   session that starts after the dialog closes. */
+static void window_focus_guard_reset(void);
+
+static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
+static double now_s(void){ return (double)now_ms()*0.001; }
 static double elapsed_time(const UI*ui){
-  if(!ui)return 0;
-  double elapsed=ui->elapsed_base;
-  if(clock_running(ui))elapsed+=now_s()-ui->running_since;
-  return elapsed<0?0:elapsed;
+  return app_clock_elapsed_s(ui,now_ms());
 }
-static void clock_pause(UI*ui,unsigned reason){
-  if(!ui||!reason)return;
-  if(clock_running(ui))ui->elapsed_base+=now_s()-ui->running_since;
-  ui->pause_reasons|=reason;
+static bool clock_pause(UI*ui,unsigned reason){
+  return app_clock_pause(ui,reason,now_ms());
 }
-static void clock_resume(UI*ui,unsigned reason){
-  if(!ui||!reason)return;
-  ui->pause_reasons&=~reason;
-  if(clock_running(ui))ui->running_since=now_s();
+static bool clock_resume(UI*ui,unsigned reason){
+  return app_clock_resume(ui,reason,now_ms());
 }
 static void clock_reset(UI*ui){
-  if(!ui)return;
-  ui->elapsed_base=0;
-  ui->pause_reasons=0;
-  ui->running_since=now_s();
+  app_clock_reset(ui,now_ms());
+}
+static bool resume_user_pause(UI*ui){
+  bool changed=false;
+  if(ui&&((ui->pause_reasons&PAUSE_FOCUS)!=0))changed=clock_resume(ui,PAUSE_FOCUS)||changed;
+  if(ui&&((ui->pause_reasons&PAUSE_MANUAL)!=0))changed=clock_resume(ui,PAUSE_MANUAL)||changed;
+  return changed;
 }
 static void show_toast(UI*ui,const char*msg){ snprintf(ui->toast,sizeof(ui->toast),"%s",msg); ui->toast_t0=now_s(); ui->toast_on=true; }
 static void set_mode_params(UI*ui){
@@ -169,8 +196,12 @@ static void set_mode_params(UI*ui){
 static void begin_fresh_play(UI*ui){
   ui->screen=SCR_PLAY; ui->prev_screen=SCR_PLAY; ui->result=RES_NONE;
   ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
+  ui->undo_count=0; ui->redo_count=0;
   set_mode_params(ui); clock_reset(ui);
 }
+static void victory_animation_start(void);
+static void victory_animation_reset(void);
+
 static void play_input_effect(GameInputResult result,Mode mode){
   AudioEffect effect=AUDIO_EFFECT_NEUTRAL;
   if(result==GAME_INPUT_NO_CHANGE)return;
@@ -179,15 +210,111 @@ static void play_input_effect(GameInputResult result,Mode mode){
   else if(result==GAME_INPUT_WRONG)effect=game_mode_reveals_correctness(mode)?AUDIO_EFFECT_NEGATIVE:AUDIO_EFFECT_NEUTRAL;
   audio_play_effect(effect);
 }
-static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
-  GameInputResult result=game_apply_input(game,row,column,value,notes_mode,ui->strict_mode);
-  play_input_effect(result,ui->mode);
-  if(result==GAME_INPUT_WRONG&&game_mode_reveals_correctness(ui->mode)){
-    ui->mistakes++; if(ui->mode==MODE_STRIKES)ui->strikes++; show_toast(ui,tr(ui->language,T_WRONG));
-  }else if(result==GAME_INPUT_STRICT_REJECTED){
+
+static void finish_terminal_action(UI*ui){
+  if(!ui||ui->result==RES_NONE||ui->screen==SCR_END)return;
+  clock_pause(ui,PAUSE_END);
+  ui->screen=SCR_END;
+  if(ui->result==RES_WIN&&!ui->reduced_motion)victory_animation_start();
+  else victory_animation_reset();
+}
+
+static bool apply_action_outcome(UI*ui,AppActionOutcome outcome){
+  play_input_effect(outcome.input,ui->mode);
+  if(outcome.error&&game_mode_reveals_correctness(ui->mode))
+    show_toast(ui,tr(ui->language,T_WRONG));
+  else if(outcome.input==GAME_INPUT_STRICT_REJECTED)
     show_toast(ui,tr(ui->language,T_ILLEGAL));
+  if(outcome.terminal)finish_terminal_action(ui);
+  return outcome.changed||outcome.terminal;
+}
+
+static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool notes_mode){
+  AppAction action={
+    .kind=notes_mode?APP_ACTION_NOTE:(value==0?APP_ACTION_CLEAR:APP_ACTION_PLACE),
+    .row=row,.column=column,.value=value
+  };
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  return apply_action_outcome(ui,outcome);
+}
+
+static bool apply_history_action(Game*game,UI*ui,AppActionKind kind){
+  AppAction action={.kind=kind};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.blocked)audio_play_effect(AUDIO_EFFECT_BLOCKED);
+  return apply_action_outcome(ui,outcome);
+}
+
+static void clear_hint_preview(UI*ui){
+  if(!ui)return;
+  ui->hint_preview_active=false;
+  ui->hint_verify_required=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
+}
+
+static bool prepare_hint_preview(const Game*game,UI*ui){
+  if(!game||!ui||!ui->session_open||ui->screen!=SCR_PLAY)return false;
+  HumanHint hint;
+  if(!human_hint_analyze(game->puzzle,&hint))return false;
+  if(hint.status==HUMAN_HINT_SOLVED)return false;
+  ui->hint_verify_required=false;
+  ui->hint_preview=hint;
+  ui->hint_preview_active=true;
+  if(hint.status==HUMAN_HINT_LOGICAL&&hint.placement.placement_cell>=0){
+    ui->sel_r=hint.placement.placement_cell/9;
+    ui->sel_c=hint.placement.placement_cell%9;
+  }else if(hint.status==HUMAN_HINT_INVALID&&hint.contradiction_cell>=0){
+    ui->sel_r=hint.contradiction_cell/9;
+    ui->sel_c=hint.contradiction_cell%9;
   }
-  return result!=GAME_INPUT_NO_CHANGE&&result!=GAME_INPUT_LOCKED;
+  return true;
+}
+
+static bool apply_logical_hint_action(Game*game,UI*ui){
+  if(!game||!ui||!ui->hint_preview_active||
+     ui->hint_preview.status!=HUMAN_HINT_LOGICAL)return false;
+  HumanStep placement=ui->hint_preview.placement;
+  if(placement.placement_cell<0||placement.placement_value<1||
+     placement.placement_value>9)return false;
+  if(game->solution[placement.placement_cell]!=placement.placement_value){
+    ui->hint_preview.status=HUMAN_HINT_STALLED;
+    ui->hint_verify_required=true;
+    ui->assisted=true;
+    return true;
+  }
+  AppAction action={
+    .kind=APP_ACTION_PLACE,
+    .row=placement.placement_cell/9,
+    .column=placement.placement_cell%9,
+    .value=placement.placement_value
+  };
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  bool changed=apply_action_outcome(ui,outcome);
+  if(changed){
+    ui->assisted=true;
+    clear_hint_preview(ui);
+  }
+  return changed;
+}
+
+static bool apply_reveal_action(Game*game,UI*ui,int row,int column){
+  AppAction action={.kind=APP_ACTION_HINT,.row=row,.column=column};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.changed){
+    ui->assisted=true;
+    clear_hint_preview(ui);
+    show_toast(ui,tr(ui->language,T_HINT_USED));
+  }
+  if(outcome.terminal)finish_terminal_action(ui);
+  return outcome.changed||outcome.terminal;
+}
+
+static int apply_verify_action(Game*game,UI*ui){
+  AppAction action={.kind=APP_ACTION_VERIFY};
+  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  if(outcome.revealed)ui->assisted=true;
+  clear_hint_preview(ui);
+  return outcome.detail;
 }
 
 /* ===== Font discovery (robust, cross-platform) ===== */
@@ -231,44 +358,220 @@ static bool local_date(int*year,int*month,int*day){
   *year=local->tm_year+1900;*month=local->tm_mon+1;*day=local->tm_mday;return true;
 }
 
-static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
-  if(!out||!base||!leaf)return false;
-  int n=snprintf(out,PATH_MAX,"%s%s",base,leaf);
-  return n>=0&&n<PATH_MAX;
+static void resume_info_from_slot(AppResumeInfo*out,const ProfileSlot*slot,
+                                  bool daily){
+  if(!out)return;
+  memset(out,0,sizeof(*out));
+  const SessionState*session=profile_slot_session(slot);
+  if(!session||!session_validate_runtime(session))return;
+  out->present=true;
+  out->can_continue=session_can_continue_runtime(session);
+  out->completed=session->status!=SESSION_ACTIVE;
+  out->assisted=slot->value.assisted;
+  out->mode=session->mode;
+  out->difficulty=session->game.difficulty;
+  out->elapsed_ms=session->elapsed_ms;
+  out->year=session->daily_year;
+  out->month=session->daily_month;
+  out->day=session->daily_day;
+  if(daily){
+    int year=0,month=0,day=0;
+    out->today=local_date(&year,&month,&day)&&year==out->year&&
+               month==out->month&&day==out->day;
+  }
 }
 
-static void persistence_init(Persistence*p){
+static void refresh_resume_info(Persistence*p,UI*ui){
+  if(!ui)return;
+  memset(&ui->normal_resume,0,sizeof(ui->normal_resume));
+  memset(&ui->daily_resume,0,sizeof(ui->daily_resume));
+  if(p&&p->enabled){
+    resume_info_from_slot(&ui->normal_resume,&p->profile.normal,false);
+    resume_info_from_slot(&ui->daily_resume,&p->profile.daily,true);
+  }
+  ui->has_session=ui->normal_resume.can_continue;
+}
+
+static bool profile_result_from_session_state(const SessionState*session,
+                                              bool assisted,
+                                              ProfileResult*out){
+  if(!session||!out||session->status==SESSION_ACTIVE)return false;
+  memset(out,0,sizeof(*out));
+  out->seed=session->game.seed;
+  out->generator_revision=session->game.generator_revision;
+  out->difficulty=session->game.difficulty;
+  out->mode=session->mode;
+  out->status=session->status;
+  out->assisted=assisted;
+  out->is_daily=session->is_daily;
+  out->elapsed_ms=session->elapsed_ms;
+  out->mistakes=(uint32_t)session->mistakes;
+  out->strikes=(uint32_t)session->strikes;
+  out->daily_year=(uint16_t)session->daily_year;
+  out->daily_month=(uint8_t)session->daily_month;
+  out->daily_day=(uint8_t)session->daily_day;
+  return true;
+}
+
+static void refresh_result_summary(Persistence*p,const SessionState*session,
+                                   bool assisted,UI*ui){
+  if(!ui)return;
+  ui->result_finished_count=0;
+  ui->result_best_time_available=false;
+  ui->result_best_time_ms=0;
+  if(!p||!p->enabled)return;
+  ProfileResult reference;
+  if(!profile_result_from_session_state(session,assisted,&reference))return;
+  ProfileResultSummary summary=profile_result_summary(&p->profile,&reference);
+  ui->result_finished_count=summary.finished;
+  ui->result_best_time_available=summary.best_time_available;
+  ui->result_best_time_ms=summary.best_time_ms;
+}
+
+static bool record_terminal_result(Persistence*p,const SessionState*session,
+                                   bool assisted,UI*ui){
+  if(!p||!p->enabled||!session||session->status==SESSION_ACTIVE)return false;
+  ProfileResult result;
+  if(!profile_result_from_session_state(session,assisted,&result))return false;
+  bool inserted=false;
+  if(!profile_record_result(&p->profile,&result,&inserted))return false;
+  if(inserted)
+    save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
+  refresh_result_summary(p,session,assisted,ui);
+  return inserted;
+}
+
+static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
+  if(!out||!base||!leaf)return false;
+  size_t base_length=strlen(base),leaf_length=strlen(leaf);
+  if(base_length>=PATH_MAX||leaf_length>PATH_MAX-base_length-1){
+    out[0]='\0';return false;
+  }
+  memcpy(out,base,base_length);
+  memcpy(out+base_length,leaf,leaf_length+1);
+  return true;
+}
+
+static void persistence_refresh_normal(Persistence*p){
   if(!p)return;
-  memset(p,0,sizeof(*p));preferences_defaults(&p->preferences);
+  const SessionState*normal=profile_slot_session(&p->profile.normal);
+  if(normal)p->saved=*normal;else memset(&p->saved,0,sizeof(p->saved));
+}
+
+static bool persistence_write_profile(Persistence*p){
+  if(!p||!p->enabled)return false;
+  p->profile.preferences=p->preferences;
+  StoreStatus status=profile_save_runtime_file(
+      p->profile_path,p->profile_backup_path,&p->profile);
+  save_policy_record_result(&p->save_policy,status,now_ms());
+  return status==STORE_OK;
+}
+
+static bool persistence_flush(Persistence*p){
+  if(!p||!p->enabled)return false;
+  if(!save_policy_dirty(&p->save_policy))return true;
+  return persistence_write_profile(p);
+}
+
+static bool persistence_has_save_error(const Persistence*p){
+  return p&&save_policy_has_error(&p->save_policy);
+}
+
+static bool persistence_recover_previous(Persistence*p){
+  if(!p||p->lock_status!=STORE_LOCK_ACQUIRED)return false;
+  ProfileData recovered;
+  StoreStatus status=profile_recover_previous(
+      p->profile_path,p->profile_backup_path,&recovered);
+  p->profile_status=status;
+  if(status!=STORE_OK)return false;
+  p->profile=recovered;
+  p->preferences=recovered.preferences;
+  persistence_refresh_normal(p);
+  save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
+  p->enabled=true;
+  return true;
+}
+
+static bool persistence_previous_available(const Persistence*p){
+  if(!p)return false;
+  ProfileData previous;
+  return profile_load_file(p->profile_backup_path,&previous)==STORE_OK;
+}
+
+static void persistence_init_base(Persistence*p){
+  if(!p)return;
+  memset(p,0,sizeof(*p));
+  p->writer_lock.native_handle=-1;
+  p->lock_status=STORE_LOCK_ERROR;
+  p->profile_status=STORE_IO_ERROR;
+  profile_defaults(&p->profile);
+  save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
+  p->preferences=p->profile.preferences;
+
   char*base=SDL_GetPrefPath("santirodriguez","Sudokura");
   if(!base)return;
-  bool paths_ok=pref_path(p->session_path,base,"session.dat")&&
-                pref_path(p->preferences_path,base,"preferences.dat");
-  SDL_free(base);if(!paths_ok)return;p->enabled=true;
-  StoreStatus pref_status=preferences_load_file(p->preferences_path,&p->preferences);
-  if(pref_status==STORE_CORRUPT){
-    (void)store_quarantine_corrupt(p->preferences_path);preferences_defaults(&p->preferences);
-  }else if(pref_status==STORE_IO_ERROR){
-    preferences_defaults(&p->preferences);
+  bool paths_ok=
+      path_copy(p->profile_directory,sizeof(p->profile_directory),base)&&
+      pref_path(p->profile_path,base,"profile.dat")&&
+      pref_path(p->profile_backup_path,base,"profile.dat.bak")&&
+      pref_path(p->session_path,base,"session.dat")&&
+      pref_path(p->preferences_path,base,"preferences.dat")&&
+      pref_path(p->audio_levels_path,base,"audio-levels.dat")&&
+      pref_path(p->session_v12_backup_path,base,"session.dat.v1.2.bak")&&
+      pref_path(p->preferences_v12_backup_path,base,"preferences.dat.v1.2.bak")&&
+      pref_path(p->audio_v12_backup_path,base,"audio-levels.dat.v1.2.bak");
+  if(!paths_ok){SDL_free(base);return;}
+
+  p->lock_status=store_writer_lock_acquire(base,&p->writer_lock);
+  if(p->lock_status!=STORE_LOCK_ACQUIRED){
+    SDL_free(base);
+    return;
   }
-  StoreStatus session_status=session_load_file(p->session_path,&p->saved);
-  if(session_status==STORE_CORRUPT)(void)store_quarantine_corrupt(p->session_path);
-  else if(session_status==STORE_INCOMPATIBLE)(void)remove(p->session_path);
-  if(session_status!=STORE_OK)memset(&p->saved,0,sizeof(p->saved));
-  p->last_checkpoint=now_s();
+
+  ProfileLegacyPaths legacy={
+    .session_path=p->session_path,
+    .preferences_path=p->preferences_path,
+    .audio_levels_path=p->audio_levels_path,
+    .session_backup_path=p->session_v12_backup_path,
+    .preferences_backup_path=p->preferences_v12_backup_path,
+    .audio_levels_backup_path=p->audio_v12_backup_path
+  };
+  bool migrated=false;
+  p->profile_status=profile_load_or_migrate_v12(
+      p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated);
+  (void)migrated;
+  SDL_free(base);
+  if(p->profile_status!=STORE_OK)return;
+
+  p->enabled=true;
+  p->preferences=p->profile.preferences;
+  persistence_refresh_normal(p);
+  save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms=now_ms();
+}
+
+static void persistence_stage_preferences(Persistence*p){
+  if(!p||!p->enabled)return;
+  p->profile.preferences=p->preferences;
+  save_policy_mark(&p->save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
 }
 
 static bool save_preferences(Persistence*p,const UI*ui){
   if(!p||!p->enabled||!ui)return false;
   p->preferences.language=ui->language;
   p->preferences.dark_theme=ui->dark_theme;
+  p->preferences.reduced_motion=ui->reduced_motion;
   p->preferences.strict_mode=ui->strict_mode;
-  return preferences_save_file(p->preferences_path,&p->preferences);
+  p->preferences.auto_remove_peer_notes=ui->auto_remove_peer_notes;
+  persistence_stage_preferences(p);
+  return true;
 }
 
 static SessionStatus runtime_session_status(const Game*game,const UI*ui){
-  if(game_is_solved(game))return SESSION_WON;
   if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,elapsed_time(ui),ui->time_limit_s))return SESSION_LOST;
+  if(game_is_solved(game))return SESSION_WON;
   return SESSION_ACTIVE;
 }
 
@@ -279,91 +582,155 @@ static void capture_session(SessionState*out,const Game*game,const UI*ui){
   out->notes_mode=ui->notes_mode;out->strict_mode=ui->strict_mode;
   out->manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
   out->status=runtime_session_status(game,ui);out->mistakes=ui->mistakes;out->strikes=ui->strikes;
-  double elapsed=elapsed_time(ui);if(elapsed<0)elapsed=0;
-  out->elapsed_ms=(uint64_t)ceil(elapsed*1000.0);
+  out->elapsed_ms=app_clock_elapsed_ms(ui,now_ms());
   out->is_daily=ui->is_daily;out->daily_year=ui->daily_year;
   out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
 }
 
-static bool save_current_session(Persistence*p,const Game*game,UI*ui){
+static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
-  SessionState state;capture_session(&state,game,ui);
-  if(!session_save_file(p->session_path,&state))return false;
-  p->saved=state;ui->has_session=true;p->last_checkpoint=now_s();return true;
+  SessionState state;
+  memset(&state,0,sizeof(state));
+  capture_session(&state,game,ui);
+  ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
+  bool same_identity=
+      slot->present &&
+      slot->value.session.game.seed==state.game.seed &&
+      slot->value.session.game.generator_revision==state.game.generator_revision &&
+      slot->value.session.game.difficulty==state.game.difficulty &&
+      slot->value.session.is_daily==state.is_daily &&
+      slot->value.session.daily_year==state.daily_year &&
+      slot->value.session.daily_month==state.daily_month &&
+      slot->value.session.daily_day==state.daily_day;
+  bool assisted=ui->assisted||(same_identity&&slot->value.assisted);
+  bool valid=same_identity
+                 ? profile_slot_set_runtime(slot,&state,assisted)
+                 : profile_slot_set(slot,&state,assisted);
+  if(!valid)return false;
+  slot->value.undo_count=ui->undo_count;
+  slot->value.redo_count=ui->redo_count;
+  memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
+  memcpy(slot->value.redo,ui->redo,sizeof(ui->redo));
+  if(!state.is_daily)p->saved=state;
+  if(state.status!=SESSION_ACTIVE)
+    (void)record_terminal_result(p,&state,assisted,ui);
+  refresh_resume_info(p,ui);
+  save_policy_mark(&p->save_policy,
+                   state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
+                   now_ms());
+  return true;
 }
 
-static bool saved_has_progress(const SessionState*state){
-  if(!state||!session_validate(state))return false;
-  if(state->status!=SESSION_ACTIVE||state->elapsed_ms||state->mistakes||state->strikes)return true;
-  for(int i=0;i<81;i++)if(state->game.puzzle[i]!=state->game.initial[i]||state->game.hinted[i]||state->game.notes[i])return true;
-  return false;
+static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
+  if(!stage_current_session(p,game,ui))return false;
+  p->last_periodic_checkpoint_ms=now_ms();
+  return persistence_flush(p);
 }
 
-static void restore_saved_session(Persistence*p,Game*game,UI*ui){
-  if(!p||!game||!ui||!session_validate(&p->saved))return;
-  const SessionState*s=&p->saved;*game=s->game;ui->mode=s->mode;set_mode_params(ui);
+static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
+  if(!p||!game||!ui)return;
+  const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
+  const SessionState*s=profile_slot_session(slot);
+  if(!s||!session_validate_runtime(s))return;
+  *game=s->game;ui->mode=s->mode;set_mode_params(ui);
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
-  ui->elapsed_base=(double)s->elapsed_ms/1000.0;ui->running_since=now_s();
-  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=true;ui->has_session=true;
+  app_clock_restore(ui,s->elapsed_ms,now_ms());
+  ui->pause_reasons=s->manual_paused?PAUSE_MANUAL:0;ui->session_open=false;
+  bool normal_continue=session_can_continue_runtime(&p->saved);
+  ui->has_session=true;
+  ui->assisted=slot->value.assisted;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  ui->undo_count=slot->value.undo_count;ui->redo_count=slot->value.redo_count;
+  memcpy(ui->undo,slot->value.undo,sizeof(ui->undo));
+  memcpy(ui->redo,slot->value.redo,sizeof(ui->redo));
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=s->is_daily;ui->daily_year=s->daily_year;ui->daily_month=s->daily_month;ui->daily_day=s->daily_day;
-  if(s->status==SESSION_WON){ui->result=RES_WIN;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
-  else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->screen=SCR_END;ui->pause_reasons|=PAUSE_END;}
-  else{ui->result=RES_NONE;ui->screen=SCR_PLAY;}
-  ui->prev_screen=ui->screen;p->last_checkpoint=now_s();
+  if(s->status==SESSION_WON){ui->result=RES_WIN;ui->pause_reasons|=PAUSE_END;}
+  else if(s->status==SESSION_LOST){ui->result=RES_LOSE;ui->pause_reasons|=PAUSE_END;}
+  else ui->result=RES_NONE;
+  AppAction continue_action={.kind=APP_ACTION_CONTINUE};
+  (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
+  if(s->status!=SESSION_ACTIVE)
+    (void)record_terminal_result(p,s,slot->value.assisted,ui);
+  refresh_resume_info(p,ui);
+  ui->has_session=normal_continue;
 }
 
-static void start_new_session(Persistence*p,Game*game,UI*ui){
+static GameGenerationResult start_new_session_base(
+    Persistence*p,Game*game,UI*ui,const GameGenerationControl*control){
+  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  Game generated;
+  GameGenerationResult result=game_generate_difficulty(
+      &generated,next_seed(),p->preferences.difficulty,
+      SUDOKURA_GENERATOR_REVISION,control);
+  if(result!=GAME_GENERATION_OK)return result;
+  *game=generated;
   ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
-  game_new_difficulty(game,next_seed(),p->preferences.difficulty);
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
+  ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
-  begin_fresh_play(ui);(void)save_current_session(p,game,ui);
+  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
+  return GAME_GENERATION_OK;
 }
 
-static bool start_daily_session(Persistence*p,Game*game,UI*ui,int year,int month,int day){
-  if(!game_new_daily(game,year,month,day))return false;
+static GameGenerationResult start_daily_session_base(
+    Persistence*p,Game*game,UI*ui,int year,int month,int day,
+    const GameGenerationControl*control){
+  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  uint64_t seed=0;
+  if(!game_daily_seed_revision(year,month,day,SUDOKURA_GENERATOR_REVISION,&seed))
+    return GAME_GENERATION_INVALID;
+  Game generated;
+  GameGenerationResult result=game_generate_difficulty(
+      &generated,seed,DIFFICULTY_MEDIUM,SUDOKURA_GENERATOR_REVISION,control);
+  if(result!=GAME_GENERATION_OK)return result;
+  *game=generated;
   ui->mode=MODE_CLASSIC;ui->strict_mode=p->preferences.strict_mode;
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
+  ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
-  begin_fresh_play(ui);(void)save_current_session(p,game,ui);return true;
+  begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
+  return GAME_GENERATION_OK;
 }
 
 static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
-  return p&&session_validate(&p->saved)&&p->saved.is_daily&&
-         p->saved.daily_year==year&&p->saved.daily_month==month&&p->saved.daily_day==day;
+  if(!p)return false;
+  const SessionState*s=profile_slot_session(&p->profile.daily);
+  return s&&session_validate(s)&&s->is_daily&&
+         s->daily_year==year&&s->daily_month==month&&s->daily_day==day;
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
-  game_restart(game);ui->sel_r=4;ui->sel_c=4;begin_fresh_play(ui);
-  (void)save_current_session(p,game,ui);
+  AppAction restart_action={.kind=APP_ACTION_RESTART};
+  AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
+  if(!outcome.changed)return;
+  ui->sel_r=4;ui->sel_c=4;ui->hint_preview_active=false;
+  memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
+  set_mode_params(ui);clock_reset(ui);
+  (void)checkpoint_current_session(p,game,ui);
 }
 
-static void go_home(Persistence*p,const Game*game,UI*ui){
-  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)save_current_session(p,game,ui);}
+static void go_home_base(Persistence*p,const Game*game,UI*ui){
+  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)checkpoint_current_session(p,game,ui);}
+  clear_hint_preview(ui);
   ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
   ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;
   ui->notes_mode=false;set_mode_params(ui);
 }
 
 static void open_info_from_play(Persistence*p,const Game*game,UI*ui,Screen screen){
-  clock_pause(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);
-  ui->prev_screen=SCR_PLAY;ui->screen=screen;
+  clock_pause(ui,PAUSE_MODAL);(void)checkpoint_current_session(p,game,ui);
+  (void)app_open_aux(ui,screen);
 }
 
 static void return_from_info(Persistence*p,const Game*game,UI*ui){
-  if(ui->prev_screen==SCR_PLAY){ui->screen=SCR_PLAY;clock_resume(ui,PAUSE_MODAL);(void)save_current_session(p,game,ui);}
-  else ui->screen=ui->prev_screen;
+  bool returning_to_play=ui&&ui->prev_screen==SCR_PLAY;
+  (void)app_return_aux(ui);
+  if(returning_to_play){clock_resume(ui,PAUSE_MODAL);(void)checkpoint_current_session(p,game,ui);}
 }
 
-static bool ends_withi(const char* s, const char* suf){
-  size_t ns=strlen(s), ms=strlen(suf); if(ms>ns) return false;
-  for(size_t i=0;i<ms;i++){
-    char a=s[ns-ms+i], b=suf[i];
-    if(a>='A'&&a<='Z') a=(char)(a-'A'+'a');
-    if(b>='A'&&b<='Z') b=(char)(b-'A'+'a');
-    if(a!=b) return false;
-  }
-  return true;
-}
 static bool try_open_font_path(const char* path){
   if(!path) return false;
   TTF_Font* tmp = TTF_OpenFont(path, 18);
