@@ -121,6 +121,8 @@ static void test_profile_roundtrip(void) {
   profile.preferences.audio_enabled = false;
   profile.preferences.music_volume = 31;
   profile.preferences.fx_volume = 72;
+  profile.preferences.music_muted = true;
+  profile.preferences.fx_muted = true;
   profile.preferences.reduced_motion = true;
   profile.preferences.auto_remove_peer_notes = true;
   profile.preferences.window_x = 40;
@@ -189,6 +191,8 @@ static void test_profile_roundtrip(void) {
   assert(loaded.preferences.language == LANG_CA);
   assert(loaded.preferences.music_volume == 31);
   assert(loaded.preferences.fx_volume == 72);
+  assert(loaded.preferences.music_muted);
+  assert(loaded.preferences.fx_muted);
   assert(loaded.preferences.reduced_motion);
   assert(loaded.preferences.auto_remove_peer_notes);
   assert(loaded.preferences.window_width == 1280);
@@ -473,6 +477,8 @@ static void run_v12_fixture(const SessionState *state) {
   assert(!profile.preferences.audio_enabled);
   assert(profile.preferences.music_volume == 37);
   assert(profile.preferences.fx_volume == 81);
+  assert(!profile.preferences.music_muted);
+  assert(!profile.preferences.fx_muted);
   assert(store_file_exists(legacy_session_backup));
   assert(store_file_exists(legacy_preferences_backup));
   assert(store_file_exists(legacy_audio_backup));
@@ -529,6 +535,8 @@ static void test_v12_migration_and_one_time_import(void) {
   assert(profile.preferences.language == LANG_ES);
   assert(profile.preferences.music_volume == 37);
   assert(profile.preferences.fx_volume == 81);
+  assert(!profile.preferences.music_muted);
+  assert(!profile.preferences.fx_muted);
   assert(store_file_exists(legacy_session_path));
   assert(store_file_exists(legacy_preferences_path));
   assert(store_file_exists(legacy_audio_path));
