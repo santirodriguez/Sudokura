@@ -35,6 +35,8 @@ typedef struct {
   int pending_channel;
   int music_volume;
   int fx_volume;
+  bool music_muted;
+  bool fx_muted;
   Mix_Music *main_loop;
   Mix_Music *fail_loop;
   Mix_Chunk *win_jingle;
@@ -62,8 +64,11 @@ static int audio_clamp_percent(int value) {
 
 static void audio_apply_volumes(void) {
   if (!audio_state.mixer_open) return;
-  Mix_VolumeMusic(MIX_MAX_VOLUME * audio_state.music_volume / 100);
-  Mix_Volume(-1, MIX_MAX_VOLUME * audio_state.fx_volume / 100);
+  Mix_VolumeMusic(MIX_MAX_VOLUME *
+                  (audio_state.music_muted ? 0 : audio_state.music_volume) /
+                  100);
+  Mix_Volume(-1, MIX_MAX_VOLUME *
+                     (audio_state.fx_muted ? 0 : audio_state.fx_volume) / 100);
 }
 
 static bool audio_file_exists(const char *path) {
@@ -342,7 +347,8 @@ static Mix_Music *audio_context_music(AudioContext context) {
 
 static void audio_start_music(void) {
   if (!audio_state.mixer_open || !audio_state.enabled ||
-      audio_state.focus_paused || audio_state.pending_channel >= 0)
+      audio_state.music_muted || audio_state.focus_paused ||
+      audio_state.pending_channel >= 0)
     return;
 
   if (audio_state.playing_context_valid &&
@@ -415,6 +421,10 @@ int audio_music_volume(void) { return audio_state.music_volume; }
 
 int audio_fx_volume(void) { return audio_state.fx_volume; }
 
+bool audio_music_muted(void) { return audio_state.music_muted; }
+
+bool audio_fx_muted(void) { return audio_state.fx_muted; }
+
 void audio_set_music_volume(int percent) {
   audio_state.music_volume = audio_clamp_percent(percent);
   audio_apply_volumes();
@@ -423,6 +433,29 @@ void audio_set_music_volume(int percent) {
 void audio_set_fx_volume(int percent) {
   audio_state.fx_volume = audio_clamp_percent(percent);
   audio_apply_volumes();
+}
+
+void audio_set_music_muted(bool muted) {
+  if (audio_state.music_muted == muted) return;
+  audio_state.music_muted = muted;
+  audio_apply_volumes();
+  if (!audio_state.mixer_open) return;
+  if (muted) {
+    Mix_HaltMusic();
+    audio_state.playing_context_valid = false;
+  } else if (audio_state.enabled) {
+    audio_start_music();
+  }
+}
+
+void audio_set_fx_muted(bool muted) {
+  if (audio_state.fx_muted == muted) return;
+  audio_state.fx_muted = muted;
+  audio_apply_volumes();
+  if (muted && audio_state.mixer_open) {
+    Mix_HaltChannel(-1);
+    audio_state.pending_channel = -1;
+  }
 }
 
 void audio_set_enabled(bool enabled) {
@@ -455,6 +488,13 @@ void audio_play_result(AudioResultCue cue) {
   if (!audio_state.mixer_open || !audio_state.enabled) return;
   Mix_Chunk *chunk = cue == AUDIO_RESULT_FAIL ? audio_state.fail_jingle
                                               : audio_state.win_jingle;
+  if (audio_state.fx_muted) {
+    audio_state.context =
+        cue == AUDIO_RESULT_FAIL ? AUDIO_CONTEXT_FAIL : AUDIO_CONTEXT_MAIN;
+    audio_state.playing_context_valid = false;
+    audio_start_music();
+    return;
+  }
   audio_state.context =
       cue == AUDIO_RESULT_FAIL ? AUDIO_CONTEXT_FAIL : AUDIO_CONTEXT_MAIN;
   audio_state.playing_context_valid = false;
@@ -478,8 +518,8 @@ void audio_play_result(AudioResultCue cue) {
 
 void audio_play_effect(AudioEffect effect) {
   if (!audio_state.mixer_open || !audio_state.enabled ||
-      audio_state.focus_paused || effect < 0 || effect >= AUDIO_EFFECT_COUNT ||
-      !audio_state.effects[effect])
+      audio_state.fx_muted || audio_state.focus_paused ||
+      effect < 0 || effect >= AUDIO_EFFECT_COUNT || !audio_state.effects[effect])
     return;
   if (Mix_PlayChannel(-1, audio_state.effects[effect], 0) < 0) {
     if (!audio_state.effect_error_logged) {
