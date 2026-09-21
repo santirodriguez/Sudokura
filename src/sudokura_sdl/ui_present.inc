@@ -1294,10 +1294,10 @@ static AudioControlGeometry ui_audio_control_geometry(const Gfx *gfx,
                                                       const UI *ui) {
   AppGeometry app;
   memset(&app, 0, sizeof(app));
-  bool play_surface =
-      gfx && ui && ui->screen == SCR_PLAY && get_geometry(gfx, ui, &app);
+  bool has_geometry = gfx && ui && get_geometry(gfx, ui, &app);
+  bool play_surface = has_geometry && ui->screen == SCR_PLAY;
   return geometry_audio_control(gfx ? gfx->width : 0, gfx ? gfx->height : 0,
-                                play_surface ? &app : NULL, play_surface);
+                                has_geometry ? &app : NULL, play_surface);
 }
 
 static void rc2_draw_speaker_icon(Gfx *gfx, Theme theme, SDL_Rect rect,
