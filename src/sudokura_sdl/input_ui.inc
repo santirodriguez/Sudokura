@@ -232,28 +232,30 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
   SDL_Rect fx = sdl_rect(geo.fx);
 
   if (event->type == SDL_KEYDOWN) {
-    SDL_Keycode key = event->key.keysym.sym;
     if (event->key.repeat) return false;
-    if (key == SDLK_v) {
-      if ((event->key.keysym.mod & KMOD_SHIFT) != 0) {
-        audio_control_popup_open = !audio_control_popup_open;
-      } else {
+    InputAudioShortcut shortcut =
+        input_audio_shortcut(event->key.keysym.sym, event->key.keysym.mod,
+                             audio_control_popup_open);
+    switch (shortcut) {
+      case INPUT_AUDIO_MASTER:
         audio_control_popup_open = false;
         audio_toggle(audio_persistence);
-      }
-      return true;
-    }
-    if (audio_control_popup_open && key == SDLK_m) {
-      audio_toggle_music_mute(audio_persistence);
-      return true;
-    }
-    if (audio_control_popup_open && key == SDLK_f) {
-      audio_toggle_fx_mute(audio_persistence);
-      return true;
-    }
-    if (audio_control_popup_open && key == SDLK_ESCAPE) {
-      audio_control_popup_open = false;
-      return true;
+        return true;
+      case INPUT_AUDIO_POPUP:
+        audio_control_popup_open = !audio_control_popup_open;
+        return true;
+      case INPUT_AUDIO_MUSIC:
+        audio_toggle_music_mute(audio_persistence);
+        return true;
+      case INPUT_AUDIO_FX:
+        audio_toggle_fx_mute(audio_persistence);
+        return true;
+      case INPUT_AUDIO_CLOSE:
+        audio_control_popup_open = false;
+        return true;
+      case INPUT_AUDIO_NONE:
+      default:
+        break;
     }
   }
 
@@ -285,7 +287,7 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
     bool inside = point_in(button, event->button.x, event->button.y);
     audio_control_pressed = false;
     if (!inside) return true;
-    if (held_ms >= 500u) {
+    if (input_audio_press_is_long(held_ms)) {
       audio_control_popup_open = true;
     } else {
       audio_control_popup_open = false;
