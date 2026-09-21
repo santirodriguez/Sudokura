@@ -4,6 +4,7 @@ from pathlib import Path
 import argparse,csv,struct
 
 SIZES={(640,480),(1024,768),(1366,768),(360,640),(1920,1080)}
+HELP_AUDIT_SIZES={(360,640),(640,480),(1024,768)}
 STATES={"home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about"}
 LANGS={"English","Español","Català"}
@@ -30,27 +31,43 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==78,f"expected 78 manifest rows, found {len(rows)}"
-files=sorted(args.directory.glob("*.bmp"));assert len(files)==78,f"expected 78 BMPs, found {len(files)}"
-by_name={p.name:p for p in files};assert len(by_name)==78
+assert len(rows)==114,f"expected 114 manifest rows, found {len(rows)}"
+files=sorted(args.directory.glob("*.bmp"));assert len(files)==114,f"expected 114 BMPs, found {len(files)}"
+by_name={p.name:p for p in files};assert len(by_name)==114
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==60 and len(audit)==18,(len(matrix),len(audit))
+assert len(matrix)==60 and len(audit)==54,(len(matrix),len(audit))
 assert {r["state"] for r in matrix}==STATES
 assert {(int(r["width"]),int(r["height"])) for r in matrix}==SIZES
 for size in SIZES:
     assert sum((int(r["width"]),int(r["height"]))==size for r in matrix)==12
 assert {r["language"] for r in rows}==LANGS
 assert {r["theme"] for r in rows}==THEMES
-for state in ("help-bottom","settings","about"):
+for state in ("help-top","help-bottom"):
+    subset=[r for r in audit if r["state"]==state]
+    assert len(subset)==18,state
+    for size in HELP_AUDIT_SIZES:
+        sized=[r for r in subset
+               if (int(r["width"]),int(r["height"]))==size]
+        assert len(sized)==6,(state,size,len(sized))
+        assert {(r["language"],r["theme"]) for r in sized}=={
+            (language,theme) for language in LANGS for theme in THEMES
+        }
+for state in ("settings","audio-popup","about"):
     subset=[r for r in audit if r["state"]==state]
     assert len(subset)==6,state
-    assert {(r["language"],r["theme"]) for r in subset}=={(l,t) for l in LANGS for t in THEMES}
-# Short translations can fit without scrolling. Still require the matrix to
-# exercise genuine overflow in each theme, so a broken zero-only manifest fails.
-for theme in THEMES:
-    assert any(r["state"]=="help-bottom" and r["theme"]==theme and
-               int(r["scroll_max"])>0 for r in audit),(theme,"missing Help overflow coverage")
+    assert {(int(r["width"]),int(r["height"])) for r in subset}=={(1024,768)}
+    assert {(r["language"],r["theme"]) for r in subset}=={
+        (language,theme) for language in LANGS for theme in THEMES
+    }
+for r in audit:
+    size=(int(r["width"]),int(r["height"]))
+    if r["state"]=="help-top":
+        assert int(r["scroll"])==0,(r["file"],"Help top must start at zero")
+    if r["state"]=="help-bottom":
+        assert int(r["scroll"])==int(r["scroll_max"]),(r["file"],"Help bottom not reached")
+        if size in {(360,640),(640,480)}:
+            assert int(r["scroll_max"])>0,(r["file"],"compact Help must exercise overflow")
 for r in rows:
     assert r["file"] in by_name,r["file"]
     w,h=int(r["width"]),int(r["height"])
@@ -77,4 +94,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 78 diagnostic BMPs, semantic focus/scroll bounds, required states, viewports, EN/ES/CA and both themes")
+print("validated 114 diagnostic BMPs, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

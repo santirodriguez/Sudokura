@@ -1115,49 +1115,95 @@ int main(int argc, char **argv) {
         }
       }
 
+      const int help_audit_sizes[][2]={{360,640},{640,480},{1024,768}};
+      for(unsigned n=0;n<sizeof(help_audit_sizes)/sizeof(help_audit_sizes[0]);++n)
+        for(int language=0;language<LANG_COUNT;++language)
+          for(int dark=0;dark<2;++dark)
+            for(int bottom=0;bottom<2;++bottom){
+              SDL_SetWindowMinimumSize(g.win,1,1);
+              SDL_SetWindowSize(g.win,help_audit_sizes[n][0],help_audit_sizes[n][1]);
+              SDL_PumpEvents();
+              if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
+              game=review_base;app_state_init(&ui);set_mode_params(&ui);
+              ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
+              ui.session_open=true;settings_open=false;audio_control_popup_open=false;
+              help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;ui.screen=SCR_HELP;
+              app_render_ui(&g,&game,&ui);
+              if(bottom)help_scroll_set(help_scroll_max_px);
+              SDL_Rect focus_rect=back_rect(&g,&ui);
+              app_render_ui(&g,&game,&ui);
+              const char*audit_state=bottom?"help-bottom":"help-top";
+              char filename[192],path[PATH_MAX];
+              snprintf(filename,sizeof(filename),"audit-%dx%d-%s-%s-%s.bmp",
+                       g.width,g.height,audit_state,language_name(ui.language),
+                       ui.dark_theme?"dark":"light");
+              if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||
+                 !save_frame(&g,path)){
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              fprintf(manifest,
+                      "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                      filename,g.width,g.height,audit_state,language_name(ui.language),
+                      ui.dark_theme?"dark":"light","back",focus_rect.x,focus_rect.y,
+                      focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
+            }
+
       const int audit_w=1024,audit_h=768;
-      const int audit_states[3]={REVIEW_HELP,REVIEW_SETTINGS,REVIEW_ABOUT};
-      for(int language=0;language<LANG_COUNT;++language)for(int dark=0;dark<2;++dark)
-        for(int a=0;a<3;++a){
-          int state=audit_states[a];
-          SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,audit_w,audit_h);
-          SDL_PumpEvents();
-          if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
-          game=review_base;app_state_init(&ui);set_mode_params(&ui);
-          ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
-          ui.session_open=true;settings_open=false;help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;
-          AppGeometry geometry;if(!get_geometry(&g,&ui,&geometry)){fclose(manifest);app_shutdown(&g);return 1;}
-          const char*focus="back";SDL_Rect focus_rect=back_rect(&g,&ui);
-          const char*audit_state=state_names[state];
-          if(state==REVIEW_HELP){
-            ui.screen=SCR_HELP;
+      const char*semantic_states[]={"settings","audio-popup","about"};
+      for(int language=0;language<LANG_COUNT;++language)
+        for(int dark=0;dark<2;++dark)
+          for(unsigned a=0;a<sizeof(semantic_states)/sizeof(semantic_states[0]);++a){
+            SDL_SetWindowMinimumSize(g.win,1,1);SDL_SetWindowSize(g.win,audit_w,audit_h);
+            SDL_PumpEvents();
+            if(!gfx_refresh_metrics(&g)){fclose(manifest);app_shutdown(&g);return 1;}
+            game=review_base;app_state_init(&ui);set_mode_params(&ui);
+            ui.language=(Language)language;ui.dark_theme=dark!=0;ui.reduced_motion=true;
+            ui.session_open=true;settings_open=false;audio_control_popup_open=false;
+            help_scroll_reset();info_keyboard_focus=INFO_FOCUS_BACK;
+            const char*focus="back";SDL_Rect focus_rect={0,0,0,0};
+            const char*audit_state=semantic_states[a];
+
+            if(!strcmp(audit_state,"settings")){
+              ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;
+              ui.pause_reasons=PAUSE_MODAL;settings_open=true;
+              settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
+              SettingsPanelLayout p=ui_settings_panel_layout(&g);
+              focus="reduced-motion";
+              focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);
+            }else if(!strcmp(audit_state,"audio-popup")){
+              ui.screen=SCR_TITLE;audio_control_popup_open=true;
+              audio_set_enabled(true);audio_set_music_muted(true);
+              audio_set_fx_muted(false);
+              AudioControlGeometry audio_geo=ui_audio_control_geometry(&g,&ui);
+              focus="audio-music";focus_rect=sdl_rect(audio_geo.music);
+            }else{
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
+              AppGeometry geometry;
+              if(!get_geometry(&g,&ui,&geometry)){
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
+            }
+
             app_render_ui(&g,&game,&ui);
-            help_scroll_set(help_scroll_max_px);
-            audit_state="help-bottom";
+            char filename[192],path[PATH_MAX];
+            snprintf(filename,sizeof(filename),"audit-%dx%d-%s-%s-%s.bmp",
+                     g.width,g.height,audit_state,language_name(ui.language),
+                     ui.dark_theme?"dark":"light");
+            if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||
+               !save_frame(&g,path)){
+              fclose(manifest);app_shutdown(&g);return 1;
+            }
+            fprintf(manifest,
+                    "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                    filename,g.width,g.height,audit_state,language_name(ui.language),
+                    ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
+                    focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
           }
-          else if(state==REVIEW_SETTINGS){
-            ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
-            settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
-            SettingsPanelLayout p=ui_settings_panel_layout(&g);
-            focus="reduced-motion";focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);
-          }else{
-            ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
-            focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
-          }
-          app_render_ui(&g,&game,&ui);
-          char filename[192],path[PATH_MAX];
-          snprintf(filename,sizeof(filename),"audit-%s-%s-%s.bmp",audit_state,
-                   language_name(ui.language),ui.dark_theme?"dark":"light");
-          if(!path_join(path,sizeof(path),screenshot_dir,filename,'/')||!save_frame(&g,path)){
-            fclose(manifest);app_shutdown(&g);return 1;
-          }
-          fprintf(manifest,"%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
-                  filename,g.width,g.height,audit_state,language_name(ui.language),
-                  ui.dark_theme?"dark":"light",focus,focus_rect.x,focus_rect.y,
-                  focus_rect.w,focus_rect.h,help_scroll_px,help_scroll_max_px);
-        }
+      audio_control_popup_open=false;audio_set_music_muted(false);
+      audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 78 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 114 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;

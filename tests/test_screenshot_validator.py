@@ -35,18 +35,26 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     check(original, True, "real matrix")
     rows = [dict(row) for row in original]
     for row in rows:
-        if row["state"] == "help-bottom" and row["language"] == "English":
+        if (row["state"] == "help-bottom" and
+                (int(row["width"]), int(row["height"])) == (1024, 768) and
+                row["language"] == "English"):
             row["scroll"] = row["scroll_max"] = "0"
-    check(rows, True, "fitting translation needs no scroll")
+    check(rows, True, "desktop fitting translation may need no scroll")
     rows = [dict(row) for row in original]
     row = next(row for row in rows if row["state"] == "help-bottom" and int(row["scroll_max"]) > 0)
     row["scroll"] = str(int(row["scroll_max"]) - 1)
     check(rows, False, "reject bottom not reached")
     rows = [dict(row) for row in original]
     for row in rows:
-        if row["state"] == "help-bottom":
+        if (row["state"] == "help-bottom" and
+                (int(row["width"]), int(row["height"])) == (360, 640)):
             row["scroll"] = row["scroll_max"] = "0"
-    check(rows, False, "reject missing overflow coverage")
+    check(rows, False, "reject missing compact Help overflow")
+
+    rows = [dict(row) for row in original]
+    rows = [row for row in rows
+            if not (row["state"] == "audio-popup" and row["language"] == "Català")]
+    check(rows, False, "reject missing semantic-state audit")
     rows = [dict(row) for row in original]
     rows[0]["fx"] = "-1"
     check(rows, False, "reject out-of-bounds focus")
