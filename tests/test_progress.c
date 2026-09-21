@@ -61,7 +61,21 @@ int main(void) {
   assert(session_validate(&state));
   assert(!session_can_continue(&state));
   assert(!session_has_meaningful_progress(&state));
+  assert(!session_can_continue_runtime(&state));
+  assert(!session_has_meaningful_progress_runtime(&state));
 
-  puts("meaningful-progress tests passed for pristine, edited, hinted and completed sessions");
+  state = fresh_state();
+  state.game.seed ^= UINT64_C(0x55aa);
+  assert(!session_validate(&state));
+  assert(session_validate_runtime(&state));
+  assert(!session_can_continue(&state));
+  assert(session_can_continue_runtime(&state));
+  assert(!session_has_meaningful_progress(&state));
+  assert(!session_has_meaningful_progress_runtime(&state));
+
+  state.game.puzzle[first_playable(&state.game)] = 1;
+  assert(session_has_meaningful_progress_runtime(&state));
+
+  puts("meaningful-progress tests passed for canonical and trusted-runtime session paths");
   return 0;
 }
