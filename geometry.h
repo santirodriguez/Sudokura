@@ -89,6 +89,13 @@ typedef struct {
 } AppGeometry;
 
 typedef struct {
+  GeoRect button;
+  GeoRect popup;
+  GeoRect music;
+  GeoRect fx;
+} AudioControlGeometry;
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 
@@ -108,5 +115,8 @@ bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
 GeometryFonts geometry_font_sizes(const AppGeometry *geometry, int width, int height);
 GeometryStyle geometry_style(const AppGeometry *geometry, int width, int height);
+AudioControlGeometry geometry_audio_control(int width, int height,
+                                                  const AppGeometry *app,
+                                                  bool play_surface);
 
 #endif
