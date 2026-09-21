@@ -224,6 +224,79 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
   return true;
 }
 
+static bool ui_handle_global_audio_event(SDL_Event *event) {
+  if (!event || !audio_gfx || !audio_ui) return false;
+  AudioControlGeometry geo = ui_audio_control_geometry(audio_gfx, audio_ui);
+  SDL_Rect button = sdl_rect(geo.button);
+  SDL_Rect music = sdl_rect(geo.music);
+  SDL_Rect fx = sdl_rect(geo.fx);
+
+  if (event->type == SDL_KEYDOWN) {
+    SDL_Keycode key = event->key.keysym.sym;
+    if (event->key.repeat) return false;
+    if (key == SDLK_v) {
+      if ((event->key.keysym.mod & KMOD_SHIFT) != 0) {
+        audio_control_popup_open = !audio_control_popup_open;
+      } else {
+        audio_control_popup_open = false;
+        audio_toggle(audio_persistence);
+      }
+      return true;
+    }
+    if (audio_control_popup_open && key == SDLK_m) {
+      audio_toggle_music_mute(audio_persistence);
+      return true;
+    }
+    if (audio_control_popup_open && key == SDLK_f) {
+      audio_toggle_fx_mute(audio_persistence);
+      return true;
+    }
+    if (audio_control_popup_open && key == SDLK_ESCAPE) {
+      audio_control_popup_open = false;
+      return true;
+    }
+  }
+
+  if (event->type == SDL_MOUSEBUTTONDOWN &&
+      event->button.button == SDL_BUTTON_LEFT) {
+    int x = event->button.x, y = event->button.y;
+    if (point_in(button, x, y)) {
+      audio_control_pressed = true;
+      audio_control_pressed_at_ms = now_ms();
+      return true;
+    }
+    if (audio_control_popup_open) {
+      if (point_in(music, x, y)) {
+        audio_toggle_music_mute(audio_persistence);
+        return true;
+      }
+      if (point_in(fx, x, y)) {
+        audio_toggle_fx_mute(audio_persistence);
+        return true;
+      }
+      audio_control_popup_open = false;
+      return true;
+    }
+  }
+
+  if (event->type == SDL_MOUSEBUTTONUP &&
+      event->button.button == SDL_BUTTON_LEFT && audio_control_pressed) {
+    uint64_t held_ms = now_ms() - audio_control_pressed_at_ms;
+    bool inside = point_in(button, event->button.x, event->button.y);
+    audio_control_pressed = false;
+    if (!inside) return true;
+    if (held_ms >= 500u) {
+      audio_control_popup_open = true;
+    } else {
+      audio_control_popup_open = false;
+      audio_toggle(audio_persistence);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
   if(audio_gfx)audio_gfx->dirty=true;
@@ -237,6 +310,7 @@ static bool ui_prepare_event(SDL_Event *event) {
     return false;
   }
 
+  if (ui_handle_global_audio_event(event)) return false;
   if (ui_handle_settings_panel_event(event)) return false;
 
   if (event->type == SDL_KEYDOWN) {
@@ -245,11 +319,6 @@ static bool ui_prepare_event(SDL_Event *event) {
         !input_key_repeat_allowed(key, event->key.keysym.scancode))
       return false;
     int digit = input_digit_value(key, event->key.keysym.scancode);
-
-    if (key == SDLK_v) {
-      audio_toggle(audio_persistence);
-      return false;
-    }
 
     if (audio_ui && audio_ui->screen == SCR_ABOUT && digit == 4) {
       ui_open_url(ui_support_url(audio_ui->language));
