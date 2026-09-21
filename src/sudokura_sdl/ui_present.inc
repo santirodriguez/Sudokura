@@ -1343,7 +1343,7 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
   AudioControlGeometry geo = ui_audio_control_geometry(gfx, ui);
   SDL_Rect button = sdl_rect(geo.button);
   int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  SDL_GetMouseState(&mx, &my);
   bool hover = point_in(button, mx, my);
   SDL_Color bg = hover ? theme.hover : theme.btn;
   SDL_Rect face = polish_button_face(gfx, theme, button, bg, false, false);
