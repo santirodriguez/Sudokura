@@ -50,7 +50,9 @@ int main(void) {
       assert_rect(screen_audio.popup, width, height);
       assert_inside(screen_audio.popup, screen_audio.music);
       assert_inside(screen_audio.popup, screen_audio.fx);
-      assert(play_audio.button.x >= g.play_language.x + g.play_language.w);
+      assert_inside(g.actions[PLAY_ACTION_AUDIO], play_audio.button);
+      assert(play_audio.button.x - 4 >
+             g.actions[PLAY_ACTION_AUDIO].x + 48);
       assert(screen_audio.button.x >=
              g.screen_language.x + g.screen_language.w);
 

@@ -1803,17 +1803,22 @@ int main(int argc, char **argv) {
             play_keyboard_focus=PLAY_FOCUS_VERIFY;
             ui_button_click();
             verify_current_entries(&persistence, &game, &ui);
-          } else if (point_in(controls.btn[PLAY_ACTION_AUDIO], x, y)) {
-            play_keyboard_focus=PLAY_FOCUS_SETTINGS;
-            ui_button_click();
-            ui_settings_open(&persistence, &game, &ui);
-          } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
-            play_keyboard_focus=PLAY_FOCUS_HELP;
-            ui_button_click();
-            info_focus_reset();
-            open_info_from_play(&persistence, &game, &ui, SCR_HELP);
           } else {
-            for (int number = 1; number <= 9; ++number) {
+            SDL_Rect settings_rect=controls.btn[PLAY_ACTION_AUDIO];
+            AudioControlGeometry audio_geo=
+                geometry_audio_control(g.width,g.height,&layout.model,true);
+            settings_rect.w=audio_geo.button.x-4-settings_rect.x;
+            if (point_in(settings_rect, x, y)) {
+              play_keyboard_focus=PLAY_FOCUS_SETTINGS;
+              ui_button_click();
+              ui_settings_open(&persistence, &game, &ui);
+            } else if (point_in(controls.btn[PLAY_ACTION_HELP], x, y)) {
+              play_keyboard_focus=PLAY_FOCUS_HELP;
+              ui_button_click();
+              info_focus_reset();
+              open_info_from_play(&persistence, &game, &ui, SCR_HELP);
+            } else {
+              for (int number = 1; number <= 9; ++number) {
               if (point_in(controls.pal[number - 1], x, y)) {
                 play_keyboard_focus=PLAY_FOCUS_NUMBER_1+number-1;
                 if (!palette_number_complete(&game, ui.mode, number)) {
@@ -1825,7 +1830,8 @@ int main(int argc, char **argv) {
                 } else {
                   audio_play_effect(AUDIO_EFFECT_BLOCKED);
                 }
-                break;
+                  break;
+                }
               }
             }
           }

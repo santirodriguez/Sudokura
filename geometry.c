@@ -633,10 +633,16 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   return geometry_final_play_rects_in_bounds(geometry, width, height);
 }
 
-static void geometry_final_reserve_audio(GeoRect *language) {
-  if (!language || language->w <= 0 || language->h <= 0) return;
-  int size = language->h;
+static int geometry_final_audio_button_size(int width, int height) {
+  int size = width < 640 ? 28 : height;
   if (size > 40) size = 40;
+  if (size < 28) size = 28;
+  return size;
+}
+
+static void geometry_final_reserve_audio(GeoRect *language, int width) {
+  if (!language || language->w <= 0 || language->h <= 0) return;
+  int size = geometry_final_audio_button_size(width, language->h);
   int gap = 4;
   if (language->w > size + gap + 96) language->w -= size + gap;
 }
@@ -653,8 +659,7 @@ bool geometry_compute(int width, int height, GeometryMode mode,
     return false;
   }
 
-  geometry_final_reserve_audio(&geometry->screen_language);
-  geometry_final_reserve_audio(&geometry->play_language);
+  geometry_final_reserve_audio(&geometry->screen_language, width);
 
   if (width < 640) return geometry_play_valid(geometry, width, height);
 
@@ -708,11 +713,19 @@ AudioControlGeometry geometry_audio_control(int width, int height,
   memset(&out, 0, sizeof(out));
   if (width <= 0 || height <= 0) return out;
 
-  if (app) {
-    GeoRect language = play_surface ? app->play_language : app->screen_language;
-    int size = language.h;
-    if (size > 40) size = 40;
-    out.button = (GeoRect){language.x + language.w + 4, language.y, size, size};
+  if (app && play_surface) {
+    GeoRect settings = app->actions[PLAY_ACTION_AUDIO];
+    int size = geometry_final_audio_button_size(width, settings.h);
+    if (size > settings.w / 2) size = settings.w / 2;
+    out.button =
+        (GeoRect){settings.x + settings.w - size,
+                  settings.y + (settings.h - size) / 2, size, size};
+  } else if (app) {
+    GeoRect language = app->screen_language;
+    int size = geometry_final_audio_button_size(width, language.h);
+    out.button =
+        (GeoRect){language.x + language.w + 4,
+                  language.y + (language.h - size) / 2, size, size};
   } else {
     int size = width < 420 ? 36 : 40;
     int margin = width < 420 ? 8 : 12;

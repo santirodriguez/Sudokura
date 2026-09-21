@@ -1103,7 +1103,13 @@ static SDL_Rect play_focus_rect(const Gfx*gfx,const UI*ui,int focus){
   if(focus==PLAY_FOCUS_HINT)return controls.btn[PLAY_ACTION_HINT];
   if(focus==PLAY_FOCUS_NOTES)return controls.btn[PLAY_ACTION_NOTES];
   if(focus==PLAY_FOCUS_VERIFY)return controls.btn[PLAY_ACTION_VERIFY];
-  if(focus==PLAY_FOCUS_SETTINGS)return controls.btn[PLAY_ACTION_AUDIO];
+  if(focus==PLAY_FOCUS_SETTINGS){
+    SDL_Rect settings=controls.btn[PLAY_ACTION_AUDIO];
+    AudioControlGeometry audio=
+        geometry_audio_control(gfx->width,gfx->height,&layout.model,true);
+    settings.w=audio.button.x-4-settings.x;
+    return settings;
+  }
   if(focus==PLAY_FOCUS_HELP)return controls.btn[PLAY_ACTION_HELP];
   if(focus==PLAY_FOCUS_STRICT&&layout.model.hud_count>4)return sdl_rect(layout.model.hud[4]);
   if(focus==PLAY_FOCUS_SAVE_RETRY)return storage_banner_layout(gfx,ui).retry;
@@ -1202,10 +1208,14 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       continue;
     }
 
+    if (action == PLAY_ACTION_AUDIO) {
+      AudioControlGeometry audio =
+          geometry_audio_control(gfx->width, gfx->height, &layout.model, true);
+      rect.w = audio.button.x - 4 - rect.x;
+    }
     bool hover = point_in(rect, mx, my);
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-    bool active = (action == PLAY_ACTION_NOTES && ui->notes_mode) ||
-                  (action == PLAY_ACTION_AUDIO && audio_is_enabled());
+    bool active = action == PLAY_ACTION_NOTES && ui->notes_mode;
     SDL_Color background =
         active ? theme.title : (hover ? theme.hover : theme.palette_bg);
     SDL_Color foreground = active ? theme.bg : theme.btnfg;

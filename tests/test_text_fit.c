@@ -122,9 +122,16 @@ int main(void) {
         }
         for (int i = 0; i < PLAY_ACTION_COUNT; ++i) {
           if (i == PLAY_ACTION_ABOUT) continue;
+          if (i == PLAY_ACTION_AUDIO) continue;
           assert(fits(font, tr((Language)language, actions[i]), tier.control, 10,
                       g.actions[i].w, g.actions[i].h));
         }
+        AudioControlGeometry play_audio =
+            geometry_audio_control(width, height, &g, true);
+        int settings_width =
+            play_audio.button.x - 4 - g.actions[PLAY_ACTION_AUDIO].x;
+        assert(fits(font, tr((Language)language, T_SETTINGS), tier.control, 10,
+                    settings_width, g.actions[PLAY_ACTION_AUDIO].h));
 
         int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
         int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap) / 2;
