@@ -8,7 +8,7 @@ os_id=$(sh -c '. /etc/os-release; printf "%s" "${ID:-}"')
 os_version_id=$(sh -c '. /etc/os-release; printf "%s" "${VERSION_ID:-}"')
 os_pretty=$(sh -c '. /etc/os-release; printf "%s" "${PRETTY_NAME:-unknown}"')
 if [[ "$os_id" != ubuntu || "$os_version_id" != 22.04 ]]; then
-  echo "Linux candidate must be built on Ubuntu 22.04; got $os_pretty" >&2
+  echo "Linux v1.3 package must be built on Ubuntu 22.04; got $os_pretty" >&2
   exit 1
 fi
 
@@ -106,7 +106,7 @@ sha256sum "$artifact" > SHA256SUMS-linux.txt
 python3 scripts/write_artifact_manifest.py \
   --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform linux --architecture x86_64 \
-  --minimum 'Ubuntu 22.04 x86_64 build baseline; Ubuntu 24.04/Fedora 44 automated portability probes; real desktop acceptance remains Phase 8' \
+  --minimum 'Ubuntu 22.04 x86_64 build baseline; Ubuntu 24.04/Fedora 44 automated portability probes; final real Linux acceptance passed for v1.3.0' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
   --output artifact-manifest-linux.json \
   --artifact "$artifact" --baseline 9730552

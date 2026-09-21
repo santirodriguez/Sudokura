@@ -52,7 +52,7 @@ The accepted functional candidate passed warnings-as-errors builds/tests on Linu
 Diagnostic UI renders are validation artifacts only and are not public artwork.
 
 ## Public screenshot
-The canonical v1.3.0 screenshot remains pending explicit user approval. The concrete proposal is a **real packaged v1.3.0 build**, 1366×768 desktop layout, dark theme, English, Classic / Medium in progress, with a representative partially played board and the global speaker visible. It should contain only the Sudokura window and no personal information.
+The canonical v1.3.0 screenshot specification is approved: a **real packaged v1.3.0 build**, 1366×768 desktop layout, dark theme, English, Classic / Medium in progress, with a representative partially played board and the global speaker visible. It contains only the Sudokura window and no personal information. The final PNG is incorporated separately as `docs/images/sudokura-v1.3.0.png`.
 
 Do not substitute `--render-screenshots` diagnostic output for this image.
 

@@ -17,7 +17,7 @@ Sudokura does not require an account, cloud service, or telemetry.
 - English, Español, and Català.
 - Optional adaptive audio with persistent master, Music, and FX controls. Audio failure never blocks gameplay.
 
-The approved v1.3.0 canonical screenshot is intentionally not committed yet. Diagnostic `--render-screenshots` output is validation evidence and must not be used as public artwork. Historical screenshots remain under [`docs/images/`](docs/images/).
+The v1.3.0 canonical screenshot specification has been explicitly approved. The final PNG is being incorporated separately as `docs/images/sudokura-v1.3.0.png`; diagnostic `--render-screenshots` output remains validation evidence and must not be used as public artwork. Historical screenshots remain under [`docs/images/`](docs/images/).
 
 ## Downloads and platform scope
 

@@ -4,11 +4,11 @@ set -euo pipefail
 
 MIN_MACOS=15.0
 if [[ "$ARCH" != arm64 ]]; then
-  echo "v1.3 macOS candidate is arm64-only" >&2
+  echo "v1.3 macOS package is arm64-only" >&2
   exit 1
 fi
 if [[ "$(uname -m)" != arm64 ]]; then
-  echo "macOS candidate must be built on an Apple Silicon runner" >&2
+  echo "macOS v1.3 package must be built on an Apple Silicon runner" >&2
   exit 1
 fi
 python3 - "$(sw_vers -productVersion)" "$MIN_MACOS" <<'PY'
@@ -121,7 +121,7 @@ PY
 python3 scripts/write_artifact_manifest.py \
   --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform macos --architecture "$ARCH" \
-  --minimum 'macOS 15.0+ arm64; ad-hoc integrity signature only; experimental pending Phase 8 real-device/Gatekeeper acceptance' \
+  --minimum 'macOS 15.0+ arm64; ad-hoc integrity signature only; experimental pending real-device/Gatekeeper acceptance' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
   --output "artifact-manifest-macos-${ARCH}.json" \
   --artifact "$artifact" --baseline 0

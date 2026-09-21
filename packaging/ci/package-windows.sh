@@ -187,8 +187,8 @@ mkdir -p "$(dirname "$install_dir")"
 
 # The installer owns application files only. SDL_GetPrefPath keeps saves and
 # settings in the roaming per-user profile; prove maintenance reinstall and
-# uninstall do not erase that profile before Phase 8 performs the real v1.2
-# upgrade acceptance on a clean Windows environment.
+# uninstall do not erase that profile. The final v1.2 -> v1.3 upgrade path
+# was separately accepted on a real Windows environment.
 profile_dir="$(cygpath -u "$APPDATA")/santirodriguez/Sudokura"
 mkdir -p "$profile_dir"
 profile_sentinel="$profile_dir/phase7-installer-profile-sentinel.txt"
@@ -205,8 +205,8 @@ env PATH="$installed_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$install_dir/sudokura.exe" --smoke-test
 
-# Exercise Inno's existing-AppId maintenance/update path without pretending it
-# substitutes for the real v1.2 -> v1.3 acceptance required in Phase 8.
+# Exercise Inno's existing-AppId maintenance/update path in CI. The real
+# v1.2 -> v1.3 upgrade path was separately accepted on Windows.
 env MSYS2_ARG_CONV_EXCL='*' "$timeout_bin" 120s "$PWD/$installer" \
   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- \
   "/DIR=$(cygpath -w "$install_dir")"
@@ -225,7 +225,7 @@ sha256sum "$archive" "$installer" > SHA256SUMS-windows.txt
 python3 scripts/write_artifact_manifest.py \
   --version "$VERSION" --source-commit "$SOURCE_COMMIT" \
   --platform windows --architecture x86_64 \
-  --minimum 'Windows 11 x64 candidate support target; Windows 10 x64 pending Phase 8 validation' \
+  --minimum 'Windows 11 x64 support target; final real Windows acceptance passed for v1.3.0; Windows 10 x64 is not claimed' \
   --kind "${SUDOKURA_ARTIFACT_KIND:-candidate}" \
   --output artifact-manifest-windows.json \
   --artifact "$archive" --baseline 9406901 \
