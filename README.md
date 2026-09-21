@@ -99,6 +99,8 @@ A small curated gallery covers Home / Continue, Settings, audio controls, compac
 
 Requirements: a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
 
+Application C sources and private headers live under `src/`; the SDL presentation fragments remain under `src/sudokura_sdl/`.
+
 ```sh
 make assets
 make

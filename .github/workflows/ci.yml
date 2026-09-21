@@ -39,36 +39,36 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_main.c game.c human.c geometry.c i18n.c -o tests/test_main_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_main.c src/game.c src/human.c src/geometry.c src/i18n.c -o tests/test_main_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_app.c app.c game.c human.c -o tests/test_app_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_app.c src/app.c src/game.c src/human.c -o tests/test_app_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_clock.c app_clock.c app.c game.c human.c -o tests/test_clock_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_clock.c src/app_clock.c src/app.c src/game.c src/human.c -o tests/test_clock_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_save_policy.c save_policy.c -o tests/test_save_policy_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_save_policy.c src/save_policy.c -o tests/test_save_policy_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_human.c human.c -o tests/test_human_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_human.c src/human.c -o tests/test_human_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_session.c game.c human.c session.c store_io.c -o tests/test_session_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_session.c src/game.c src/human.c src/session.c src/store_io.c -o tests/test_session_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_profile.c profile.c session.c store_io.c game.c human.c -o tests/test_profile_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_profile.c src/profile.c src/session.c src/store_io.c src/game.c src/human.c -o tests/test_profile_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o tests/test_live_save_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_live_save.c src/profile.c src/save_policy.c src/session.c src/store_io.c src/game.c src/human.c -o tests/test_live_save_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_desktop.c desktop.c -o tests/test_desktop_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_desktop.c src/desktop.c -o tests/test_desktop_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_URL_LAUNCHER_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_url_launcher.c url_launcher.c -o tests/test_url_launcher_san
+            tests/test_url_launcher.c src/url_launcher.c -o tests/test_url_launcher_san
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san

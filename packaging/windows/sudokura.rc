@@ -1,4 +1,4 @@
-#include "../../version.h"
+#include "../../src/version.h"
 1 ICON "../../assets/generated/sudokura.ico"
 1 VERSIONINFO
  FILEVERSION SUDOKURA_VERSION_MAJOR,SUDOKURA_VERSION_MINOR,SUDOKURA_VERSION_PATCH,0

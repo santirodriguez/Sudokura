@@ -2,7 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-HEADER="$ROOT/version.h"
+HEADER="$ROOT/src/version.h"
 
 read_macro() {
   awk -v name="$1" '$1 == "#define" && $2 == name { print $3; found=1; exit } END { if (!found) exit 1 }' "$HEADER"

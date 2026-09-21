@@ -22,10 +22,10 @@ echo "generator benchmark host: $(uname -a)"
 gcc --version | head -1
 make WERROR=-Werror quality
 windres packaging/windows/sudokura.rc -O coff -o icon.o
-gcc -I. -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+gcc -I. -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
-  sudokura_sdl.c app.c app_clock.c desktop.c url_launcher.c audio.c profile.c save_policy.c store_io.c session.c seed.c progress.c input.c \
-  game.c human.c geometry.c i18n.c \
+  src/sudokura_sdl.c src/app.c src/app_clock.c src/desktop.c src/url_launcher.c src/audio.c src/profile.c src/save_policy.c src/store_io.c src/session.c src/seed.c src/progress.c src/input.c \
+  src/game.c src/human.c src/geometry.c src/i18n.c \
   assets/generated/window_icon.c assets/generated/wordmark.c \
   assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c icon.o \
   -o sudokura.exe $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_mixer) -lshell32 -lm -mwindows
