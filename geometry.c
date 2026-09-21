@@ -633,6 +633,14 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   return geometry_final_play_rects_in_bounds(geometry, width, height);
 }
 
+static void geometry_final_reserve_audio(GeoRect *language) {
+  if (!language || language->w <= 0 || language->h <= 0) return;
+  int size = language->h;
+  if (size > 40) size = 40;
+  int gap = 4;
+  if (language->w > size + gap + 96) language->w -= size + gap;
+}
+
 bool geometry_compute(int width, int height, GeometryMode mode,
                       AppGeometry *geometry) {
   if (!geometry_compute_base(width, height, mode, geometry)) return false;
@@ -644,6 +652,9 @@ bool geometry_compute(int width, int height, GeometryMode mode,
   } else if (!geometry_final_layout_desktop_play(width, height, geometry)) {
     return false;
   }
+
+  geometry_final_reserve_audio(&geometry->screen_language);
+  geometry_final_reserve_audio(&geometry->play_language);
 
   if (width < 640) return geometry_play_valid(geometry, width, height);
 
@@ -697,8 +708,11 @@ AudioControlGeometry geometry_audio_control(int width, int height,
   memset(&out, 0, sizeof(out));
   if (width <= 0 || height <= 0) return out;
 
-  if (play_surface && app) {
-    out.button = app->actions[PLAY_ACTION_AUDIO];
+  if (app) {
+    GeoRect language = play_surface ? app->play_language : app->screen_language;
+    int size = language.h;
+    if (size > 40) size = 40;
+    out.button = (GeoRect){language.x + language.w + 4, language.y, size, size};
   } else {
     int size = width < 420 ? 36 : 40;
     int margin = width < 420 ? 8 : 12;
