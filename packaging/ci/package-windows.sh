@@ -179,7 +179,7 @@ root_win=$(cygpath -w "$PWD")
 dist_win=$(cygpath -w "$PWD/dist")
 portable_win=$(cygpath -w "$PWD/$portable")
 portable_script_win=$(cygpath -w "$PWD/packaging/windows/sudokura-portable.nsi")
-"$NSIS_MAKENSIS" \
+env MSYS2_ARG_CONV_EXCL='*' "$NSIS_MAKENSIS" \
   "/DVERSION=$VERSION" \
   "/DROOT=$root_win" \
   "/DDIST=$dist_win" \
@@ -228,7 +228,7 @@ test -z "$(find "$child_fail_temp" -mindepth 1 -print -quit)"
 # child-launch failure. It must fail visibly and still clean its private temp.
 fail_probe="$PWD/portable-fail-probe.exe"
 fail_probe_win=$(cygpath -w "$fail_probe")
-"$NSIS_MAKENSIS" \
+env MSYS2_ARG_CONV_EXCL='*' "$NSIS_MAKENSIS" \
   "/DVERSION=$VERSION" \
   "/DROOT=$root_win" \
   "/DDIST=$dist_win" \
