@@ -484,6 +484,7 @@ typedef struct {
 
 static Persistence *audio_persistence = NULL;
 static Gfx *audio_gfx = NULL;
+static const Game *audio_game = NULL;
 static UI *audio_ui = NULL;
 static bool settings_open = false;
 typedef enum {

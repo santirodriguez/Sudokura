@@ -11,14 +11,13 @@ static const char *ui_support_url(Language language) {
 }
 
 static void ui_open_url(const char *url) {
-  if (!url || !audio_gfx || !audio_ui) return;
+  if (!url || !audio_gfx || !audio_game || !audio_ui) return;
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    ui_audio_control_cancel_interaction();
-    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                                   tr(audio_ui->language, T_ABOUT),
-                                   tr(audio_ui->language, T_LINK_ERROR),
-                                   audio_gfx->win);
+    (void)show_simple_message_box(audio_gfx, audio_game, audio_ui,
+                                  SDL_MESSAGEBOX_WARNING,
+                                  tr(audio_ui->language, T_ABOUT),
+                                  tr(audio_ui->language, T_LINK_ERROR));
   }
 }
 

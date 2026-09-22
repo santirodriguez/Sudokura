@@ -11,7 +11,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument("directory", type=Path)
 args = parser.parse_args()
 source = args.directory.resolve()
-validator = Path(__file__).resolve().parents[1] / "scripts/validate_screenshots.py"
+repo_root = Path(__file__).resolve().parents[1]
+validator = repo_root / "scripts/validate_screenshots.py"
+for path in (repo_root / "src" / "sudokura_sdl").glob("*.inc"):
+    if path.name == "04_screens.inc":
+        continue
+    text = path.read_text(encoding="utf-8")
+    assert "SDL_ShowSimpleMessageBox(" not in text, path
+    assert "SDL_ShowMessageBox(" not in text, path
+print("PASS native dialog wrapper routing")
+
 with (source / "MANIFEST.tsv").open(encoding="utf-8", newline="") as stream:
     reader = csv.DictReader(stream, delimiter="\t")
     fields = reader.fieldnames
