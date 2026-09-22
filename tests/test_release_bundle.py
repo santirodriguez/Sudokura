@@ -9,7 +9,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "release_bundle.py"
-VERSION = "1.3.5"
+VERSION_SCRIPT = ROOT / "scripts" / "version.sh"
 
 
 def run(*args):
@@ -20,6 +20,15 @@ def run(*args):
         text=True,
     )
 
+
+version_result = subprocess.run(
+    [str(VERSION_SCRIPT)],
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+)
+assert version_result.returncode == 0, version_result.stderr
+VERSION = version_result.stdout.strip()
 
 labels_result = run("labels", "--version", VERSION)
 assert labels_result.returncode == 0, labels_result.stderr
