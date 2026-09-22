@@ -61,7 +61,7 @@ These instructions apply to the entire repository.
 ## Packaging
 
 - Linux: keep an x86_64 AppImage with the real icon, fallback font, SDL2_mixer dependency closure, and the four OGG assets. Any downloaded packaging tool must be pinned to an immutable source and verified by checksum before execution.
-- Windows: create a portable x86_64 ZIP with required non-system DLLs, SDL2_mixer, the audio assets, one fallback font, embedded icon, and version metadata.
+- Windows: keep the per-user x86_64 installer and produce a single-file installation-free portable EXE around the same audited payload. An internal ZIP may remain as validation/staging evidence, but it is not the public portable artifact. Preserve required non-system DLLs, SDL2_mixer, audio assets, one fallback font, embedded icon, version metadata, and the existing AppData profile location.
 - macOS v1.3 candidate: target macOS 15+ on Apple Silicon/arm64 only, ship a real `.app` inside a simple DMG with SDL2, SDL2_ttf, SDL2_mixer, transitive non-system dylibs, audio resources, bundle-relative dynamic-library paths, complete Mach-O audit, and explicit ad-hoc integrity signing. Do not generate a new Intel candidate by inertia; historical Intel/older-macOS releases remain available but are not newly maintained.
 - Do not claim signing, notarization, or manual platform testing unless it actually occurred.
 - Package previews must never publish a release.

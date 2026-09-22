@@ -216,10 +216,30 @@ jobs:
       - name: Fetch pinned Inno Setup
         shell: pwsh
         run: ./scripts/fetch_innosetup.ps1
+      - name: Fetch pinned NSIS
+        shell: pwsh
+        run: ./scripts/fetch_nsis.ps1
       - name: Build and validate Windows package
         env:
           SUDOKURA_ARTIFACT_KIND: ci-candidate
         run: packaging/ci/package-windows.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase8-windows-portable
+          path: |
+            Sudokura-*-windows-x86_64-portable.exe
+            Sudokura-*.zip
+            Sudokura-*-windows-x86_64-setup.exe
+            SHA256SUMS-windows.txt
+            internal-zip-sha256-windows.txt
+            artifact-manifest-windows.json
+            build-provenance-windows.txt
+            portable-benchmark-windows.txt
+            inventory-windows.txt
+            dependencies-windows.txt
+            dependencies-windows-recursive.txt
+            components-windows.txt
+          retention-days: 7
 
   ui-review:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ui-review]')

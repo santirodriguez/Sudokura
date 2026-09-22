@@ -45,7 +45,7 @@ Get the latest builds from [GitHub Releases](https://github.com/santirodriguez/S
 
 | Platform | Package | Status |
 |---|---|---|
-| **Windows 11 x64** | Installer or portable ZIP | Supported |
+| **Windows 11 x64** | Installer or single-file portable EXE | Supported |
 | **Linux x86_64** | AppImage | Supported |
 | **macOS 15+ Apple Silicon** | DMG | Experimental |
 
