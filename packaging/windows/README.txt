@@ -1,6 +1,15 @@
 Sudokura - Windows package notes
 =========================================
 
+Public v1.3.5 filenames
+-----------------------
+  Sudokura-1.3.5-Windows-x64-Setup.exe
+  Sudokura-1.3.5-Windows-x64-Portable.exe
+
+The release also publishes SHA256SUMS.txt and
+Sudokura-1.3.5-Build-Info.json. The ZIP produced by CI is internal staging
+evidence and is not a public portable download.
+
 Portable EXE and installer
 --------------------------
 The portable download is one self-extracting EXE and does not install Sudokura,

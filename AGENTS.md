@@ -65,7 +65,7 @@ These instructions apply to the entire repository.
 - macOS v1.3 candidate: target macOS 15+ on Apple Silicon/arm64 only, ship a real `.app` inside a simple DMG with SDL2, SDL2_ttf, SDL2_mixer, transitive non-system dylibs, audio resources, bundle-relative dynamic-library paths, complete Mach-O audit, and explicit ad-hoc integrity signing. Do not generate a new Intel candidate by inertia; historical Intel/older-macOS releases remain available but are not newly maintained.
 - Do not claim signing, notarization, or manual platform testing unless it actually occurred.
 - Package previews must never publish a release.
-- A release tag must match the source version. Release automation may create a draft release for manual verification; publishing remains a separate explicit action.
+- Public release filenames are derived from the source version and use the stable contract: `Sudokura-<version>-Windows-x64-Setup.exe`, `Sudokura-<version>-Windows-x64-Portable.exe`, `Sudokura-<version>-Linux-x64.AppImage`, `Sudokura-<version>-macOS-arm64.dmg`, `SHA256SUMS.txt`, and `Sudokura-<version>-Build-Info.json`. The public Windows portable ZIP is retired; an internal ZIP may remain only as validation evidence.\n- A release tag must match the source version. Release automation may create a draft release for manual verification; publishing remains a separate explicit action.
 
 ## Completion standard
 

@@ -159,7 +159,7 @@ env PATH="$clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
 
 find dist -type f -printf '%P\n' | sort | tee inventory-windows.txt
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "audio/$audio" inventory-windows.txt; done
-archive="Sudokura-v${VERSION}-windows-x86_64.zip"
+archive="Sudokura-${VERSION}-Windows-x64-Internal.zip"
 (cd dist && zip -9 -r "../$archive" ./*)
 unzip -t "$archive"
 zip_inventory=$(unzip -Z1 "$archive")
@@ -174,7 +174,7 @@ env PATH="$zip_clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$zip_extract/sudokura.exe" --smoke-test
 
-portable="Sudokura-v${VERSION}-windows-x86_64-portable.exe"
+portable="Sudokura-${VERSION}-Windows-x64-Portable.exe"
 root_win=$(cygpath -w "$PWD")
 dist_win=$(cygpath -w "$PWD/dist")
 portable_win=$(cygpath -w "$PWD/$portable")
@@ -314,7 +314,7 @@ measure_smoke_ms portable_warm "$portable_copy" "$PWD/portabletmp/bench-warm" --
 export SUDOKURA_VERSION="$VERSION"
 export SUDOKURA_ROOT_WIN="$root_win"
 "$INNO_ISCC" packaging/windows/sudokura.iss
-installer="Sudokura-v${VERSION}-windows-x86_64-setup.exe"
+installer="Sudokura-${VERSION}-Windows-x64-Setup.exe"
 test -s "$installer"
 printf 'installer_bytes=%s\n' "$(stat -c%s "$installer")" >> "$benchmark"
 installer_product=$(powershell.exe -NoProfile -Command "(Get-Item '$(cygpath -w "$PWD/$installer")').VersionInfo.ProductVersion" | tr -d '\r')

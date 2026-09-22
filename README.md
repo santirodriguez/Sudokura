@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/santirodriguez/Sudokura/releases">Downloads</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.0.md">What's new in v1.3.0</a>
+  <a href="docs/RELEASE_NOTES_1.3.5.md">What's new in v1.3.5</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
@@ -41,27 +41,28 @@ Sudokura combines classic Sudoku with practical desktop features: Daily puzzles,
 
 ## Download
 
-Get the latest builds from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases).
-
-| Platform | Package | Status |
+| Platform | Direct download | Notes |
 |---|---|---|
-| **Windows 11 x64** | Installer or single-file portable EXE | Supported |
-| **Linux x86_64** | AppImage | Supported |
-| **macOS 15+ Apple Silicon** | DMG | Experimental |
+| **Windows 11 x64** | [Installer (x64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Setup.exe) | Per-user installer |
+| **Windows 11 x64** | [Portable (x64, no installation)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Portable.exe) | Single-file self-extracting EXE |
+| **Linux x86_64** | [AppImage (x64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Linux-x64.AppImage) | Supported |
+| **macOS 15+ Apple Silicon** | [DMG (arm64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-macOS-arm64.dmg) | Experimental |
+
+Technical files: [SHA-256 checksums](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/SHA256SUMS.txt) · [Build details](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Build-Info.json) · [all releases](https://github.com/santirodriguez/Sudokura/releases).
 
 Windows builds are not commercially code-signed, so SmartScreen may show a reputation warning. The macOS build is ad-hoc signed and not notarized.
 
 ### Linux
 
 ```sh
-chmod +x Sudokura-v1.3.0-linux-x86_64.AppImage
-./Sudokura-v1.3.0-linux-x86_64.AppImage
+chmod +x Sudokura-1.3.5-Linux-x64.AppImage
+./Sudokura-1.3.5-Linux-x64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```sh
-./Sudokura-v1.3.0-linux-x86_64.AppImage --appimage-extract-and-run
+./Sudokura-1.3.5-Linux-x64.AppImage --appimage-extract-and-run
 ```
 
 ## Quick controls
@@ -111,6 +112,7 @@ make test-ui
 
 ## Documentation
 
+- [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)
 - [v1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md)
 - [Changelog](CHANGELOG.md)
 - [Implementation record](docs/V1.3.0_IMPLEMENTATION.md)

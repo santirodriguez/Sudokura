@@ -28,7 +28,7 @@ VIAddVersionKey /LANG=1033 "FileDescription" "Sudokura portable launcher"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "CompanyName" "Santiago Rodriguez"
-VIAddVersionKey /LANG=1033 "OriginalFilename" "Sudokura-v${VERSION}-windows-x86_64-portable.exe"
+VIAddVersionKey /LANG=1033 "OriginalFilename" "Sudokura-${VERSION}-Windows-x64-Portable.exe"
 
 !include "FileFunc.nsh"
 

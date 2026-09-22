@@ -6,7 +6,6 @@ on:
       ref:
         description: Commit, branch, or tag to package without publishing
         required: true
-        default: upgrade/v1.3.0
         type: string
   pull_request:
     branches:
@@ -70,7 +69,7 @@ jobs:
         with:
           name: linux-x86_64
           path: |
-            Sudokura-*.AppImage
+            Sudokura-*-Linux-x64.AppImage
             SHA256SUMS-linux.txt
             inventory-linux.txt
             dependencies-linux-all.txt
@@ -97,7 +96,7 @@ jobs:
           name: linux-x86_64
           path: candidate
       - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
-      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
+      - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage ubuntu24 required
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}
         with:
@@ -117,7 +116,7 @@ jobs:
         with:
           name: linux-x86_64
           path: candidate
-      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
+      - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage fedora44 skip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}
         with:
@@ -170,14 +169,14 @@ jobs:
         with:
           name: windows-x86_64
           path: |
-            Sudokura-*.zip
-            Sudokura-*-windows-x86_64-portable.exe
+            Sudokura-*-Windows-x64-Internal.zip
+            Sudokura-*-Windows-x64-Portable.exe
             SHA256SUMS-windows.txt
             internal-zip-sha256-windows.txt
             inventory-windows.txt
             dependencies-windows.txt
             dependencies-windows-recursive.txt
-            Sudokura-*-windows-x86_64-setup.exe
+            Sudokura-*-Windows-x64-Setup.exe
             artifact-manifest-windows.json
             build-provenance-windows.txt
             portable-benchmark-windows.txt
@@ -204,7 +203,7 @@ jobs:
         with:
           name: macos-arm64
           path: |
-            Sudokura-*.dmg
+            Sudokura-*-macOS-arm64.dmg
             SHA256SUMS-macos-arm64.txt
             inventory-macos-arm64.txt
             dependencies-macos-arm64.txt
@@ -218,19 +217,33 @@ jobs:
             artifact-manifest-macos-arm64.json
             build-provenance-macos-arm64.txt
 
-  checksums:
-    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos]
+  release-bundle:
+    needs: [resolve, linux, linux-ubuntu24, linux-fedora44, windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           path: artifacts
           merge-multiple: true
-      - run: cat artifacts/SHA256SUMS-*.txt | sort -k2 > artifacts/SHA256SUMS.txt
+      - name: Validate public release bundle
+        run: |
+          python3 scripts/release_bundle.py build \
+            --artifacts-dir artifacts \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --source-commit "${{ needs.resolve.outputs.commit }}"
+          cat artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: checksums
+          name: release-bundle-preview
           path: |
+            artifacts/Sudokura-*-Windows-x64-Setup.exe
+            artifacts/Sudokura-*-Windows-x64-Portable.exe
+            artifacts/Sudokura-*-Linux-x64.AppImage
+            artifacts/Sudokura-*-macOS-arm64.dmg
             artifacts/SHA256SUMS.txt
+            artifacts/Sudokura-*-Build-Info.json
             artifacts/artifact-manifest-*.json
             artifacts/build-provenance-*.txt

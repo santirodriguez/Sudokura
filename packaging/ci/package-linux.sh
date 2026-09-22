@@ -84,7 +84,7 @@ test -s AppDir/sudokura.png
 
 ./packaging/ci/audit-linux-bundle.sh AppDir
 
-artifact="Sudokura-v${VERSION}-linux-x86_64.AppImage"
+artifact="Sudokura-${VERSION}-Linux-x64.AppImage"
 VERSION="$VERSION" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" \
   --runtime-file "$APPIMAGE_RUNTIME" AppDir "$artifact"
 grep -Fxq "X-AppImage-Version=$VERSION" AppDir/sudokura.desktop

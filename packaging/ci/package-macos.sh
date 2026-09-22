@@ -81,7 +81,7 @@ grep -qi 'SDL2_mixer' "dependencies-macos-${ARCH}.txt"
 codesign -dv --verbose=4 Sudokura.app 2>&1 | tee "codesign-macos-${ARCH}.txt"
 grep -q 'Signature=adhoc' "codesign-macos-${ARCH}.txt"
 
-artifact="Sudokura-v${VERSION}-macos-${ARCH}.dmg"
+artifact="Sudokura-${VERSION}-macOS-${ARCH}.dmg"
 rm -rf dmgroot macmount attach.plist
 mkdir dmgroot
 ditto Sudokura.app dmgroot/Sudokura.app
