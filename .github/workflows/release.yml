@@ -289,20 +289,12 @@ jobs:
           test "$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')" = "Sudokura $VERSION"
           release_id=$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > draft-release-assets.json
-          while IFS=\t' read -r name label; do
-            asset_id=$(python3 - "$name" draft-release-assets.json <<'PY'
-import json
-import sys
-name = sys.argv[1]
-assets = json.load(open(sys.argv[2], encoding="utf-8"))
-matches = [str(asset["id"]) for asset in assets if asset.get("name") == name]
-if len(matches) != 1:
-    raise SystemExit(f"expected exactly one draft asset named {name!r}, got {len(matches)}")
-print(matches[0])
-PY
-)
+          python3 scripts/release_bundle.py labels --version "$VERSION" > release-labels.tsv
+          while IFS="$(printf '\t')" read -r name label; do
+            asset_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq ".[] | select(.name == \"$name\") | .id")
+            test -n "$asset_id"
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" -f "label=$label" >/dev/null
-          done < <(python3 scripts/release_bundle.py labels --version "$VERSION")
+          done < release-labels.tsv
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > draft-release-assets.json
           python3 scripts/release_bundle.py validate-assets \
             --version "$VERSION" \
