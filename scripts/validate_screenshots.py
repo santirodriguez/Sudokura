@@ -31,12 +31,12 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==114,f"expected 114 manifest rows, found {len(rows)}"
-files=sorted(args.directory.glob("*.bmp"));assert len(files)==114,f"expected 114 BMPs, found {len(files)}"
-by_name={p.name:p for p in files};assert len(by_name)==114
+assert len(rows)==120,f"expected 120 manifest rows, found {len(rows)}"
+files=sorted(args.directory.glob("*.bmp"));assert len(files)==120,f"expected 120 BMPs, found {len(files)}"
+by_name={p.name:p for p in files};assert len(by_name)==120
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==60 and len(audit)==54,(len(matrix),len(audit))
+assert len(matrix)==60 and len(audit)==60,(len(matrix),len(audit))
 assert {r["state"] for r in matrix}==STATES
 assert {(int(r["width"]),int(r["height"])) for r in matrix}==SIZES
 for size in SIZES:
@@ -53,7 +53,7 @@ for state in ("help-top","help-bottom"):
         assert {(r["language"],r["theme"]) for r in sized}=={
             (language,theme) for language in LANGS for theme in THEMES
         }
-for state in ("settings","audio-popup","about"):
+for state in ("settings","audio-popup","dialog-prep","about"):
     subset=[r for r in audit if r["state"]==state]
     assert len(subset)==6,state
     assert {(int(r["width"]),int(r["height"])) for r in subset}=={(1024,768)}
@@ -82,6 +82,9 @@ for r in rows:
         assert audio_visible==1,(r["file"],"audio popup control unexpectedly hidden")
         assert audio_popup==1,(r["file"],"audio popup did not remain open")
         assert audio_pressed==0,(r["file"],"audio popup retained pressed state")
+    if r["state"]=="dialog-prep":
+        assert audio_popup==0,(r["file"],"native dialog preparation retained audio popup")
+        assert audio_pressed==0,(r["file"],"native dialog preparation retained audio press")
     w,h=int(r["width"]),int(r["height"])
     fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
     assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
@@ -106,4 +109,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 114 diagnostic BMPs, covered-audio-control policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 120 diagnostic BMPs, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

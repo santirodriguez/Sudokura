@@ -191,24 +191,45 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
   draw_focus_ring(g->ren,result_keyboard_focus==0?b1:b2,th.sel_outline);
 }
 
-static bool confirm_box(SDL_Window*win,const char*title,const char*msg,const char*ok_label,const char*cancel_label){
+static void native_dialog_prepare(Gfx*g,const Game*game,UI*ui){
+  if(!g||!g->ren||!ui)return;
   ui_audio_control_cancel_interaction();
-  const SDL_MessageBoxButtonData buttons[]={{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,cancel_label},{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,ok_label?ok_label:"OK"}};
-  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_INFORMATION,win,title,msg,2,buttons,&scheme};int buttonid=-1;int status=SDL_ShowMessageBox(&data,&buttonid);window_focus_guard_reset();if(status<0)return false;return buttonid==1;
+  app_render_ui(g,game,ui);
+  SDL_RenderPresent(g->ren);
+  g->dirty=false;
 }
 
-static int choice_box(SDL_Window*win,const char*title,const char*msg,
-                      const char*back_label,const char*retry_label,
-                      const char*discard_label){
-  ui_audio_control_cancel_interaction();
+static int show_simple_message_box(Gfx*g,const Game*game,UI*ui,Uint32 flags,
+                                   const char*title,const char*msg){
+  if(!g||!g->win)return -1;
+  native_dialog_prepare(g,game,ui);
+  int status=SDL_ShowSimpleMessageBox(flags,title,msg,g->win);
+  window_focus_guard_reset();
+  return status;
+}
+
+static bool confirm_box(Gfx*g,const Game*game,UI*ui,const char*title,
+                        const char*msg,const char*ok_label,
+                        const char*cancel_label){
+  if(!g||!g->win)return false;
+  native_dialog_prepare(g,game,ui);
+  const SDL_MessageBoxButtonData buttons[]={{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,cancel_label},{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,ok_label?ok_label:"OK"}};
+  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
+  const SDL_MessageBoxData data={SDL_MESSAGEBOX_INFORMATION,g->win,title,msg,2,buttons,&scheme};int buttonid=-1;int status=SDL_ShowMessageBox(&data,&buttonid);window_focus_guard_reset();if(status<0)return false;return buttonid==1;
+}
+
+static int choice_box(Gfx*g,const Game*game,UI*ui,const char*title,
+                      const char*msg,const char*back_label,
+                      const char*retry_label,const char*discard_label){
+  if(!g||!g->win)return 0;
+  native_dialog_prepare(g,game,ui);
   const SDL_MessageBoxButtonData buttons[]={
     {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,back_label},
     {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,retry_label},
     {0,2,discard_label}
   };
   const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,win,title,msg,3,buttons,&scheme};
+  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,g->win,title,msg,3,buttons,&scheme};
   int buttonid=0;
   int status=SDL_ShowMessageBox(&data,&buttonid);
   window_focus_guard_reset();

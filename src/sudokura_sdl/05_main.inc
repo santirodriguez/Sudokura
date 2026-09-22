@@ -63,7 +63,8 @@ typedef enum {
 
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
 
-static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g, UI *ui,
+static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
+                                      const Game *game, UI *ui,
                                       unsigned dirty_mask,
                                       TextKey prompt_key) {
   if (!p || !g || !ui ||
@@ -72,7 +73,7 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g, UI *ui,
   if (persistence_flush(p)) return SAVE_GATE_SAVED;
 
   for (;;) {
-    int choice = choice_box(g->win, tr(ui->language, T_UNSAVED_TITLE),
+    int choice = choice_box(g, game, ui, tr(ui->language, T_UNSAVED_TITLE),
                             tr(ui->language, prompt_key),
                             tr(ui->language, T_BACK),
                             tr(ui->language, T_RETRY_SAVE),
@@ -145,19 +146,20 @@ static bool reveal_selected_cell(Persistence *p, Game *game, UI *ui) {
   return true;
 }
 
-static bool replace_saved_session_confirmed(Persistence *p, UI *ui, Gfx *g,
+static bool replace_saved_session_confirmed(Persistence *p,
+                                            const Game *game, UI *ui, Gfx *g,
                                             bool daily) {
   if (!p) return true;
   unsigned dirty_bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
   SaveGateResult gate =
-      resolve_unsaved(p, g, ui, dirty_bit, T_UNSAVED_REPLACE);
+      resolve_unsaved(p, g, game, ui, dirty_bit, T_UNSAVED_REPLACE);
   if (gate == SAVE_GATE_BACK) return false;
   if (gate == SAVE_GATE_DISCARD) return true;
 
   const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   const SessionState *saved = profile_slot_session(slot);
   return !saved || !session_has_meaningful_progress_runtime(saved) ||
-         confirm_box(g->win, tr(ui->language, T_NEW_GAME),
+         confirm_box(g, game, ui, tr(ui->language, T_NEW_GAME),
                      tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
                      tr(ui->language, T_CANCEL));
 }
@@ -168,14 +170,14 @@ static bool restart_current_session_confirmed(Persistence *p,
   if (!p || !game || !ui || !g) return false;
   unsigned dirty_bit = ui->is_daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
   SaveGateResult gate =
-      resolve_unsaved(p, g, ui, dirty_bit, T_UNSAVED_REPLACE);
+      resolve_unsaved(p, g, game, ui, dirty_bit, T_UNSAVED_REPLACE);
   if (gate == SAVE_GATE_BACK) return false;
 
   if (!game_has_meaningful_progress(game, ui->mistakes, ui->strikes))
     return true;
   clock_pause(ui, PAUSE_MODAL);
   bool confirmed =
-      confirm_box(g->win, tr(ui->language, T_RESTART),
+      confirm_box(g, game, ui, tr(ui->language, T_RESTART),
                   tr(ui->language, T_RESTART_PROMPT),
                   tr(ui->language, T_RESTART), tr(ui->language, T_CANCEL));
   clock_resume(ui, PAUSE_MODAL);
@@ -261,14 +263,12 @@ static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
       return false;
     }
     if (result != GAME_GENERATION_EXHAUSTED) {
-      ui_audio_control_cancel_interaction();
-      (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                                     tr(ui->language, T_GENERATION_FAILED),
-                                     tr(ui->language, T_PROFILE_IO_ERROR),
-                                     g->win);
+      (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_ERROR,
+                                    tr(ui->language, T_GENERATION_FAILED),
+                                    tr(ui->language, T_PROFILE_IO_ERROR));
       return false;
     }
-    bool retry = confirm_box(g->win, tr(ui->language, T_GENERATION_FAILED),
+    bool retry = confirm_box(g, game, ui, tr(ui->language, T_GENERATION_FAILED),
                              tr(ui->language, T_GENERATION_FAILED_BODY),
                              tr(ui->language, T_RETRY),
                              tr(ui->language, T_CANCEL));
@@ -285,15 +285,15 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
     show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
     return false;
   }
-  ui_audio_control_cancel_interaction();
-  (void)SDL_ShowSimpleMessageBox(
-      SDL_MESSAGEBOX_WARNING, tr(ui->language, T_GENERATION_FAILED),
-      tr(ui->language, T_GENERATION_FAILED_BODY), g->win);
+  (void)show_simple_message_box(
+      g, game, ui, SDL_MESSAGEBOX_WARNING,
+      tr(ui->language, T_GENERATION_FAILED),
+      tr(ui->language, T_GENERATION_FAILED_BODY));
   return false;
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (replace_saved_session_confirmed(p, ui, g, false)) {
+  if (replace_saved_session_confirmed(p, game, ui, g, false)) {
     victory_animation_reset();
     (void)start_new_game_with_ui(p, game, ui, g);
   }
@@ -315,7 +315,7 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
     restore_saved_session(p, game, ui, true);
     return;
   }
-  if (replace_saved_session_confirmed(p, ui, g, true))
+  if (replace_saved_session_confirmed(p, game, ui, g, true))
     (void)start_daily_game_with_ui(p, game, ui, g, year, month, day);
 }
 
@@ -372,15 +372,14 @@ static const char *about_url(int index) {
   return index >= 0 && index < 3 ? urls[index] : NULL;
 }
 
-static void open_about_url(Gfx *g, UI *ui, int index) {
+static void open_about_url(Gfx *g, const Game *game, UI *ui, int index) {
   const char *url = about_url(index);
   if (!url) return;
   ui_button_click();
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    ui_audio_control_cancel_interaction();
-    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                                   tr(ui->language, T_ABOUT),
-                                   tr(ui->language, T_LINK_ERROR), g->win);
+    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
+                                  tr(ui->language, T_ABOUT),
+                                  tr(ui->language, T_LINK_ERROR));
   }
 }
 
@@ -395,14 +394,14 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   if(ui->screen!=SCR_ABOUT)return false;
   if(info_keyboard_focus==INFO_FOCUS_STUDY){ui_open_url("https://doi.org/10.1002/gps.5085");return true;}
   int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
-  if(link>=0&&link<3){open_about_url(g,ui,link);return true;}
+  if(link>=0&&link<3){open_about_url(g,game,ui,link);return true;}
   if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
   return false;
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   ui_button_click();victory_animation_reset();
   if(result_keyboard_focus==1){go_home(p,game,ui);return;}
-  if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
+  if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,game,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
   else if(restart_current_session_confirmed(p,game,ui,g))restart_current_session(p,game,ui);
 }
 static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
@@ -564,7 +563,7 @@ static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   if (ui->session_open && game) (void)stage_current_session(p, game, ui);
   capture_window_preferences(p, g, ui);
   SaveGateResult gate =
-      resolve_unsaved(p, g, ui, UINT_MAX, T_UNSAVED_EXIT);
+      resolve_unsaved(p, g, game, ui, UINT_MAX, T_UNSAVED_EXIT);
   return gate != SAVE_GATE_BACK;
 }
 
@@ -1164,7 +1163,7 @@ int main(int argc, char **argv) {
             }
 
       const int audit_w=1024,audit_h=768;
-      const char*semantic_states[]={"settings","audio-popup","about"};
+      const char*semantic_states[]={"settings","audio-popup","dialog-prep","about"};
       for(int language=0;language<LANG_COUNT;++language)
         for(int dark=0;dark<2;++dark)
           for(unsigned a=0;a<sizeof(semantic_states)/sizeof(semantic_states[0]);++a){
@@ -1193,6 +1192,15 @@ int main(int argc, char **argv) {
               audio_set_fx_muted(false);
               AudioControlGeometry audio_geo=ui_audio_control_geometry(&g,&ui);
               focus="audio-music";focus_rect=sdl_rect(audio_geo.music);
+            }else if(!strcmp(audit_state,"dialog-prep")){
+              ui.screen=SCR_TITLE;audio_control_popup_open=true;
+              audio_control_pressed=true;audio_control_pressed_at_ms=now_ms();
+              audio_set_enabled(true);
+              AudioControlGeometry audio_geo=ui_audio_control_geometry(&g,&ui);
+              focus="audio-button";focus_rect=sdl_rect(audio_geo.button);
+              app_render_ui(&g,&game,&ui);
+              SDL_RenderPresent(g.ren);
+              native_dialog_prepare(&g,&game,&ui);
             }else{
               ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
               AppGeometry geometry;
@@ -1202,7 +1210,8 @@ int main(int argc, char **argv) {
               focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
             }
 
-            app_render_ui(&g,&game,&ui);
+            if(strcmp(audit_state,"dialog-prep"))
+              app_render_ui(&g,&game,&ui);
             char filename[192],path[PATH_MAX];
             snprintf(filename,sizeof(filename),"audit-%dx%d-%s-%s-%s.bmp",
                      g.width,g.height,audit_state,language_name(ui.language),
@@ -1233,7 +1242,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 114 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 120 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
@@ -1244,7 +1253,7 @@ int main(int argc, char **argv) {
   ui.language = persistence.preferences.language;
   if (persistence.profile_status == STORE_CORRUPT &&
       persistence_previous_available(&persistence)) {
-    bool recover = confirm_box(g.win, tr(ui.language, T_STORAGE_ERROR),
+    bool recover = confirm_box(&g, &game, &ui, tr(ui.language, T_STORAGE_ERROR),
                                tr(ui.language, T_PROFILE_RECOVER_PROMPT),
                                tr(ui.language, T_RECOVER),
                                tr(ui.language, T_QUIT));
@@ -1253,11 +1262,10 @@ int main(int argc, char **argv) {
       return 1;
     }
     if (!persistence_recover_previous(&persistence)) {
-      ui_audio_control_cancel_interaction();
-      (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                                     tr(ui.language, T_STORAGE_ERROR),
-                                     tr(ui.language, T_PROFILE_IO_ERROR),
-                                     g.win);
+      (void)show_simple_message_box(
+          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
+          tr(ui.language, T_STORAGE_ERROR),
+          tr(ui.language, T_PROFILE_IO_ERROR));
       app_shutdown(&g);
       return 1;
     }
@@ -1267,10 +1275,9 @@ int main(int argc, char **argv) {
   const char *startup_error =
       persistence_startup_error(&persistence, ui.language);
   if (startup_error) {
-    ui_audio_control_cancel_interaction();
-    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                                   tr(ui.language, T_STORAGE_ERROR),
-                                   startup_error, g.win);
+    (void)show_simple_message_box(
+        &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
+        tr(ui.language, T_STORAGE_ERROR), startup_error);
     app_shutdown(&g);
     return 1;
   }
@@ -1719,7 +1726,7 @@ int main(int argc, char **argv) {
             ui_button_click();
             victory_animation_reset();
             if (ui.result == RES_WIN) {
-              if (replace_saved_session_confirmed(&persistence, &ui, &g, false))
+              if (replace_saved_session_confirmed(&persistence, &game, &ui, &g, false))
                 (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
             } else if (restart_current_session_confirmed(
                            &persistence, &game, &ui, &g)) {

@@ -71,6 +71,10 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     row = next(row for row in rows if row["state"] == "settings")
     row["audio_pressed"] = "1"
     check(rows, False, "reject stale audio press over Settings")
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows if row["state"] == "dialog-prep")
+    row["audio_popup"] = "1"
+    check(rows, False, "reject stale audio popup behind native dialog")
 
     rows = [dict(row) for row in original]
     row = next(row for row in rows if row["state"] == "save-error")
