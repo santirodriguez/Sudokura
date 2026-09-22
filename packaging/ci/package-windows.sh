@@ -225,7 +225,9 @@ test "$child_fail_status" -eq 1
 test -z "$(find "$child_fail_temp" -mindepth 1 -print -quit)"
 
 # Compile a non-shipping probe from the same launcher source to force a direct
-# child-launch failure. It must fail visibly and still clean its private temp.
+# child-launch failure. Production shows an error dialog; CI suppresses only
+# that UI so it can assert the exit code and cleanup without blocking.
+grep -Fq 'Sudokura could not start.' packaging/windows/sudokura-portable.nsi
 fail_probe="$PWD/portable-fail-probe.exe"
 fail_probe_win=$(cygpath -w "$fail_probe")
 env MSYS2_ARG_CONV_EXCL='*' "$NSIS_MAKENSIS" \
@@ -234,6 +236,7 @@ env MSYS2_ARG_CONV_EXCL='*' "$NSIS_MAKENSIS" \
   "/DDIST=$dist_win" \
   "/DOUTPUT=$fail_probe_win" \
   "/DSUDOKURA_PORTABLE_TEST_FAIL_LAUNCH=1" \
+  "/DSUDOKURA_PORTABLE_TEST_SUPPRESS_ERROR_UI=1" \
   "$portable_script_win"
 fail_temp="$PWD/portabletmp/launch-failure"
 mkdir -p "$fail_temp"

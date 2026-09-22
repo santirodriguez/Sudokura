@@ -262,6 +262,7 @@ jobs:
           path: artifacts
       - name: Validate public release bundle
         run: |
+          python3 tests/test_release_bundle.py
           version=$(./scripts/version.sh)
           python3 scripts/release_bundle.py build \
             --artifacts-dir artifacts \

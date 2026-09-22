@@ -310,11 +310,16 @@ def validate_assets(args):
         if asset.get("state") != "uploaded":
             raise SystemExit(f"{name}: release asset not uploaded")
         url = asset.get("browser_download_url") or ""
-        if tag_fragment not in url or not url.endswith("/" + name):
+        if "/releases/download/" not in url or not url.endswith("/" + name):
             raise SystemExit(f"{name}: unexpected browser_download_url: {url!r}")
+        if args.published and tag_fragment not in url:
+            raise SystemExit(
+                f"{name}: published release URL does not use v{args.version}: {url!r}"
+            )
 
     print(f"validated_github_release_assets={len(expected)}")
     print(f"validated_release_tag=v{args.version}")
+    print(f"validated_release_urls={'published' if args.published else 'draft-compatible'}")
 
 
 def parser():
@@ -334,6 +339,11 @@ def parser():
     validate_parser = sub.add_parser("validate-assets")
     validate_parser.add_argument("--version", required=True)
     validate_parser.add_argument("--assets-json", required=True)
+    validate_parser.add_argument(
+        "--published",
+        action="store_true",
+        help="Require versioned /releases/download/v<version>/ URLs after publication.",
+    )
     validate_parser.set_defaults(func=validate_assets)
 
     return root

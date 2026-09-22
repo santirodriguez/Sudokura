@@ -48,6 +48,9 @@ Section
   IfErrors launch_failed launch_done
 
 launch_failed:
+!ifndef SUDOKURA_PORTABLE_TEST_SUPPRESS_ERROR_UI
+  MessageBox MB_OK|MB_ICONSTOP|MB_SETFOREGROUND "Sudokura could not start.$\r$\n$\r$\nWindows may have blocked or quarantined a required file while Sudokura was starting. Check Windows Security or your antivirus, then try again."
+!endif
   StrCpy $1 127
 
 launch_done:
