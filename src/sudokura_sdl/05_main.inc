@@ -1444,11 +1444,11 @@ int main(int argc, char **argv) {
             (void)activate_info_focus(&persistence,&game,&ui,&g);
           } else if (ui.screen == SCR_ABOUT) {
             if (k == SDLK_1 || k == SDLK_KP_1)
-              open_about_url(&g, &ui, 0);
+              open_about_url(&g, &game, &ui, 0);
             else if (k == SDLK_2 || k == SDLK_KP_2)
-              open_about_url(&g, &ui, 1);
+              open_about_url(&g, &game, &ui, 1);
             else if (k == SDLK_3 || k == SDLK_KP_3)
-              open_about_url(&g, &ui, 2);
+              open_about_url(&g, &game, &ui, 2);
           }
           continue;
         }
@@ -1749,7 +1749,7 @@ int main(int argc, char **argv) {
             for (int i = 0; i < 3; ++i) {
               if (point_in(sdl_rect(a.about_links[i]), x, y)) {
                 info_keyboard_focus=INFO_FOCUS_LINK_0+i;
-                open_about_url(&g, &ui, i);
+                open_about_url(&g, &game, &ui, i);
                 opened = true;
                 break;
               }
