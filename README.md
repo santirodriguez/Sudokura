@@ -5,65 +5,89 @@
 </p>
 
 <p align="center">
-  <strong>A fast, polished desktop Sudoku for Windows, Linux, and macOS.</strong>
+  <strong>Classic Sudoku, made for desktop.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/santirodriguez/Sudokura/releases">Downloads</a>
+  Daily puzzles, four game modes, notes, hints, fast keyboard play, themes, optional audio,<br>
+  and local progress — all in a lightweight app that stays on your device.
+</p>
+
+<p align="center">
+  <a href="#download-sudokura">Download</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.5.md">What's new in v1.3.5</a>
+  <a href="docs/RELEASE_NOTES_1.3.5.md">What's new in 1.3.5</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
   <a href="#build-from-source">Build from source</a>
 </p>
 
-Sudokura combines classic Sudoku with practical desktop features: Daily puzzles, multiple game modes, notes, hints, Undo/Redo, local results, themes, keyboard controls, and English / Español / Català.
-
-**Sudokura runs entirely on your device. Games, settings, and progress are stored locally, and the app sends no telemetry.**
-
 <p align="center">
   <a href="docs/images/sudokura-v1.3.0.png">
-    <img src="docs/images/sudokura-v1.3.0.png" alt="Sudokura v1.3.0" width="900">
+    <img src="docs/images/sudokura-v1.3.0.png" alt="Sudokura desktop gameplay" width="900">
   </a>
 </p>
 
-## Highlights
+## Download Sudokura
 
-- **Classic, Strikes, Time Attack, and Daily Sudoku.**
-- **Easy, Medium, and Hard** puzzles with a unique solution and difficulty based on human-solving techniques.
-- **Notes, Clear, Hint, Verify, Reveal, Undo/Redo, Restart, and Retry.**
-- **Independent normal and Daily saves**, with automatic recovery safeguards.
+<p align="center">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Setup.exe">
+    <img src="https://img.shields.io/badge/Windows-Installer-0078D4?style=for-the-badge&logo=windows11&logoColor=white" alt="Download Sudokura for Windows">
+  </a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Portable.exe">
+    <img src="https://img.shields.io/badge/Windows-Portable-2563EB?style=for-the-badge&logo=windows11&logoColor=white" alt="Download portable Sudokura for Windows">
+  </a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Linux-x64.AppImage">
+    <img src="https://img.shields.io/badge/Linux-AppImage-333333?style=for-the-badge&logo=linux&logoColor=white" alt="Download Sudokura AppImage for Linux">
+  </a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-macOS-arm64.dmg">
+    <img src="https://img.shields.io/badge/macOS-Apple_Silicon-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download experimental Sudokura for macOS">
+  </a>
+</p>
+
+<p align="center">
+  <sub>
+    Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon (experimental)
+  </sub>
+</p>
+
+**Windows:** choose the installer for a normal per-user installation, or the portable EXE if you want a single file with no installation.  
+**Linux:** the AppImage is the complete application in one file.  
+**macOS:** the Apple Silicon build is experimental, ad-hoc signed, and not notarized.
+
+Windows builds are not commercially code-signed, so SmartScreen may show a reputation warning.
+
+## Why Sudokura
+
+<table>
+<tr>
+<td width="33%" valign="top">
+<strong>Built around the puzzle</strong><br><br>
+Easy, Medium, and Hard puzzles have a unique solution, with difficulty shaped by human-solving techniques rather than arbitrary clue counts.
+</td>
+<td width="33%" valign="top">
+<strong>Fast on a desktop</strong><br><br>
+Mouse and keyboard are first-class. Notes, Undo/Redo, Hint, Verify, Restart, themes, and audio controls stay close at hand without crowding the board.
+</td>
+<td width="33%" valign="top">
+<strong>Private by design</strong><br><br>
+Sudokura runs offline. Games, settings, progress, and local results stay on your device, and the app sends no telemetry.
+</td>
+</tr>
+</table>
+
+## Play your way
+
+- **Classic** — focused Sudoku with neutral feedback.
+- **Strikes** — mistakes matter.
+- **Time Attack** — play against the clock.
+- **Daily Puzzle** — one deterministic Classic · Medium puzzle for each local calendar day.
+- **Notes, Hint, Verify, Reveal, Undo/Redo, Restart, and Retry** are available when you need them.
 - **Dark and light themes**, reduced motion, responsive layouts, and full mouse/keyboard navigation.
 - **English, Español, and Català.**
 - **Optional music and effects** with master, Music, and FX controls.
-- Local result history and comparable personal-best tracking.
-
-## Download
-
-| Platform | Direct download | Notes |
-|---|---|---|
-| **Windows 11 x64** | [Installer (x64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Setup.exe) | Per-user installer |
-| **Windows 11 x64** | [Portable (x64, no installation)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Portable.exe) | Single-file self-extracting EXE |
-| **Linux x86_64** | [AppImage (x64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Linux-x64.AppImage) | Supported |
-| **macOS 15+ Apple Silicon** | [DMG (arm64)](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-macOS-arm64.dmg) | Experimental |
-
-Technical files: [SHA-256 checksums](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/SHA256SUMS.txt) · [Build details](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Build-Info.json) · [all releases](https://github.com/santirodriguez/Sudokura/releases).
-
-Windows builds are not commercially code-signed, so SmartScreen may show a reputation warning. The macOS build is ad-hoc signed and not notarized.
-
-### Linux
-
-```sh
-chmod +x Sudokura-1.3.5-Linux-x64.AppImage
-./Sudokura-1.3.5-Linux-x64.AppImage
-```
-
-If FUSE is unavailable:
-
-```sh
-./Sudokura-1.3.5-Linux-x64.AppImage --appimage-extract-and-run
-```
+- Independent normal and Daily saves, automatic recovery safeguards, and local result history.
 
 ## Quick controls
 
@@ -84,23 +108,57 @@ If FUSE is unavailable:
 
 Most actions are also available directly from the interface.
 
-## Saves and upgrades
+## Your progress stays yours
 
-Sudokura keeps its data in the operating system's normal per-user application-data directory. v1.3 preserves compatible v1.2 data during migration and keeps recovery copies so an upgrade does not silently overwrite the previous valid state.
+Sudokura stores data in the operating system's normal per-user application-data directory. Compatible v1.2 data is preserved during migration, with recovery copies so an upgrade does not silently replace the previous valid state.
 
 For save locations, migration details, rollback guidance, and useful bug-report information, see [Reporting Sudokura issues](docs/REPORTING_ISSUES.md).
 
 ## More screenshots
 
-A small curated gallery covers Home / Continue, Settings, audio controls, compact Notes, and Help:
+The curated gallery includes Home / Continue, Settings, audio controls, compact Notes, and Help.
 
-[Browse the v1.3.0 screenshot gallery →](docs/images/README.md)
+[Browse the screenshot gallery →](docs/images/README.md)
+
+---
+
+## Technical notes
+
+### Verify a download
+
+Release checksums and build provenance are published alongside the application packages:
+
+[SHA-256 checksums](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/SHA256SUMS.txt)
+·
+[Build details](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Build-Info.json)
+·
+[All releases](https://github.com/santirodriguez/Sudokura/releases)
+
+<details>
+<summary><strong>Linux first launch and FUSE fallback</strong></summary>
+
+Make the AppImage executable before first launch:
+
+```sh
+chmod +x Sudokura-1.3.5-Linux-x64.AppImage
+./Sudokura-1.3.5-Linux-x64.AppImage
+```
+
+If FUSE is unavailable:
+
+```sh
+./Sudokura-1.3.5-Linux-x64.AppImage --appimage-extract-and-run
+```
+
+</details>
 
 ## Build from source
 
+Sudokura is written in **C11** with **SDL2**, **SDL2_ttf**, and **SDL2_mixer**.
+
 Requirements: a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
 
-Application C sources and private headers live under `src/`; the SDL presentation fragments remain under `src/sudokura_sdl/`.
+Application C sources and private headers live under `src/`; SDL presentation fragments live under `src/sudokura_sdl/`.
 
 ```sh
 make assets
@@ -110,14 +168,14 @@ make test-ui
 ./sudokura
 ```
 
-## Documentation
+## Project documentation
 
 - [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)
-- [v1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md)
 - [Changelog](CHANGELOG.md)
-- [Implementation record](docs/V1.3.0_IMPLEMENTATION.md)
 - [Issue reporting, saves, and rollback](docs/REPORTING_ISSUES.md)
 - [Screenshot gallery](docs/images/README.md)
+- [v1.3.0 release notes](docs/RELEASE_NOTES_1.3.0.md)
+- [Implementation record](docs/V1.3.0_IMPLEMENTATION.md)
 
 ## Credits
 
@@ -129,4 +187,4 @@ Language flags are from [lipis/flag-icons](https://github.com/lipis/flag-icons),
 
 If you enjoy Sudokura and want to support its development, [support Sudokura here](https://santiagorodriguez.com/donate/).
 
-GPLv3 · © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)
+**GPLv3** · © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)
