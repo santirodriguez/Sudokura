@@ -262,7 +262,8 @@ jobs:
         with:
           name: release-bundle
           path: artifacts
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+      - id: create-release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Sudokura ${{ needs.version.outputs.version }}
@@ -280,14 +281,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_ID: ${{ steps.create-release.outputs.id }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="v$VERSION"
-          release_json=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          test -n "$RELEASE_ID"
+          release_json=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
           test "$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["draft"]).lower())')" = "true"
           test "$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')" = "Sudokura $VERSION"
-          release_id=$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          test "$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')" = "v$VERSION"
+          release_id="$RELEASE_ID"
           gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" > draft-release-assets.json
           python3 scripts/release_bundle.py labels --version "$VERSION" > release-labels.tsv
           while IFS="$(printf '\t')" read -r name label; do
