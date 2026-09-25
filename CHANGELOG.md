@@ -1,6 +1,19 @@
 # Changelog
 
-## [1.3.0] - Unreleased
+## [1.3.5] - Unreleased
+
+### Fixes and polish
+- Fixed the global speaker control so Hint, Pause/focus-pause, Settings, generation overlays, and native dialogs cannot leave a visible, clickable, or stale audio popup/press state behind.
+- Fixed the FX unmute confirmation so the effect is played only after the FX mute state is cleared.
+- Kept the established visual design while tightening audio/UI regression coverage.
+
+### Repository and distribution
+- Moved the root C sources and private headers under `src/` without changing gameplay behavior, and removed two already-retired SDL presentation fragments after fresh reference checks.
+- Replaced the public Windows portable ZIP with a single-file installation-free EXE built from the same audited payload as the installer; the internal ZIP remains validation evidence only.
+- Standardized the four public app filenames, added one consolidated Build-Info JSON, generated final SHA-256 checksums from the exact public artifacts, and added fail-closed release-asset validation/labels.
+- Removed stale version-specific workflow-dispatch defaults; package previews/releases now require an explicit ref and resolve it to an exact commit.
+
+## [1.3.0] - 2026-09-21
 
 ### Reliability
 - Introduced versioned `profile.dat` storage with independent normal/Daily slots, previous-copy recovery, visible save-failure handling, writer exclusion, and preserved v1.2 migration backups.

@@ -16,12 +16,14 @@
 #include "input.h"
 #include "progress.h"
 
-#include "src/sudokura_sdl/01_runtime.inc"
-#include "src/sudokura_sdl/02_font_discovery.inc"
-#include "src/sudokura_sdl/03_board_render.inc"
-#include "src/sudokura_sdl/04_screens.inc"
-#include "src/sudokura_sdl/ui_present.inc"
-#include "src/sudokura_sdl/audio_ui.inc"
-#include "src/sudokura_sdl/input_ui.inc"
+static void ui_audio_control_cancel_interaction(void);
 
-#include "src/sudokura_sdl/05_main.inc"
+#include "sudokura_sdl/01_runtime.inc"
+#include "sudokura_sdl/02_font_discovery.inc"
+#include "sudokura_sdl/03_board_render.inc"
+#include "sudokura_sdl/04_screens.inc"
+#include "sudokura_sdl/ui_present.inc"
+#include "sudokura_sdl/audio_ui.inc"
+#include "sudokura_sdl/input_ui.inc"
+
+#include "sudokura_sdl/05_main.inc"

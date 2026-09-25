@@ -36,8 +36,8 @@ static void audio_toggle_music_mute(Persistence *persistence) {
 
 static void audio_toggle_fx_mute(Persistence *persistence) {
   bool muted = !audio_fx_muted();
-  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
   audio_set_fx_muted(muted);
+  if (!muted) audio_play_effect(AUDIO_EFFECT_CLICK);
   audio_store_preferences(persistence);
 }
 
@@ -143,6 +143,7 @@ static void app_shutdown(Gfx *gfx) {
   app_icon_texture = NULL;
   audio_persistence = NULL;
   audio_gfx = NULL;
+  audio_game = NULL;
   audio_ui = NULL;
   audio_ui_seen = false;
   settings_open = false;
@@ -152,6 +153,7 @@ static void app_shutdown(Gfx *gfx) {
 
 static void app_tick(Gfx *gfx, const Game *game, UI *ui) {
   audio_gfx = gfx;
+  audio_game = game;
   audio_ui = ui;
   audio_sync_ui(game, ui);
 }

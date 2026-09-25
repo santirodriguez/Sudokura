@@ -11,13 +11,14 @@ static const char *ui_support_url(Language language) {
 }
 
 static void ui_open_url(const char *url) {
-  if (!url || !audio_gfx || !audio_ui) return;
+  if (!url || !audio_gfx || !audio_game || !audio_ui) return;
   audio_play_effect(AUDIO_EFFECT_CLICK);
-  if (url_launcher_open(url) != URL_LAUNCH_OK)
-    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING,
-                                   tr(audio_ui->language, T_ABOUT),
-                                   tr(audio_ui->language, T_LINK_ERROR),
-                                   audio_gfx->win);
+  if (url_launcher_open(url) != URL_LAUNCH_OK) {
+    (void)show_simple_message_box(audio_gfx, audio_game, audio_ui,
+                                  SDL_MESSAGEBOX_WARNING,
+                                  tr(audio_ui->language, T_ABOUT),
+                                  tr(audio_ui->language, T_LINK_ERROR));
+  }
 }
 
 static bool ui_keypad_scancode(SDL_Scancode scancode) {
@@ -226,6 +227,7 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
 
 static bool ui_handle_global_audio_event(SDL_Event *event) {
   if (!event || !audio_gfx || !audio_ui) return false;
+  bool control_available = ui_audio_control_reconcile(audio_ui);
   AudioControlGeometry geo = ui_audio_control_geometry(audio_gfx, audio_ui);
   SDL_Rect button = sdl_rect(geo.button);
   SDL_Rect music = sdl_rect(geo.music);
@@ -235,7 +237,7 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
     if (event->key.repeat) return false;
     InputAudioShortcut shortcut =
         input_audio_shortcut(event->key.keysym.sym, event->key.keysym.mod,
-                             audio_control_popup_open);
+                             audio_control_popup_open, control_available);
     switch (shortcut) {
       case INPUT_AUDIO_MASTER:
         audio_control_popup_open = false;
@@ -258,6 +260,8 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
         break;
     }
   }
+
+  if (!control_available) return false;
 
   if (event->type == SDL_MOUSEBUTTONDOWN &&
       event->button.button == SDL_BUTTON_LEFT) {
@@ -302,6 +306,7 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
   if(audio_gfx)audio_gfx->dirty=true;
+  if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();
 
   if (event->type == SDL_AUDIODEVICEREMOVED && !event->adevice.iscapture) {
     audio_notify_device_removed();

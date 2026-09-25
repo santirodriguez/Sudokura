@@ -111,11 +111,14 @@ const char *input_primary_modifier_label(void) {
 
 
 InputAudioShortcut input_audio_shortcut(SDL_Keycode key, SDL_Keymod modifiers,
-                                        bool popup_open) {
-  if (key == SDLK_v)
-    return (modifiers & KMOD_SHIFT) != 0 ? INPUT_AUDIO_POPUP
-                                         : INPUT_AUDIO_MASTER;
-  if (!popup_open) return INPUT_AUDIO_NONE;
+                                        bool popup_open,
+                                        bool control_available) {
+  if (key == SDLK_v) {
+    if ((modifiers & KMOD_SHIFT) != 0)
+      return control_available ? INPUT_AUDIO_POPUP : INPUT_AUDIO_NONE;
+    return INPUT_AUDIO_MASTER;
+  }
+  if (!control_available || !popup_open) return INPUT_AUDIO_NONE;
   if (key == SDLK_m) return INPUT_AUDIO_MUSIC;
   if (key == SDLK_f) return INPUT_AUDIO_FX;
   if (key == SDLK_ESCAPE) return INPUT_AUDIO_CLOSE;

@@ -167,6 +167,7 @@ typedef struct {
    advances this guard after each modal so those older events cannot pause a
    session that starts after the dialog closes. */
 static void window_focus_guard_reset(void);
+static void app_render_ui(Gfx *gfx, const Game *game, UI *ui);
 
 static uint64_t now_ms(void){ return (uint64_t)SDL_GetTicks64(); }
 static double now_s(void){ return (double)now_ms()*0.001; }

@@ -48,7 +48,8 @@ typedef enum {
 } InputAudioShortcut;
 
 InputAudioShortcut input_audio_shortcut(SDL_Keycode key, SDL_Keymod modifiers,
-                                        bool popup_open);
+                                        bool popup_open,
+                                        bool control_available);
 bool input_audio_press_is_long(Uint64 held_ms);
 
 #endif

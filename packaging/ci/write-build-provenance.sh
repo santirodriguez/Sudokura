@@ -21,6 +21,19 @@ source_commit=$(./scripts/source_commit.sh)
   python3 --version 2>&1 || true
   printf '\n[pkg-config]\n'
   pkg-config --version 2>&1 || true
+  if [[ -n "${INNO_ISCC:-}" || -n "${NSIS_MAKENSIS:-}" ]]; then
+    printf '\n[windows-packaging-tools]\n'
+    if [[ -n "${INNO_ISCC:-}" && -x "${INNO_ISCC:-}" ]]; then
+      printf 'inno_iscc=%s\n' "$INNO_ISCC"
+      "$INNO_ISCC" '/?' 2>&1 | head -3 || true
+    fi
+    if [[ -n "${NSIS_MAKENSIS:-}" && -x "${NSIS_MAKENSIS:-}" ]]; then
+      printf 'nsis_makensis=%s\n' "$NSIS_MAKENSIS"
+      printf 'nsis_version=%s\n' "${NSIS_VERSION:-unknown}"
+      printf 'nsis_archive_sha256=%s\n' "${NSIS_ARCHIVE_SHA256:-unknown}"
+      "$NSIS_MAKENSIS" '/VERSION' 2>&1 | head -3 || true
+    fi
+  fi
   if [[ -n "${LINUXDEPLOY:-}" || -n "${APPIMAGETOOL:-}" || -n "${APPIMAGE_RUNTIME:-}" ]]; then
     printf '\n[linux-packaging-tools]\n'
     if [[ -n "${LINUXDEPLOY:-}" && -x "$LINUXDEPLOY" ]]; then

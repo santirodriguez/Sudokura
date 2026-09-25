@@ -39,36 +39,36 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_main.c game.c human.c geometry.c i18n.c -o tests/test_main_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_main.c src/game.c src/human.c src/geometry.c src/i18n.c -o tests/test_main_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_app.c app.c game.c human.c -o tests/test_app_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_app.c src/app.c src/game.c src/human.c -o tests/test_app_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_clock.c app_clock.c app.c game.c human.c -o tests/test_clock_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_clock.c src/app_clock.c src/app.c src/game.c src/human.c -o tests/test_clock_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_save_policy.c save_policy.c -o tests/test_save_policy_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_save_policy.c src/save_policy.c -o tests/test_save_policy_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_human.c human.c -o tests/test_human_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_human.c src/human.c -o tests/test_human_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_session.c game.c human.c session.c store_io.c -o tests/test_session_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_session.c src/game.c src/human.c src/session.c src/store_io.c -o tests/test_session_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_profile.c profile.c session.c store_io.c game.c human.c -o tests/test_profile_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_profile.c src/profile.c src/session.c src/store_io.c src/game.c src/human.c -o tests/test_profile_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_live_save.c profile.c save_policy.c session.c store_io.c game.c human.c -o tests/test_live_save_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_live_save.c src/profile.c src/save_policy.c src/session.c src/store_io.c src/game.c src/human.c -o tests/test_live_save_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_desktop.c desktop.c -o tests/test_desktop_san
-          cc -I. -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            tests/test_desktop.c src/desktop.c -o tests/test_desktop_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_URL_LAUNCHER_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_url_launcher.c url_launcher.c -o tests/test_url_launcher_san
+            tests/test_url_launcher.c src/url_launcher.c -o tests/test_url_launcher_san
           ./tests/test_main_san
           ./tests/test_app_san
           ./tests/test_clock_san
@@ -102,7 +102,7 @@ jobs:
         with:
           name: phase7-linux-candidate
           path: |
-            Sudokura-*.AppImage
+            Sudokura-*-Linux-x64.AppImage
             artifact-manifest-linux.json
             build-provenance-linux.txt
             inventory-linux.txt
@@ -123,7 +123,7 @@ jobs:
           name: phase7-linux-candidate
           path: candidate
       - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
-      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage ubuntu24 required
+      - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage ubuntu24 required
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}
         with:
@@ -142,7 +142,7 @@ jobs:
         with:
           name: phase7-linux-candidate
           path: candidate
-      - run: chmod +x candidate/Sudokura-*.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*.AppImage fedora44 skip
+      - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage fedora44 skip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}
         with:
@@ -168,7 +168,7 @@ jobs:
         with:
           name: phase7-macos-arm64
           path: |
-            Sudokura-*.dmg
+            Sudokura-*-macOS-arm64.dmg
             SHA256SUMS-macos-arm64.txt
             artifact-manifest-macos-arm64.json
             build-provenance-macos-arm64.txt
@@ -216,10 +216,72 @@ jobs:
       - name: Fetch pinned Inno Setup
         shell: pwsh
         run: ./scripts/fetch_innosetup.ps1
+      - name: Fetch pinned NSIS
+        shell: pwsh
+        run: ./scripts/fetch_nsis.ps1
       - name: Build and validate Windows package
         env:
           SUDOKURA_ARTIFACT_KIND: ci-candidate
         run: packaging/ci/package-windows.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase8-windows-portable
+          path: |
+            Sudokura-*-Windows-x64-Portable.exe
+            Sudokura-*-Windows-x64-Internal.zip
+            Sudokura-*-Windows-x64-Setup.exe
+            SHA256SUMS-windows.txt
+            internal-zip-sha256-windows.txt
+            artifact-manifest-windows.json
+            build-provenance-windows.txt
+            portable-benchmark-windows.txt
+            inventory-windows.txt
+            dependencies-windows.txt
+            dependencies-windows-recursive.txt
+            components-windows.txt
+          retention-days: 7
+
+  release-bundle:
+    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-linux-candidate
+          path: artifacts
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase8-windows-portable
+          path: artifacts
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: phase7-macos-arm64
+          path: artifacts
+      - name: Validate public release bundle
+        run: |
+          python3 tests/test_release_bundle.py
+          version=$(./scripts/version.sh)
+          python3 scripts/release_bundle.py build \
+            --artifacts-dir artifacts \
+            --version "$version" \
+            --source-commit "$GITHUB_SHA"
+          cat artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: phase9-release-bundle
+          path: |
+            artifacts/Sudokura-*-Windows-x64-Setup.exe
+            artifacts/Sudokura-*-Windows-x64-Portable.exe
+            artifacts/Sudokura-*-Linux-x64.AppImage
+            artifacts/Sudokura-*-macOS-arm64.dmg
+            artifacts/SHA256SUMS.txt
+            artifacts/Sudokura-*-Build-Info.json
+            artifacts/artifact-manifest-*.json
+            artifacts/build-provenance-*.txt
+          retention-days: 7
 
   ui-review:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[ui-review]')
