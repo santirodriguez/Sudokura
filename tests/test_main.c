@@ -243,6 +243,17 @@ static void test_recorded_compound_edits(void) {
   assert(game_toggle_note(&game, peer / 9, peer % 9, value));
   uint16_t peer_before = game.notes[peer];
 
+  GameEdit manual_edit;
+  assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
+                                   false, false, false, &manual_edit) ==
+         GAME_INPUT_CORRECT);
+  assert(game_edit_valid(&manual_edit));
+  assert(manual_edit.peer_notes_removed == 0);
+  assert(game.notes[peer] == peer_before);
+  assert(game_apply_edit(&game, &manual_edit, false));
+  assert(game.puzzle[target] == 0);
+  assert(game.notes[peer] == peer_before);
+
   GameEdit edit;
   assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
                                    false, false, true, &edit) ==

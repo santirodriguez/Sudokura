@@ -22,6 +22,7 @@ typedef enum {
   T_REDO,
   T_AUTO_NOTES_ON,
   T_AUTO_NOTES_OFF,
+  T_AUTO_NOTES,
   T_THEME,
   T_SETTINGS,
   T_REDUCED_MOTION,

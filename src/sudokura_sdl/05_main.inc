@@ -1005,6 +1005,123 @@ int main(int argc, char **argv) {
     app_frame(&g, &game, &ui);
     ui.screen = SCR_PLAY;
     app_frame(&g, &game, &ui);
+    if (smoke_test) {
+      Persistence settings_persistence;
+      memset(&settings_persistence, 0, sizeof(settings_persistence));
+      settings_persistence.enabled = true;
+      preferences_defaults(&settings_persistence.preferences);
+      settings_persistence.profile.preferences =
+          settings_persistence.preferences;
+      save_policy_init(&settings_persistence.save_policy);
+
+      audio_persistence = &settings_persistence;
+      audio_gfx = &g;
+      audio_game = &game;
+      audio_ui = &ui;
+      ui.screen = APP_SCREEN_SETTINGS;
+      ui.prev_screen = SCR_PLAY;
+      ui.pause_reasons = PAUSE_MODAL;
+      ui.auto_remove_peer_notes = false;
+      settings_open = true;
+      settings_keyboard_focus = SETTINGS_FOCUS_REDUCED_MOTION;
+
+      SDL_Event settings_event;
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_KEYDOWN;
+      settings_event.key.type = SDL_KEYDOWN;
+      settings_event.key.keysym.sym = SDLK_TAB;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_TAB;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings Tab focus regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.mod = KMOD_SHIFT;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_REDUCED_MOTION) {
+        fprintf(stderr, "settings Shift+Tab focus regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      settings_event.key.keysym.mod = KMOD_NONE;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings focus return regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_RIGHT;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_RIGHT;
+      if (ui_prepare_event(&settings_event) ||
+          !ui.auto_remove_peer_notes ||
+          !settings_persistence.preferences.auto_remove_peer_notes ||
+          (settings_persistence.save_policy.dirty_mask &
+           SAVE_DIRTY_PREFERENCES) == 0) {
+        fprintf(stderr, "settings auto-note enable regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_LEFT;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_LEFT;
+      if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
+          settings_persistence.preferences.auto_remove_peer_notes) {
+        fprintf(stderr, "settings auto-note disable regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_SPACE;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_SPACE;
+      if (ui_prepare_event(&settings_event) || !ui.auto_remove_peer_notes) {
+        fprintf(stderr, "settings auto-note activation regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      SettingsPanelLayout settings_layout = ui_settings_panel_layout(&g);
+      SDL_Rect focus_rect =
+          ui_settings_focus_rect(settings_layout, settings_keyboard_focus);
+      if (focus_rect.x != settings_layout.auto_notes.x ||
+          focus_rect.y != settings_layout.auto_notes.y ||
+          focus_rect.w != settings_layout.auto_notes.w ||
+          focus_rect.h != settings_layout.auto_notes.h) {
+        fprintf(stderr, "settings auto-note focus geometry regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_MOUSEBUTTONDOWN;
+      settings_event.button.type = SDL_MOUSEBUTTONDOWN;
+      settings_event.button.button = SDL_BUTTON_LEFT;
+      settings_event.button.x =
+          settings_layout.auto_notes.x + settings_layout.auto_notes.w / 2;
+      settings_event.button.y =
+          settings_layout.auto_notes.y + settings_layout.auto_notes.h / 2;
+      if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings auto-note pointer regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_KEYDOWN;
+      settings_event.key.type = SDL_KEYDOWN;
+      settings_event.key.keysym.sym = SDLK_ESCAPE;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+      if (ui_prepare_event(&settings_event) || settings_open ||
+          ui.screen != SCR_PLAY || (ui.pause_reasons & PAUSE_MODAL) != 0) {
+        fprintf(stderr, "settings return-to-play regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      audio_persistence = NULL;
+    }
     if (screenshot_dir) {
       enum {
         REVIEW_HOME_EMPTY=0, REVIEW_HOME_SAVE, REVIEW_NOTES, REVIEW_CONFLICT,
@@ -1106,7 +1223,7 @@ int main(int argc, char **argv) {
               focus_rect=back_rect(&g,&ui);break;
             case REVIEW_SETTINGS:{
               ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
-              settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_MUSIC;focus="music";
+              settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_AUTO_NOTES;focus="auto-notes";
               SettingsPanelLayout p=ui_settings_panel_layout(&g);
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);break;
             }
@@ -1192,9 +1309,9 @@ int main(int argc, char **argv) {
               ui.pause_reasons=PAUSE_MODAL;settings_open=true;
               audio_control_popup_open=true;audio_control_pressed=true;
               audio_control_pressed_at_ms=now_ms();
-              settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
+              settings_keyboard_focus=SETTINGS_FOCUS_AUTO_NOTES;
               SettingsPanelLayout p=ui_settings_panel_layout(&g);
-              focus="reduced-motion";
+              focus="auto-notes";
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);
             }else if(!strcmp(audit_state,"audio-popup")){
               ui.screen=SCR_TITLE;audio_control_popup_open=true;

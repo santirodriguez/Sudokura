@@ -479,6 +479,7 @@ typedef struct {
   SDL_Rect fx_track;
   SDL_Rect fx_plus;
   SDL_Rect reduced_motion;
+  SDL_Rect auto_notes;
   SDL_Rect back;
 } SettingsPanelLayout;
 
@@ -494,6 +495,7 @@ typedef enum {
   SETTINGS_FOCUS_MUSIC,
   SETTINGS_FOCUS_FX,
   SETTINGS_FOCUS_REDUCED_MOTION,
+  SETTINGS_FOCUS_AUTO_NOTES,
   SETTINGS_FOCUS_BACK,
   SETTINGS_FOCUS_COUNT
 } SettingsKeyboardFocus;
@@ -627,6 +629,12 @@ static void ui_settings_toggle_reduced_motion(void) {
   if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
 }
 
+static void ui_settings_toggle_auto_notes(void) {
+  if (!audio_ui) return;
+  audio_ui->auto_remove_peer_notes = !audio_ui->auto_remove_peer_notes;
+  if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
+}
+
 static void ui_settings_open(Persistence *persistence, const Game *game, UI *ui) {
   if (!ui || settings_open ||
       (ui->screen != SCR_PLAY && ui->screen != SCR_TITLE))
@@ -681,6 +689,8 @@ static SDL_Rect ui_settings_focus_rect(SettingsPanelLayout layout,
           layout.fx_minus.h};
     case SETTINGS_FOCUS_REDUCED_MOTION:
       return layout.reduced_motion;
+    case SETTINGS_FOCUS_AUTO_NOTES:
+      return layout.auto_notes;
     case SETTINGS_FOCUS_BACK:
       return layout.back;
     case SETTINGS_FOCUS_COUNT:
@@ -739,6 +749,8 @@ static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   y += slider_h + gap;
 
   layout.reduced_motion = (SDL_Rect){x, y, w, row_h};
+  y += row_h + gap;
+  layout.auto_notes = (SDL_Rect){x, y, w, row_h};
   layout.back = (SDL_Rect){x, layout.card.y + layout.card.h - row_h - 12,
                            w, row_h};
   return layout;
@@ -845,6 +857,12 @@ static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
            tr(ui->language, ui->reduced_motion ? T_ENABLED : T_DISABLED));
   rc2_settings_button(gfx, theme, layout.reduced_motion, label,
                       ui->reduced_motion, preferred);
+
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_AUTO_NOTES),
+           tr(ui->language,
+              ui->auto_remove_peer_notes ? T_ENABLED : T_DISABLED));
+  rc2_settings_button(gfx, theme, layout.auto_notes, label,
+                      ui->auto_remove_peer_notes, preferred);
 
   rc2_settings_button(gfx, theme, layout.back, tr(ui->language, T_BACK),
                       false, preferred);

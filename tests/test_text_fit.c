@@ -330,6 +330,10 @@ int main(void) {
                  tr((Language)language, T_REDUCED_MOTION),
                  tr((Language)language, T_OFF));
         assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_AUTO_NOTES),
+                 tr((Language)language, T_DISABLED));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
         assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
                     settings_w, 24));
         assert(fits(font, tr((Language)language, T_FX), tier.control, 10,

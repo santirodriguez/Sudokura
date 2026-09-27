@@ -124,6 +124,7 @@ static void test_preferences(void) {
   assert(defaults.language == LANG_EN);
   assert(defaults.dark_theme);
   assert(!defaults.strict_mode);
+  assert(!defaults.auto_remove_peer_notes);
   assert(defaults.mode == MODE_CLASSIC);
   assert(defaults.difficulty == DIFFICULTY_MEDIUM);
   assert(defaults.audio_enabled);
