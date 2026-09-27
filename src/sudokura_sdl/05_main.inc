@@ -1360,8 +1360,9 @@ int main(int argc, char **argv) {
         continue;
       }
       if (e.type == SDL_KEYDOWN) {
-        SDL_Keycode k = e.key.keysym.sym;
-        SDL_Keymod mod = SDL_GetModState();
+        InputKeySnapshot key_event = input_key_snapshot(&e.key);
+        SDL_Keycode k = key_event.key;
+        SDL_Keymod mod = key_event.modifiers;
         if (persistence_has_save_error(&persistence) && k == SDLK_r) {
           ui_button_click();
           (void)persistence_flush(&persistence);
@@ -1592,7 +1593,7 @@ int main(int argc, char **argv) {
           (void)prepare_hint_preview(&game, &ui);
           if(ui.hint_preview_active)hint_focus_reset(&ui);
         } else {
-          int value = input_digit_value(k, e.key.keysym.scancode);
+          int value = input_digit_value(k, key_event.scancode);
           if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
             if (apply_player_input(&game, &ui, r, c, 0, false)) {
               clear_hint_preview(&ui);

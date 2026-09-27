@@ -1,7 +1,7 @@
 #include "audio.h"
 
-static Screen audio_previous_screen = SCR_TITLE;
 static Result audio_previous_result = RES_NONE;
+static bool audio_previous_result_context = false;
 static bool audio_ui_seen = false;
 
 static void audio_apply_preferences(Persistence *persistence) {
@@ -51,7 +51,7 @@ static void audio_toggle(Persistence *persistence) {
 
 static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
   if (!ui) return AUDIO_CONTEXT_MAIN;
-  if (ui->screen == SCR_END && ui->result == RES_LOSE)
+  if (app_result_context_active(ui) && ui->result == RES_LOSE)
     return AUDIO_CONTEXT_FAIL;
 
   bool gameplay_context =
@@ -75,11 +75,12 @@ static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
 static void audio_sync_ui(const Game *game, const UI *ui) {
   if (!ui) return;
 
+  bool result_context = app_result_context_active(ui);
   bool entered_result =
-      audio_ui_seen && ui->screen == SCR_END &&
-      (audio_previous_screen != SCR_END || audio_previous_result != ui->result);
+      audio_ui_seen && result_context &&
+      (!audio_previous_result_context || audio_previous_result != ui->result);
   bool left_result =
-      audio_ui_seen && audio_previous_screen == SCR_END && ui->screen != SCR_END;
+      audio_ui_seen && audio_previous_result_context && !result_context;
   bool opening_home = !audio_ui_seen && ui->screen == SCR_TITLE;
   bool requested_home_cue = ui_home_cue_requested && ui->screen == SCR_TITLE;
 
@@ -98,8 +99,8 @@ static void audio_sync_ui(const Game *game, const UI *ui) {
 
   audio_update();
 
-  audio_previous_screen = ui->screen;
   audio_previous_result = ui->result;
+  audio_previous_result_context = result_context;
   audio_ui_seen = true;
 }
 
@@ -146,6 +147,7 @@ static void app_shutdown(Gfx *gfx) {
   audio_game = NULL;
   audio_ui = NULL;
   audio_ui_seen = false;
+  audio_previous_result_context = false;
   settings_open = false;
   ui_home_cue_requested = false;
   app_shutdown_base(gfx);

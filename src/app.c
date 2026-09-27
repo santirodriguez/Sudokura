@@ -56,6 +56,13 @@ bool app_play_interactions_allowed(const AppState *state) {
          state->result == APP_RESULT_NONE && state->pause_reasons == 0;
 }
 
+bool app_result_context_active(const AppState *state) {
+  if (!state || state->result == APP_RESULT_NONE) return false;
+  if (state->screen == APP_SCREEN_RESULT) return true;
+  return app_screen_is_auxiliary(state->screen) &&
+         state->prev_screen == APP_SCREEN_RESULT;
+}
+
 bool app_open_aux(AppState *state, AppScreen screen) {
   if (!state || !app_screen_is_auxiliary(screen) || state->screen == screen)
     return false;

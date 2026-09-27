@@ -79,6 +79,40 @@ static void test_navigation_contract(void) {
   assert(!app_open_aux(&state, APP_SCREEN_RESULT));
 }
 
+
+static void test_result_context_survives_auxiliary_round_trip(void) {
+  AppState state;
+  app_state_init(&state);
+  state.screen = APP_SCREEN_RESULT;
+  state.prev_screen = APP_SCREEN_RESULT;
+  state.result = APP_RESULT_LOSE;
+
+  assert(app_result_context_active(&state));
+  assert(app_open_aux(&state, APP_SCREEN_HELP));
+  assert(state.prev_screen == APP_SCREEN_RESULT);
+  assert(app_result_context_active(&state));
+
+  assert(app_open_aux(&state, APP_SCREEN_ABOUT));
+  assert(state.prev_screen == APP_SCREEN_RESULT);
+  assert(app_result_context_active(&state));
+
+  assert(app_return_aux(&state));
+  assert(state.screen == APP_SCREEN_RESULT);
+  assert(app_result_context_active(&state));
+
+  assert(app_navigate(&state, APP_SCREEN_HOME));
+  assert(!app_result_context_active(&state));
+
+  state.screen = APP_SCREEN_RESULT;
+  state.prev_screen = APP_SCREEN_RESULT;
+  state.result = APP_RESULT_WIN;
+  assert(app_open_aux(&state, APP_SCREEN_SETTINGS));
+  assert(app_result_context_active(&state));
+  assert(app_return_aux(&state));
+  assert(state.screen == APP_SCREEN_RESULT);
+  assert(app_result_context_active(&state));
+}
+
 static void test_no_change_and_strikes(void) {
   Game game;
   fixture_game_new(&game, 99);
@@ -489,6 +523,7 @@ static void test_storage_is_substitutable(void) {
 
 int main(void) {
   test_navigation_contract();
+  test_result_context_survives_auxiliary_round_trip();
   test_no_change_and_strikes();
   test_grouped_events_stop_at_loss();
   test_loss_retry_preserves_identity();

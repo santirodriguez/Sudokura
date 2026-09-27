@@ -64,6 +64,49 @@ int main(void) {
   assert(input_info_shortcut(SDLK_F2) == INPUT_INFO_ABOUT);
   assert(input_info_shortcut(SDLK_ESCAPE) == INPUT_INFO_NONE);
 
+
+  SDL_KeyboardEvent shifted_digit = {0};
+  shifted_digit.type = SDL_KEYDOWN;
+  shifted_digit.keysym.sym = SDLK_1;
+  shifted_digit.keysym.scancode = SDL_SCANCODE_1;
+  shifted_digit.keysym.mod = KMOD_SHIFT;
+  InputKeySnapshot shifted_snapshot = input_key_snapshot(&shifted_digit);
+  assert(shifted_snapshot.key == SDLK_1);
+  assert(shifted_snapshot.scancode == SDL_SCANCODE_1);
+  assert((shifted_snapshot.modifiers & KMOD_SHIFT) != 0);
+  assert(!shifted_snapshot.repeat);
+
+  SDL_KeyboardEvent shift_release = {0};
+  shift_release.type = SDL_KEYUP;
+  shift_release.keysym.sym = SDLK_LSHIFT;
+  shift_release.keysym.scancode = SDL_SCANCODE_LSHIFT;
+  shift_release.keysym.mod = KMOD_NONE;
+  InputKeySnapshot released_snapshot = input_key_snapshot(&shift_release);
+  assert((released_snapshot.modifiers & KMOD_SHIFT) == 0);
+  assert((shifted_snapshot.modifiers & KMOD_SHIFT) != 0);
+
+  SDL_KeyboardEvent reverse_tab = {0};
+  reverse_tab.type = SDL_KEYDOWN;
+  reverse_tab.keysym.sym = SDLK_TAB;
+  reverse_tab.keysym.scancode = SDL_SCANCODE_TAB;
+  reverse_tab.keysym.mod = KMOD_SHIFT;
+  InputKeySnapshot reverse_tab_snapshot = input_key_snapshot(&reverse_tab);
+  assert((reverse_tab_snapshot.modifiers & KMOD_SHIFT) != 0);
+
+  SDL_KeyboardEvent keypad_numlock_off = {0};
+  keypad_numlock_off.type = SDL_KEYDOWN;
+  keypad_numlock_off.keysym.sym = SDLK_END;
+  keypad_numlock_off.keysym.scancode = SDL_SCANCODE_KP_1;
+  keypad_numlock_off.keysym.mod = KMOD_NONE;
+  InputKeySnapshot keypad_snapshot = input_key_snapshot(&keypad_numlock_off);
+  assert(input_digit_value(keypad_snapshot.key, keypad_snapshot.scancode) == 1);
+
+  InputKeySnapshot empty_snapshot = input_key_snapshot(NULL);
+  assert(empty_snapshot.key == SDLK_UNKNOWN);
+  assert(empty_snapshot.scancode == SDL_SCANCODE_UNKNOWN);
+  assert(empty_snapshot.modifiers == KMOD_NONE);
+  assert(!empty_snapshot.repeat);
+
 #if defined(__APPLE__)
   SDL_Keymod primary = KMOD_GUI;
   SDL_Keymod other = KMOD_CTRL;
@@ -73,6 +116,30 @@ int main(void) {
   SDL_Keymod other = KMOD_GUI;
   assert(strcmp(input_primary_modifier_label(), "Ctrl") == 0);
 #endif
+  SDL_KeyboardEvent primary_undo = {0};
+  primary_undo.type = SDL_KEYDOWN;
+  primary_undo.keysym.sym = SDLK_z;
+  primary_undo.keysym.scancode = SDL_SCANCODE_Z;
+  primary_undo.keysym.mod = primary;
+  InputKeySnapshot primary_undo_snapshot = input_key_snapshot(&primary_undo);
+  assert(input_play_shortcut(primary_undo_snapshot.key,
+                             primary_undo_snapshot.modifiers) == INPUT_PLAY_UNDO);
+
+  SDL_KeyboardEvent primary_release = {0};
+  primary_release.type = SDL_KEYUP;
+#if defined(__APPLE__)
+  primary_release.keysym.sym = SDLK_LGUI;
+  primary_release.keysym.scancode = SDL_SCANCODE_LGUI;
+#else
+  primary_release.keysym.sym = SDLK_LCTRL;
+  primary_release.keysym.scancode = SDL_SCANCODE_LCTRL;
+#endif
+  primary_release.keysym.mod = KMOD_NONE;
+  InputKeySnapshot primary_release_snapshot = input_key_snapshot(&primary_release);
+  assert(primary_release_snapshot.modifiers == KMOD_NONE);
+  assert(input_play_shortcut(primary_undo_snapshot.key,
+                             primary_undo_snapshot.modifiers) == INPUT_PLAY_UNDO);
+
   assert(input_play_shortcut(SDLK_z, primary) == INPUT_PLAY_UNDO);
   assert(input_play_shortcut(SDLK_z, (SDL_Keymod)(primary | KMOD_SHIFT)) ==
          INPUT_PLAY_REDO);
