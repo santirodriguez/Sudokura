@@ -57,6 +57,41 @@ static void test_nested_modal_preserves_manual_pause(void) {
   assert(app_clock_elapsed_ms(&state, 4500) == 1500);
 }
 
+
+static void test_failed_save_prompt_dwell_does_not_charge_time_attack(void) {
+  AppState state = playing_state(UINT64_C(1000));
+  state.mode = MODE_TIME;
+  state.time_limit_s = 600.0;
+  app_clock_restore(&state, UINT64_C(599000), UINT64_C(1000));
+
+  bool owns_modal_pause =
+      app_clock_pause(&state, APP_PAUSE_MODAL, UINT64_C(1000));
+  assert(owns_modal_pause);
+  assert(app_clock_elapsed_ms(&state, UINT64_C(6000)) == UINT64_C(599000));
+
+  /* A retry keeps the same modal ownership and must not restart the clock. */
+  assert(!app_clock_pause(&state, APP_PAUSE_MODAL, UINT64_C(6000)));
+  assert(app_clock_elapsed_ms(&state, UINT64_C(7000)) == UINT64_C(599000));
+
+  assert(app_clock_resume(&state, APP_PAUSE_MODAL, UINT64_C(7000)));
+  assert(app_clock_elapsed_ms(&state, UINT64_C(7500)) == UINT64_C(599500));
+  assert(!game_mode_lost(state.mode, state.strikes, state.strikes_max,
+                         app_clock_elapsed_s(&state, UINT64_C(7500)),
+                         state.time_limit_s));
+
+  /* A pre-existing pause is not owned by the failed-save prompt. */
+  state = playing_state(UINT64_C(1000));
+  state.mode = MODE_TIME;
+  state.time_limit_s = 600.0;
+  app_clock_restore(&state, UINT64_C(599000), UINT64_C(1000));
+  assert(app_clock_pause(&state, APP_PAUSE_MANUAL, UINT64_C(1000)));
+  assert(app_clock_pause(&state, APP_PAUSE_MODAL, UINT64_C(1200)));
+  assert(app_clock_elapsed_ms(&state, UINT64_C(8000)) == UINT64_C(599000));
+  assert(app_clock_resume(&state, APP_PAUSE_MODAL, UINT64_C(8000)));
+  assert(state.pause_reasons == APP_PAUSE_MANUAL);
+  assert(app_clock_elapsed_ms(&state, UINT64_C(9000)) == UINT64_C(599000));
+}
+
 static void test_restore_and_reset(void) {
   AppState state = playing_state(0);
   app_clock_restore(&state, UINT64_C(123456), UINT64_C(7000));
@@ -73,6 +108,7 @@ int main(void) {
   test_monotonic_64_bit_elapsed();
   test_pause_resume_is_idempotent();
   test_nested_modal_preserves_manual_pause();
+  test_failed_save_prompt_dwell_does_not_charge_time_attack();
   test_restore_and_reset();
   puts("64-bit application clock and idempotent pause tests passed");
   return 0;

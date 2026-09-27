@@ -72,15 +72,25 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
     return SAVE_GATE_SAVED;
   if (persistence_flush(p)) return SAVE_GATE_SAVED;
 
+  bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
   for (;;) {
     int choice = choice_box(g, game, ui, tr(ui->language, T_UNSAVED_TITLE),
                             tr(ui->language, prompt_key),
                             tr(ui->language, T_BACK),
                             tr(ui->language, T_RETRY_SAVE),
                             tr(ui->language, T_DISCARD));
-    if (choice == 0) return SAVE_GATE_BACK;
-    if (choice == 2) return SAVE_GATE_DISCARD;
-    if (persistence_flush(p)) return SAVE_GATE_SAVED;
+    if (choice == 0) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_BACK;
+    }
+    if (choice == 2) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_DISCARD;
+    }
+    if (persistence_flush(p)) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_SAVED;
+    }
   }
 }
 
@@ -410,7 +420,7 @@ static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
   else go_home(p,game,ui);
 }
 static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
-  if(!ui||!ui->hint_preview_active)return false;
+  if(!hint_panel_interactive(ui))return false;
   if(hint_keyboard_focus==HINT_FOCUS_CANCEL){ui_button_click();clear_hint_preview(ui);return true;}
   if(hint_keyboard_focus==HINT_FOCUS_REVEAL){ui_button_click();(void)reveal_selected_cell(p,game,ui);return true;}
   ui_button_click();
@@ -1500,7 +1510,7 @@ int main(int argc, char **argv) {
           verify_current_entries(&persistence, &game, &ui);
           continue;
         }
-        if (ui.hint_preview_active) {
+        if (hint_panel_interactive(&ui)) {
           if (k == SDLK_TAB) {
             hint_move_focus(&ui, shifted ? -1 : 1);
             continue;
@@ -1616,7 +1626,7 @@ int main(int argc, char **argv) {
           (void)persistence_flush(&persistence);
           continue;
         }
-        if (left && ui.hint_preview_active) {
+        if (left && hint_panel_interactive(&ui)) {
           if (hint_apply_hit(&g, &ui, x, y)) {
             hint_keyboard_focus=HINT_FOCUS_PRIMARY;
             ui_button_click();

@@ -382,6 +382,75 @@ static void test_history_blocked_after_terminal(void) {
   assert(state.undo_count == undo_count);
 }
 
+
+static void test_paused_play_actions_are_blocked(void) {
+  const unsigned reasons[] = {
+      APP_PAUSE_MANUAL, APP_PAUSE_FOCUS, APP_PAUSE_MODAL,
+      APP_PAUSE_HOME, APP_PAUSE_END,
+  };
+
+  for (unsigned i = 0; i < sizeof(reasons) / sizeof(reasons[0]); ++i) {
+    Game game;
+    fixture_game_new(&game, UINT64_C(7000) + i);
+    AppState state = playing_state(MODE_CLASSIC);
+    int index = first_playable(&game);
+    assert(index >= 0);
+
+    AppAction note = {
+        .kind = APP_ACTION_NOTE,
+        .row = index / 9,
+        .column = index % 9,
+        .value = 1,
+    };
+    assert(app_apply_action(&game, &state, note, 1.0).changed);
+    uint16_t notes_before = game.notes[index];
+    uint16_t undo_before = state.undo_count;
+    bool hinted_before = game.hinted[index];
+
+    state.pause_reasons = reasons[i];
+    assert(!app_play_interactions_allowed(&state));
+
+    AppAction place = {
+        .kind = APP_ACTION_PLACE,
+        .row = index / 9,
+        .column = index % 9,
+        .value = game.solution[index],
+    };
+    AppActionOutcome placed = app_apply_action(&game, &state, place, 2.0);
+    assert(!placed.changed && placed.no_effect);
+    assert(game.puzzle[index] == 0);
+    assert(game.notes[index] == notes_before);
+    assert(state.undo_count == undo_before);
+
+    AppActionOutcome undone = app_apply_action(
+        &game, &state, (AppAction){.kind = APP_ACTION_UNDO}, 2.1);
+    assert(!undone.changed && undone.no_effect);
+    assert(state.undo_count == undo_before);
+    assert(game.notes[index] == notes_before);
+
+    AppActionOutcome hinted = app_apply_action(
+        &game, &state,
+        (AppAction){.kind = APP_ACTION_HINT,
+                    .row = index / 9,
+                    .column = index % 9},
+        2.2);
+    assert(!hinted.changed && !hinted.revealed && hinted.no_effect);
+    assert(game.hinted[index] == hinted_before);
+
+    AppActionOutcome verified = app_apply_action(
+        &game, &state, (AppAction){.kind = APP_ACTION_VERIFY}, 2.3);
+    assert(!verified.revealed && verified.no_effect);
+  }
+
+  AppState state = playing_state(MODE_CLASSIC);
+  assert(app_play_interactions_allowed(&state));
+  state.screen = APP_SCREEN_HELP;
+  assert(!app_play_interactions_allowed(&state));
+  state.screen = APP_SCREEN_PLAY;
+  state.session_open = false;
+  assert(!app_play_interactions_allowed(&state));
+}
+
 static int session_save_calls = 0;
 static int preferences_save_calls = 0;
 
@@ -432,6 +501,7 @@ int main(void) {
   test_history_bound();
   test_undo_keeps_assisted_state();
   test_history_blocked_after_terminal();
+  test_paused_play_actions_are_blocked();
   test_storage_is_substitutable();
   puts("application action sequencing, terminality, navigation, and storage substitution passed");
   return 0;

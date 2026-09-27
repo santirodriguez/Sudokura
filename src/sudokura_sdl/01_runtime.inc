@@ -254,7 +254,7 @@ static void clear_hint_preview(UI*ui){
 }
 
 static bool prepare_hint_preview(const Game*game,UI*ui){
-  if(!game||!ui||!ui->session_open||ui->screen!=SCR_PLAY)return false;
+  if(!game||!app_play_interactions_allowed(ui))return false;
   HumanHint hint;
   if(!human_hint_analyze(game->puzzle,&hint))return false;
   if(hint.status==HUMAN_HINT_SOLVED)return false;
@@ -272,7 +272,7 @@ static bool prepare_hint_preview(const Game*game,UI*ui){
 }
 
 static bool apply_logical_hint_action(Game*game,UI*ui){
-  if(!game||!ui||!ui->hint_preview_active||
+  if(!game||!app_play_interactions_allowed(ui)||!ui->hint_preview_active||
      ui->hint_preview.status!=HUMAN_HINT_LOGICAL)return false;
   HumanStep placement=ui->hint_preview.placement;
   if(placement.placement_cell<0||placement.placement_value<1||

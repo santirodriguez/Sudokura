@@ -51,6 +51,11 @@ bool app_pause_hides_play(const AppState *state) {
   return state && (state->pause_reasons & APP_PAUSE_USER_VISIBLE) != 0;
 }
 
+bool app_play_interactions_allowed(const AppState *state) {
+  return state && state->session_open && state->screen == APP_SCREEN_PLAY &&
+         state->result == APP_RESULT_NONE && state->pause_reasons == 0;
+}
+
 bool app_open_aux(AppState *state, AppScreen screen) {
   if (!state || !app_screen_is_auxiliary(screen) || state->screen == screen)
     return false;
@@ -212,7 +217,8 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
       action.kind == APP_ACTION_REDO || action.kind == APP_ACTION_HINT ||
       action.kind == APP_ACTION_VERIFY;
   if (play_action &&
-      (!state->session_open || state->screen != APP_SCREEN_PLAY))
+      (!state->session_open || state->screen != APP_SCREEN_PLAY ||
+       state->pause_reasons != 0))
     return outcome;
 
   AppActionOutcome terminal = app_check_terminal(game, state, elapsed_s);
