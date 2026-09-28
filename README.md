@@ -16,7 +16,7 @@
 <p align="center">
   <a href="#download-sudokura">Download</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.5.md">What's new in 1.3.5</a>
+  <a href="docs/RELEASE_NOTES_1.3.6.md">What's new in 1.3.6</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
@@ -96,10 +96,10 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 | Move | Mouse, arrows, or WASD |
 | Enter number | 1–9 |
 | Clear | 0, Backspace, or Delete |
-| Notes | N · Shift+1–9 · right-click |
-| Undo / Redo | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
+| Notes | N · Shift+1–9 · right-click · Shift+N toggles automatic peer-note cleanup |
+| Undo / Redo | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y · Cmd equivalents on macOS |
 | Hint | H |
-| Verify | Ctrl+Enter |
+| Verify | Ctrl+Enter · Cmd+Enter on macOS |
 | Pause | P |
 | Theme / Language | T / L |
 | Master audio | V |
@@ -170,6 +170,7 @@ make test-ui
 
 ## Project documentation
 
+- [v1.3.6 release notes](docs/RELEASE_NOTES_1.3.6.md)
 - [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)
 - [Changelog](CHANGELOG.md)
 - [Issue reporting, saves, and rollback](docs/REPORTING_ISSUES.md)

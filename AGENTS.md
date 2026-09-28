@@ -8,7 +8,7 @@ These instructions apply to the entire repository.
 - Do not rewrite it in another language, toolkit, engine, or web framework.
 - Preserve the established visual identity, game modes, keyboard/mouse interaction, offline behavior, and optional-audio model unless an explicitly approved change requires otherwise.
 - Keep runtime dependencies and packaged size low. Do not add SDL_image only to load icons or flags, and do not add media dependencies for UI effects that can be generated safely at runtime.
-- Target Sudokura v1.3.5. The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings.
+- Target Sudokura v1.3.6. The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings.
 
 ## Engineering requirements
 
@@ -23,7 +23,7 @@ These instructions apply to the entire repository.
 ## Gameplay and persistence
 
 - Easy, Medium, and Hard generation must remain deterministic for a seed, difficulty, and generator revision and must produce a unique solution.
-- Generator revision 2 builds complete grids through deterministic randomized backtracking; do not silently reintroduce a single-pattern permutation generator or a full-grid fallback.
+- Generator revision 3 is the current deterministic generator. Revision 2 remains supported only to reconstruct compatible existing puzzle identities; do not silently reintroduce a single-pattern permutation generator or a full-grid fallback.
 - Daily Puzzle is deterministic from the local calendar date and generator revision; v1.2 defines it as Classic · Medium.
 - Classic and Daily must not expose hidden-solution correctness through colors, counters, palette completion, progress, or audio. Strikes and Time Attack may expose correct/incorrect feedback according to their rules.
 - Restart and loss Retry must preserve the exact puzzle identity.
@@ -56,13 +56,13 @@ These instructions apply to the entire repository.
 - Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
-- The canonical v1.2 screenshot is the user-supplied `docs/images/sudokura-v1.2.0.png`, captured after real package testing and approval. Automated diagnostic renders are never canonical artwork; do not replace the approved screenshot without explicit approval.
+- The canonical current screenshot is the user-supplied `docs/images/sudokura-v1.3.0.png`, captured after real package testing and approval. Automated diagnostic renders are never canonical artwork; do not replace the approved screenshot without explicit approval.
 
 ## Packaging
 
 - Linux: keep an x86_64 AppImage with the real icon, fallback font, SDL2_mixer dependency closure, and the four OGG assets. Any downloaded packaging tool must be pinned to an immutable source and verified by checksum before execution.
 - Windows: keep the per-user x86_64 installer and produce a single-file installation-free portable EXE around the same audited payload. An internal ZIP may remain as validation/staging evidence, but it is not the public portable artifact. Preserve required non-system DLLs, SDL2_mixer, audio assets, one fallback font, embedded icon, version metadata, and the existing AppData profile location.
-- macOS v1.3 candidate: target macOS 15+ on Apple Silicon/arm64 only, ship a real `.app` inside a simple DMG with SDL2, SDL2_ttf, SDL2_mixer, transitive non-system dylibs, audio resources, bundle-relative dynamic-library paths, complete Mach-O audit, and explicit ad-hoc integrity signing. Do not generate a new Intel candidate by inertia; historical Intel/older-macOS releases remain available but are not newly maintained.
+- macOS v1.3.x candidate: target macOS 15+ on Apple Silicon/arm64 only, ship a real `.app` inside a simple DMG with SDL2, SDL2_ttf, SDL2_mixer, transitive non-system dylibs, audio resources, bundle-relative dynamic-library paths, complete Mach-O audit, and explicit ad-hoc integrity signing. Do not generate a new Intel candidate by inertia; historical Intel/older-macOS releases remain available but are not newly maintained.
 - Do not claim signing, notarization, or manual platform testing unless it actually occurred.
 - Package previews must never publish a release.
 - Public release filenames are derived from the source version and use the stable contract: `Sudokura-<version>-Windows-x64-Setup.exe`, `Sudokura-<version>-Windows-x64-Portable.exe`, `Sudokura-<version>-Linux-x64.AppImage`, `Sudokura-<version>-macOS-arm64.dmg`, `SHA256SUMS.txt`, and `Sudokura-<version>-Build-Info.json`. The public Windows portable ZIP is retired; an internal ZIP may remain only as validation evidence.

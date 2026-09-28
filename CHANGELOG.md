@@ -1,6 +1,24 @@
 # Changelog
 
-## [1.3.5] - Unreleased
+## [1.3.6] - Unreleased
+
+### Correctness and robustness
+- Blocked paused or otherwise non-playable Hint/game actions from mutating board state or intercepting unrelated controls.
+- Stopped failed-save Retry/Back/Discard dialogs from consuming Time Attack gameplay time while preserving nested pause ownership.
+- Made gameplay shortcuts use each queued SDL key event's modifier snapshot instead of process-wide current modifier state.
+- Preserved win/loss audio context through Help, About, and Settings round trips without replaying result cues.
+
+### Accessibility and quality of life
+- Raised effective minor-grid contrast against real alpha-composited board states while preserving major/minor hierarchy.
+- Reworked progress text onto a stable contrasting backing instead of switching foreground near half progress.
+- Exposed automatic peer-note cleanup in Settings with mouse, keyboard, and EN/ES/CA parity; the persisted default remains off.
+
+### Validation and repository hygiene
+- Expanded effective-color, text-fit, paused-interaction, clock, queued-input, result-context, Settings, and note-cleanup regressions.
+- Completed exact generated-test ignores and cleanup of the crash-write test's temporary fixture.
+- Kept the v1.3 persistence schema, generator revision 3, revision-2 compatibility, and supported package matrix unchanged.
+
+## [1.3.5] - 2026-09-25
 
 ### Fixes and polish
 - Fixed the global speaker control so Hint, Pause/focus-pause, Settings, generation overlays, and native dialogs cannot leave a visible, clickable, or stale audio popup/press state behind.
