@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.3.6] - Unreleased
+## [1.3.6]
 
 ### Correctness and robustness
 - Blocked paused or otherwise non-playable Hint/game actions from mutating board state or intercepting unrelated controls.
