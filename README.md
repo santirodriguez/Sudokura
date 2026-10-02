@@ -32,16 +32,16 @@
 ## Download Sudokura
 
 <p align="center">
-  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Setup.exe">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest">
     <img src="https://img.shields.io/badge/Windows-Installer-0078D4?style=for-the-badge&logo=windows11&logoColor=white" alt="Download Sudokura for Windows">
   </a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Windows-x64-Portable.exe">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest">
     <img src="https://img.shields.io/badge/Windows-Portable-2563EB?style=for-the-badge&logo=windows11&logoColor=white" alt="Download portable Sudokura for Windows">
   </a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Linux-x64.AppImage">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest">
     <img src="https://img.shields.io/badge/Linux-AppImage-333333?style=for-the-badge&logo=linux&logoColor=white" alt="Download Sudokura AppImage for Linux">
   </a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-macOS-arm64.dmg">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest">
     <img src="https://img.shields.io/badge/macOS-Apple_Silicon-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download experimental Sudokura for macOS">
   </a>
 </p>
@@ -49,6 +49,12 @@
 <p align="center">
   <sub>
     Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon (experimental)
+  </sub>
+</p>
+
+<p align="center">
+  <sub>
+    Platform buttons open the latest published release; choose the matching asset for your system.
   </sub>
 </p>
 
@@ -126,12 +132,10 @@ The curated gallery includes Home / Continue, Settings, audio controls, compact 
 
 ### Verify a download
 
-Release checksums and build provenance are published alongside the application packages:
+Release checksums and build provenance are published alongside the application packages.
 
-[SHA-256 checksums](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/SHA256SUMS.txt)
-·
-[Build details](https://github.com/santirodriguez/Sudokura/releases/download/v1.3.5/Sudokura-1.3.5-Build-Info.json)
-·
+Open the [latest published release](https://github.com/santirodriguez/Sudokura/releases/latest) and use its `SHA256SUMS.txt` and `Sudokura-*-Build-Info.json` files to verify the matching download.
+
 [All releases](https://github.com/santirodriguez/Sudokura/releases)
 
 <details>
@@ -140,14 +144,14 @@ Release checksums and build provenance are published alongside the application p
 Make the AppImage executable before first launch:
 
 ```sh
-chmod +x Sudokura-1.3.5-Linux-x64.AppImage
-./Sudokura-1.3.5-Linux-x64.AppImage
+chmod +x Sudokura-*-Linux-x64.AppImage
+./Sudokura-*-Linux-x64.AppImage
 ```
 
 If FUSE is unavailable:
 
 ```sh
-./Sudokura-1.3.5-Linux-x64.AppImage --appimage-extract-and-run
+./Sudokura-*-Linux-x64.AppImage --appimage-extract-and-run
 ```
 
 </details>
