@@ -212,6 +212,16 @@ int main(void) {
                  tr((Language)language, T_HINTS));
         assert(fits(font, sample, tier.hud, 10, g.hud[3].w, g.hud[3].h));
 
+        const int progress_values[] = {0, 49, 52, 53, 100};
+        int progress_label_w = g.progress.w * 2 / 3;
+        for (unsigned p = 0;
+             p < sizeof(progress_values) / sizeof(progress_values[0]); ++p) {
+          snprintf(sample, sizeof sample, "%s %d%%",
+                   tr((Language)language, T_PROGRESS), progress_values[p]);
+          assert(fits(font, sample, tier.hud, 10, progress_label_w,
+                      g.progress.h - 4));
+        }
+
         char help_text[2048];
         snprintf(help_text, sizeof help_text,
                  tr((Language)language, T_HELP_BODY),
@@ -319,6 +329,10 @@ int main(void) {
         snprintf(settings_sample, sizeof settings_sample, "%s: %s",
                  tr((Language)language, T_REDUCED_MOTION),
                  tr((Language)language, T_OFF));
+        assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
+        snprintf(settings_sample, sizeof settings_sample, "%s: %s",
+                 tr((Language)language, T_AUTO_NOTES),
+                 tr((Language)language, T_DISABLED));
         assert(fits(font, settings_sample, tier.control, 9, settings_w, 34));
         assert(fits(font, tr((Language)language, T_MUSIC), tier.control, 10,
                     settings_w, 24));

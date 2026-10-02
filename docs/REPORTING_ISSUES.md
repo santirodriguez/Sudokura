@@ -35,4 +35,4 @@ A v1.3-only session is not expected to become readable by v1.2.
 ## Platform details
 - **Windows:** record the exact SmartScreen/reputation message if launch is warned or blocked; do not disable security protections as troubleshooting.
 - **Linux:** state whether the AppImage used FUSE or `--appimage-extract-and-run`, and whether the session is X11 or Wayland when relevant.
-- **macOS:** v1.3.0 arm64 is experimental; record the exact macOS/Gatekeeper/quarantine message and whether the app was launched from the DMG or Applications.
+- **macOS:** the current v1.3.x arm64 build is experimental; record the exact macOS/Gatekeeper/quarantine message and whether the app was launched from the DMG or Applications.

@@ -101,7 +101,7 @@ typedef struct {
 
 static Theme theme_dark(void){
   Theme t={
-    .bg={16,18,26,255}, .board={26,30,44,255}, .thin={110,118,140,160}, .thick={150,180,255,220},
+    .bg={16,18,26,255}, .board={26,30,44,255}, .thin={112,120,142,255}, .thick={150,180,255,220},
     .hover={39,46,66,160}, .sel={60,80,130,170}, .sel_outline={180,210,255,230},
     .text_given={245,248,252,255}, .text_edit={170,255,210,255}, .text_wrong={255,125,125,255},
     .boxhl={40,50,70,130}, .samehl={100,140,220,70}, .shadow={0,0,0,110},
@@ -112,7 +112,7 @@ static Theme theme_dark(void){
 }
 static Theme theme_light(void){
   Theme t={
-    .bg={245,247,252,255}, .board={236,240,248,255}, .thin={105,115,135,220}, .thick={60,80,120,255},
+    .bg={245,247,252,255}, .board={236,240,248,255}, .thin={105,115,135,255}, .thick={60,80,120,255},
     .hover={210,220,245,200}, .sel={180,200,250,160}, .sel_outline={35,55,120,230},
     .text_given={36,41,46,255}, .text_edit={0,110,85,255}, .text_wrong={200,40,40,255},
     .boxhl={200,210,235,160}, .samehl={60,100,200,50}, .shadow={0,0,0,60},
@@ -254,7 +254,7 @@ static void clear_hint_preview(UI*ui){
 }
 
 static bool prepare_hint_preview(const Game*game,UI*ui){
-  if(!game||!ui||!ui->session_open||ui->screen!=SCR_PLAY)return false;
+  if(!game||!app_play_interactions_allowed(ui))return false;
   HumanHint hint;
   if(!human_hint_analyze(game->puzzle,&hint))return false;
   if(hint.status==HUMAN_HINT_SOLVED)return false;
@@ -272,7 +272,7 @@ static bool prepare_hint_preview(const Game*game,UI*ui){
 }
 
 static bool apply_logical_hint_action(Game*game,UI*ui){
-  if(!game||!ui||!ui->hint_preview_active||
+  if(!game||!app_play_interactions_allowed(ui)||!ui->hint_preview_active||
      ui->hint_preview.status!=HUMAN_HINT_LOGICAL)return false;
   HumanStep placement=ui->hint_preview.placement;
   if(placement.placement_cell<0||placement.placement_value<1||

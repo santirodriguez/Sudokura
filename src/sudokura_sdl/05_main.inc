@@ -72,15 +72,25 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
     return SAVE_GATE_SAVED;
   if (persistence_flush(p)) return SAVE_GATE_SAVED;
 
+  bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
   for (;;) {
     int choice = choice_box(g, game, ui, tr(ui->language, T_UNSAVED_TITLE),
                             tr(ui->language, prompt_key),
                             tr(ui->language, T_BACK),
                             tr(ui->language, T_RETRY_SAVE),
                             tr(ui->language, T_DISCARD));
-    if (choice == 0) return SAVE_GATE_BACK;
-    if (choice == 2) return SAVE_GATE_DISCARD;
-    if (persistence_flush(p)) return SAVE_GATE_SAVED;
+    if (choice == 0) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_BACK;
+    }
+    if (choice == 2) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_DISCARD;
+    }
+    if (persistence_flush(p)) {
+      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
+      return SAVE_GATE_SAVED;
+    }
   }
 }
 
@@ -410,7 +420,7 @@ static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
   else go_home(p,game,ui);
 }
 static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
-  if(!ui||!ui->hint_preview_active)return false;
+  if(!hint_panel_interactive(ui))return false;
   if(hint_keyboard_focus==HINT_FOCUS_CANCEL){ui_button_click();clear_hint_preview(ui);return true;}
   if(hint_keyboard_focus==HINT_FOCUS_REVEAL){ui_button_click();(void)reveal_selected_cell(p,game,ui);return true;}
   ui_button_click();
@@ -995,6 +1005,123 @@ int main(int argc, char **argv) {
     app_frame(&g, &game, &ui);
     ui.screen = SCR_PLAY;
     app_frame(&g, &game, &ui);
+    if (smoke_test) {
+      Persistence settings_persistence;
+      memset(&settings_persistence, 0, sizeof(settings_persistence));
+      settings_persistence.enabled = true;
+      preferences_defaults(&settings_persistence.preferences);
+      settings_persistence.profile.preferences =
+          settings_persistence.preferences;
+      save_policy_init(&settings_persistence.save_policy);
+
+      audio_persistence = &settings_persistence;
+      audio_gfx = &g;
+      audio_game = &game;
+      audio_ui = &ui;
+      ui.screen = APP_SCREEN_SETTINGS;
+      ui.prev_screen = SCR_PLAY;
+      ui.pause_reasons = PAUSE_MODAL;
+      ui.auto_remove_peer_notes = false;
+      settings_open = true;
+      settings_keyboard_focus = SETTINGS_FOCUS_REDUCED_MOTION;
+
+      SDL_Event settings_event;
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_KEYDOWN;
+      settings_event.key.type = SDL_KEYDOWN;
+      settings_event.key.keysym.sym = SDLK_TAB;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_TAB;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings Tab focus regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.mod = KMOD_SHIFT;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_REDUCED_MOTION) {
+        fprintf(stderr, "settings Shift+Tab focus regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      settings_event.key.keysym.mod = KMOD_NONE;
+      if (ui_prepare_event(&settings_event) ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings focus return regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_RIGHT;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_RIGHT;
+      if (ui_prepare_event(&settings_event) ||
+          !ui.auto_remove_peer_notes ||
+          !settings_persistence.preferences.auto_remove_peer_notes ||
+          (settings_persistence.save_policy.dirty_mask &
+           SAVE_DIRTY_PREFERENCES) == 0) {
+        fprintf(stderr, "settings auto-note enable regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_LEFT;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_LEFT;
+      if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
+          settings_persistence.preferences.auto_remove_peer_notes) {
+        fprintf(stderr, "settings auto-note disable regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      settings_event.key.keysym.sym = SDLK_SPACE;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_SPACE;
+      if (ui_prepare_event(&settings_event) || !ui.auto_remove_peer_notes) {
+        fprintf(stderr, "settings auto-note activation regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      SettingsPanelLayout settings_layout = ui_settings_panel_layout(&g);
+      SDL_Rect focus_rect =
+          ui_settings_focus_rect(settings_layout, settings_keyboard_focus);
+      if (focus_rect.x != settings_layout.auto_notes.x ||
+          focus_rect.y != settings_layout.auto_notes.y ||
+          focus_rect.w != settings_layout.auto_notes.w ||
+          focus_rect.h != settings_layout.auto_notes.h) {
+        fprintf(stderr, "settings auto-note focus geometry regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_MOUSEBUTTONDOWN;
+      settings_event.button.type = SDL_MOUSEBUTTONDOWN;
+      settings_event.button.button = SDL_BUTTON_LEFT;
+      settings_event.button.x =
+          settings_layout.auto_notes.x + settings_layout.auto_notes.w / 2;
+      settings_event.button.y =
+          settings_layout.auto_notes.y + settings_layout.auto_notes.h / 2;
+      if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
+          settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
+        fprintf(stderr, "settings auto-note pointer regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+
+      memset(&settings_event, 0, sizeof(settings_event));
+      settings_event.type = SDL_KEYDOWN;
+      settings_event.key.type = SDL_KEYDOWN;
+      settings_event.key.keysym.sym = SDLK_ESCAPE;
+      settings_event.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+      if (ui_prepare_event(&settings_event) || settings_open ||
+          ui.screen != SCR_PLAY || (ui.pause_reasons & PAUSE_MODAL) != 0) {
+        fprintf(stderr, "settings return-to-play regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      audio_persistence = NULL;
+    }
     if (screenshot_dir) {
       enum {
         REVIEW_HOME_EMPTY=0, REVIEW_HOME_SAVE, REVIEW_NOTES, REVIEW_CONFLICT,
@@ -1096,7 +1223,7 @@ int main(int argc, char **argv) {
               focus_rect=back_rect(&g,&ui);break;
             case REVIEW_SETTINGS:{
               ui.screen=APP_SCREEN_SETTINGS;ui.prev_screen=SCR_PLAY;ui.pause_reasons=PAUSE_MODAL;
-              settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_MUSIC;focus="music";
+              settings_open=true;settings_keyboard_focus=SETTINGS_FOCUS_AUTO_NOTES;focus="auto-notes";
               SettingsPanelLayout p=ui_settings_panel_layout(&g);
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);break;
             }
@@ -1182,9 +1309,9 @@ int main(int argc, char **argv) {
               ui.pause_reasons=PAUSE_MODAL;settings_open=true;
               audio_control_popup_open=true;audio_control_pressed=true;
               audio_control_pressed_at_ms=now_ms();
-              settings_keyboard_focus=SETTINGS_FOCUS_REDUCED_MOTION;
+              settings_keyboard_focus=SETTINGS_FOCUS_AUTO_NOTES;
               SettingsPanelLayout p=ui_settings_panel_layout(&g);
-              focus="reduced-motion";
+              focus="auto-notes";
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);
             }else if(!strcmp(audit_state,"audio-popup")){
               ui.screen=SCR_TITLE;audio_control_popup_open=true;
@@ -1350,8 +1477,9 @@ int main(int argc, char **argv) {
         continue;
       }
       if (e.type == SDL_KEYDOWN) {
-        SDL_Keycode k = e.key.keysym.sym;
-        SDL_Keymod mod = SDL_GetModState();
+        InputKeySnapshot key_event = input_key_snapshot(&e.key);
+        SDL_Keycode k = key_event.key;
+        SDL_Keymod mod = key_event.modifiers;
         if (persistence_has_save_error(&persistence) && k == SDLK_r) {
           ui_button_click();
           (void)persistence_flush(&persistence);
@@ -1500,7 +1628,7 @@ int main(int argc, char **argv) {
           verify_current_entries(&persistence, &game, &ui);
           continue;
         }
-        if (ui.hint_preview_active) {
+        if (hint_panel_interactive(&ui)) {
           if (k == SDLK_TAB) {
             hint_move_focus(&ui, shifted ? -1 : 1);
             continue;
@@ -1582,7 +1710,7 @@ int main(int argc, char **argv) {
           (void)prepare_hint_preview(&game, &ui);
           if(ui.hint_preview_active)hint_focus_reset(&ui);
         } else {
-          int value = input_digit_value(k, e.key.keysym.scancode);
+          int value = input_digit_value(k, key_event.scancode);
           if (k == SDLK_DELETE || k == SDLK_BACKSPACE || value == 0) {
             if (apply_player_input(&game, &ui, r, c, 0, false)) {
               clear_hint_preview(&ui);
@@ -1616,7 +1744,7 @@ int main(int argc, char **argv) {
           (void)persistence_flush(&persistence);
           continue;
         }
-        if (left && ui.hint_preview_active) {
+        if (left && hint_panel_interactive(&ui)) {
           if (hint_apply_hit(&g, &ui, x, y)) {
             hint_keyboard_focus=HINT_FOCUS_PRIMARY;
             ui_button_click();

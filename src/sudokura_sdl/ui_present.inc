@@ -479,6 +479,7 @@ typedef struct {
   SDL_Rect fx_track;
   SDL_Rect fx_plus;
   SDL_Rect reduced_motion;
+  SDL_Rect auto_notes;
   SDL_Rect back;
 } SettingsPanelLayout;
 
@@ -494,6 +495,7 @@ typedef enum {
   SETTINGS_FOCUS_MUSIC,
   SETTINGS_FOCUS_FX,
   SETTINGS_FOCUS_REDUCED_MOTION,
+  SETTINGS_FOCUS_AUTO_NOTES,
   SETTINGS_FOCUS_BACK,
   SETTINGS_FOCUS_COUNT
 } SettingsKeyboardFocus;
@@ -627,6 +629,12 @@ static void ui_settings_toggle_reduced_motion(void) {
   if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
 }
 
+static void ui_settings_toggle_auto_notes(void) {
+  if (!audio_ui) return;
+  audio_ui->auto_remove_peer_notes = !audio_ui->auto_remove_peer_notes;
+  if (audio_persistence) (void)save_preferences(audio_persistence, audio_ui);
+}
+
 static void ui_settings_open(Persistence *persistence, const Game *game, UI *ui) {
   if (!ui || settings_open ||
       (ui->screen != SCR_PLAY && ui->screen != SCR_TITLE))
@@ -681,6 +689,8 @@ static SDL_Rect ui_settings_focus_rect(SettingsPanelLayout layout,
           layout.fx_minus.h};
     case SETTINGS_FOCUS_REDUCED_MOTION:
       return layout.reduced_motion;
+    case SETTINGS_FOCUS_AUTO_NOTES:
+      return layout.auto_notes;
     case SETTINGS_FOCUS_BACK:
       return layout.back;
     case SETTINGS_FOCUS_COUNT:
@@ -739,6 +749,8 @@ static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   y += slider_h + gap;
 
   layout.reduced_motion = (SDL_Rect){x, y, w, row_h};
+  y += row_h + gap;
+  layout.auto_notes = (SDL_Rect){x, y, w, row_h};
   layout.back = (SDL_Rect){x, layout.card.y + layout.card.h - row_h - 12,
                            w, row_h};
   return layout;
@@ -846,6 +858,12 @@ static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
   rc2_settings_button(gfx, theme, layout.reduced_motion, label,
                       ui->reduced_motion, preferred);
 
+  snprintf(label, sizeof label, "%s: %s", tr(ui->language, T_AUTO_NOTES),
+           tr(ui->language,
+              ui->auto_remove_peer_notes ? T_ENABLED : T_DISABLED));
+  rc2_settings_button(gfx, theme, layout.auto_notes, label,
+                      ui->auto_remove_peer_notes, preferred);
+
   rc2_settings_button(gfx, theme, layout.back, tr(ui->language, T_BACK),
                       false, preferred);
 
@@ -910,8 +928,11 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
 
 typedef enum{HINT_FOCUS_PRIMARY=0,HINT_FOCUS_REVEAL,HINT_FOCUS_CANCEL,HINT_FOCUS_COUNT}HintKeyboardFocus;
 static HintKeyboardFocus hint_keyboard_focus=HINT_FOCUS_PRIMARY;
+static bool hint_panel_interactive(const UI *ui) {
+  return ui && ui->hint_preview_active && app_play_interactions_allowed(ui);
+}
 static bool hint_focus_enabled(const UI*ui,HintKeyboardFocus focus){
-  if(!ui||!ui->hint_preview_active)return false;
+  if(!hint_panel_interactive(ui))return false;
   if(focus==HINT_FOCUS_REVEAL)return ui->hint_preview.status!=HUMAN_HINT_INVALID;
   return focus>=HINT_FOCUS_PRIMARY&&focus<HINT_FOCUS_COUNT;
 }
@@ -936,13 +957,13 @@ static SDL_Rect hint_focus_rect(const Gfx*gfx,const UI*ui,HintKeyboardFocus focu
 static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
                            int x, int y) {
   (void)gfx;
-  return ui && ui->hint_preview_active && rect.w > 0 && rect.h > 0 &&
+  return hint_panel_interactive(ui) && rect.w > 0 && rect.h > 0 &&
          point_in(rect, x, y);
 }
 
 static bool hint_panel_blocks_point(const Gfx *gfx, const UI *ui, int x, int y) {
   HintPanelLayout panel = hint_panel_layout(gfx, ui);
-  return ui && ui->hint_preview_active && point_in(panel.card, x, y);
+  return hint_panel_interactive(ui) && point_in(panel.card, x, y);
 }
 
 static bool hint_apply_hit(const Gfx *gfx, const UI *ui, int x, int y) {
@@ -1016,9 +1037,7 @@ static void hint_panel_button(Gfx *gfx, Theme theme, SDL_Rect rect,
 }
 
 static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
-  if (!gfx || !ui || !ui->hint_preview_active || ui->screen != SCR_PLAY ||
-      app_pause_hides_play(ui))
-    return;
+  if (!gfx || !hint_panel_interactive(ui)) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   HintPanelLayout panel = hint_panel_layout(gfx, ui);
   draw_round_rect(gfx->ren, panel.card, 10, theme.palette_bg);

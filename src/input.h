@@ -4,6 +4,17 @@
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 
+typedef struct {
+  SDL_Keycode key;
+  SDL_Scancode scancode;
+  SDL_Keymod modifiers;
+  bool repeat;
+} InputKeySnapshot;
+
+/* Capture the key data carried by one queued SDL event. Gameplay dispatch must
+   use this snapshot instead of querying the process-wide modifier state. */
+InputKeySnapshot input_key_snapshot(const SDL_KeyboardEvent *event);
+
 /* Return 0..9 for keyboard digits, including physical keypad scancodes.
    Return -1 when the event is not a numeric input. */
 int input_digit_value(SDL_Keycode key, SDL_Scancode scancode);

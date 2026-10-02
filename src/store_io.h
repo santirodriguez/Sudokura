@@ -45,6 +45,10 @@ typedef enum {
 } StoreTestFault;
 
 void store_test_set_fault(StoreTestFault fault);
+bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
+                               const char *path,
+                               unsigned long process_id,
+                               unsigned long counter);
 #endif
 
 #endif

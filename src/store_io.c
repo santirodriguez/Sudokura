@@ -85,19 +85,36 @@ static bool build_child_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
   return written >= 0 && (size_t)written < SUDOKURA_STORE_PATH_CAPACITY;
 }
 
+static bool format_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
+                                  const char *path,
+                                  unsigned long process_id,
+                                  unsigned long counter) {
+  if (!out || !path || !path[0] || process_id == 0 || counter == 0)
+    return false;
+  int written = snprintf(out, SUDOKURA_STORE_PATH_CAPACITY, "%s.tmp.%lu.%lu",
+                         path, process_id, counter);
+  return written >= 0 && (size_t)written < SUDOKURA_STORE_PATH_CAPACITY;
+}
+
 static bool build_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
                                  const char *path) {
-  if (!out || !path) return false;
 #if defined(_WIN32)
   unsigned long process_id = (unsigned long)GetCurrentProcessId();
 #else
   unsigned long process_id = (unsigned long)getpid();
 #endif
   ++store_temp_counter;
-  int written = snprintf(out, SUDOKURA_STORE_PATH_CAPACITY, "%s.tmp.%lu.%lu",
-                         path, process_id, store_temp_counter);
-  return written >= 0 && (size_t)written < SUDOKURA_STORE_PATH_CAPACITY;
+  return format_temporary_path(out, path, process_id, store_temp_counter);
 }
+
+#ifdef SUDOKURA_STORE_TESTING
+bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
+                               const char *path,
+                               unsigned long process_id,
+                               unsigned long counter) {
+  return format_temporary_path(out, path, process_id, counter);
+}
+#endif
 
 static bool sync_parent_directory(const char *path) {
 #if defined(_WIN32)

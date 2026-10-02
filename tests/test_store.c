@@ -8,6 +8,7 @@
 #if defined(_WIN32)
 #include <direct.h>
 #include <process.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -61,11 +62,22 @@ static bool executable_sibling_path(
 }
 
 static int run_child(const char *argv0, const char *mode,
-                     const char *arg1, const char *arg2) {
+                     const char *arg1, const char *arg2,
+                     unsigned long *process_id_out) {
 #if defined(_WIN32)
   const char *args[5] = {argv0, mode, arg1, arg2, NULL};
-  intptr_t result = _spawnv(_P_WAIT, argv0, args);
-  return result < 0 ? 255 : (int)result;
+  intptr_t process = _spawnv(_P_NOWAIT, argv0, args);
+  if (process < 0) return 255;
+  DWORD process_id = GetProcessId((HANDLE)process);
+  if (!process_id) {
+    int ignored = 0;
+    (void)_cwait(&ignored, process, _WAIT_CHILD);
+    return 255;
+  }
+  if (process_id_out) *process_id_out = (unsigned long)process_id;
+  int status = 0;
+  if (_cwait(&status, process, _WAIT_CHILD) < 0) return 255;
+  return status;
 #else
   pid_t pid = fork();
   if (pid < 0) return 255;
@@ -76,6 +88,7 @@ static int run_child(const char *argv0, const char *mode,
       execl(argv0, argv0, mode, arg1, (char *)NULL);
     _exit(127);
   }
+  if (process_id_out) *process_id_out = (unsigned long)pid;
   int status = 0;
   if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status)) return 255;
   return WEXITSTATUS(status);
@@ -170,11 +183,11 @@ static void test_permission_failure(void) {
 static void test_writer_lock(const char *argv0) {
   StoreWriterLock first;
   assert(store_writer_lock_acquire(".", &first) == STORE_LOCK_ACQUIRED);
-  assert(run_child(argv0, "--expect-lock-busy", ".", NULL) == 0);
+  assert(run_child(argv0, "--expect-lock-busy", ".", NULL, NULL) == 0);
   store_writer_lock_release(&first);
 
-  assert(run_child(argv0, "--expect-lock-acquired", ".", NULL) == 0);
-  assert(run_child(argv0, "--lock-and-exit", ".", NULL) == 0);
+  assert(run_child(argv0, "--expect-lock-acquired", ".", NULL, NULL) == 0);
+  assert(run_child(argv0, "--lock-and-exit", ".", NULL, NULL) == 0);
 
   StoreWriterLock after_exit;
   assert(store_writer_lock_acquire(".", &after_exit) == STORE_LOCK_ACQUIRED);
@@ -190,10 +203,18 @@ static void test_unexpected_exit_preserves_active(const char *argv0) {
          STORE_OK);
   assert(store_copy_once(active_path, backup_path) == STORE_OK);
 
-  int exit_code = run_child(argv0, "--crash-write", active_path, NULL);
+  unsigned long crash_process_id = 0;
+  int exit_code =
+      run_child(argv0, "--crash-write", active_path, NULL, &crash_process_id);
   assert(exit_code == 73);
   assert_contents(active_path, "before-crash");
   assert_contents(backup_path, "before-crash");
+
+  char crash_temporary[SUDOKURA_STORE_PATH_CAPACITY];
+  assert(store_test_temporary_path(crash_temporary, active_path,
+                                   crash_process_id, 1));
+  assert(store_file_exists(crash_temporary));
+  assert(store_remove_file(crash_temporary));
 
   assert(store_atomic_write(active_path, backup_path, update,
                             sizeof(update) - 1) == STORE_OK);

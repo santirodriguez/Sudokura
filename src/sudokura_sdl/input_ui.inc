@@ -108,6 +108,11 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
               (key == SDLK_RIGHT && !audio_ui->reduced_motion))
             ui_settings_toggle_reduced_motion();
           break;
+        case SETTINGS_FOCUS_AUTO_NOTES:
+          if ((key == SDLK_LEFT && audio_ui->auto_remove_peer_notes) ||
+              (key == SDLK_RIGHT && !audio_ui->auto_remove_peer_notes))
+            ui_settings_toggle_auto_notes();
+          break;
         case SETTINGS_FOCUS_BACK:
         case SETTINGS_FOCUS_COUNT:
         default:
@@ -129,6 +134,9 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
           break;
         case SETTINGS_FOCUS_REDUCED_MOTION:
           ui_settings_toggle_reduced_motion();
+          break;
+        case SETTINGS_FOCUS_AUTO_NOTES:
+          ui_settings_toggle_auto_notes();
           break;
         case SETTINGS_FOCUS_BACK:
           ui_settings_close(audio_persistence, NULL, audio_ui);
@@ -213,6 +221,10 @@ static bool ui_handle_settings_panel_event(SDL_Event *event) {
       settings_keyboard_focus = SETTINGS_FOCUS_REDUCED_MOTION;
       audio_play_effect(AUDIO_EFFECT_CLICK);
       ui_settings_toggle_reduced_motion();
+    } else if (point_in(layout.auto_notes, x, y)) {
+      settings_keyboard_focus = SETTINGS_FOCUS_AUTO_NOTES;
+      audio_play_effect(AUDIO_EFFECT_CLICK);
+      ui_settings_toggle_auto_notes();
     } else if (point_in(layout.back, x, y)) {
       settings_keyboard_focus = SETTINGS_FOCUS_BACK;
       audio_play_effect(AUDIO_EFFECT_CLICK);

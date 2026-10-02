@@ -1,5 +1,20 @@
 #include "input.h"
 
+InputKeySnapshot input_key_snapshot(const SDL_KeyboardEvent *event) {
+  InputKeySnapshot snapshot = {
+      .key = SDLK_UNKNOWN,
+      .scancode = SDL_SCANCODE_UNKNOWN,
+      .modifiers = KMOD_NONE,
+      .repeat = false,
+  };
+  if (!event) return snapshot;
+  snapshot.key = event->keysym.sym;
+  snapshot.scancode = event->keysym.scancode;
+  snapshot.modifiers = (SDL_Keymod)event->keysym.mod;
+  snapshot.repeat = event->repeat != 0;
+  return snapshot;
+}
+
 static int keypad_key_value(SDL_Keycode key) {
   switch (key) {
     case SDLK_KP_0: return 0;

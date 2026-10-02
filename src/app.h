@@ -123,6 +123,8 @@ typedef struct {
 void app_state_init(AppState *state);
 bool app_screen_is_auxiliary(AppScreen screen);
 bool app_pause_hides_play(const AppState *state);
+bool app_play_interactions_allowed(const AppState *state);
+bool app_result_context_active(const AppState *state);
 bool app_open_aux(AppState *state, AppScreen screen);
 bool app_return_aux(AppState *state);
 bool app_navigate(AppState *state, AppScreen target);

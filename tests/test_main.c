@@ -243,6 +243,17 @@ static void test_recorded_compound_edits(void) {
   assert(game_toggle_note(&game, peer / 9, peer % 9, value));
   uint16_t peer_before = game.notes[peer];
 
+  GameEdit manual_edit;
+  assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
+                                   false, false, false, &manual_edit) ==
+         GAME_INPUT_CORRECT);
+  assert(game_edit_valid(&manual_edit));
+  assert(manual_edit.peer_notes_removed == 0);
+  assert(game.notes[peer] == peer_before);
+  assert(game_apply_edit(&game, &manual_edit, false));
+  assert(game.puzzle[target] == 0);
+  assert(game.notes[peer] == peer_before);
+
   GameEdit edit;
   assert(game_apply_input_recorded(&game, target / 9, target % 9, value,
                                    false, false, true, &edit) ==
@@ -388,7 +399,7 @@ static void test_window_size_normalization(void) {
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key) assert(tr((Language)language, (TextKey)key)[0]);
-  assert(!strcmp(SUDOKURA_VERSION, "1.3.5"));
+  assert(!strcmp(SUDOKURA_VERSION, "1.3.6"));
 }
 
 int main(void) {

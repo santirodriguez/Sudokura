@@ -417,8 +417,21 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   SDL_GetMouseState(&mx,&my);
   for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);bool strict_chip=i==4,hover=strict_chip&&point_in(hr,mx,my);SDL_Color bg=strict_chip&&ui->strict_mode?th.title:(hover?th.hover:th.palette_bg);SDL_Color fg=strict_chip&&ui->strict_mode?th.bg:th.dim;draw_round_rect(g->ren,hr,hr.h/2,bg);(void)draw_fitted_text(g,hud[i],fg,hr,fonts.hud,10);}
 
-  int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;int filled=inner_w*progress/100;if(filled>0)draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);
-  char progress_text[64];snprintf(progress_text,sizeof progress_text,"%s %d%%",tr(ui->language,T_PROGRESS),progress);(void)draw_fitted_text(g,progress_text,progress>52?th.bg:th.dim,R.progress,fonts.hud,10);
+  int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);
+  draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);
+  int inner_w=R.progress.w-4;if(inner_w<0)inner_w=0;
+  int filled=inner_w*progress/100;
+  if(filled>0)
+    draw_round_rect(g->ren,(SDL_Rect){R.progress.x+2,R.progress.y+2,filled,R.progress.h-4},(R.progress.h-4)/2,th.title);
+  SDL_Rect progress_label={
+    R.progress.x+R.progress.w/6,R.progress.y+2,
+    R.progress.w*2/3,R.progress.h-4
+  };
+  if(progress_label.w>0&&progress_label.h>0)
+    draw_round_rect(g->ren,progress_label,progress_label.h/2,th.btn);
+  char progress_text[64];
+  snprintf(progress_text,sizeof progress_text,"%s %d%%",tr(ui->language,T_PROGRESS),progress);
+  (void)draw_fitted_text(g,progress_text,th.btnfg,progress_label,fonts.hud,10);
 
   SDL_Rect status=sdl_rect(L.model.status);
   draw_round_rect(g->ren,status,style.radius_control,th.palette_bg);
