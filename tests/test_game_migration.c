@@ -563,6 +563,66 @@ static void test_immutable_intent_cutpoint_replays(void) {
   cleanup();
 }
 
+static void test_repeated_terminal_summaries_are_distinct_attempts(void) {
+  prepare();
+  ProfileData old = legacy_profile();
+  old.result_count = SUDOKURA_RESULT_LIMIT;
+  for (uint16_t i = 2; i < old.result_count; ++i)
+    old.results[i] = old.results[0]; /* Same event as the won Daily slot. */
+  assert(profile_validate(&old));
+  assert(profile_save_file(primary, backup, &old) == STORE_OK);
+
+  ProfileData migrated;
+  assert(profile_load_file(primary, &migrated) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &migrated, NULL) ==
+         STORE_OK);
+  assert(!migrated.migration_pending);
+  assert(migrated.result_count == SUDOKURA_RESULT_LIMIT);
+  assert(game_attempt_id_equal(migrated.results[0].attempt_id,
+                               migrated.daily.attempt_id));
+  GameAttemptId ids[SUDOKURA_RESULT_LIMIT];
+  for (uint16_t i = 0; i < migrated.result_count; ++i) {
+    ids[i] = migrated.results[i].attempt_id;
+    assert(game_attempt_id_valid(ids[i]));
+    for (uint16_t j = 0; j < i; ++j)
+      assert(!game_attempt_id_equal(ids[i], ids[j]));
+    GameLibraryRecord record;
+    assert(game_library_load(root, ids[i], &record) == STORE_OK);
+    assert(record.kind == (i == 0 ? GAME_RECORD_EXACT
+                                 : GAME_RECORD_LEGACY_SUMMARY));
+    assert(record.result.seed == old.results[i].seed);
+    assert(record.result.elapsed_ms == old.results[i].elapsed_ms);
+    if (i != 0) assert(record.finished_utc == 0);
+  }
+  MigrationRecordCount count = {0};
+  assert(game_library_scan(root, count_migrated_record, &count) == STORE_OK);
+  assert(count.count == SUDOKURA_RESULT_LIMIT + 1u); /* Plus normal slot. */
+
+  revert_to_immutable_source();
+  assert(profile_load_file(primary, &migrated) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &migrated, NULL) ==
+         STORE_OK);
+  assert(migrated.result_count == SUDOKURA_RESULT_LIMIT);
+  for (uint16_t i = 0; i < migrated.result_count; ++i)
+    assert(game_attempt_id_equal(migrated.results[i].attempt_id, ids[i]));
+  count.count = 0;
+  assert(game_library_scan(root, count_migrated_record, &count) == STORE_OK);
+  assert(count.count == SUDOKURA_RESULT_LIMIT + 1u);
+
+  assert(game_library_delete(root, ids[64]) == STORE_OK);
+  revert_to_immutable_source();
+  assert(profile_load_file(primary, &migrated) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &migrated, NULL) ==
+         STORE_OK);
+  assert(migrated.result_count == SUDOKURA_RESULT_LIMIT - 1u);
+  assert(game_library_load(root, ids[64], &(GameLibraryRecord){0}) ==
+         STORE_NOT_FOUND);
+  count.count = 0;
+  assert(game_library_scan(root, count_migrated_record, &count) == STORE_OK);
+  assert(count.count == SUDOKURA_RESULT_LIMIT);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -576,6 +636,7 @@ int main(void) {
   test_collection_recovery_isolates_bad_and_previous_only();
   test_preimage_write_fault_matrix();
   test_immutable_intent_cutpoint_replays();
+  test_repeated_terminal_summaries_are_distinct_attempts();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;
