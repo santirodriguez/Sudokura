@@ -85,11 +85,27 @@ StoreStatus game_library_receipt_status(const char *root, GameAttemptId id) {
   unsigned char bytes[RECEIPT_BYTES];
   size_t count = 0;
   StoreStatus status = store_read_file(path, bytes, sizeof(bytes), &count);
+  if (status == STORE_CORRUPT) {
+    /* An oversized receipt may be an unsupported future version, not a
+       damaged v1 receipt. Probe only the bounded magic/version prefix. */
+    unsigned char prefix[10];
+    size_t got = 0;
+    status = store_read_prefix(path, prefix, sizeof(prefix), &got);
+    if (status != STORE_OK) return status;
+    if (got >= sizeof(prefix) &&
+        memcmp(prefix, receipt_magic, sizeof(receipt_magic)) == 0 &&
+        read16(prefix + 8) != 1)
+      return STORE_INCOMPATIBLE;
+    return STORE_CORRUPT;
+  }
   if (status != STORE_OK) return status;
+  if (count >= 10u &&
+      memcmp(bytes, receipt_magic, sizeof(receipt_magic)) == 0 &&
+      read16(bytes + 8) != 1)
+    return STORE_INCOMPATIBLE;
   if (count != sizeof(bytes) ||
       memcmp(bytes, receipt_magic, sizeof(receipt_magic)) != 0)
     return STORE_CORRUPT;
-  if (read16(bytes + 8) != 1) return STORE_INCOMPATIBLE;
   if (read32(bytes + 10) != 16 ||
       read32(bytes + 14) != checksum(bytes + 18, 16) ||
       read64(bytes + 18) != id.high ||

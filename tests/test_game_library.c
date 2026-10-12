@@ -1008,6 +1008,120 @@ static void test_unsupported_generator_preserves_previous(void) {
   cleanup();
 }
 
+typedef struct {
+  GameAttemptId target;
+  GameAttemptId neighbor;
+  unsigned incompatible;
+  unsigned healthy;
+} ReceiptVersionScan;
+
+static bool inspect_future_receipt(const GameLibraryEntry *entry,
+                                   void *context) {
+  ReceiptVersionScan *scan = (ReceiptVersionScan *)context;
+  if (game_attempt_id_equal(entry->id, scan->target)) {
+    assert(entry->status == STORE_INCOMPATIBLE);
+    ++scan->incompatible;
+  } else {
+    assert(game_attempt_id_equal(entry->id, scan->neighbor));
+    assert(entry->status == STORE_OK);
+    ++scan->healthy;
+  }
+  return true;
+}
+
+static void test_future_receipt_versions_fail_closed(void) {
+  prepare();
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameAttemptId target = make_id(740);
+  GameAttemptId neighbor = make_id(741);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, target, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_make_exact(&record, neighbor, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  char hex[33], path[160];
+  game_attempt_id_hex(target, hex);
+  int written = snprintf(path, sizeof(path), "%s/games/%s.deleted",
+                         root, hex);
+  assert(written > 0 && (size_t)written < sizeof(path));
+  unsigned char future[40] = {0};
+  memcpy(future, "SUDODEL1", 8);
+  future[8] = 2; /* Future, unsupported receipt version. */
+  assert(store_atomic_write(path, NULL, future, sizeof(future)) == STORE_OK);
+  assert(game_library_receipt_status(root, target) == STORE_INCOMPATIBLE);
+  GameLibraryRecord unchanged = record;
+  assert(game_library_load(root, target, &unchanged) == STORE_INCOMPATIBLE);
+  assert(memcmp(&unchanged, &record, sizeof(record)) == 0);
+  assert(game_library_delete(root, target) == STORE_INCOMPATIBLE);
+  ReceiptVersionScan scan = {target, neighbor, 0, 0};
+  assert(game_library_scan(root, inspect_future_receipt, &scan) == STORE_OK);
+  assert(scan.incompatible == 1 && scan.healthy == 1);
+
+  /* Even a recognizable truncated future header is incompatible. */
+  assert(store_atomic_write(path, NULL, future, 10) == STORE_OK);
+  assert(game_library_receipt_status(root, target) == STORE_INCOMPATIBLE);
+
+  /* Known v1 with surplus bytes is corrupt, never accepted as deletion. */
+  future[8] = 1;
+  assert(store_atomic_write(path, NULL, future, sizeof(future)) == STORE_OK);
+  assert(game_library_receipt_status(root, target) == STORE_CORRUPT);
+  assert(game_library_delete(root, target) == STORE_CORRUPT);
+  assert(store_remove_file(path));
+  assert(game_library_load(root, target, &unchanged) == STORE_OK);
+  assert(unchanged.revision == 1);
+  assert(game_library_load(root, neighbor, &unchanged) == STORE_OK);
+  cleanup();
+}
+
+typedef struct {
+  GameAttemptId id;
+  unsigned count;
+} InvalidBackupScan;
+
+static bool inspect_invalid_backup(const GameLibraryEntry *entry,
+                                   void *context) {
+  InvalidBackupScan *scan = (InvalidBackupScan *)context;
+  assert(game_attempt_id_equal(entry->id, scan->id));
+  assert(entry->status == STORE_OK);
+  assert(entry->previous_status == STORE_CORRUPT);
+  ++scan->count;
+  return true;
+}
+
+static void test_corrupt_previous_copy_does_not_replace_good_primary(void) {
+  prepare();
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(742);
+  GameLibraryRecord record, prior;
+  assert(game_library_make_exact(&record, id, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  active.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_load(root, id, &prior) == STORE_OK);
+  assert(prior.revision == 2);
+  char hex[33], backup[160];
+  game_attempt_id_hex(id, hex);
+  int written = snprintf(backup, sizeof(backup), "%s/games/%s.dat.bak",
+                         root, hex);
+  assert(written > 0 && (size_t)written < sizeof(backup));
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t length = 0;
+  assert(store_read_file(backup, bytes, sizeof(bytes), &length) == STORE_OK);
+  bytes[length - 1] ^= 0x35;
+  assert(store_atomic_write(backup, NULL, bytes, length) == STORE_OK);
+  GameLibraryRecord candidate = prior;
+  assert(game_library_recover_previous(root, id, &candidate) == STORE_CORRUPT);
+  assert(memcmp(&candidate, &prior, sizeof(candidate)) == 0);
+  assert(game_library_load(root, id, &candidate) == STORE_OK);
+  assert(candidate.revision == 2);
+  InvalidBackupScan scan = {id, 0};
+  assert(game_library_scan(root, inspect_invalid_backup, &scan) == STORE_OK);
+  assert(scan.count == 1);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -1033,6 +1147,8 @@ int main(void) {
   test_runtime_utc_dates_and_unknown_legacy();
   test_unsupported_generator_preserves_previous();
   test_invalid_timestamp_is_not_healthy_catalogue_metadata();
+  test_future_receipt_versions_fail_closed();
+  test_corrupt_previous_copy_does_not_replace_good_primary();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
