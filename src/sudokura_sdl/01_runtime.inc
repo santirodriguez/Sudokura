@@ -650,8 +650,28 @@ static void persistence_capture_failure(Persistence*p,const UI*ui){
   save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failure_ms);
 }
 
+static bool persistence_new_attempt_id(Persistence*p,GameAttemptId*out){
+  if(!p||!out)return false;
+  GameAttemptId reserved[2+SUDOKURA_RESULT_LIMIT];
+  size_t count=0;
+  if(p->profile.normal.present&&
+     game_attempt_id_valid(p->profile.normal.attempt_id))
+    reserved[count++]=p->profile.normal.attempt_id;
+  if(p->profile.daily.present&&
+     game_attempt_id_valid(p->profile.daily.attempt_id))
+    reserved[count++]=p->profile.daily.attempt_id;
+  for(uint16_t i=0;i<p->profile.result_count;++i)
+    if(game_attempt_id_valid(p->profile.results[i].attempt_id))
+      reserved[count++]=p->profile.results[i].attempt_id;
+  return game_library_new_id(p->profile_directory,reserved,count,out);
+}
+
 static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
+  if(p->profile.codec_version!=SUDOKURA_PROFILE_CONTENT_VERSION){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
   SessionState state;
   if(!capture_session(&state,game,ui,now_ms())){
     persistence_capture_failure(p,ui);
@@ -668,20 +688,49 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
       slot->value.session.daily_month==state.daily_month &&
       slot->value.session.daily_day==state.daily_day;
   bool assisted=ui->assisted||(same_identity&&slot->value.assisted);
+  GameAttemptId id=same_identity?slot->attempt_id:(GameAttemptId){0,0};
+  uint64_t old_revision=same_identity?slot->revision:0;
+  bool retained=same_identity&&slot->retained;
+  bool terminal_repeat=same_identity &&
+      slot->value.session.status!=SESSION_ACTIVE &&
+      state.status==slot->value.session.status;
+  if(!game_attempt_id_valid(id) &&
+     !persistence_new_attempt_id(p,&id)){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
+  if(old_revision==UINT64_MAX && !terminal_repeat){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
+  uint64_t next_revision=terminal_repeat?old_revision:old_revision+1;
   bool valid=same_identity
-                 ? profile_slot_set_runtime(slot,&state,assisted)
-                 : profile_slot_set(slot,&state,assisted);
+                  ? profile_slot_set_runtime(slot,&state,assisted)
+                  : profile_slot_set(slot,&state,assisted);
   if(!valid){
     persistence_capture_failure(p,ui);
     return false;
   }
+  slot->attempt_id=id;
+  slot->revision=next_revision;
+  slot->retained=retained||state.status==SESSION_WON;
   slot->value.undo_count=ui->undo_count;
   slot->value.redo_count=ui->redo_count;
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
   memcpy(slot->value.redo,ui->redo,sizeof(ui->redo));
+
+  /* Record commits precede hot pointer and recent-result publication. */
+  if(slot->retained){
+    GameLibraryRecord record;
+    if(!game_library_make_exact(&record,id,next_revision,&slot->value,true) ||
+       game_library_save(p->profile_directory,&record)!=STORE_OK){
+      persistence_capture_failure(p,ui);
+      return false;
+    }
+  }
   if(!state.is_daily)p->saved=state;
   if(state.status!=SESSION_ACTIVE &&
-     !record_terminal_result(p,&state,assisted,ui)){
+     !record_terminal_result(p,&state,assisted,id,ui)){
     persistence_capture_failure(p,ui);
     return false;
   }
@@ -690,7 +739,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   save_policy_mark(&p->save_policy,
                    state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
                    now_ms());
-  /* All terminal input and timeout paths persist before returning. */
+  /* Finished outcomes are durable before result presentation or exit. */
   return state.status==SESSION_ACTIVE || persistence_flush(p);
 }
 
