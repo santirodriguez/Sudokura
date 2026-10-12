@@ -71,6 +71,9 @@ bool game_library_encode(const GameLibraryRecord *record,
                          size_t *size);
 StoreStatus game_library_decode(const unsigned char *bytes, size_t size,
                                 GameLibraryRecord *record);
+/* Validate the envelope and bounded metadata without reconstructing a puzzle. */
+StoreStatus game_library_peek(const unsigned char *bytes, size_t size,
+                              GameLibraryEntry *entry);
 StoreStatus game_library_load(const char *root, GameAttemptId id,
                               GameLibraryRecord *record);
 StoreStatus game_library_save(const char *root,
