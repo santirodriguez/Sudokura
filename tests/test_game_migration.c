@@ -258,12 +258,71 @@ static void test_existing_library_blocks_fresh_migration(void) {
   cleanup();
 }
 
+static void test_record_first_failure_recovers_terminal_and_recent_result(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData live;
+  assert(profile_load_file(primary, &live) == STORE_OK);
+  bool migrated = false;
+  assert(game_migration_upgrade(root, primary, backup, &live, &migrated) ==
+         STORE_OK);
+  assert(migrated);
+  GameAttemptId id = live.normal.attempt_id;
+  uint64_t initial_revision = live.normal.revision;
+  assert(live.normal.value.session.status == SESSION_ACTIVE);
+  uint16_t old_result_count = live.result_count;
+
+  ProfileSession won = live.normal.value;
+  for (int cell = 0; cell < 81; ++cell) {
+    won.session.game.puzzle[cell] = won.session.game.solution[cell];
+    won.session.game.notes[cell] = 0;
+  }
+  won.session.status = SESSION_WON;
+  won.session.elapsed_ms += UINT64_C(1500);
+  won.undo_count = 0;
+  won.redo_count = 0;
+  assert(session_validate(&won.session));
+  GameLibraryRecord archive;
+  assert(game_library_make_exact(&archive, id, initial_revision + 1,
+                                 &won, true));
+  assert(game_library_save(root, &archive) == STORE_OK);
+
+  ProfileData candidate = live;
+  candidate.normal.value = won;
+  candidate.normal.revision = initial_revision + 1;
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_file(primary, backup, &candidate) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+
+  ProfileData recovered;
+  assert(profile_load_file(primary, &recovered) == STORE_OK);
+  assert(recovered.normal.revision == initial_revision);
+  assert(recovered.normal.value.session.status == SESSION_ACTIVE);
+  assert(game_migration_reconcile(root, primary, backup, &recovered) == STORE_OK);
+  assert(recovered.normal.revision == initial_revision + 1);
+  assert(recovered.normal.value.session.status == SESSION_WON);
+  assert(recovered.normal.value.session.elapsed_ms == won.session.elapsed_ms);
+  assert(recovered.result_count == old_result_count + 1);
+  const ProfileResult *last = &recovered.results[recovered.result_count - 1];
+  assert(last->status == SESSION_WON);
+  assert(game_attempt_id_equal(last->attempt_id, id));
+
+  ProfileData reread;
+  assert(profile_load_file(primary, &reread) == STORE_OK);
+  assert(reread.normal.revision == initial_revision + 1);
+  assert(reread.result_count == recovered.result_count);
+  assert(game_migration_reconcile(root, primary, backup, &reread) == STORE_OK);
+  assert(reread.result_count == recovered.result_count);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
   test_receipt_survives_source_rollback();
   test_failure_preserves_source_and_retry();
   test_immutable_preimage_collision();
+  test_record_first_failure_recovers_terminal_and_recent_result();
   test_existing_library_blocks_fresh_migration();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
