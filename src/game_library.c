@@ -224,6 +224,104 @@ StoreStatus game_library_save(const char *root,
   return STORE_OK;
 }
 
+static void hot_cache_store(GameLibraryHotCache *cache,
+                            const GameLibraryRecord *record,
+                            const unsigned char *bytes, size_t length) {
+  cache->valid = true;
+  cache->id = record->id;
+  cache->revision = record->revision;
+  cache->status = record->result.status;
+  cache->length = length;
+  memcpy(cache->bytes, bytes, length);
+}
+
+StoreStatus game_library_save_runtime(const char *root,
+                                      const GameLibraryRecord *record,
+                                      GameLibraryHotCache *cache) {
+  if (!root || !record || !cache ||
+      !game_library_record_validate_runtime(record) ||
+      record->kind != GAME_RECORD_EXACT)
+    return STORE_IO_ERROR;
+
+  char path[SUDOKURA_STORE_PATH_CAPACITY];
+  char backup[SUDOKURA_STORE_PATH_CAPACITY];
+  char folder[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!game_path(path, root, record->id, ".dat") ||
+      !game_path(backup, root, record->id, ".dat.bak") ||
+      !games_directory(folder, root))
+    return STORE_IO_ERROR;
+
+  StoreStatus receipt = game_library_receipt_status(root, record->id);
+  if (receipt != STORE_NOT_FOUND)
+    return receipt == STORE_OK ? STORE_IO_ERROR : receipt;
+
+  unsigned char encoded[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t length = 0;
+  if (!game_library_encode_runtime(record, encoded, &length))
+    return STORE_IO_ERROR;
+
+  unsigned char prior[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t prior_length = 0;
+  StoreStatus status = store_read_file(path, prior, sizeof(prior),
+                                       &prior_length);
+  bool trusted_cache = cache->valid &&
+                       game_attempt_id_equal(cache->id, record->id);
+  if (trusted_cache && (status != STORE_OK ||
+      prior_length != cache->length ||
+      memcmp(prior, cache->bytes, cache->length) != 0)) {
+    cache->valid = false;
+    /* A disappearing/changed on-disk record is not a new attempt. */
+    if (status == STORE_NOT_FOUND) return STORE_IO_ERROR;
+    if (status != STORE_OK) return status;
+    trusted_cache = false;
+  }
+
+  uint64_t previous_revision = 0;
+  SessionStatus previous_status = SESSION_ACTIVE;
+  if (status == STORE_OK) {
+    if (trusted_cache) {
+      previous_revision = cache->revision;
+      previous_status = cache->status;
+    } else {
+      /* First access after startup or external mutation remains canonical. */
+      GameLibraryRecord previous;
+      status = game_library_load(root, record->id, &previous);
+      if (status != STORE_OK) return status;
+      if (previous.kind != GAME_RECORD_EXACT) return STORE_IO_ERROR;
+      previous_revision = previous.revision;
+      previous_status = previous.result.status;
+    }
+    if (length == prior_length && memcmp(encoded, prior, length) == 0) {
+      hot_cache_store(cache, record, encoded, length);
+      return STORE_OK;
+    }
+    if (previous_revision >= record->revision ||
+        previous_status != SESSION_ACTIVE)
+      return STORE_IO_ERROR;
+  } else if (status != STORE_NOT_FOUND) {
+    return status;
+  } else if (store_file_exists(backup)) {
+    /* Never rotate a recoverable backup when the primary disappeared. */
+    return STORE_IO_ERROR;
+  }
+
+  status = store_ensure_directory(folder);
+  if (status != STORE_OK) return status;
+  status = store_atomic_write(path, backup, encoded, length);
+  if (status != STORE_OK) return status;
+
+  unsigned char verified[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t verified_length = 0;
+  status = store_read_file(path, verified, sizeof(verified),
+                           &verified_length);
+  if (status != STORE_OK) return status;
+  if (verified_length != length ||
+      memcmp(verified, encoded, length) != 0)
+    return STORE_CORRUPT;
+  hot_cache_store(cache, record, encoded, length);
+  return STORE_OK;
+}
+
 StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record) {
   if (!record || !root || !game_attempt_id_valid(id))
