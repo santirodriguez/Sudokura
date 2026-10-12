@@ -160,6 +160,7 @@ typedef struct {
   char preferences_v12_backup_path[PATH_MAX];
   char audio_v12_backup_path[PATH_MAX];
   SavePolicy save_policy;
+  bool capture_failed;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
@@ -450,7 +451,7 @@ static bool record_terminal_result(Persistence*p,const SessionState*session,
   if(inserted)
     save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
   refresh_result_summary(p,session,assisted,ui);
-  return inserted;
+  return true;
 }
 
 static bool pref_path(char out[PATH_MAX],const char*base,const char*leaf){
@@ -470,13 +471,18 @@ static void persistence_refresh_normal(Persistence*p){
   if(normal)p->saved=*normal;else memset(&p->saved,0,sizeof(p->saved));
 }
 
-static bool persistence_write_profile(Persistence*p){
-  if(!p||!p->enabled)return false;
+static StoreStatus persistence_write_profile_callback(void*context){
+  Persistence*p=(Persistence*)context;
+  if(!p||!p->enabled||p->capture_failed)return STORE_IO_ERROR;
   p->profile.preferences=p->preferences;
-  StoreStatus status=profile_save_runtime_file(
+  return profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
-  save_policy_record_result(&p->save_policy,status,now_ms());
-  return status==STORE_OK;
+}
+
+static bool persistence_write_profile(Persistence*p){
+  if(!p||!p->enabled||p->capture_failed)return false;
+  return save_policy_checkpoint_now(
+      &p->save_policy,persistence_write_profile_callback,p,now_ms());
 }
 
 static bool persistence_flush(Persistence*p){
@@ -498,6 +504,7 @@ static bool persistence_recover_previous(Persistence*p){
   if(status!=STORE_OK)return false;
   p->profile=recovered;
   p->preferences=recovered.preferences;
+  p->capture_failed=false;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
@@ -581,29 +588,53 @@ static bool save_preferences(Persistence*p,const UI*ui){
   return true;
 }
 
-static SessionStatus runtime_session_status(const Game*game,const UI*ui){
-  if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,elapsed_time(ui),ui->time_limit_s))return SESSION_LOST;
-  if(game_is_solved(game))return SESSION_WON;
-  return SESSION_ACTIVE;
+static bool capture_session(SessionState*out,const Game*game,const UI*ui,
+                            uint64_t capture_ms){
+  if(!out||!game||!ui)return false;
+  SessionState candidate;
+  memset(&candidate,0,sizeof(candidate));
+  candidate.game=*game;
+  candidate.mode=ui->mode;
+  candidate.selected_row=ui->sel_r;
+  candidate.selected_column=ui->sel_c;
+  candidate.notes_mode=ui->notes_mode;
+  candidate.strict_mode=ui->strict_mode;
+  candidate.manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
+  candidate.mistakes=ui->mistakes;
+  candidate.strikes=ui->strikes;
+  candidate.elapsed_ms=app_clock_elapsed_ms(ui,capture_ms);
+  candidate.is_daily=ui->is_daily;
+  candidate.daily_year=ui->daily_year;
+  candidate.daily_month=ui->daily_month;
+  candidate.daily_day=ui->daily_day;
+  if(ui->result==RES_WIN)candidate.status=SESSION_WON;
+  else if(ui->result==RES_LOSE)candidate.status=SESSION_LOST;
+  else if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,
+                        (double)candidate.elapsed_ms/1000.0,
+                        ui->time_limit_s))candidate.status=SESSION_LOST;
+  else candidate.status=game_is_solved(game)?SESSION_WON:SESSION_ACTIVE;
+  if(!session_validate_runtime(&candidate))return false;
+  *out=candidate;
+  return true;
 }
 
-static void capture_session(SessionState*out,const Game*game,const UI*ui){
-  if(!out||!game||!ui)return;
-  memset(out,0,sizeof(*out));out->game=*game;
-  out->mode=ui->mode;out->selected_row=ui->sel_r;out->selected_column=ui->sel_c;
-  out->notes_mode=ui->notes_mode;out->strict_mode=ui->strict_mode;
-  out->manual_paused=(ui->pause_reasons&PAUSE_MANUAL)!=0;
-  out->status=runtime_session_status(game,ui);out->mistakes=ui->mistakes;out->strikes=ui->strikes;
-  out->elapsed_ms=app_clock_elapsed_ms(ui,now_ms());
-  out->is_daily=ui->is_daily;out->daily_year=ui->daily_year;
-  out->daily_month=ui->daily_month;out->daily_day=ui->daily_day;
+static void persistence_capture_failure(Persistence*p,const UI*ui){
+  if(!p||!p->enabled)return;
+  uint64_t failure_ms=now_ms();
+  p->capture_failed=true;
+  save_policy_mark(&p->save_policy,
+                   ui&&ui->is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
+                   failure_ms);
+  save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failure_ms);
 }
 
 static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   SessionState state;
-  memset(&state,0,sizeof(state));
-  capture_session(&state,game,ui);
+  if(!capture_session(&state,game,ui,now_ms())){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
   ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
   bool same_identity=
       slot->present &&
@@ -618,24 +649,40 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   bool valid=same_identity
                  ? profile_slot_set_runtime(slot,&state,assisted)
                  : profile_slot_set(slot,&state,assisted);
-  if(!valid)return false;
+  if(!valid){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
   slot->value.undo_count=ui->undo_count;
   slot->value.redo_count=ui->redo_count;
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
   memcpy(slot->value.redo,ui->redo,sizeof(ui->redo));
   if(!state.is_daily)p->saved=state;
-  if(state.status!=SESSION_ACTIVE)
-    (void)record_terminal_result(p,&state,assisted,ui);
+  if(state.status!=SESSION_ACTIVE &&
+     !record_terminal_result(p,&state,assisted,ui)){
+    persistence_capture_failure(p,ui);
+    return false;
+  }
+  p->capture_failed=false;
   refresh_resume_info(p,ui);
   save_policy_mark(&p->save_policy,
                    state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,
                    now_ms());
-  return true;
+  /* All terminal input and timeout paths persist before returning. */
+  return state.status==SESSION_ACTIVE || persistence_flush(p);
 }
 
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
   if(!stage_current_session(p,game,ui))return false;
   p->last_periodic_checkpoint_ms=now_ms();
+  return persistence_flush(p);
+}
+
+static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
+  if(!p)return false;
+  if(p->capture_failed)
+    return game&&ui&&ui->session_open &&
+           checkpoint_current_session(p,game,ui);
   return persistence_flush(p);
 }
 
