@@ -106,6 +106,10 @@ bool profile_result_is_valid(const ProfileResult *result);
 bool profile_session_encode_blob(const ProfileSession *session,
                                  unsigned char *bytes, size_t capacity,
                                  size_t *size_out);
+/* Encode a trusted live session without reconstructing its puzzle. */
+bool profile_session_encode_blob_runtime(const ProfileSession *session,
+                                         unsigned char *bytes, size_t capacity,
+                                         size_t *size_out);
 StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
                                         bool expected_daily,
                                         ProfileSession *session);
