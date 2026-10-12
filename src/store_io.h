@@ -29,6 +29,13 @@ StoreStatus store_copy_once(const char *source, const char *destination);
 bool store_file_exists(const char *path);
 bool store_remove_file(const char *path);
 
+/* Enumerate one directory without retaining an unbounded name collection. */
+typedef bool (*StoreDirectoryEntryFn)(const char *name, void *context);
+StoreStatus store_ensure_directory(const char *path);
+StoreStatus store_list_directory(const char *path,
+                                 StoreDirectoryEntryFn visitor,
+                                 void *context);
+
 StoreLockStatus store_writer_lock_acquire(const char *directory,
                                           StoreWriterLock *lock);
 void store_writer_lock_release(StoreWriterLock *lock);
