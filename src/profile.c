@@ -216,6 +216,7 @@ static bool profile_links_valid(const ProfileData *profile) {
       profile->normal.attempt_id.high == profile->daily.attempt_id.high &&
       profile->normal.attempt_id.low == profile->daily.attempt_id.low)
     return false;
+  if (profile->migration_source_suffix > 15) return false;
   if (profile->migration_pending &&
       (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION ||
        profile->migration_source_length == 0))
@@ -707,6 +708,7 @@ static bool encode_profile_payload(unsigned char *payload, size_t capacity,
     writer_u8(&writer, profile->migration_pending ? 1u : 0u);
     writer_u32(&writer, profile->migration_source_length);
     writer_u32(&writer, profile->migration_source_crc);
+    writer_u8(&writer, profile->migration_source_suffix);
   }
 
   if (!writer.ok) return false;
@@ -865,6 +867,7 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
     uint8_t pending = reader_u8(&reader);
     loaded.migration_source_length = reader_u32(&reader);
     loaded.migration_source_crc = reader_u32(&reader);
+    loaded.migration_source_suffix = reader_u8(&reader);
     if (pending > 1) return STORE_CORRUPT;
     loaded.migration_pending = pending == 1;
   }
