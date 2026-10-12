@@ -603,17 +603,31 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   return STORE_OK;
 }
 
-bool profile_session_encode_blob(const ProfileSession *session,
-                                 unsigned char *bytes, size_t capacity,
-                                 size_t *size_out) {
+static bool encode_profile_session_blob(const ProfileSession *session,
+                                        unsigned char *bytes, size_t capacity,
+                                        size_t *size_out, bool canonical) {
   if (!session || !bytes || capacity == 0 || capacity > PROFILE_MAX_FILE_SIZE ||
-      !valid_profile_session(session, session->session.is_daily))
+      !(canonical ? valid_profile_session(session, session->session.is_daily)
+                  : valid_profile_session_runtime(
+                        session, session->session.is_daily)))
     return false;
   ProfileWriter writer = {bytes, capacity, 0, true};
   encode_session(&writer, session);
   if (!writer.ok) return false;
   if (size_out) *size_out = writer.position;
   return true;
+}
+
+bool profile_session_encode_blob(const ProfileSession *session,
+                                 unsigned char *bytes, size_t capacity,
+                                 size_t *size_out) {
+  return encode_profile_session_blob(session, bytes, capacity, size_out, true);
+}
+
+bool profile_session_encode_blob_runtime(const ProfileSession *session,
+                                         unsigned char *bytes, size_t capacity,
+                                         size_t *size_out) {
+  return encode_profile_session_blob(session, bytes, capacity, size_out, false);
 }
 
 StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
