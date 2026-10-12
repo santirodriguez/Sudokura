@@ -30,6 +30,11 @@ bool save_policy_dirty(const SavePolicy *policy);
 bool save_policy_has_error(const SavePolicy *policy);
 bool save_policy_slot_dirty(const SavePolicy *policy, bool daily);
 bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms);
+typedef StoreStatus (*SavePolicyWriteFn)(void *context);
+
+/* Synchronous checkpoint; bypasses the regular autosave quiet window. */
+bool save_policy_checkpoint_now(SavePolicy *policy, SavePolicyWriteFn write,
+                                void *context, uint64_t now_ms);
 void save_policy_record_result(SavePolicy *policy, StoreStatus status,
                                uint64_t now_ms);
 

@@ -32,6 +32,19 @@ bool app_clock_pause(AppState *state, unsigned reason, uint64_t now_ms) {
   return true;
 }
 
+bool app_clock_freeze_terminal(AppState *state, uint64_t decision_ms) {
+  if (!state || !state->session_open || state->result == APP_RESULT_NONE)
+    return false;
+  if (state->screen == APP_SCREEN_RESULT &&
+      (state->pause_reasons & APP_PAUSE_END) != 0)
+    return true;
+  if (state->screen != APP_SCREEN_PLAY ||
+      !app_clock_pause(state, APP_PAUSE_END, decision_ms))
+    return false;
+  state->screen = APP_SCREEN_RESULT;
+  return true;
+}
+
 bool app_clock_resume(AppState *state, unsigned reason, uint64_t now_ms) {
   if (!state || !reason || (state->pause_reasons & reason) == 0) return false;
   state->pause_reasons &= ~reason;

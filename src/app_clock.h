@@ -10,6 +10,8 @@ bool app_clock_running(const AppState *state);
 uint64_t app_clock_elapsed_ms(const AppState *state, uint64_t now_ms);
 double app_clock_elapsed_s(const AppState *state, uint64_t now_ms);
 bool app_clock_pause(AppState *state, unsigned reason, uint64_t now_ms);
+/* Commit the terminal clock at the exact semantic-action timestamp. */
+bool app_clock_freeze_terminal(AppState *state, uint64_t decision_ms);
 bool app_clock_resume(AppState *state, unsigned reason, uint64_t now_ms);
 void app_clock_reset(AppState *state, uint64_t now_ms);
 void app_clock_restore(AppState *state, uint64_t elapsed_ms, uint64_t now_ms);

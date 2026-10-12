@@ -39,6 +39,15 @@ bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms) {
          now_ms - policy->dirty_since_ms >= SUDOKURA_AUTOSAVE_MAX_MS;
 }
 
+bool save_policy_checkpoint_now(SavePolicy *policy, SavePolicyWriteFn write,
+                                void *context, uint64_t now_ms) {
+  if (!policy || !write) return false;
+  if (!save_policy_dirty(policy)) return true;
+  StoreStatus status = write(context);
+  save_policy_record_result(policy, status, now_ms);
+  return status == STORE_OK;
+}
+
 void save_policy_record_result(SavePolicy *policy, StoreStatus status,
                                uint64_t now_ms) {
   if (!policy) return;
