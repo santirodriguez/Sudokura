@@ -86,6 +86,18 @@ static void test_hex_and_collision(void) {
   assert(!game_attempt_id_equal(random, id));
 }
 
+static void test_long_paths_fail_closed(void) {
+  char long_root[SUDOKURA_STORE_PATH_CAPACITY + 40u];
+  memset(long_root, 'x', sizeof(long_root));
+  long_root[sizeof(long_root) - 1u] = '\0';
+  GameAttemptId id = make_id(7);
+  GameLibraryRecord record;
+  assert(game_library_receipt_status(long_root, id) == STORE_IO_ERROR);
+  assert(game_library_load(long_root, id, &record) == STORE_IO_ERROR);
+  assert(!game_library_new_id(long_root, NULL, 0u, &id));
+  assert(game_library_scan(long_root, NULL, NULL) == STORE_IO_ERROR);
+}
+
 static void test_codec_and_atomic_decode(void) {
   ProfileSession active = make_session(SESSION_ACTIVE);
   GameLibraryRecord input;
@@ -278,6 +290,7 @@ int main(void) {
   cleanup();
   prepare();
   test_hex_and_collision();
+  test_long_paths_fail_closed();
   test_codec_and_atomic_decode();
   cleanup();
   test_save_revision_and_previous_recovery();

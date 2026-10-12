@@ -27,9 +27,17 @@ static bool game_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
   if (!games_directory(folder, root)) return false;
   char hex[33];
   game_attempt_id_hex(id, hex);
-  int n = snprintf(out, SUDOKURA_STORE_PATH_CAPACITY,
-                   "%s/%s%s", folder, hex, suffix);
-  return n >= 0 && (size_t)n < SUDOKURA_STORE_PATH_CAPACITY;
+  size_t folder_len = strlen(folder);
+  size_t suffix_len = strlen(suffix);
+  /* Separator + 32 hex digits + terminating NUL require 34 bytes. */
+  if (folder_len > SUDOKURA_STORE_PATH_CAPACITY - 34u ||
+      suffix_len > SUDOKURA_STORE_PATH_CAPACITY - folder_len - 34u)
+    return false;
+  memcpy(out, folder, folder_len);
+  out[folder_len] = '/';
+  memcpy(out + folder_len + 1u, hex, 32u);
+  memcpy(out + folder_len + 33u, suffix, suffix_len + 1u);
+  return true;
 }
 
 static uint32_t checksum(const unsigned char *data, size_t count) {
