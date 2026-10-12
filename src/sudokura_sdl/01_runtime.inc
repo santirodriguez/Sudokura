@@ -162,6 +162,7 @@ typedef struct {
   char preferences_v12_backup_path[PATH_MAX];
   char audio_v12_backup_path[PATH_MAX];
   SavePolicy save_policy;
+  GameLibraryHotCache game_cache[2];
   bool capture_failed;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
@@ -729,8 +730,10 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   /* Record commits precede hot pointer and recent-result publication. */
   if(slot->retained){
     GameLibraryRecord record;
-    if(!game_library_make_exact(&record,id,next_revision,&slot->value,true) ||
-       game_library_save(p->profile_directory,&record)!=STORE_OK){
+    GameLibraryHotCache*cache=&p->game_cache[state.is_daily?1:0];
+    if(!game_library_make_exact_runtime(
+           &record,id,next_revision,&slot->value,true) ||
+       game_library_save_runtime(p->profile_directory,&record,cache)!=STORE_OK){
       persistence_capture_failure(p,ui);
       return false;
     }
