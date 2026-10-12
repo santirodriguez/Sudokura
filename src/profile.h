@@ -69,6 +69,7 @@ typedef struct {
   bool migration_pending;
   uint32_t migration_source_length;
   uint32_t migration_source_crc;
+  uint8_t migration_source_suffix;
 } ProfileData;
 
 typedef struct {
