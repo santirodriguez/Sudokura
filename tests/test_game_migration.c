@@ -316,6 +316,124 @@ static void test_record_first_failure_recovers_terminal_and_recent_result(void) 
   cleanup();
 }
 
+
+static void test_missing_hot_pair_recovers_verified_intent(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData current;
+  assert(profile_load_file(primary, &current) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &current, NULL) ==
+         STORE_OK);
+  GameAttemptId id = current.normal.attempt_id;
+  GameLibraryRecord record;
+  assert(game_library_load(root, id, &record) == STORE_OK);
+  ProfileSession newer = record.exact;
+  newer.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &newer, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(store_remove_file(primary));
+  assert(store_remove_file(backup));
+  assert(game_migration_has_artifacts(root));
+
+  ProfileData recovered;
+  profile_defaults(&recovered);
+  GameMigrationRecoverySummary summary;
+  assert(game_migration_recover_collection(
+             root, primary, backup, &recovered, &summary) ==
+         STORE_INCOMPATIBLE);
+  assert(!store_file_exists(primary));
+  assert(game_migration_recover_intent(root, primary, backup,
+                                      &recovered) == STORE_OK);
+  assert(recovered.preferences.language == LANG_CA);
+  assert(recovered.normal.present &&
+         game_attempt_id_equal(recovered.normal.attempt_id, id));
+  assert(recovered.normal.revision == 2);
+  assert(recovered.normal.value.session.elapsed_ms == newer.session.elapsed_ms);
+  assert(profile_load_file(primary, &current) == STORE_OK);
+  assert(profile_encoded_equal(&current, &recovered));
+  cleanup();
+}
+
+static void test_explicit_collection_recovery_and_ambiguity(void) {
+  prepare();
+  assert(!game_migration_has_artifacts(root));
+  ProfileData legacy = legacy_profile();
+  ProfileSession first = legacy.normal.value;
+  GameLibraryRecord record;
+  GameAttemptId a = {UINT64_C(0xdeadbeef), 1};
+  GameAttemptId b = {UINT64_C(0xdeadbeef), 2};
+  assert(game_library_make_exact(&record, a, 1, &first, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  ProfileData candidate;
+  GameMigrationRecoverySummary info = {0};
+  assert(game_migration_preview_collection(root, &candidate, &info) ==
+         STORE_OK);
+  assert(candidate.normal.present && candidate.normal.retained);
+  assert(game_attempt_id_equal(candidate.normal.attempt_id, a));
+  assert(info.normal_active_candidates == 1);
+  assert(info.compatible_records == 1);
+
+  first.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, b, 1, &first, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_migration_preview_collection(root, &candidate, &info) ==
+         STORE_OK);
+  assert(!candidate.normal.present);
+  assert(info.normal_active_candidates == 2);
+  assert(info.compatible_records == 2);
+
+  ProfileData recovered;
+  profile_defaults(&recovered);
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_migration_recover_collection(
+             root, primary, backup, &recovered, &info) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(!store_file_exists(primary));
+  assert(game_library_load(root, a, &record) == STORE_OK);
+  assert(game_migration_recover_collection(
+             root, primary, backup, &recovered, &info) == STORE_OK);
+  assert(!recovered.normal.present);
+  assert(!recovered.daily.present);
+  assert(info.normal_active_candidates == 2);
+  assert(game_library_load(root, b, &record) == STORE_OK);
+  assert(game_migration_recover_collection(
+             root, primary, backup, &recovered, &info) == STORE_IO_ERROR);
+  cleanup();
+}
+
+static void test_collection_recovery_isolates_bad_and_previous_only(void) {
+  prepare();
+  ProfileData legacy = legacy_profile();
+  GameLibraryRecord record;
+  GameAttemptId good = {UINT64_C(0xbead), 1};
+  GameAttemptId broken = {UINT64_C(0xbead), 2};
+  assert(game_library_make_exact(&record, good, 1, &legacy.normal.value, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_make_exact(&record, broken, 1,
+                                 &legacy.normal.value, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  char hex[33], path[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(broken, hex);
+  int count = snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
+  assert(count > 0 && (size_t)count < sizeof(path));
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t length = 0;
+  assert(store_read_file(path, bytes, sizeof(bytes), &length) == STORE_OK);
+  bytes[length - 1u] ^= 0x10u;
+  assert(store_atomic_write(path, NULL, bytes, length) == STORE_OK);
+  GameMigrationRecoverySummary info;
+  ProfileData preview;
+  assert(game_migration_preview_collection(root, &preview, &info) ==
+         STORE_OK);
+  assert(info.compatible_records == 1);
+  assert(info.unavailable_records == 1);
+  assert(preview.normal.present &&
+         game_attempt_id_equal(preview.normal.attempt_id, good));
+  assert(game_library_load(root, broken, &record) == STORE_CORRUPT);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -324,6 +442,9 @@ int main(void) {
   test_immutable_preimage_collision();
   test_record_first_failure_recovers_terminal_and_recent_result();
   test_existing_library_blocks_fresh_migration();
+  test_missing_hot_pair_recovers_verified_intent();
+  test_explicit_collection_recovery_and_ambiguity();
+  test_collection_recovery_isolates_bad_and_previous_only();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

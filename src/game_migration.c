@@ -482,3 +482,149 @@ StoreStatus game_migration_reconcile(const char *root,
   *profile = loaded;
   return STORE_OK;
 }
+
+static StoreStatus missing_hot_pair(const char *primary, const char *backup) {
+  if (!primary || !backup) return STORE_IO_ERROR;
+  unsigned char sentinel = 0;
+  StoreStatus a = store_read_prefix(primary, &sentinel, 1u, NULL);
+  StoreStatus b = store_read_prefix(backup, &sentinel, 1u, NULL);
+  if (a != STORE_NOT_FOUND || b != STORE_NOT_FOUND)
+    return a != STORE_NOT_FOUND && a != STORE_OK ? a
+         : b != STORE_NOT_FOUND && b != STORE_OK ? b
+         : STORE_IO_ERROR;
+  return STORE_OK;
+}
+
+typedef struct {
+  const char *root;
+  ProfileData staged;
+  GameMigrationRecoverySummary summary;
+} RecoveryScan;
+
+static bool inspect_recovery_entry(const GameLibraryEntry *entry, void *ctx) {
+  RecoveryScan *scan = (RecoveryScan *)ctx;
+  if (entry->only_backup) {
+    ++scan->summary.previous_only_records;
+    return true; /* Earlier copy needs explicit validation and confirmation. */
+  }
+  if (entry->status != STORE_OK) {
+    ++scan->summary.unavailable_records;
+    return true;
+  }
+  ++scan->summary.compatible_records;
+  if (entry->kind != GAME_RECORD_EXACT ||
+      entry->result.status != SESSION_ACTIVE)
+    return true;
+  /* Full canonical decode only for active candidates, not 1000 won items. */
+  GameLibraryRecord record;
+  if (game_library_load(scan->root, entry->id, &record) != STORE_OK) {
+    --scan->summary.compatible_records;
+    ++scan->summary.unavailable_records;
+    return true;
+  }
+  if (!record.retained || record.kind != GAME_RECORD_EXACT)
+    return true;
+
+  bool daily = record.exact.session.is_daily;
+  size_t *candidates = daily ? &scan->summary.daily_active_candidates
+                             : &scan->summary.normal_active_candidates;
+  ProfileSlot *slot = daily ? &scan->staged.daily : &scan->staged.normal;
+  ++*candidates;
+  if (*candidates == 1u) {
+    /* Record was already canonically validated by game_library_load. */
+    slot->present = true;
+    slot->retained = true;
+    slot->attempt_id = record.id;
+    slot->revision = record.revision;
+    slot->value = record.exact;
+  } else {
+    /* Revision numbers are per attempt: never guess which attempt is newer. */
+    memset(slot, 0, sizeof(*slot));
+  }
+  return true;
+}
+
+StoreStatus game_migration_preview_collection(
+    const char *root, ProfileData *candidate,
+    GameMigrationRecoverySummary *summary) {
+  if (!root || !candidate || !summary) return STORE_IO_ERROR;
+  if (!game_migration_has_artifacts(root)) return STORE_NOT_FOUND;
+  RecoveryScan scan;
+  memset(&scan, 0, sizeof(scan));
+  scan.root = root;
+  profile_defaults(&scan.staged);
+  StoreStatus status = game_library_scan(root, inspect_recovery_entry, &scan);
+  if (status != STORE_OK) return status;
+  if (!profile_validate(&scan.staged)) return STORE_CORRUPT;
+  *candidate = scan.staged;
+  *summary = scan.summary;
+  return STORE_OK;
+}
+
+StoreStatus game_migration_recover_collection(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, GameMigrationRecoverySummary *summary) {
+  if (!root || !profile_path || !backup_path || !profile || !summary)
+    return STORE_IO_ERROR;
+  StoreStatus status = missing_hot_pair(profile_path, backup_path);
+  if (status != STORE_OK) return status;
+  char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!join(intent_path, root, "profile.dat.v1.3.7-import.dat"))
+    return STORE_IO_ERROR;
+  if (store_file_exists(intent_path))
+    return STORE_INCOMPATIBLE; /* Offer the separate intent recovery path. */
+
+  ProfileData rebuilt;
+  GameMigrationRecoverySummary preview;
+  status = game_migration_preview_collection(root, &rebuilt, &preview);
+  if (status != STORE_OK) return status;
+  status = profile_save_file(profile_path, NULL, &rebuilt);
+  if (status != STORE_OK) return status;
+  ProfileData checked;
+  status = profile_load_file(profile_path, &checked);
+  if (status != STORE_OK) return status;
+  if (!profile_encoded_equal(&rebuilt, &checked)) return STORE_CORRUPT;
+  *profile = checked;
+  *summary = preview;
+  return STORE_OK;
+}
+
+StoreStatus game_migration_recover_intent(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile) {
+  if (!root || !profile_path || !backup_path || !profile)
+    return STORE_IO_ERROR;
+  StoreStatus status = missing_hot_pair(profile_path, backup_path);
+  if (status != STORE_OK) return status;
+  char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!join(intent_path, root, "profile.dat.v1.3.7-import.dat"))
+    return STORE_IO_ERROR;
+  ProfileData intent;
+  status = profile_load_file(intent_path, &intent);
+  if (status != STORE_OK) return status;
+  if (!intent.migration_pending ||
+      intent.codec_version != SUDOKURA_PROFILE_CONTENT_VERSION)
+    return STORE_CORRUPT;
+
+  unsigned char original[SOURCE_MAX];
+  size_t source_length = 0;
+  status = verify_source(root, &intent, original, &source_length);
+  if (status != STORE_OK) return status;
+  /* A verified source/intent is enough to rehydrate pending state once.
+     Failure after publication leaves a resuming pending hot profile, not a
+     fresh-default state and not a second allocation of attempt IDs. */
+  status = profile_save_file(profile_path, NULL, &intent);
+  if (status != STORE_OK) return status;
+  ProfileData restored;
+  status = profile_load_file(profile_path, &restored);
+  if (status != STORE_OK) return status;
+  if (!profile_encoded_equal(&intent, &restored)) return STORE_CORRUPT;
+  status = game_migration_upgrade(root, profile_path, backup_path,
+                                  &restored, NULL);
+  if (status != STORE_OK) return status;
+  status = game_migration_reconcile(root, profile_path, backup_path,
+                                    &restored);
+  if (status != STORE_OK) return status;
+  *profile = restored;
+  return STORE_OK;
+}
