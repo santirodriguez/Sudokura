@@ -243,8 +243,8 @@ StoreStatus game_library_save(const char *root,
     }
   } else if (status != STORE_NOT_FOUND) {
     return status;
-  } else if (store_file_exists(backup) || record->revision != 1u) {
-    /* A missing existing revision must not be treated as a new attempt. */
+  } else if (store_file_exists(backup)) {
+    /* New retention may follow many unretained hot-profile revisions. */
     return STORE_IO_ERROR;
   }
 
@@ -340,8 +340,8 @@ StoreStatus game_library_save_runtime(const char *root,
       return STORE_IO_ERROR;
   } else if (status != STORE_NOT_FOUND) {
     return status;
-  } else if (store_file_exists(backup) || record->revision != 1u) {
-    /* Missing durable state cannot be recreated as an older/newer save. */
+  } else if (store_file_exists(backup)) {
+    /* A previous-only record needs explicit recovery before reuse. */
     return STORE_IO_ERROR;
   }
 

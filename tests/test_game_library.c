@@ -552,26 +552,39 @@ static void test_recovery_copy_collision_is_lossless(void) {
   cleanup();
 }
 
-static void test_missing_record_does_not_recreate_revision(void) {
+static void test_first_archive_after_unretained_hot_revisions(void) {
   prepare();
+  ProfileSession won = make_session(SESSION_WON);
   GameAttemptId id = make_id(513);
-  ProfileSession live = make_session(SESSION_ACTIVE);
   GameLibraryRecord record;
   GameLibraryHotCache cache = {0};
-  assert(game_library_make_exact(&record, id, 2, &live, true));
-  assert(game_library_save(root, &record) == STORE_IO_ERROR);
-  assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
-  assert(game_library_make_exact(&record, id, 1, &live, true));
+
+  /* Unretained Continue checkpoints can advance the profile revision
+     before the first archive is ever created. */
+  assert(game_library_make_exact_runtime(&record, id, 17, &won, true));
   assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  assert(cache.valid && cache.revision == 17);
+  GameLibraryRecord readback;
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.revision == 17 && readback.result.status == SESSION_WON);
+
+  /* A committed record disappearing in the same live session cannot
+     silently be recreated from its stale hot cache. */
   char hex[33], path[160];
   game_attempt_id_hex(id, hex);
   (void)snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
   assert(store_remove_file(path));
-  live.session.elapsed_ms += 1000;
-  assert(game_library_make_exact(&record, id, 2, &live, true));
-  assert(game_library_save(root, &record) == STORE_IO_ERROR);
   assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
-  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+  assert(!cache.valid);
+  assert(game_library_load(root, id, &readback) == STORE_NOT_FOUND);
+
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameAttemptId second_id = make_id(514);
+  GameLibraryHotCache next_cache = {0};
+  assert(game_library_make_exact_runtime(&record, second_id, 8, &active, true));
+  assert(game_library_save_runtime(root, &record, &next_cache) == STORE_OK);
+  assert(game_library_load(root, second_id, &readback) == STORE_OK);
+  assert(readback.revision == 8 && readback.result.status == SESSION_ACTIVE);
   cleanup();
 }
 
@@ -662,7 +675,7 @@ int main(void) {
   test_mixed_record_health_and_oversized_future_envelope();
   test_thousand_record_incremental_scan();
   test_recovery_copy_collision_is_lossless();
-  test_missing_record_does_not_recreate_revision();
+  test_first_archive_after_unretained_hot_revisions();
   test_write_fault_matrix_keeps_last_known_good();
   test_corrupt_receipt_isolates_one_attempt();
   cleanup();
