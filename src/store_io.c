@@ -63,6 +63,9 @@ static FILE *store_fopen(const char *path, const char *mode) {
 }
 #endif
 
+static bool build_child_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
+                             const char *directory, const char *leaf);
+
 StoreStatus store_ensure_directory(const char *path) {
   if (!path || !path[0]) return STORE_IO_ERROR;
 #if defined(_WIN32)
