@@ -55,15 +55,23 @@ bool game_library_new_id(const char *root, const GameAttemptId *reserved,
                          size_t reserved_count, GameAttemptId *out);
 
 bool game_library_record_validate(const GameLibraryRecord *record);
+/* Only for a trusted in-memory board, never a decoded file. */
+bool game_library_record_validate_runtime(const GameLibraryRecord *record);
 bool game_library_make_exact(GameLibraryRecord *out, GameAttemptId id,
                              uint64_t revision, const ProfileSession *session,
                              bool retained);
+bool game_library_make_exact_runtime(
+    GameLibraryRecord *out, GameAttemptId id, uint64_t revision,
+    const ProfileSession *session, bool retained);
 bool game_library_make_legacy(GameLibraryRecord *out, GameAttemptId id,
                               const ProfileResult *result);
 
 bool game_library_encode(const GameLibraryRecord *record,
                          unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES],
                          size_t *size);
+bool game_library_encode_runtime(
+    const GameLibraryRecord *record,
+    unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES], size_t *size);
 StoreStatus game_library_decode(const unsigned char *bytes, size_t size,
                                 GameLibraryRecord *record);
 /* Validate the envelope and bounded metadata without reconstructing a puzzle. */
@@ -73,6 +81,22 @@ StoreStatus game_library_load(const char *root, GameAttemptId id,
                               GameLibraryRecord *record);
 StoreStatus game_library_save(const char *root,
                               const GameLibraryRecord *record);
+
+/* Per-live-slot validated on-disk bytes; initialized to zero by the owner.
+   Cold/mismatched state falls back to the full canonical disk validator. */
+typedef struct {
+  bool valid;
+  GameAttemptId id;
+  uint64_t revision;
+  SessionStatus status;
+  size_t length;
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+} GameLibraryHotCache;
+
+/* Optimizes a trusted live session without changing canonical load/recovery. */
+StoreStatus game_library_save_runtime(const char *root,
+                                      const GameLibraryRecord *record,
+                                      GameLibraryHotCache *cache);
 StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record);
 StoreStatus game_library_receipt_status(const char *root, GameAttemptId id);
