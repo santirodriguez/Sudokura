@@ -122,8 +122,18 @@ static bool allocate_ids(const char *root, ProfileData *pending) {
     if (game_attempt_id_valid(r->attempt_id)) continue;
     for (unsigned index = 0; index < 2; ++index) {
       if (r->status == SESSION_WON && same_event(r, slots[index])) {
-        r->attempt_id = slots[index]->attempt_id;
-        break;
+        /* Exactly one legacy result may describe the terminal slot. */
+        bool already_linked = false;
+        for (uint16_t j = 0; j < i; ++j)
+          if (game_attempt_id_equal(pending->results[j].attempt_id,
+                                    slots[index]->attempt_id)) {
+            already_linked = true;
+            break;
+          }
+        if (!already_linked) {
+          r->attempt_id = slots[index]->attempt_id;
+          break;
+        }
       }
     }
     if (!game_attempt_id_valid(r->attempt_id)) {
