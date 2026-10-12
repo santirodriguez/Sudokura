@@ -711,6 +711,10 @@ static void test_v2_linkage_and_v1_read_compatibility(void) {
   assert(loaded.results[0].attempt_id.high == 3);
 
   profile.codec_version = SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY;
+  /* Legacy format cannot encode an ID; reject before touching disk. */
+  assert(!profile_validate(&profile));
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_IO_ERROR);
   profile.normal.attempt_id = (GameAttemptId){0, 0};
   profile.normal.revision = 0;
   profile.normal.retained = false;
