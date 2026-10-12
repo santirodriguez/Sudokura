@@ -29,9 +29,20 @@ static unsigned long store_temp_counter = 0;
 
 #ifdef SUDOKURA_STORE_TESTING
 static StoreTestFault store_test_fault = STORE_TEST_FAULT_NONE;
+static char store_fault_parent_path[SUDOKURA_STORE_PATH_CAPACITY];
 
 void store_test_set_fault(StoreTestFault fault) {
   store_test_fault = fault;
+  store_fault_parent_path[0] = '\0';
+}
+
+void store_test_fail_parent_sync_at(const char *path) {
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  if (!path || !path[0]) return;
+  size_t length = strlen(path);
+  if (length >= sizeof(store_fault_parent_path)) return;
+  memcpy(store_fault_parent_path, path, length + 1u);
+  store_test_fault = STORE_TEST_FAULT_PARENT_SYNC;
 }
 
 static bool store_fault_is(StoreTestFault fault) {
@@ -216,7 +227,14 @@ bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
 static bool sync_parent_directory(const char *path) {
 #ifdef SUDOKURA_STORE_TESTING
   /* The rename may have succeeded even when its directory sync fails. */
-  if (store_fault_is(STORE_TEST_FAULT_PARENT_SYNC)) return false;
+  if (store_fault_is(STORE_TEST_FAULT_PARENT_SYNC) &&
+      (!store_fault_parent_path[0] ||
+       strcmp(store_fault_parent_path, path) == 0)) {
+    /* A one-shot fault after the selected rename, not during backup write. */
+    store_test_fault = STORE_TEST_FAULT_NONE;
+    store_fault_parent_path[0] = '\0';
+    return false;
+  }
 #endif
 #if defined(_WIN32)
   (void)path;

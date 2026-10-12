@@ -960,6 +960,136 @@ static void test_unacknowledged_immutable_source_replays_safely(void) {
   cleanup();
 }
 
+static void test_profile_backup_recovery_preserves_corrupt_primary(void) {
+  prepare();
+  ProfileData old = legacy_profile();
+  assert(profile_save_file(primary, backup, &old) == STORE_OK);
+  ProfileData changed = old;
+  changed.preferences.language = LANG_ES;
+  assert(profile_save_file(primary, backup, &changed) == STORE_OK);
+  unsigned char corrupted[16384], checked[16384];
+  size_t original_size = 0, count = 0;
+  assert(store_read_file(primary, corrupted, sizeof(corrupted),
+                         &original_size) == STORE_OK);
+  assert(original_size > 20u);
+  corrupted[original_size - 1u] ^= 0x7bu;
+  assert(store_atomic_write(primary, NULL, corrupted,
+                            original_size) == STORE_OK);
+  ProfileData rejected;
+  assert(profile_load_file(primary, &rejected) == STORE_CORRUPT);
+
+  const char *occupied = ".sudokura-migration-test/profile.dat.pre-recovery";
+  const char *evidence = ".sudokura-migration-test/profile.dat.pre-recovery.1";
+  const char *next = ".sudokura-migration-test/profile.dat.pre-recovery.2";
+  const unsigned char marker[] = "older-evidence";
+  assert(store_atomic_write(occupied, NULL, marker,
+                            sizeof(marker) - 1u) == STORE_OK);
+  ProfileData restored = changed;
+  store_test_fail_parent_sync_at(evidence);
+  assert(profile_recover_previous(primary, backup, &restored) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_encoded_equal(&restored, &changed));
+  assert(profile_load_file(primary, &rejected) == STORE_CORRUPT);
+  assert(store_read_file(evidence, checked, sizeof(checked),
+                         &count) == STORE_OK);
+  assert(count == original_size &&
+         memcmp(checked, corrupted, count) == 0);
+  assert(store_file_exists(backup));
+
+  assert(profile_recover_previous(primary, backup, &restored) == STORE_OK);
+  assert(profile_encoded_equal(&restored, &old));
+  assert(store_read_file(evidence, checked, sizeof(checked),
+                         &count) == STORE_OK);
+  assert(count == original_size &&
+         memcmp(checked, corrupted, count) == 0);
+  assert(store_read_file(occupied, checked, sizeof(checked),
+                         &count) == STORE_OK);
+  assert(count == sizeof(marker) - 1u &&
+         memcmp(checked, marker, count) == 0);
+  assert(!store_file_exists(next));
+  ProfileData disk;
+  assert(profile_load_file(primary, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &old));
+
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_recover_previous(primary, backup, &restored) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(!store_file_exists(next));
+  cleanup();
+}
+
+static void test_profile_backup_recovery_preserves_empty_primary(void) {
+  prepare();
+  ProfileData previous = legacy_profile();
+  assert(profile_save_file(primary, backup, &previous) == STORE_OK);
+  ProfileData changed = previous;
+  changed.preferences.language = LANG_ES;
+  assert(profile_save_file(primary, backup, &changed) == STORE_OK);
+  /* A physically empty primary is still evidence and must not be discarded. */
+  FILE *empty = fopen(primary, "wb");
+  assert(empty != NULL && fclose(empty) == 0);
+  ProfileData recovered = changed;
+  assert(profile_recover_previous(primary, backup, &recovered) == STORE_OK);
+  assert(profile_encoded_equal(&recovered, &previous));
+  unsigned char bytes[16];
+  size_t count = 1;
+  const char *preserved = ".sudokura-migration-test/profile.dat.pre-recovery";
+  assert(store_read_file(preserved, bytes, sizeof(bytes), &count) == STORE_OK);
+  assert(count == 0);
+  cleanup();
+}
+
+static void test_terminal_reconcile_after_unacknowledged_profile_replace(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData live;
+  assert(profile_load_file(primary, &live) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &live, NULL) ==
+         STORE_OK);
+  ProfileData before = live;
+  GameAttemptId id = live.normal.attempt_id;
+  ProfileSession won = live.normal.value;
+  for (int cell = 0; cell < 81; ++cell) {
+    won.session.game.puzzle[cell] = won.session.game.solution[cell];
+    won.session.game.notes[cell] = 0;
+  }
+  won.session.status = SESSION_WON;
+  won.session.elapsed_ms += UINT64_C(1500);
+  won.undo_count = 0;
+  won.redo_count = 0;
+  assert(session_validate(&won.session));
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, id, live.normal.revision + 1u,
+                                 &won, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  store_test_fail_parent_sync_at(primary);
+  assert(game_migration_reconcile(root, primary, backup, &live) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_encoded_equal(&live, &before));
+
+  ProfileData committed, prior;
+  assert(profile_load_file(primary, &committed) == STORE_OK);
+  assert(profile_load_file(backup, &prior) == STORE_OK);
+  assert(prior.normal.revision == before.normal.revision);
+  assert(committed.normal.value.session.status == SESSION_WON);
+  assert(committed.normal.revision == before.normal.revision + 1u);
+  assert(committed.result_count == before.result_count + 1u);
+  assert(game_attempt_id_equal(
+             committed.results[committed.result_count - 1u].attempt_id, id));
+  store_test_fail_parent_sync_at(primary);
+  assert(game_migration_reconcile(root, primary, backup, &committed) ==
+         STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(committed.result_count == before.result_count + 1u);
+  ProfileData still_prior;
+  assert(profile_load_file(backup, &still_prior) == STORE_OK);
+  assert(profile_encoded_equal(&still_prior, &prior));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -978,6 +1108,9 @@ int main(void) {
   test_repeated_terminal_summaries_are_distinct_attempts();
   test_legacy_v1_rich_state_survives_migration_and_recovery();
   test_unacknowledged_immutable_source_replays_safely();
+  test_profile_backup_recovery_preserves_corrupt_primary();
+  test_profile_backup_recovery_preserves_empty_primary();
+  test_terminal_reconcile_after_unacknowledged_profile_replace();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

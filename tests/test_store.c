@@ -172,6 +172,20 @@ static void test_parent_sync_failure_after_replace(void) {
   assert_contents(backup_path, "durable-previous");
 }
 
+static void test_targeted_parent_sync_after_backup_rotation(void) {
+  cleanup();
+  const unsigned char before[] = "durable";
+  const unsigned char after[] = "new-commit";
+  assert(store_atomic_write(active_path, NULL, before,
+                            sizeof(before) - 1u) == STORE_OK);
+  store_test_fail_parent_sync_at(active_path);
+  assert(store_atomic_write(active_path, backup_path, after,
+                            sizeof(after) - 1u) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert_contents(active_path, "new-commit");
+  assert_contents(backup_path, "durable");
+}
+
 static void test_utf8_path(void) {
   const unsigned char value[] = "utf8-path";
   assert(executable_unicode_path[0]);
@@ -283,6 +297,7 @@ int main(int argc, char **argv) {
   test_atomic_backup();
   test_faults_preserve_active();
   test_parent_sync_failure_after_replace();
+  test_targeted_parent_sync_after_backup_rotation();
   test_utf8_path();
 #if !defined(_WIN32)
   test_permission_failure();

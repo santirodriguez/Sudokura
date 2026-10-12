@@ -61,6 +61,8 @@ typedef enum {
 } StoreTestFault;
 
 void store_test_set_fault(StoreTestFault fault);
+/* Test-only single-path post-rename failure, after any backup is written. */
+void store_test_fail_parent_sync_at(const char *path);
 bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
                                const char *path,
                                unsigned long process_id,

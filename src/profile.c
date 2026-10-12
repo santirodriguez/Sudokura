@@ -927,12 +927,70 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
 
 bool profile_encoded_equal(const ProfileData *a, const ProfileData *b);
 
+/* Explicit recovery must preserve the current primary, even if invalid,
+   before replacing it with a canonically validated earlier profile. */
+static StoreStatus preserve_profile_pre_recovery(const char *profile_path) {
+  unsigned char original[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+  size_t original_size = 0;
+  StoreStatus status = store_read_file(profile_path, original,
+                                       sizeof(original), &original_size);
+  if (status == STORE_NOT_FOUND) return STORE_OK;
+  if (status != STORE_OK) return status;
+
+  size_t path_size = strlen(profile_path);
+  for (unsigned index = 0; index < 16u; ++index) {
+    char suffix[32];
+    int count = index == 0
+        ? snprintf(suffix, sizeof(suffix), ".pre-recovery")
+        : snprintf(suffix, sizeof(suffix), ".pre-recovery.%u", index);
+    if (count <= 0 || (size_t)count >= sizeof(suffix) ||
+        (size_t)count >= SUDOKURA_STORE_PATH_CAPACITY ||
+        path_size > SUDOKURA_STORE_PATH_CAPACITY - (size_t)count - 1u)
+      return STORE_IO_ERROR;
+    char copy[SUDOKURA_STORE_PATH_CAPACITY];
+    memcpy(copy, profile_path, path_size);
+    memcpy(copy + path_size, suffix, (size_t)count + 1u);
+
+    unsigned char checked[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+    size_t checked_size = 0;
+    status = store_read_file(copy, checked, sizeof(checked), &checked_size);
+    if (status == STORE_OK) {
+      if (checked_size == original_size &&
+          memcmp(checked, original, original_size) == 0)
+        return STORE_OK; /* Reuse a matching prior interrupted copy. */
+      continue; /* Never replace unrelated recovery evidence. */
+    }
+    if (status != STORE_NOT_FOUND) return status;
+    status = store_copy_once_allow_empty(profile_path, copy);
+    if (status != STORE_OK) return status;
+    status = store_read_file(copy, checked, sizeof(checked), &checked_size);
+    if (status != STORE_OK) return status;
+    if (checked_size != original_size ||
+        memcmp(checked, original, original_size) != 0)
+      return STORE_CORRUPT;
+    return STORE_OK;
+  }
+  return STORE_IO_ERROR; /* No slot remains; keep the original profile. */
+}
+
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
                                      ProfileData *profile) {
   if (!profile_path || !profile_backup_path || !profile) return STORE_IO_ERROR;
   ProfileData recovered;
   StoreStatus status = profile_load_file(profile_backup_path, &recovered);
+  if (status != STORE_OK) return status;
+
+  ProfileData current;
+  status = profile_load_file(profile_path, &current);
+  if (status == STORE_OK && profile_encoded_equal(&current, &recovered)) {
+    *profile = current;
+    return STORE_OK; /* No new copies on an identical recovery retry. */
+  }
+  if (status != STORE_OK && status != STORE_NOT_FOUND &&
+      status != STORE_CORRUPT && status != STORE_INCOMPATIBLE)
+    return status;
+  status = preserve_profile_pre_recovery(profile_path);
   if (status != STORE_OK) return status;
   status = profile_save_file(profile_path, NULL, &recovered);
   if (status != STORE_OK) return status;

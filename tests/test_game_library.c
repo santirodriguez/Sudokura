@@ -1152,6 +1152,69 @@ static void test_unacknowledged_record_commit_is_idempotent(void) {
   cleanup();
 }
 
+static void test_unacknowledged_revision_retains_previous_copy(void) {
+  prepare();
+  GameAttemptId id = make_id(744);
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameLibraryRecord record, previous;
+  assert(game_library_make_exact(&record, id, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  char hex[33], primary[SUDOKURA_STORE_PATH_CAPACITY];
+  char backup[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(id, hex);
+  int n = snprintf(primary, sizeof(primary), "%s/games/%s.dat", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(primary));
+  n = snprintf(backup, sizeof(backup), "%s/games/%s.dat.bak", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(backup));
+
+  active.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &active, true));
+  store_test_fail_parent_sync_at(primary);
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_load(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 2);
+  assert(store_file_exists(backup));
+
+  unsigned char before[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  unsigned char after[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t before_size = 0, after_size = 0;
+  assert(store_read_file(backup, before, sizeof(before),
+                         &before_size) == STORE_OK);
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(store_read_file(backup, after, sizeof(after),
+                         &after_size) == STORE_OK);
+  assert(before_size == after_size &&
+         memcmp(before, after, before_size) == 0);
+  assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1);
+  cleanup();
+}
+
+static void test_unacknowledged_delete_receipt_blocks_resurrection(void) {
+  prepare();
+  GameAttemptId id = make_id(745);
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, id, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  char hex[33], receipt[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(id, hex);
+  int n = snprintf(receipt, sizeof(receipt), "%s/games/%s.deleted", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(receipt));
+
+  store_test_fail_parent_sync_at(receipt);
+  assert(game_library_delete(root, id) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_receipt_status(root, id) == STORE_OK);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  assert(game_library_delete(root, id) == STORE_OK);
+  assert(game_library_receipt_status(root, id) == STORE_OK);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -1180,6 +1243,8 @@ int main(void) {
   test_future_receipt_versions_fail_closed();
   test_corrupt_previous_copy_does_not_replace_good_primary();
   test_unacknowledged_record_commit_is_idempotent();
+  test_unacknowledged_revision_retains_previous_copy();
+  test_unacknowledged_delete_receipt_blocks_resurrection();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
