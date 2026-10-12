@@ -10,6 +10,7 @@
 
 #if defined(_WIN32)
 #include <direct.h>
+#include <windows.h>
 #define test_rmdir _rmdir
 #else
 #include <unistd.h>
@@ -18,12 +19,23 @@
 
 static const char *root = ".sudokura-library-test";
 
-/* C11 wall clock: used only for diagnostic measurements, not flaky limits. */
+/* Diagnostic elapsed time only: no machine-dependent timing assertions. */
 static double wall_clock_ms(void) {
+#if defined(_WIN32)
+  /* MinGW targets using MSVCRT may not expose C11 timespec_get. */
+  LARGE_INTEGER frequency, counter;
+  if (!QueryPerformanceFrequency(&frequency) ||
+      frequency.QuadPart <= 0 ||
+      !QueryPerformanceCounter(&counter))
+    return -1.0;
+  return 1000.0 * (double)counter.QuadPart /
+         (double)frequency.QuadPart;
+#else
   struct timespec now;
   if (timespec_get(&now, TIME_UTC) != TIME_UTC) return -1.0;
   return (double)now.tv_sec * 1000.0 +
          (double)now.tv_nsec / 1000000.0;
+#endif
 }
 
 static GameAttemptId make_id(uint64_t number) {
