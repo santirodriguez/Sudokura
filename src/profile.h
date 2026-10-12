@@ -8,13 +8,19 @@
 #include <stddef.h>
 
 #define SUDOKURA_PROFILE_CONTAINER_VERSION 2u
-#define SUDOKURA_PROFILE_CONTENT_VERSION 1u
+#define SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY 1u
+#define SUDOKURA_PROFILE_CONTENT_VERSION 2u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY 1u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_V2 2u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION 3u
 #define SUDOKURA_SESSION_CONTENT_VERSION_LEGACY 2u
 #define SUDOKURA_SESSION_CONTENT_VERSION 3u
 #define SUDOKURA_RESULT_LIMIT 128u
+
+typedef struct {
+  uint64_t high;
+  uint64_t low;
+} GameAttemptId;
 
 typedef GameEdit ProfileEdit;
 
@@ -29,6 +35,9 @@ typedef struct {
 
 typedef struct {
   bool present;
+  bool retained;
+  GameAttemptId attempt_id;
+  uint64_t revision;
   ProfileSession value;
 } ProfileSlot;
 
@@ -46,14 +55,20 @@ typedef struct {
   uint16_t daily_year;
   uint8_t daily_month;
   uint8_t daily_day;
+  GameAttemptId attempt_id;
+  bool practice;
 } ProfileResult;
 
 typedef struct {
+  uint16_t codec_version; /* Legacy source stays legacy until safe upgrade. */
   Preferences preferences;
   ProfileSlot normal;
   ProfileSlot daily;
   uint16_t result_count;
   ProfileResult results[SUDOKURA_RESULT_LIMIT];
+  bool migration_pending;
+  uint32_t migration_source_length;
+  uint32_t migration_source_crc;
 } ProfileData;
 
 typedef struct {
