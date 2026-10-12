@@ -230,6 +230,9 @@ static StoreStatus migrate_slot(const char *root, ProfileSlot *slot) {
   return game_library_load(root, expected.id, &on_disk);
 }
 
+static bool same_result_metadata(const ProfileResult *a,
+                                 const ProfileResult *b);
+
 static StoreStatus migrate_results(const char *root, ProfileData *pending) {
   for (uint16_t i = 0; i < pending->result_count;) {
     ProfileResult *r = &pending->results[i];
