@@ -205,6 +205,86 @@ static void test_receipt_survives_source_rollback(void) {
   cleanup();
 }
 
+static void test_durable_delete_receipt_survives_profile_write_failures(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData baseline;
+  assert(profile_load_file(primary, &baseline) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &baseline, NULL) ==
+         STORE_OK);
+  assert_upgraded(&baseline);
+
+  GameAttemptId daily_id = baseline.daily.attempt_id;
+  GameAttemptId normal_id = baseline.normal.attempt_id;
+  GameAttemptId unrelated_result = baseline.results[1].attempt_id;
+  assert(game_library_delete(root, daily_id) == STORE_OK);
+  assert(game_library_receipt_status(root, daily_id) == STORE_OK);
+
+  /* Deletion is already logically committed, but the hot profile is stale. */
+  const StoreTestFault faults[] = {
+      STORE_TEST_FAULT_OPEN, STORE_TEST_FAULT_DURING_WRITE,
+      STORE_TEST_FAULT_NO_SPACE, STORE_TEST_FAULT_SYNC,
+      STORE_TEST_FAULT_REPLACE
+  };
+  for (size_t i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) {
+    ProfileData attempted = baseline;
+    store_test_set_fault(faults[i]);
+    assert(game_migration_reconcile(root, primary, backup, &attempted) ==
+           STORE_IO_ERROR);
+    store_test_set_fault(STORE_TEST_FAULT_NONE);
+
+    /* In-memory and on-disk snapshots remain unchanged on failure. */
+    assert(profile_encoded_equal(&attempted, &baseline));
+    ProfileData disk;
+    assert(profile_load_file(primary, &disk) == STORE_OK);
+    assert(profile_encoded_equal(&disk, &baseline));
+    assert(game_library_receipt_status(root, daily_id) == STORE_OK);
+    assert(game_library_load(root, daily_id, &(GameLibraryRecord){0}) ==
+           STORE_NOT_FOUND);
+    GameLibraryRecord valid;
+    assert(game_library_load(root, normal_id, &valid) == STORE_OK);
+    assert(game_library_load(root, unrelated_result, &valid) == STORE_OK);
+  }
+
+  ProfileData reconciled = baseline;
+  assert(game_migration_reconcile(root, primary, backup, &reconciled) ==
+         STORE_OK);
+  assert(!reconciled.daily.present);
+  assert(reconciled.normal.present);
+  assert(game_attempt_id_equal(reconciled.normal.attempt_id, normal_id));
+  assert(reconciled.result_count == 1);
+  assert(game_attempt_id_equal(reconciled.results[0].attempt_id,
+                               unrelated_result));
+  assert(preferences_validate(&reconciled.preferences));
+  assert(reconciled.preferences.language == baseline.preferences.language);
+  assert(reconciled.preferences.music_volume ==
+         baseline.preferences.music_volume);
+  ProfileData disk;
+  assert(profile_load_file(primary, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &reconciled));
+
+  /* An idempotent second replay must not rotate copies or write at all. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_migration_reconcile(root, primary, backup, &reconciled) ==
+         STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &reconciled));
+
+  /* Even restoring the immutable old-format predecessor cannot resurrect it. */
+  revert_to_immutable_source();
+  assert(profile_load_file(primary, &disk) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &disk, NULL) ==
+         STORE_OK);
+  assert(!disk.daily.present && disk.normal.present);
+  assert(disk.result_count == 1);
+  assert(game_attempt_id_equal(disk.normal.attempt_id, normal_id));
+  assert(game_attempt_id_equal(disk.results[0].attempt_id,
+                               unrelated_result));
+  assert(game_library_receipt_status(root, daily_id) == STORE_OK);
+  cleanup();
+}
+
 static void test_failure_preserves_source_and_retry(void) {
   prepare();
   write_legacy_profile();
@@ -782,6 +862,7 @@ int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
   test_receipt_survives_source_rollback();
+  test_durable_delete_receipt_survives_profile_write_failures();
   test_failure_preserves_source_and_retry();
   test_immutable_preimage_collision();
   test_record_first_failure_recovers_terminal_and_recent_result();
