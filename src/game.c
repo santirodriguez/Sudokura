@@ -493,9 +493,24 @@ GameGenerationResult game_generate_difficulty(
   return GAME_GENERATION_EXHAUSTED;
 }
 
+#ifdef SUDOKURA_GAME_TESTING
+static uint64_t game_generation_count;
+
+void game_test_reset_generation_count(void) {
+  game_generation_count = 0;
+}
+
+uint64_t game_test_generation_count(void) {
+  return game_generation_count;
+}
+#endif
+
 bool game_new_difficulty_revision(Game *game, uint64_t seed,
                                   GameDifficulty difficulty,
                                   uint32_t revision) {
+#ifdef SUDOKURA_GAME_TESTING
+  ++game_generation_count;
+#endif
   return game_generate_difficulty(game, seed, difficulty, revision, NULL) ==
          GAME_GENERATION_OK;
 }
