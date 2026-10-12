@@ -12,5 +12,10 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
 
 /* If hot profile copies are lost, collection artifacts prevent fresh defaults. */
 bool game_migration_has_artifacts(const char *root);
+/* Apply newer durable records before publishing hot Continue state. */
+StoreStatus game_migration_reconcile(const char *root,
+                                     const char *profile_path,
+                                     const char *backup_path,
+                                     ProfileData *profile);
 
 #endif
