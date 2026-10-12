@@ -507,6 +507,10 @@ static bool persistence_recover_previous(Persistence*p){
     status=game_migration_upgrade(
         p->profile_directory,p->profile_path,p->profile_backup_path,
         &recovered,NULL);
+  if(status==STORE_OK)
+    status=game_migration_reconcile(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &recovered);
   p->profile_status=status;
   if(status!=STORE_OK)return false;
   p->profile=recovered;
@@ -580,6 +584,9 @@ static void persistence_init_base(Persistence*p){
     bool upgraded=false;
     p->profile_status=game_migration_upgrade(
         base,p->profile_path,p->profile_backup_path,&p->profile,&upgraded);
+    if(p->profile_status==STORE_OK)
+      p->profile_status=game_migration_reconcile(
+          base,p->profile_path,p->profile_backup_path,&p->profile);
     (void)upgraded;
   }
   (void)migrated;
