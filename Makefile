@@ -42,7 +42,7 @@ tests/test_save_policy: tests/test_save_policy.c src/save_policy.c src/save_poli
 tests/test_profile: tests/test_profile.c src/profile.c src/profile.h src/session.c src/session.h src/store_io.c src/store_io.h src/store_status.h src/game.c src/game.h src/i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_profile.c src/profile.c src/session.c src/store_io.c src/game.c src/human.c -o $@
 tests/test_game_library: tests/test_game_library.c src/game_library.c src/game_library_codec.c src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_game_library.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING -DSUDOKURA_GAME_TESTING tests/test_game_library.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
 tests/test_game_migration: tests/test_game_migration.c $(LIBRARY) src/game_migration.h src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_game_migration.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
 tests/test_live_save: tests/test_live_save.c src/profile.c src/profile.h src/save_policy.c src/save_policy.h src/session.c src/session.h src/store_io.c src/store_io.h src/store_status.h src/game.c src/game.h src/i18n.h
