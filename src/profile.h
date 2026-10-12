@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define SUDOKURA_PROFILE_CONTAINER_VERSION 2u
 #define SUDOKURA_PROFILE_CONTENT_VERSION 1u
@@ -81,6 +82,15 @@ bool profile_record_result(ProfileData *profile, const ProfileResult *result,
                            bool *inserted);
 ProfileResultSummary profile_result_summary(const ProfileData *profile,
                                             const ProfileResult *reference);
+
+bool profile_result_is_valid(const ProfileResult *result);
+/* Shared bounded codec for independent persistent game records. */
+bool profile_session_encode_blob(const ProfileSession *session,
+                                 unsigned char *bytes, size_t capacity,
+                                 size_t *size_out);
+StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
+                                        bool expected_daily,
+                                        ProfileSession *session);
 
 StoreStatus profile_save_file(const char *path, const char *backup_path,
                               const ProfileData *profile);
