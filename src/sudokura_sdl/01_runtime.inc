@@ -444,10 +444,11 @@ static void refresh_result_summary(Persistence*p,const SessionState*session,
 }
 
 static bool record_terminal_result(Persistence*p,const SessionState*session,
-                                   bool assisted,UI*ui){
+                                   bool assisted,GameAttemptId id,UI*ui){
   if(!p||!p->enabled||!session||session->status==SESSION_ACTIVE)return false;
   ProfileResult result;
   if(!profile_result_from_session_state(session,assisted,&result))return false;
+  result.attempt_id=id;
   bool inserted=false;
   if(!profile_record_result(&p->profile,&result,&inserted))return false;
   if(inserted)
@@ -731,7 +732,8 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   AppAction continue_action={.kind=APP_ACTION_CONTINUE};
   (void)app_apply_action(game,ui,continue_action,elapsed_time(ui));
   if(s->status!=SESSION_ACTIVE)
-    (void)record_terminal_result(p,s,slot->value.assisted,ui);
+    (void)record_terminal_result(p,s,slot->value.assisted,
+                                slot->attempt_id,ui);
   refresh_resume_info(p,ui);
   ui->has_session=normal_continue;
 }
