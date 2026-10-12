@@ -298,7 +298,7 @@ static bool apply_logical_hint_action(Game*game,UI*ui){
   AppActionOutcome outcome=app_apply_action(
       game,ui,action,app_clock_elapsed_s(ui,action_ms));
   bool changed=apply_action_outcome(ui,outcome,action_ms);
-  if(changed){
+  if(outcome.changed){
     ui->assisted=true;
     clear_hint_preview(ui);
   }
