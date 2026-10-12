@@ -805,6 +805,43 @@ static void test_v2_maximum_result_payload(void) {
   cleanup();
 }
 
+static void test_oversized_future_profile_headers(void) {
+  cleanup();
+  ProfileData original;
+  profile_defaults(&original);
+  original.preferences.language = LANG_ES;
+  assert(profile_save_file(profile_path, NULL, &original) == STORE_OK);
+  unsigned char valid[16384];
+  size_t valid_size = 0;
+  assert(store_read_file(profile_path, valid, sizeof(valid),
+                         &valid_size) == STORE_OK);
+  assert(valid_size >= LEGACY_HEADER_SIZE + 2u);
+
+  unsigned char oversized[16384u + 1u] = {0};
+  memcpy(oversized, valid, valid_size);
+  ProfileData loaded = original;
+  put_u16_test(oversized + 8, SUDOKURA_PROFILE_CONTAINER_VERSION + 1u);
+  assert(store_atomic_write(profile_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(profile_load_file(profile_path, &loaded) == STORE_INCOMPATIBLE);
+  assert(profile_encoded_equal(&loaded, &original));
+
+  put_u16_test(oversized + 8, SUDOKURA_PROFILE_CONTAINER_VERSION);
+  put_u16_test(oversized + LEGACY_HEADER_SIZE, UINT16_C(99));
+  assert(store_atomic_write(profile_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(profile_load_file(profile_path, &loaded) == STORE_INCOMPATIBLE);
+  assert(profile_encoded_equal(&loaded, &original));
+
+  put_u16_test(oversized + LEGACY_HEADER_SIZE,
+               SUDOKURA_PROFILE_CONTENT_VERSION);
+  assert(store_atomic_write(profile_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(profile_load_file(profile_path, &loaded) == STORE_CORRUPT);
+  assert(profile_encoded_equal(&loaded, &original));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_profile_roundtrip();
@@ -827,6 +864,7 @@ int main(void) {
   test_v2_linkage_and_v1_read_compatibility();
   test_attempt_dedup_and_recent_practice();
   test_v2_maximum_result_payload();
+  test_oversized_future_profile_headers();
   cleanup();
   puts("v1.3 profile model, recovery, slots, bounds, and v1.2 fixture migration passed");
   return 0;

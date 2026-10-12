@@ -384,6 +384,116 @@ static void test_terminal_hot_retry_is_immutable(void) {
   cleanup();
 }
 
+typedef struct {
+  unsigned healthy, damaged, incompatible;
+  bool recovery_available;
+} MixedScanProbe;
+
+static bool mixed_scan_callback(const GameLibraryEntry *entry, void *context) {
+  MixedScanProbe *probe = (MixedScanProbe *)context;
+  if (entry->status == STORE_OK) {
+    ++probe->healthy;
+  } else if (entry->status == STORE_CORRUPT) {
+    ++probe->damaged;
+    if (entry->previous_status == STORE_OK)
+      probe->recovery_available = true;
+  } else if (entry->status == STORE_INCOMPATIBLE) {
+    ++probe->incompatible;
+  } else {
+    assert(!"unexpected catalogue status");
+  }
+  return true;
+}
+
+static void test_mixed_record_health_and_oversized_future_envelope(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameLibraryRecord record;
+  GameAttemptId good = make_id(800), broken = make_id(801);
+  GameAttemptId future = make_id(802);
+  assert(game_library_make_exact(&record, good, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_make_exact(&record, broken, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, broken, 2, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  char broken_path[128], future_path[128];
+  (void)snprintf(broken_path, sizeof(broken_path),
+                 "%s/games/123456789abcdef00000000000000321.dat", root);
+  (void)snprintf(future_path, sizeof(future_path),
+                 "%s/games/123456789abcdef00000000000000322.dat", root);
+  unsigned char existing[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t current = 0;
+  assert(store_read_file(broken_path, existing, sizeof(existing),
+                         &current) == STORE_OK);
+  existing[current - 1u] ^= 0x40u;
+  assert(store_atomic_write(broken_path, NULL, existing, current) == STORE_OK);
+
+  unsigned char oversized[SUDOKURA_GAME_RECORD_MAX_BYTES + 16u] = {0};
+  memcpy(oversized, "SUDOGAME", 8u);
+  oversized[8] = 2u; /* recognized, unsupported container */
+  assert(store_atomic_write(future_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
+  MixedScanProbe probe = {0};
+  assert(game_library_scan(root, mixed_scan_callback, &probe) == STORE_OK);
+  assert(probe.healthy == 1 && probe.damaged == 1 &&
+         probe.incompatible == 1 && probe.recovery_available);
+  assert(game_library_load(root, good, &record) == STORE_OK);
+  assert(record.revision == 1);
+
+  oversized[8] = 1u;
+  oversized[20] = 2u; /* recognized, unsupported payload */
+  assert(store_atomic_write(future_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
+  oversized[20] = 1u; /* known oversized format is corrupt */
+  assert(store_atomic_write(future_path, NULL, oversized,
+                            sizeof(oversized)) == STORE_OK);
+  assert(game_library_load(root, future, &record) == STORE_CORRUPT);
+  assert(game_library_recover_previous(root, broken, &record) == STORE_OK);
+  assert(record.revision == 1);
+  cleanup();
+}
+
+static bool count_metadata(const GameLibraryEntry *entry, void *context) {
+  size_t *count = (size_t *)context;
+  assert(entry->status == STORE_OK);
+  assert(entry->kind == GAME_RECORD_LEGACY_SUMMARY);
+  ++*count;
+  return true;
+}
+
+static void test_thousand_record_incremental_scan(void) {
+  prepare();
+  ProfileResult result = {
+      .seed = UINT64_C(10000),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_EASY,
+      .mode = MODE_CLASSIC,
+      .status = SESSION_WON,
+      .elapsed_ms = UINT64_C(12000),
+  };
+  for (uint64_t i = 0; i < UINT64_C(1000); ++i) {
+    GameLibraryRecord record;
+    result.seed = UINT64_C(10000) + i;
+    assert(game_library_make_legacy(&record, make_id(10000 + i), &result));
+    assert(game_library_save(root, &record) == STORE_OK);
+  }
+  size_t count = 0;
+  assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
+  assert(count == 1000u);
+  count = 0;
+  /* User cancellation must not allocate a list or scan the entire folder. */
+  assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
+  assert(count == 1000u);
+  ScanProbe cancel = {0, false, true};
+  assert(game_library_scan(root, scan_callback, &cancel) == STORE_CANCELLED);
+  assert(cancel.count == 1u);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -398,6 +508,8 @@ int main(void) {
   test_live_checkpoint_avoids_puzzle_regeneration();
   test_terminal_hot_retry_is_immutable();
   test_hot_write_failure_keeps_last_good_revision();
+  test_mixed_record_health_and_oversized_future_envelope();
+  test_thousand_record_incremental_scan();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
