@@ -70,7 +70,7 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
   if (!p || !g || !ui ||
       (p->save_policy.dirty_mask & dirty_mask) == 0)
     return SAVE_GATE_SAVED;
-  if (persistence_flush(p)) return SAVE_GATE_SAVED;
+  if (persistence_retry_current(p, game, ui)) return SAVE_GATE_SAVED;
 
   bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
   for (;;) {
@@ -87,7 +87,7 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
       if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
       return SAVE_GATE_DISCARD;
     }
-    if (persistence_flush(p)) {
+    if (persistence_retry_current(p, game, ui)) {
       if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
       return SAVE_GATE_SAVED;
     }
