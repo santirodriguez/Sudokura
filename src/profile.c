@@ -810,6 +810,15 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   StoreStatus status = profile_load_file(profile_path, profile);
   if (status != STORE_NOT_FOUND) return status;
 
+  /* A missing primary is not a first launch while a previous copy exists.
+     Leave recovery to the caller so it can ask before restoring older state.
+     Even an unreadable/incompatible previous copy must block fresh migration. */
+  if (profile_backup_path && store_file_exists(profile_backup_path)) {
+    ProfileData previous;
+    status = profile_load_file(profile_backup_path, &previous);
+    return status == STORE_OK ? STORE_NOT_FOUND : status;
+  }
+
   ProfileData candidate;
   profile_defaults(&candidate);
   bool imported_any = false;
