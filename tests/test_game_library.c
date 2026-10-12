@@ -332,6 +332,36 @@ static void test_live_checkpoint_avoids_puzzle_regeneration(void) {
   cleanup();
 }
 
+static void test_hot_write_failure_keeps_last_good_revision(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(704);
+  GameLibraryHotCache cache = {0};
+  GameLibraryRecord record;
+  assert(game_library_make_exact_runtime(&record, id, 1, &live, true));
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact_runtime(&record, id, 2, &live, true));
+  game_test_reset_generation_count();
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(cache.valid && cache.revision == 1);
+  assert(game_test_generation_count() == 0);
+
+  GameLibraryRecord from_disk;
+  assert(game_library_load(root, id, &from_disk) == STORE_OK);
+  assert(from_disk.revision == 1);
+  game_test_reset_generation_count();
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  assert(cache.revision == 2);
+  assert(game_test_generation_count() == 0);
+  assert(game_library_load(root, id, &from_disk) == STORE_OK);
+  assert(from_disk.revision == 2);
+  cleanup();
+}
+
 static void test_terminal_hot_retry_is_immutable(void) {
   prepare();
   ProfileSession won = make_session(SESSION_WON);
@@ -367,6 +397,7 @@ int main(void) {
   test_unbounded_wins_and_scan_cancellation();
   test_live_checkpoint_avoids_puzzle_regeneration();
   test_terminal_hot_retry_is_immutable();
+  test_hot_write_failure_keeps_last_good_revision();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
