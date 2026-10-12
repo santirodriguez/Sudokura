@@ -59,6 +59,8 @@
 #include "i18n.h"
 #include "session.h"
 #include "profile.h"
+#include "game_library.h"
+#include "game_migration.h"
 #include "save_policy.h"
 #include "seed.h"
 #include "store_io.h"
@@ -500,6 +502,10 @@ static bool persistence_recover_previous(Persistence*p){
   ProfileData recovered;
   StoreStatus status=profile_recover_previous(
       p->profile_path,p->profile_backup_path,&recovered);
+  if(status==STORE_OK)
+    status=game_migration_upgrade(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &recovered,NULL);
   p->profile_status=status;
   if(status!=STORE_OK)return false;
   p->profile=recovered;
@@ -549,6 +555,15 @@ static void persistence_init_base(Persistence*p){
     return;
   }
 
+  /* Collection evidence means missing hot copies are not a fresh install. */
+  if(!store_file_exists(p->profile_path) &&
+     !store_file_exists(p->profile_backup_path) &&
+     game_migration_has_artifacts(base)){
+    p->profile_status=STORE_IO_ERROR;
+    SDL_free(base);
+    return;
+  }
+
   ProfileLegacyPaths legacy={
     .session_path=p->session_path,
     .preferences_path=p->preferences_path,
@@ -560,6 +575,12 @@ static void persistence_init_base(Persistence*p){
   bool migrated=false;
   p->profile_status=profile_load_or_migrate_v12(
       p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated);
+  if(p->profile_status==STORE_OK){
+    bool upgraded=false;
+    p->profile_status=game_migration_upgrade(
+        base,p->profile_path,p->profile_backup_path,&p->profile,&upgraded);
+    (void)upgraded;
+  }
   (void)migrated;
   SDL_free(base);
   if(p->profile_status!=STORE_OK)return;
