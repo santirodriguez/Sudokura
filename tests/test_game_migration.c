@@ -623,6 +623,161 @@ static void test_repeated_terminal_summaries_are_distinct_attempts(void) {
   cleanup();
 }
 
+
+static void assert_session_bytes_equal(const ProfileSession *session,
+                                       const unsigned char *original,
+                                       size_t original_size) {
+  unsigned char encoded[4096];
+  size_t size = 0;
+  assert(profile_session_encode_blob(session, encoded, sizeof(encoded), &size));
+  assert(size == original_size && memcmp(encoded, original, size) == 0);
+}
+
+static void test_legacy_v1_rich_state_survives_migration_and_recovery(void) {
+  prepare();
+  ProfileData old = legacy_profile();
+  old.preferences.dark_theme = false;
+  old.preferences.strict_mode = true;
+  old.preferences.mode = MODE_STRIKES;
+  old.preferences.difficulty = DIFFICULTY_HARD;
+  old.preferences.audio_enabled = false;
+  old.preferences.music_volume = 39;
+  old.preferences.fx_volume = 72;
+  old.preferences.music_muted = true;
+  old.preferences.fx_muted = true;
+  old.preferences.reduced_motion = true;
+  old.preferences.auto_remove_peer_notes = true;
+  old.preferences.window_x = 40;
+  old.preferences.window_y = 60;
+  old.preferences.window_width = 1280;
+  old.preferences.window_height = 800;
+  old.preferences.window_maximized = true;
+
+  ProfileSession *saved = &old.normal.value;
+  Game *game = &saved->session.game;
+  int editable[4];
+  unsigned found = 0;
+  for (int i = 0; i < 81 && found < 4; ++i)
+    if (!game->fixed[i]) editable[found++] = i;
+  assert(found == 4);
+
+  const int placed = editable[0];
+  const int redo_cell = editable[1];
+  const int hinted = editable[2];
+  const int noted = editable[3];
+  GameEdit placed_edit, redo_edit;
+  assert(game_apply_input_recorded(game, placed / 9, placed % 9,
+                                   game->solution[placed], false, false,
+                                   false, &placed_edit) == GAME_INPUT_CORRECT);
+  assert(game_apply_input_recorded(game, redo_cell / 9, redo_cell % 9,
+                                   game->solution[redo_cell], true, false,
+                                   false, &redo_edit) == GAME_INPUT_NOTE_ADDED);
+  assert(game_apply_edit(game, &redo_edit, false));
+  assert(game_hint(game, hinted / 9, hinted % 9));
+  assert(game_toggle_note(game, noted / 9, noted % 9,
+                          game->solution[noted]));
+
+  saved->session.selected_row = 2;
+  saved->session.selected_column = 7;
+  saved->session.notes_mode = true;
+  saved->session.strict_mode = true;
+  saved->session.manual_paused = true;
+  saved->session.mistakes = 2;
+  saved->session.strikes = 2;
+  saved->session.elapsed_ms = UINT64_C(654321);
+  saved->assisted = true;
+  saved->undo_count = 1;
+  saved->undo[0] = placed_edit;
+  saved->redo_count = 1;
+  saved->redo[0] = redo_edit;
+  assert(profile_validate(&old));
+
+  unsigned char normal_bytes[4096], daily_bytes[4096];
+  size_t normal_size = 0, daily_size = 0;
+  assert(profile_session_encode_blob(&old.normal.value, normal_bytes,
+                                     sizeof(normal_bytes), &normal_size));
+  assert(profile_session_encode_blob(&old.daily.value, daily_bytes,
+                                     sizeof(daily_bytes), &daily_size));
+  assert(profile_save_file(primary, backup, &old) == STORE_OK);
+
+  unsigned char source_bytes[16384], readback[16384];
+  size_t source_size = 0, readback_size = 0;
+  assert(store_read_file(primary, source_bytes, sizeof(source_bytes),
+                         &source_size) == STORE_OK);
+  ProfileData staged;
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  assert(staged.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_OK);
+  assert(!staged.migration_pending);
+  assert(staged.normal.present && staged.daily.present);
+  assert(staged.normal.retained && staged.daily.retained);
+  assert_session_bytes_equal(&staged.normal.value, normal_bytes, normal_size);
+  assert_session_bytes_equal(&staged.daily.value, daily_bytes, daily_size);
+  assert(staged.normal.value.undo_count == 1 &&
+         staged.normal.value.redo_count == 1);
+  assert(staged.normal.value.session.game.hinted[hinted] == 1);
+  assert(staged.normal.value.session.game.notes[noted] ==
+         (uint16_t)(1u << game->solution[noted]));
+  assert(staged.normal.value.assisted && staged.normal.value.session.notes_mode);
+  assert(staged.normal.value.session.manual_paused);
+  assert(staged.normal.value.session.strikes == 2);
+  assert(staged.normal.value.session.elapsed_ms == UINT64_C(654321));
+
+  const Preferences *prefs = &staged.preferences;
+  assert(prefs->language == LANG_CA && !prefs->dark_theme);
+  assert(prefs->strict_mode && prefs->mode == MODE_STRIKES);
+  assert(prefs->difficulty == DIFFICULTY_HARD);
+  assert(!prefs->audio_enabled);
+  assert(prefs->music_volume == 39 && prefs->fx_volume == 72);
+  assert(prefs->music_muted && prefs->fx_muted);
+  assert(prefs->reduced_motion && prefs->auto_remove_peer_notes);
+  assert(prefs->window_x == 40 && prefs->window_y == 60);
+  assert(prefs->window_width == 1280 && prefs->window_height == 800);
+  assert(prefs->window_maximized);
+
+  GameAttemptId normal_id = staged.normal.attempt_id;
+  GameAttemptId daily_id = staged.daily.attempt_id;
+  GameLibraryRecord record;
+  assert(game_library_load(root, normal_id, &record) == STORE_OK);
+  assert(record.kind == GAME_RECORD_EXACT && record.retained);
+  assert_session_bytes_equal(&record.exact, normal_bytes, normal_size);
+  assert(game_library_load(root, daily_id, &record) == STORE_OK);
+  assert_session_bytes_equal(&record.exact, daily_bytes, daily_size);
+
+  assert(store_read_file(source, readback, sizeof(readback),
+                         &readback_size) == STORE_OK);
+  assert(readback_size == source_size &&
+         memcmp(readback, source_bytes, source_size) == 0);
+  ProfileData immutable;
+  assert(profile_load_file(source, &immutable) == STORE_OK);
+  assert(profile_encoded_equal(&immutable, &old));
+
+  /* Recovered old rotating profile must reuse immutable-intent IDs and data. */
+  revert_to_immutable_source();
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_OK);
+  assert(game_attempt_id_equal(staged.normal.attempt_id, normal_id));
+  assert(game_attempt_id_equal(staged.daily.attempt_id, daily_id));
+  assert_session_bytes_equal(&staged.normal.value, normal_bytes, normal_size);
+  assert_session_bytes_equal(&staged.daily.value, daily_bytes, daily_size);
+
+  /* Both hot copies lost: explicit validated intent reconstruction. */
+  assert(store_remove_file(primary));
+  assert(store_remove_file(backup));
+  ProfileData recovered;
+  assert(game_migration_recover_intent(root, primary, backup, &recovered) ==
+         STORE_OK);
+  assert(game_attempt_id_equal(recovered.normal.attempt_id, normal_id));
+  assert(game_attempt_id_equal(recovered.daily.attempt_id, daily_id));
+  assert_session_bytes_equal(&recovered.normal.value,
+                             normal_bytes, normal_size);
+  assert_session_bytes_equal(&recovered.daily.value, daily_bytes, daily_size);
+  assert(profile_encoded_equal(&recovered, &staged));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -637,6 +792,7 @@ int main(void) {
   test_preimage_write_fault_matrix();
   test_immutable_intent_cutpoint_replays();
   test_repeated_terminal_summaries_are_distinct_attempts();
+  test_legacy_v1_rich_state_survives_migration_and_recovery();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;
