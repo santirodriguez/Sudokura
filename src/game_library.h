@@ -45,6 +45,9 @@ typedef struct {
   GameRecordKind kind;
   ProfileResult result;
   uint64_t revision;
+  uint64_t created_utc;
+  uint64_t updated_utc;
+  uint64_t finished_utc;
 } GameLibraryEntry;
 
 /* Stop a scan by returning false; cancellation is reported as STORE_CANCELLED. */
@@ -92,6 +95,9 @@ typedef struct {
   GameAttemptId id;
   uint64_t revision;
   SessionStatus status;
+  uint64_t created_utc;
+  uint64_t updated_utc;
+  uint64_t finished_utc;
   size_t length;
   unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
 } GameLibraryHotCache;
@@ -100,6 +106,11 @@ typedef struct {
 StoreStatus game_library_save_runtime(const char *root,
                                       const GameLibraryRecord *record,
                                       GameLibraryHotCache *cache);
+/* Deterministic UTC injection for tests; 0 indicates unavailable clock. */
+StoreStatus game_library_save_runtime_at(const char *root,
+                                         const GameLibraryRecord *record,
+                                         GameLibraryHotCache *cache,
+                                         uint64_t utc_seconds);
 StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record);
 StoreStatus game_library_receipt_status(const char *root, GameAttemptId id);

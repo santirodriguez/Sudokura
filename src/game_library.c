@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 enum { RECEIPT_BYTES = 34u };
 static const unsigned char receipt_magic[8] = {
@@ -271,13 +272,17 @@ static void hot_cache_store(GameLibraryHotCache *cache,
   cache->id = record->id;
   cache->revision = record->revision;
   cache->status = record->result.status;
+  cache->created_utc = record->created_utc;
+  cache->updated_utc = record->updated_utc;
+  cache->finished_utc = record->finished_utc;
   cache->length = length;
   memcpy(cache->bytes, bytes, length);
 }
 
-StoreStatus game_library_save_runtime(const char *root,
-                                      const GameLibraryRecord *record,
-                                      GameLibraryHotCache *cache) {
+StoreStatus game_library_save_runtime_at(const char *root,
+                                         const GameLibraryRecord *record,
+                                         GameLibraryHotCache *cache,
+                                         uint64_t utc_seconds) {
   if (!root || !record || !cache ||
       !game_library_record_validate_runtime(record) ||
       record->kind != GAME_RECORD_EXACT)
@@ -295,11 +300,6 @@ StoreStatus game_library_save_runtime(const char *root,
   if (receipt != STORE_NOT_FOUND)
     return receipt == STORE_OK ? STORE_IO_ERROR : receipt;
 
-  unsigned char encoded[SUDOKURA_GAME_RECORD_MAX_BYTES];
-  size_t length = 0;
-  if (!game_library_encode_runtime(record, encoded, &length))
-    return STORE_IO_ERROR;
-
   unsigned char prior[SUDOKURA_GAME_RECORD_MAX_BYTES];
   size_t prior_length = 0;
   StoreStatus status = store_read_file(path, prior, sizeof(prior),
@@ -316,12 +316,18 @@ StoreStatus game_library_save_runtime(const char *root,
     trusted_cache = false;
   }
 
+  GameLibraryRecord dated = *record;
   uint64_t previous_revision = 0;
   SessionStatus previous_status = SESSION_ACTIVE;
+  uint64_t previous_updated = 0;
+  uint64_t previous_finished = 0;
   if (status == STORE_OK) {
     if (trusted_cache) {
       previous_revision = cache->revision;
       previous_status = cache->status;
+      dated.created_utc = cache->created_utc;
+      previous_updated = cache->updated_utc;
+      previous_finished = cache->finished_utc;
     } else {
       /* First access after startup or external mutation remains canonical. */
       GameLibraryRecord previous;
@@ -330,19 +336,45 @@ StoreStatus game_library_save_runtime(const char *root,
       if (previous.kind != GAME_RECORD_EXACT) return STORE_IO_ERROR;
       previous_revision = previous.revision;
       previous_status = previous.result.status;
+      dated.created_utc = previous.created_utc;
+      previous_updated = previous.updated_utc;
+      previous_finished = previous.finished_utc;
     }
+    if (record->revision == previous_revision) {
+      /* An identical retry retains its original timestamps and backup. */
+      dated.updated_utc = previous_updated;
+      dated.finished_utc = previous_finished;
+    } else {
+      dated.updated_utc = utc_seconds > previous_updated
+                              ? utc_seconds : previous_updated;
+      dated.finished_utc = dated.result.status == SESSION_ACTIVE
+          ? 0
+          : (previous_status == SESSION_ACTIVE
+              ? dated.updated_utc : previous_finished);
+    }
+  } else if (status == STORE_NOT_FOUND) {
+    if (store_file_exists(backup))
+      return STORE_IO_ERROR; /* Only an explicit recovery can reuse a backup. */
+    dated.created_utc = utc_seconds;
+    dated.updated_utc = utc_seconds;
+    dated.finished_utc = dated.result.status == SESSION_ACTIVE
+                             ? 0 : utc_seconds;
+  } else {
+    return status;
+  }
+
+  unsigned char encoded[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t length = 0;
+  if (!game_library_encode_runtime(&dated, encoded, &length))
+    return STORE_IO_ERROR;
+  if (status == STORE_OK) {
     if (length == prior_length && memcmp(encoded, prior, length) == 0) {
-      hot_cache_store(cache, record, encoded, length);
+      hot_cache_store(cache, &dated, encoded, length);
       return STORE_OK;
     }
     if (previous_revision >= record->revision ||
         previous_status != SESSION_ACTIVE)
       return STORE_IO_ERROR;
-  } else if (status != STORE_NOT_FOUND) {
-    return status;
-  } else if (store_file_exists(backup)) {
-    /* A previous-only record needs explicit recovery before reuse. */
-    return STORE_IO_ERROR;
   }
 
   status = store_ensure_directory(folder);
@@ -358,8 +390,16 @@ StoreStatus game_library_save_runtime(const char *root,
   if (verified_length != length ||
       memcmp(verified, encoded, length) != 0)
     return STORE_CORRUPT;
-  hot_cache_store(cache, record, encoded, length);
+  hot_cache_store(cache, &dated, encoded, length);
   return STORE_OK;
+}
+
+StoreStatus game_library_save_runtime(const char *root,
+                                      const GameLibraryRecord *record,
+                                      GameLibraryHotCache *cache) {
+  time_t now = time(NULL);
+  return game_library_save_runtime_at(root, record, cache,
+                                       now > 0 ? (uint64_t)now : 0);
 }
 
 /* Explicit previous-copy recovery must not destroy the existing primary,
@@ -518,6 +558,9 @@ static bool visit_game_name(const char *name, void *context) {
       item.kind = decoded.kind;
       item.result = decoded.result;
       item.revision = decoded.revision;
+      item.created_utc = decoded.created_utc;
+      item.updated_utc = decoded.updated_utc;
+      item.finished_utc = decoded.finished_utc;
     }
     if (backup) {
       item.previous_status = item.status;

@@ -658,6 +658,99 @@ static void test_corrupt_receipt_isolates_one_attempt(void) {
   cleanup();
 }
 
+typedef struct {
+  GameAttemptId id;
+  uint64_t created, updated, finished;
+  unsigned count;
+} DateScan;
+
+static bool scan_date(const GameLibraryEntry *item, void *context) {
+  DateScan *probe = (DateScan *)context;
+  assert(game_attempt_id_equal(item->id, probe->id));
+  assert(item->status == STORE_OK);
+  assert(item->created_utc == probe->created);
+  assert(item->updated_utc == probe->updated);
+  assert(item->finished_utc == probe->finished);
+  ++probe->count;
+  return true;
+}
+
+static void test_runtime_utc_dates_and_unknown_legacy(void) {
+  prepare();
+  GameAttemptId id = make_id(571);
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameLibraryHotCache cache = {0};
+  GameLibraryRecord record, readback;
+  const uint64_t created = UINT64_C(1700001000);
+  assert(game_library_make_exact_runtime(&record, id, 1, &active, true));
+  assert(game_library_save_runtime_at(root, &record, &cache, created) ==
+         STORE_OK);
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.created_utc == created && readback.updated_utc == created);
+  assert(readback.finished_utc == 0);
+
+  active.session.elapsed_ms += 1000;
+  assert(game_library_make_exact_runtime(&record, id, 2, &active, true));
+  assert(game_library_save_runtime_at(root, &record, &cache, created + 30) ==
+         STORE_OK);
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.created_utc == created &&
+         readback.updated_utc == created + 30 &&
+         readback.finished_utc == 0);
+
+  /* A cold session resumes the original creation time and validates disk. */
+  memset(&cache, 0, sizeof(cache));
+  active.session.elapsed_ms += 1000;
+  assert(game_library_make_exact_runtime(&record, id, 3, &active, true));
+  assert(game_library_save_runtime_at(root, &record, &cache, created + 60) ==
+         STORE_OK);
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.created_utc == created &&
+         readback.updated_utc == created + 60);
+
+  ProfileSession won = make_session(SESSION_WON);
+  won.session.elapsed_ms = active.session.elapsed_ms + 1000;
+  assert(game_library_make_exact_runtime(&record, id, 4, &won, true));
+  assert(game_library_save_runtime_at(root, &record, &cache, created + 90) ==
+         STORE_OK);
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.created_utc == created &&
+         readback.updated_utc == created + 90 &&
+         readback.finished_utc == created + 90);
+
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_save_runtime_at(root, &record, &cache, created + 900) ==
+         STORE_OK); /* Retry cannot alter a terminal timestamp. */
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_load(root, id, &readback) == STORE_OK);
+  assert(readback.finished_utc == created + 90 &&
+         readback.updated_utc == created + 90);
+  DateScan probe = {id, created, created + 90, created + 90, 0};
+  assert(game_library_scan(root, scan_date, &probe) == STORE_OK);
+  assert(probe.count == 1);
+
+  readback.updated_utc = created - 1;
+  assert(!game_library_record_validate(&readback));
+  readback.updated_utc = created + 90;
+  readback.finished_utc = created + 91;
+  assert(!game_library_record_validate(&readback));
+
+  GameAttemptId old_id = make_id(572);
+  ProfileResult result = {
+      .seed = UINT64_C(98877),
+      .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_EASY,
+      .mode = MODE_CLASSIC, .status = SESSION_WON,
+      .elapsed_ms = UINT64_C(54000),
+  };
+  assert(game_library_make_legacy(&record, old_id, &result));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_load(root, old_id, &readback) == STORE_OK);
+  assert(readback.created_utc == 0 &&
+         readback.updated_utc == 0 && readback.finished_utc == 0);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -678,6 +771,7 @@ int main(void) {
   test_first_archive_after_unretained_hot_revisions();
   test_write_fault_matrix_keeps_last_known_good();
   test_corrupt_receipt_isolates_one_attempt();
+  test_runtime_utc_dates_and_unknown_legacy();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;

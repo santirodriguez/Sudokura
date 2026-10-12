@@ -184,6 +184,14 @@ static bool record_validate(const GameLibraryRecord *record,
   if (!record || !game_attempt_id_valid(record->id) ||
       record->revision == 0 || !valid_summary(&record->result))
     return false;
+  if ((record->created_utc && record->updated_utc &&
+       record->updated_utc < record->created_utc) ||
+      (record->finished_utc && record->result.status == SESSION_ACTIVE) ||
+      (record->finished_utc && record->updated_utc &&
+       record->finished_utc > record->updated_utc) ||
+      (record->finished_utc && record->created_utc &&
+       record->finished_utc < record->created_utc))
+    return false;
   if (record->practice) {
     if (!game_attempt_id_valid(record->parent) ||
         game_attempt_id_equal(record->parent, record->id))
@@ -487,6 +495,9 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
     metadata.kind = candidate.kind;
     metadata.result = candidate.result;
     metadata.revision = candidate.revision;
+    metadata.created_utc = candidate.created_utc;
+    metadata.updated_utc = candidate.updated_utc;
+    metadata.finished_utc = candidate.finished_utc;
     *entry = metadata;
   }
   return STORE_OK;
