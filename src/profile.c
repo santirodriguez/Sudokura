@@ -193,15 +193,58 @@ bool profile_result_is_valid(const ProfileResult *result) {
   return valid_result(result);
 }
 
+static bool attempt_id_present(GameAttemptId id) {
+  return id.high != 0 || id.low != 0;
+}
+
+static bool slot_link_valid(const ProfileSlot *slot) {
+  if (!slot->present)
+    return !slot->retained && !slot->revision &&
+           !attempt_id_present(slot->attempt_id);
+  return attempt_id_present(slot->attempt_id) == (slot->revision != 0) &&
+         (!slot->retained || attempt_id_present(slot->attempt_id));
+}
+
+static bool profile_links_valid(const ProfileData *profile) {
+  if (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
+      profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
+    return false;
+  if (!slot_link_valid(&profile->normal) ||
+      !slot_link_valid(&profile->daily))
+    return false;
+  if (attempt_id_present(profile->normal.attempt_id) &&
+      profile->normal.attempt_id.high == profile->daily.attempt_id.high &&
+      profile->normal.attempt_id.low == profile->daily.attempt_id.low)
+    return false;
+  if (profile->migration_pending &&
+      (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION ||
+       profile->migration_source_length == 0))
+    return false;
+  for (uint16_t i = 0; i < profile->result_count; ++i) {
+    const ProfileResult *result = &profile->results[i];
+    if (result->practice && !attempt_id_present(result->attempt_id))
+      return false;
+    for (uint16_t j = 0; j < i; ++j) {
+      if (attempt_id_present(result->attempt_id) &&
+          result->attempt_id.high == profile->results[j].attempt_id.high &&
+          result->attempt_id.low == profile->results[j].attempt_id.low)
+        return false;
+    }
+  }
+  return true;
+}
+
 void profile_defaults(ProfileData *profile) {
   if (!profile) return;
   memset(profile, 0, sizeof(*profile));
+  profile->codec_version = SUDOKURA_PROFILE_CONTENT_VERSION;
   preferences_defaults(&profile->preferences);
 }
 
 bool profile_validate(const ProfileData *profile) {
   if (!profile || !preferences_validate(&profile->preferences) ||
-      profile->result_count > SUDOKURA_RESULT_LIMIT)
+      profile->result_count > SUDOKURA_RESULT_LIMIT ||
+      !profile_links_valid(profile))
     return false;
   if (profile->normal.present &&
       !valid_profile_session(&profile->normal.value, false))
@@ -268,8 +311,20 @@ bool profile_record_result(ProfileData *profile, const ProfileResult *result,
   if (inserted) *inserted = false;
   if (!profile || !valid_result(result)) return false;
 
-  for (uint16_t i = 0; i < profile->result_count; ++i)
-    if (same_result_event(&profile->results[i], result)) return true;
+  for (uint16_t i = 0; i < profile->result_count; ++i) {
+    const ProfileResult *existing = &profile->results[i];
+    if (attempt_id_present(existing->attempt_id) &&
+        attempt_id_present(result->attempt_id) &&
+        existing->attempt_id.high == result->attempt_id.high &&
+        existing->attempt_id.low == result->attempt_id.low)
+      return same_result_event(existing, result) &&
+             existing->practice == result->practice;
+    if (!attempt_id_present(existing->attempt_id) &&
+        !attempt_id_present(result->attempt_id) &&
+        same_result_event(existing, result) &&
+        existing->practice == result->practice)
+      return true;
+  }
 
   if (profile->result_count == SUDOKURA_RESULT_LIMIT) {
     memmove(profile->results, profile->results + 1,
@@ -299,7 +354,8 @@ ProfileResultSummary profile_result_summary(const ProfileData *profile,
         result->difficulty == reference->difficulty &&
         result->generator_revision == reference->generator_revision &&
         result->is_daily == reference->is_daily &&
-        result->assisted == reference->assisted;
+        result->assisted == reference->assisted &&
+        !result->practice && !reference->practice;
     if (!comparable) continue;
     if (!summary.best_time_available ||
         result->elapsed_ms < summary.best_time_ms) {
@@ -674,7 +730,8 @@ static StoreStatus decode_slot(ProfileReader *reader, ProfileSlot *slot,
 
 static bool profile_validate_runtime(const ProfileData *profile) {
   if (!profile || !preferences_validate(&profile->preferences) ||
-      profile->result_count > SUDOKURA_RESULT_LIMIT)
+      profile->result_count > SUDOKURA_RESULT_LIMIT ||
+      !profile_links_valid(profile))
     return false;
   if (profile->normal.present &&
       !valid_profile_session_runtime(&profile->normal.value, false))
