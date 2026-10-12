@@ -289,7 +289,56 @@ static void test_delete_receipt_prevents_resurrection(void) {
   assert(game_library_recover_previous(root, id, &record) == STORE_NOT_FOUND);
   assert(game_library_scan(root, scan_callback, &probe) == STORE_OK);
   assert(probe.count == 0);
+
+  /* A cut after durable receipt publication may leave BOTH old copies.
+     Neither must resurrect the deleted attempt. Retrying cleans them. */
+  char stale_primary[128];
+  (void)snprintf(stale_primary, sizeof(stale_primary),
+                 "%s/games/123456789abcdef00000000000000005.dat", root);
+  assert(store_atomic_write(stale_primary, NULL, old, bytes) == STORE_OK);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  assert(game_library_scan(root, scan_callback, &probe) == STORE_OK);
+  assert(probe.count == 0);
+  assert(game_library_delete(root, id) == STORE_OK);
+  assert(!store_file_exists(stale_primary));
+  assert(!store_file_exists(leftover));
+  assert(game_library_receipt_status(root, id) == STORE_OK);
   cleanup();
+}
+
+static void test_delete_receipt_fault_matrix(void) {
+  const StoreTestFault faults[] = {
+      STORE_TEST_FAULT_OPEN, STORE_TEST_FAULT_DURING_WRITE,
+      STORE_TEST_FAULT_NO_SPACE, STORE_TEST_FAULT_SYNC,
+      STORE_TEST_FAULT_REPLACE};
+  for (size_t index = 0; index < sizeof(faults) / sizeof(faults[0]);
+       ++index) {
+    prepare();
+    ProfileSession active = make_session(SESSION_ACTIVE);
+    GameAttemptId id = make_id(710 + index);
+    GameLibraryRecord record;
+    assert(game_library_make_exact(&record, id, 1, &active, true));
+    assert(game_library_save(root, &record) == STORE_OK);
+    active.session.elapsed_ms += 1000;
+    assert(game_library_make_exact(&record, id, 2, &active, true));
+    assert(game_library_save(root, &record) == STORE_OK);
+
+    store_test_set_fault(faults[index]);
+    assert(game_library_delete(root, id) == STORE_IO_ERROR);
+    store_test_set_fault(STORE_TEST_FAULT_NONE);
+    assert(game_library_receipt_status(root, id) == STORE_NOT_FOUND);
+    GameLibraryRecord loaded;
+    assert(game_library_load(root, id, &loaded) == STORE_OK);
+    assert(loaded.revision == 2);
+    ScanProbe scan = {0, false, false};
+    assert(game_library_scan(root, scan_callback, &scan) == STORE_OK);
+    assert(scan.count == 1);
+    assert(game_library_delete(root, id) == STORE_OK);
+    assert(game_library_receipt_status(root, id) == STORE_OK);
+    assert(game_library_load(root, id, &loaded) == STORE_NOT_FOUND);
+    cleanup();
+  }
 }
 
 static void test_unbounded_wins_and_scan_cancellation(void) {
@@ -969,6 +1018,7 @@ int main(void) {
   test_save_revision_and_previous_recovery();
   test_backup_only_scan_and_recovery();
   test_delete_receipt_prevents_resurrection();
+  test_delete_receipt_fault_matrix();
   test_unbounded_wins_and_scan_cancellation();
   test_live_checkpoint_avoids_puzzle_regeneration();
   test_terminal_hot_retry_is_immutable();
