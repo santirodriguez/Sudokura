@@ -150,6 +150,28 @@ static void test_faults_preserve_active(void) {
   store_test_set_fault(STORE_TEST_FAULT_NONE);
 }
 
+static void test_parent_sync_failure_after_replace(void) {
+  cleanup();
+  const unsigned char previous[] = "durable-previous";
+  const unsigned char updated[] = "unacknowledged-update";
+  assert(store_atomic_write(active_path, NULL, previous,
+                            sizeof(previous) - 1u) == STORE_OK);
+  assert(store_copy_once(active_path, backup_path) == STORE_OK);
+
+  /* The rename has happened, but the caller must still receive failure.
+     The previous copy survives and a repeat write remains possible. */
+  store_test_set_fault(STORE_TEST_FAULT_PARENT_SYNC);
+  assert(store_atomic_write(active_path, NULL, updated,
+                            sizeof(updated) - 1u) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert_contents(active_path, "unacknowledged-update");
+  assert_contents(backup_path, "durable-previous");
+  assert(store_atomic_write(active_path, NULL, updated,
+                            sizeof(updated) - 1u) == STORE_OK);
+  assert_contents(active_path, "unacknowledged-update");
+  assert_contents(backup_path, "durable-previous");
+}
+
 static void test_utf8_path(void) {
   const unsigned char value[] = "utf8-path";
   assert(executable_unicode_path[0]);
@@ -260,6 +282,7 @@ int main(int argc, char **argv) {
   cleanup();
   test_atomic_backup();
   test_faults_preserve_active();
+  test_parent_sync_failure_after_replace();
   test_utf8_path();
 #if !defined(_WIN32)
   test_permission_failure();

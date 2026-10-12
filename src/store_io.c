@@ -214,6 +214,10 @@ bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
 #endif
 
 static bool sync_parent_directory(const char *path) {
+#ifdef SUDOKURA_STORE_TESTING
+  /* The rename may have succeeded even when its directory sync fails. */
+  if (store_fault_is(STORE_TEST_FAULT_PARENT_SYNC)) return false;
+#endif
 #if defined(_WIN32)
   (void)path;
   return true;

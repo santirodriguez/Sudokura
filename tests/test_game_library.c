@@ -1122,6 +1122,36 @@ static void test_corrupt_previous_copy_does_not_replace_good_primary(void) {
   cleanup();
 }
 
+static void test_unacknowledged_record_commit_is_idempotent(void) {
+  prepare();
+  GameAttemptId id = make_id(743);
+  ProfileSession won = make_session(SESSION_WON);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, id, 1, &won, true));
+
+  store_test_set_fault(STORE_TEST_FAULT_PARENT_SYNC);
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  GameLibraryRecord loaded;
+  assert(game_library_load(root, id, &loaded) == STORE_OK);
+  assert(loaded.revision == record.revision &&
+         loaded.result.status == SESSION_WON);
+
+  /* Retrying a committed record must not create a second win or rotate a
+     valid record into backup merely because the first acknowledgement failed. */
+  assert(game_library_save(root, &record) == STORE_OK);
+  char hex[33], previous[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(id, hex);
+  int length = snprintf(previous, sizeof(previous), "%s/games/%s.dat.bak",
+                        root, hex);
+  assert(length > 0 && (size_t)length < sizeof(previous));
+  assert(!store_file_exists(previous));
+  ScanProbe scan = {0, false, false};
+  assert(game_library_scan(root, scan_callback, &scan) == STORE_OK);
+  assert(scan.count == 1u && !scan.saw_backup);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -1149,6 +1179,7 @@ int main(void) {
   test_invalid_timestamp_is_not_healthy_catalogue_metadata();
   test_future_receipt_versions_fail_closed();
   test_corrupt_previous_copy_does_not_replace_good_primary();
+  test_unacknowledged_record_commit_is_idempotent();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;

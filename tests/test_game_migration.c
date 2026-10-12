@@ -926,6 +926,40 @@ static void test_legacy_v1_rich_state_survives_migration_and_recovery(void) {
   cleanup();
 }
 
+static void test_unacknowledged_immutable_source_replays_safely(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData source_profile;
+  assert(profile_load_file(primary, &source_profile) == STORE_OK);
+  ProfileData unchanged = source_profile;
+
+  /* The immutable source file may exist after the directory sync fails,
+     although the migration must not report completion or mint intent IDs. */
+  store_test_set_fault(STORE_TEST_FAULT_PARENT_SYNC);
+  assert(game_migration_upgrade(root, primary, backup,
+                                &source_profile, NULL) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_encoded_equal(&source_profile, &unchanged));
+  ProfileData on_disk;
+  assert(profile_load_file(primary, &on_disk) == STORE_OK);
+  assert(profile_encoded_equal(&on_disk, &unchanged));
+  assert(store_file_exists(source));
+  assert(!store_file_exists(intent));
+  GameLibraryRecord inaccessible;
+  assert(game_migration_has_artifacts(root));
+
+  assert(game_migration_upgrade(root, primary, backup, &on_disk, NULL) ==
+         STORE_OK);
+  assert_upgraded(&on_disk);
+  assert(game_library_load(root, on_disk.normal.attempt_id, &inaccessible) ==
+         STORE_OK);
+  assert(game_library_load(root, on_disk.daily.attempt_id, &inaccessible) ==
+         STORE_OK);
+  assert(profile_load_file(source, &source_profile) == STORE_OK);
+  assert(profile_encoded_equal(&source_profile, &unchanged));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -943,6 +977,7 @@ int main(void) {
   test_immutable_intent_cutpoint_replays();
   test_repeated_terminal_summaries_are_distinct_attempts();
   test_legacy_v1_rich_state_survives_migration_and_recovery();
+  test_unacknowledged_immutable_source_replays_safely();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;
