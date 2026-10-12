@@ -88,6 +88,8 @@ typedef struct {
 
 void profile_defaults(ProfileData *profile);
 bool profile_validate(const ProfileData *profile);
+/* Compare encoded state, excluding C struct padding and transient fields. */
+bool profile_encoded_equal(const ProfileData *left, const ProfileData *right);
 bool profile_slot_set(ProfileSlot *slot, const SessionState *session,
                       bool assisted);
 bool profile_slot_set_runtime(ProfileSlot *slot, const SessionState *session,
