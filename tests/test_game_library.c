@@ -286,6 +286,74 @@ static void test_unbounded_wins_and_scan_cancellation(void) {
   cleanup();
 }
 
+static void test_live_checkpoint_avoids_puzzle_regeneration(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(702);
+  GameLibraryHotCache cache = {0};
+  GameLibraryRecord record;
+
+  game_test_reset_generation_count();
+  for (uint64_t revision = 1; revision <= 40; ++revision) {
+    live.session.elapsed_ms += 1000;
+    assert(game_library_make_exact_runtime(&record, id, revision,
+                                           &live, true));
+    assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+    assert(game_test_generation_count() == 0);
+    assert(cache.valid && cache.revision == revision);
+  }
+  /* Idempotent retries must not replace a terminal/retained record. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+
+  GameLibraryRecord checked;
+  assert(game_library_load(root, id, &checked) == STORE_OK);
+  assert(game_test_generation_count() > 0);
+  assert(checked.revision == 40);
+  assert(checked.exact.session.elapsed_ms == live.session.elapsed_ms);
+
+  char name[33], primary[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(id, name);
+  int written = snprintf(primary, sizeof(primary), "%s/games/%s.dat",
+                         root, name);
+  assert(written > 0 && (size_t)written < sizeof(primary));
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t size = 0;
+  assert(store_read_file(primary, bytes, sizeof(bytes), &size) == STORE_OK);
+  bytes[size - 1] ^= 0x4a;
+  assert(store_atomic_write(primary, NULL, bytes, size) == STORE_OK);
+
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact_runtime(&record, id, 41, &live, true));
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_CORRUPT);
+  assert(!cache.valid);
+  assert(game_library_load(root, id, &checked) == STORE_CORRUPT);
+  cleanup();
+}
+
+static void test_terminal_hot_retry_is_immutable(void) {
+  prepare();
+  ProfileSession won = make_session(SESSION_WON);
+  GameAttemptId id = make_id(703);
+  GameLibraryHotCache cache = {0};
+  GameLibraryRecord record;
+  assert(game_library_make_exact_runtime(&record, id, 1, &won, true));
+  game_test_reset_generation_count();
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  won.session.elapsed_ms += 1000;
+  assert(game_library_make_exact_runtime(&record, id, 2, &won, true));
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
+  assert(game_test_generation_count() == 0);
+  GameLibraryRecord reopened;
+  assert(game_library_load(root, id, &reopened) == STORE_OK);
+  assert(reopened.revision == 1);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -297,6 +365,8 @@ int main(void) {
   test_backup_only_scan_and_recovery();
   test_delete_receipt_prevents_resurrection();
   test_unbounded_wins_and_scan_cancellation();
+  test_live_checkpoint_avoids_puzzle_regeneration();
+  test_terminal_hot_retry_is_immutable();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
