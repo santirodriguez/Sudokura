@@ -875,7 +875,7 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   return STORE_OK;
 }
 
-static bool profiles_equal(const ProfileData *a, const ProfileData *b);
+bool profile_encoded_equal(const ProfileData *a, const ProfileData *b);
 
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
@@ -889,7 +889,7 @@ StoreStatus profile_recover_previous(const char *profile_path,
   ProfileData verified;
   status = profile_load_file(profile_path, &verified);
   if (status != STORE_OK) return status;
-  if (!profiles_equal(&recovered, &verified)) return STORE_CORRUPT;
+  if (!profile_encoded_equal(&recovered, &verified)) return STORE_CORRUPT;
   *profile = verified;
   return STORE_OK;
 }
@@ -920,7 +920,7 @@ static StoreStatus backup_legacy_file(const char *source, const char *backup) {
   return status == STORE_NOT_FOUND ? STORE_OK : status;
 }
 
-static bool profiles_equal(const ProfileData *a, const ProfileData *b) {
+bool profile_encoded_equal(const ProfileData *a, const ProfileData *b) {
   if (!a || !b) return false;
   unsigned char left[PROFILE_MAX_FILE_SIZE];
   unsigned char right[PROFILE_MAX_FILE_SIZE];
@@ -1023,7 +1023,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   ProfileData verified;
   status = profile_load_file(profile_path, &verified);
   if (status != STORE_OK) return status;
-  if (!profiles_equal(&candidate, &verified)) return STORE_CORRUPT;
+  if (!profile_encoded_equal(&candidate, &verified)) return STORE_CORRUPT;
 
   *profile = verified;
   if (migrated) *migrated = imported_any;
