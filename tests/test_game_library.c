@@ -808,6 +808,46 @@ static bool scan_unsupported(const GameLibraryEntry *entry, void *ctx) {
   return true;
 }
 
+static void fixture_put_u64(unsigned char *out, uint64_t value) {
+  for (unsigned shift = 0; shift < 64; shift += 8)
+    out[shift / 8] = (unsigned char)(value >> shift);
+}
+
+static void test_invalid_timestamp_is_not_healthy_catalogue_metadata(void) {
+  prepare();
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(583);
+  GameLibraryRecord record, unchanged;
+  GameLibraryHotCache cache = {0};
+  const uint64_t epoch = UINT64_C(1700001000);
+  assert(game_library_make_exact_runtime(&record, id, 1, &active, true));
+  assert(game_library_save_runtime_at(root, &record, &cache, epoch) == STORE_OK);
+
+  char hex[33], path[160];
+  game_attempt_id_hex(id, hex);
+  (void)snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t size = 0;
+  assert(store_read_file(path, bytes, sizeof(bytes), &size) == STORE_OK);
+
+  /* Valid envelope checksum with inconsistent recorded UTC dates. */
+  enum { HEADER = 18, UPDATED_UTC = 18 + 4 + 16 + 16 + 8 + 8 };
+  assert(size > UPDATED_UTC + 8u);
+  fixture_put_u64(bytes + UPDATED_UTC, epoch - 1u);
+  fixture_put_u32(bytes + 14u,
+                  fixture_crc32(bytes + HEADER, size - HEADER));
+  assert(store_atomic_write(path, NULL, bytes, size) == STORE_OK);
+  GameLibraryEntry metadata;
+  assert(game_library_peek(bytes, size, &metadata) == STORE_CORRUPT);
+  unchanged = record;
+  assert(game_library_load(root, id, &unchanged) == STORE_CORRUPT);
+  assert(memcmp(&unchanged, &record, sizeof(record)) == 0);
+  MixedScanProbe probe = {0};
+  assert(game_library_scan(root, mixed_scan_callback, &probe) == STORE_OK);
+  assert(probe.damaged == 1 && probe.healthy == 0);
+  cleanup();
+}
+
 static void test_unsupported_generator_preserves_previous(void) {
   prepare();
   ProfileSession active = make_session(SESSION_ACTIVE);
@@ -882,6 +922,7 @@ int main(void) {
   test_corrupt_receipt_isolates_one_attempt();
   test_runtime_utc_dates_and_unknown_legacy();
   test_unsupported_generator_preserves_previous();
+  test_invalid_timestamp_is_not_healthy_catalogue_metadata();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;

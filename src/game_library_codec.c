@@ -179,19 +179,27 @@ static bool summary_matches_session(const GameLibraryRecord *record) {
   return true;
 }
 
+static bool valid_record_timestamps(const GameLibraryRecord *record) {
+  if (record->created_utc && record->updated_utc &&
+      record->updated_utc < record->created_utc)
+    return false;
+  if (record->finished_utc && record->result.status == SESSION_ACTIVE)
+    return false;
+  if (record->finished_utc && record->updated_utc &&
+      record->finished_utc > record->updated_utc)
+    return false;
+  if (record->finished_utc && record->created_utc &&
+      record->finished_utc < record->created_utc)
+    return false;
+  return true;
+}
+
 static bool record_validate(const GameLibraryRecord *record,
                             bool canonical) {
   if (!record || !game_attempt_id_valid(record->id) ||
       record->revision == 0 || !valid_summary(&record->result))
     return false;
-  if ((record->created_utc && record->updated_utc &&
-       record->updated_utc < record->created_utc) ||
-      (record->finished_utc && record->result.status == SESSION_ACTIVE) ||
-      (record->finished_utc && record->updated_utc &&
-       record->finished_utc > record->updated_utc) ||
-      (record->finished_utc && record->created_utc &&
-       record->finished_utc < record->created_utc))
-    return false;
+  if (!valid_record_timestamps(record)) return false;
   if (record->practice) {
     if (!game_attempt_id_valid(record->parent) ||
         game_attempt_id_equal(record->parent, record->id))
@@ -459,7 +467,7 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
   decode_result(&r, &candidate.result);
   uint16_t session_size = r16(&r);
   if (!r.ok || !game_attempt_id_valid(candidate.id) ||
-      candidate.revision == 0)
+      candidate.revision == 0 || !valid_record_timestamps(&candidate))
     return STORE_CORRUPT;
   if (!game_generator_revision_supported(candidate.result.generator_revision))
     return STORE_INCOMPATIBLE;
