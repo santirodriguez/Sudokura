@@ -571,8 +571,12 @@ StoreStatus game_migration_recover_collection(
   char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
   if (!join(intent_path, root, "profile.dat.v1.3.7-import.dat"))
     return STORE_IO_ERROR;
-  if (store_file_exists(intent_path))
-    return STORE_INCOMPATIBLE; /* Offer the separate intent recovery path. */
+  unsigned char prefix = 0;
+  StoreStatus intent_status =
+      store_read_prefix(intent_path, &prefix, 1u, NULL);
+  if (intent_status == STORE_OK)
+    return STORE_IO_ERROR; /* Earlier-checkpoint recovery must be selected. */
+  if (intent_status != STORE_NOT_FOUND) return intent_status;
 
   ProfileData rebuilt;
   GameMigrationRecoverySummary preview;

@@ -340,7 +340,7 @@ static void test_missing_hot_pair_recovers_verified_intent(void) {
   GameMigrationRecoverySummary summary;
   assert(game_migration_recover_collection(
              root, primary, backup, &recovered, &summary) ==
-         STORE_INCOMPATIBLE);
+         STORE_IO_ERROR);
   assert(!store_file_exists(primary));
   assert(game_migration_recover_intent(root, primary, backup,
                                       &recovered) == STORE_OK);
