@@ -18,6 +18,14 @@
 
 static const char *root = ".sudokura-library-test";
 
+/* C11 wall clock: used only for diagnostic measurements, not flaky limits. */
+static double wall_clock_ms(void) {
+  struct timespec now;
+  if (timespec_get(&now, TIME_UTC) != TIME_UTC) return -1.0;
+  return (double)now.tv_sec * 1000.0 +
+         (double)now.tv_nsec / 1000000.0;
+}
+
 static GameAttemptId make_id(uint64_t number) {
   GameAttemptId id = {UINT64_C(0x123456789abcdef0), number};
   return id;
@@ -304,6 +312,7 @@ static void test_live_checkpoint_avoids_puzzle_regeneration(void) {
   GameLibraryRecord record;
 
   game_test_reset_generation_count();
+  double checkpoints_start = wall_clock_ms();
   for (uint64_t revision = 1; revision <= 40; ++revision) {
     live.session.elapsed_ms += 1000;
     assert(game_library_make_exact_runtime(&record, id, revision,
@@ -312,13 +321,22 @@ static void test_live_checkpoint_avoids_puzzle_regeneration(void) {
     assert(game_test_generation_count() == 0);
     assert(cache.valid && cache.revision == revision);
   }
+  double checkpoints_end = wall_clock_ms();
+  if (checkpoints_start >= 0 && checkpoints_end >= checkpoints_start)
+    printf("40 hot checkpoints wall time: %.2f ms\n",
+           checkpoints_end - checkpoints_start);
   /* Idempotent retries must not replace a terminal/retained record. */
   store_test_set_fault(STORE_TEST_FAULT_REPLACE);
   assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
   store_test_set_fault(STORE_TEST_FAULT_NONE);
 
   GameLibraryRecord checked;
+  double load_start = wall_clock_ms();
   assert(game_library_load(root, id, &checked) == STORE_OK);
+  double load_end = wall_clock_ms();
+  if (load_start >= 0 && load_end >= load_start)
+    printf("Canonical full-record load wall time: %.2f ms\n",
+           load_end - load_start);
   assert(game_test_generation_count() > 0);
   assert(checked.revision == 40);
   assert(checked.exact.session.elapsed_ms == live.session.elapsed_ms);
@@ -494,7 +512,9 @@ static void test_thousand_record_incremental_scan(void) {
   size_t count = 0;
   game_test_reset_generation_count();
   clock_t started = clock();
+  double scan_start = wall_clock_ms();
   assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
+  double scan_end = wall_clock_ms();
   clock_t finished = clock();
   assert(count == 1000u);
   assert(game_test_generation_count() == 0u);
@@ -503,6 +523,9 @@ static void test_thousand_record_incremental_scan(void) {
     printf("1000-entry metadata scan CPU time: %.2f ms\n",
            1000.0 * (double)(finished - started) / CLOCKS_PER_SEC);
   }
+  if (scan_start >= 0 && scan_end >= scan_start)
+    printf("1000-entry metadata scan wall time: %.2f ms\n",
+           scan_end - scan_start);
   count = 0;
   /* User cancellation must not allocate a list or scan the entire folder. */
   assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
