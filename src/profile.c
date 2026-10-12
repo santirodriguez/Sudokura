@@ -189,6 +189,10 @@ static bool valid_result(const ProfileResult *result) {
   return true;
 }
 
+bool profile_result_is_valid(const ProfileResult *result) {
+  return valid_result(result);
+}
+
 void profile_defaults(ProfileData *profile) {
   if (!profile) return;
   memset(profile, 0, sizeof(*profile));
@@ -526,6 +530,33 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   if (!reader->ok || !valid_profile_session(&loaded, expected_daily))
     return STORE_CORRUPT;
   *out = loaded;
+  return STORE_OK;
+}
+
+bool profile_session_encode_blob(const ProfileSession *session,
+                                 unsigned char *bytes, size_t capacity,
+                                 size_t *size_out) {
+  if (!session || !bytes || capacity == 0 || capacity > PROFILE_MAX_FILE_SIZE ||
+      !valid_profile_session(session, session->session.is_daily))
+    return false;
+  ProfileWriter writer = {bytes, capacity, 0, true};
+  encode_session(&writer, session);
+  if (!writer.ok) return false;
+  if (size_out) *size_out = writer.position;
+  return true;
+}
+
+StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
+                                        bool expected_daily,
+                                        ProfileSession *session) {
+  if (!bytes || !session || size == 0 || size > PROFILE_MAX_FILE_SIZE)
+    return STORE_IO_ERROR;
+  ProfileReader reader = {bytes, size, 0, true};
+  ProfileSession decoded;
+  StoreStatus status = decode_session(&reader, &decoded, expected_daily);
+  if (status != STORE_OK) return status;
+  if (!reader.ok || reader.position != size) return STORE_CORRUPT;
+  *session = decoded;
   return STORE_OK;
 }
 
