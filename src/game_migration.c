@@ -255,9 +255,8 @@ static StoreStatus migrate_results(const char *root, ProfileData *pending) {
         GameLibraryRecord existing;
         StoreStatus status = game_library_load(root, r->attempt_id, &existing);
         if (status == STORE_OK) {
-          if (existing.result.seed != expected.result.seed ||
-              existing.result.mode != expected.result.mode ||
-              existing.result.status != SESSION_WON)
+          if (!same_result_metadata(&existing.result, &expected.result) ||
+              existing.practice || !existing.retained)
             return STORE_CORRUPT;
         } else if (status == STORE_NOT_FOUND) {
           status = game_library_save(root, &expected);
@@ -381,6 +380,20 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
   return STORE_OK;
 }
 
+static bool same_result_metadata(const ProfileResult *a,
+                                 const ProfileResult *b) {
+  return a->seed == b->seed &&
+         a->generator_revision == b->generator_revision &&
+         a->difficulty == b->difficulty &&
+         a->mode == b->mode && a->status == b->status &&
+         a->assisted == b->assisted && a->is_daily == b->is_daily &&
+         a->elapsed_ms == b->elapsed_ms &&
+         a->mistakes == b->mistakes && a->strikes == b->strikes &&
+         a->daily_year == b->daily_year &&
+         a->daily_month == b->daily_month &&
+         a->daily_day == b->daily_day;
+}
+
 static bool same_serialized_session(const ProfileSession *a,
                                     const ProfileSession *b) {
   unsigned char left[4096], right[4096];
@@ -430,6 +443,15 @@ StoreStatus game_migration_reconcile(const char *root,
       slot->value = disk.exact;
       slot->revision = disk.revision;
       changed = true;
+    }
+    if (disk.result.status != SESSION_ACTIVE) {
+      ProfileResult terminal = disk.result;
+      terminal.attempt_id = disk.id;
+      terminal.practice = disk.practice;
+      bool inserted = false;
+      if (!profile_record_result(&staged, &terminal, &inserted))
+        return STORE_CORRUPT;
+      if (inserted) changed = true;
     }
   }
   for (uint16_t i = 0; i < staged.result_count;) {
