@@ -15,7 +15,7 @@ ifeq ($(OS),Windows_NT)
 PLATFORM_LIBS += -lshell32
 endif
 CORE = src/game.c src/human.c src/geometry.c src/i18n.c
-LIBRARY = src/game_library.c src/game_library_codec.c
+LIBRARY = src/game_library.c src/game_library_codec.c src/game_migration.c
 AUDIO_ASSETS = assets/audio/music-main.ogg assets/audio/music-fail.ogg \
 	assets/audio/jingle-win.ogg assets/audio/jingle-fail.ogg
 GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
@@ -25,7 +25,7 @@ GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
 	assets/generated/flag_ca.c assets/generated/flag_ca.h
 .PHONY: all test test-ui quality clean assets
 all: sudokura
-sudokura: src/sudokura_sdl.c src/app.c src/app.h src/app_clock.c src/app_clock.h src/desktop.c src/desktop.h src/url_launcher.c src/url_launcher.h src/profile.c src/profile.h src/game_library.c src/game_library_codec.c src/game_library.h src/save_policy.c src/save_policy.h src/store_io.c src/store_io.h src/store_status.h src/storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_present.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) src/audio.c src/audio.h src/input.c src/input.h src/progress.c src/progress.h src/version.h src/game.h src/human.h src/geometry.h src/i18n.h src/session.h src/session.c src/seed.h src/seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
+sudokura: src/sudokura_sdl.c src/app.c src/app.h src/app_clock.c src/app_clock.h src/desktop.c src/desktop.h src/url_launcher.c src/url_launcher.h src/profile.c src/profile.h src/game_library.c src/game_library_codec.c src/game_migration.c src/game_library.h src/game_migration.h src/save_policy.c src/save_policy.h src/store_io.c src/store_io.h src/store_status.h src/storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_present.inc src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) src/audio.c src/audio.h src/input.c src/input.h src/progress.c src/progress.h src/version.h src/game.h src/human.h src/geometry.h src/i18n.h src/session.h src/session.c src/seed.h src/seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) src/sudokura_sdl.c src/app.c src/app_clock.c src/desktop.c src/url_launcher.c src/audio.c src/profile.c $(LIBRARY) src/save_policy.c src/store_io.c src/session.c src/seed.c src/progress.c src/input.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c -o $@ $(SDL_LIBS) $(PLATFORM_LIBS) -lm
 tests/test_main: tests/test_main.c $(CORE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_main.c $(CORE) -o $@
