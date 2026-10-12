@@ -76,7 +76,7 @@ jobs:
           ./tests/test_human_san
           ./tests/test_session_san
           cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
-            -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -DSUDOKURA_STORE_TESTING -DSUDOKURA_GAME_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
             tests/test_game_library.c src/game_library.c src/game_library_codec.c \
             src/profile.c src/store_io.c src/seed.c src/session.c src/game.c \
             src/human.c -o tests/test_game_library_san
