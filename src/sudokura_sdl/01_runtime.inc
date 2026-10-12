@@ -212,21 +212,21 @@ static void play_input_effect(GameInputResult result,Mode mode){
   audio_play_effect(effect);
 }
 
-static void finish_terminal_action(UI*ui){
+static void finish_terminal_action(UI*ui,uint64_t decision_ms){
   if(!ui||ui->result==RES_NONE||ui->screen==SCR_END)return;
-  clock_pause(ui,PAUSE_END);
-  ui->screen=SCR_END;
+  if(!app_clock_freeze_terminal(ui,decision_ms))return;
   if(ui->result==RES_WIN&&!ui->reduced_motion)victory_animation_start();
   else victory_animation_reset();
 }
 
-static bool apply_action_outcome(UI*ui,AppActionOutcome outcome){
+static bool apply_action_outcome(UI*ui,AppActionOutcome outcome,
+                                 uint64_t decision_ms){
   play_input_effect(outcome.input,ui->mode);
   if(outcome.error&&game_mode_reveals_correctness(ui->mode))
     show_toast(ui,tr(ui->language,T_WRONG));
   else if(outcome.input==GAME_INPUT_STRICT_REJECTED)
     show_toast(ui,tr(ui->language,T_ILLEGAL));
-  if(outcome.terminal)finish_terminal_action(ui);
+  if(outcome.terminal)finish_terminal_action(ui,decision_ms);
   return outcome.changed||outcome.terminal;
 }
 
@@ -235,15 +235,19 @@ static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool
     .kind=notes_mode?APP_ACTION_NOTE:(value==0?APP_ACTION_CLEAR:APP_ACTION_PLACE),
     .row=row,.column=column,.value=value
   };
-  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
-  return apply_action_outcome(ui,outcome);
+  uint64_t action_ms=now_ms();
+  AppActionOutcome outcome=app_apply_action(
+      game,ui,action,app_clock_elapsed_s(ui,action_ms));
+  return apply_action_outcome(ui,outcome,action_ms);
 }
 
 static bool apply_history_action(Game*game,UI*ui,AppActionKind kind){
   AppAction action={.kind=kind};
-  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  uint64_t action_ms=now_ms();
+  AppActionOutcome outcome=app_apply_action(
+      game,ui,action,app_clock_elapsed_s(ui,action_ms));
   if(outcome.blocked)audio_play_effect(AUDIO_EFFECT_BLOCKED);
-  return apply_action_outcome(ui,outcome);
+  return apply_action_outcome(ui,outcome,action_ms);
 }
 
 static void clear_hint_preview(UI*ui){
@@ -289,8 +293,10 @@ static bool apply_logical_hint_action(Game*game,UI*ui){
     .column=placement.placement_cell%9,
     .value=placement.placement_value
   };
-  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
-  bool changed=apply_action_outcome(ui,outcome);
+  uint64_t action_ms=now_ms();
+  AppActionOutcome outcome=app_apply_action(
+      game,ui,action,app_clock_elapsed_s(ui,action_ms));
+  bool changed=apply_action_outcome(ui,outcome,action_ms);
   if(changed){
     ui->assisted=true;
     clear_hint_preview(ui);
@@ -300,20 +306,25 @@ static bool apply_logical_hint_action(Game*game,UI*ui){
 
 static bool apply_reveal_action(Game*game,UI*ui,int row,int column){
   AppAction action={.kind=APP_ACTION_HINT,.row=row,.column=column};
-  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  uint64_t action_ms=now_ms();
+  AppActionOutcome outcome=app_apply_action(
+      game,ui,action,app_clock_elapsed_s(ui,action_ms));
   if(outcome.changed){
     ui->assisted=true;
     clear_hint_preview(ui);
     show_toast(ui,tr(ui->language,T_HINT_USED));
   }
-  if(outcome.terminal)finish_terminal_action(ui);
+  if(outcome.terminal)finish_terminal_action(ui,action_ms);
   return outcome.changed||outcome.terminal;
 }
 
 static int apply_verify_action(Game*game,UI*ui){
   AppAction action={.kind=APP_ACTION_VERIFY};
-  AppActionOutcome outcome=app_apply_action(game,ui,action,elapsed_time(ui));
+  uint64_t action_ms=now_ms();
+  AppActionOutcome outcome=app_apply_action(
+      game,ui,action,app_clock_elapsed_s(ui,action_ms));
   if(outcome.revealed)ui->assisted=true;
+  if(outcome.terminal)finish_terminal_action(ui,action_ms);
   clear_hint_preview(ui);
   return outcome.detail;
 }
