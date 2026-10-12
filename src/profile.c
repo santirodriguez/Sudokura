@@ -663,7 +663,7 @@ static bool encode_profile_payload(unsigned char *payload, size_t capacity,
                                    size_t *size_out,
                                    const ProfileData *profile) {
   ProfileWriter writer = {payload, capacity, 0, true};
-  writer_u16(&writer, SUDOKURA_PROFILE_CONTENT_VERSION);
+  writer_u16(&writer, profile->codec_version);
 
   size_t preferences_length_position = writer.position;
   writer_u32(&writer, 0);
@@ -690,6 +690,24 @@ static bool encode_profile_payload(unsigned char *payload, size_t capacity,
   writer_u16(&writer, profile->result_count);
   for (uint16_t i = 0; i < profile->result_count; ++i)
     encode_result(&writer, &profile->results[i]);
+
+  if (profile->codec_version == SUDOKURA_PROFILE_CONTENT_VERSION) {
+    for (int index = 0; index < 2; ++index) {
+      const ProfileSlot *slot = slots[index];
+      writer_u64(&writer, slot->attempt_id.high);
+      writer_u64(&writer, slot->attempt_id.low);
+      writer_u64(&writer, slot->revision);
+      writer_u8(&writer, slot->retained ? 1u : 0u);
+    }
+    for (uint16_t i = 0; i < profile->result_count; ++i) {
+      writer_u64(&writer, profile->results[i].attempt_id.high);
+      writer_u64(&writer, profile->results[i].attempt_id.low);
+      writer_u8(&writer, profile->results[i].practice ? 1u : 0u);
+    }
+    writer_u8(&writer, profile->migration_pending ? 1u : 0u);
+    writer_u32(&writer, profile->migration_source_length);
+    writer_u32(&writer, profile->migration_source_crc);
+  }
 
   if (!writer.ok) return false;
   if (size_out) *size_out = writer.position;
@@ -806,11 +824,13 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   ProfileReader reader = {payload, payload_size, 0, true};
   uint16_t content_version = reader_u16(&reader);
   if (!reader.ok) return STORE_CORRUPT;
-  if (content_version != SUDOKURA_PROFILE_CONTENT_VERSION)
+  if (content_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
+      content_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
 
   ProfileData loaded;
   profile_defaults(&loaded);
+  loaded.codec_version = content_version;
   status = decode_sized_preferences(&reader, &loaded.preferences);
   if (status != STORE_OK) return status;
   status = decode_slot(&reader, &loaded.normal, false);
@@ -824,6 +844,29 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   for (uint16_t i = 0; i < loaded.result_count; ++i) {
     status = decode_result(&reader, &loaded.results[i]);
     if (status != STORE_OK) return status;
+  }
+  if (content_version == SUDOKURA_PROFILE_CONTENT_VERSION) {
+    ProfileSlot *slots[2] = {&loaded.normal, &loaded.daily};
+    for (int index = 0; index < 2; ++index) {
+      slots[index]->attempt_id.high = reader_u64(&reader);
+      slots[index]->attempt_id.low = reader_u64(&reader);
+      slots[index]->revision = reader_u64(&reader);
+      uint8_t retained = reader_u8(&reader);
+      if (retained > 1) return STORE_CORRUPT;
+      slots[index]->retained = retained == 1;
+    }
+    for (uint16_t i = 0; i < loaded.result_count; ++i) {
+      loaded.results[i].attempt_id.high = reader_u64(&reader);
+      loaded.results[i].attempt_id.low = reader_u64(&reader);
+      uint8_t practice = reader_u8(&reader);
+      if (practice > 1) return STORE_CORRUPT;
+      loaded.results[i].practice = practice == 1;
+    }
+    uint8_t pending = reader_u8(&reader);
+    loaded.migration_source_length = reader_u32(&reader);
+    loaded.migration_source_crc = reader_u32(&reader);
+    if (pending > 1) return STORE_CORRUPT;
+    loaded.migration_pending = pending == 1;
   }
 
   if (!reader.ok || reader.position != reader.size || !profile_validate(&loaded))
