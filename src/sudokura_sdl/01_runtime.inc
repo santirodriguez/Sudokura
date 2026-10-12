@@ -764,6 +764,15 @@ static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
   return persistence_flush(p);
 }
 
+static void persistence_begin_distinct_attempt(Persistence*p,bool daily){
+  if(!p)return;
+  ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
+  if(!slot->present)return;
+  slot->attempt_id=(GameAttemptId){0,0};
+  slot->revision=0;
+  slot->retained=false;
+}
+
 static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   if(!p||!game||!ui)return;
   const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
@@ -808,6 +817,7 @@ static GameGenerationResult start_new_session_base(
   ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;ui->sel_r=4;ui->sel_c=4;
+  persistence_begin_distinct_attempt(p,false);
   begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
   return GAME_GENERATION_OK;
 }
@@ -829,6 +839,7 @@ static GameGenerationResult start_daily_session_base(
   ui->assisted=false;ui->hint_preview_active=false;ui->hint_verify_required=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   ui->is_daily=true;ui->daily_year=year;ui->daily_month=month;ui->daily_day=day;ui->sel_r=4;ui->sel_c=4;
+  persistence_begin_distinct_attempt(p,true);
   begin_fresh_play(ui);(void)checkpoint_current_session(p,game,ui);
   return GAME_GENERATION_OK;
 }
@@ -841,9 +852,11 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
+  bool retry_after_loss=ui&&ui->result==RES_LOSE;
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
   if(!outcome.changed)return;
+  if(retry_after_loss)persistence_begin_distinct_attempt(p,ui->is_daily);
   ui->sel_r=4;ui->sel_c=4;ui->hint_preview_active=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   set_mode_params(ui);clock_reset(ui);
