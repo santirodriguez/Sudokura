@@ -68,6 +68,10 @@ GameGenerationResult game_generate_difficulty(
 bool game_new_difficulty_revision(Game *game, uint64_t seed,
                                   GameDifficulty difficulty,
                                   uint32_t revision);
+#ifdef SUDOKURA_GAME_TESTING
+void game_test_reset_generation_count(void);
+uint64_t game_test_generation_count(void);
+#endif
 bool game_new_difficulty(Game *game, uint64_t seed, GameDifficulty difficulty);
 bool game_new_daily_revision(Game *game, int year, int month, int day,
                              uint32_t revision);
