@@ -587,6 +587,53 @@ static void test_recovery_copy_collision_is_lossless(void) {
   cleanup();
 }
 
+static void test_recover_empty_corrupt_primary_losslessly(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(620);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, id, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  char hex[33], primary[160], backup[160], original[180];
+  game_attempt_id_hex(id, hex);
+  (void)snprintf(primary, sizeof(primary), "%s/games/%s.dat", root, hex);
+  (void)snprintf(backup, sizeof(backup), "%s/games/%s.dat.bak", root, hex);
+  (void)snprintf(original, sizeof(original),
+                 "%s/games/%s.dat.pre-recovery", root, hex);
+  /* Simulate an interrupted external truncation, not a valid empty record. */
+  FILE *file = fopen(primary, "wb");
+  assert(file != NULL);
+  assert(fclose(file) == 0);
+  assert(game_library_load(root, id, &record) == STORE_CORRUPT);
+  assert(store_copy_once(primary, original) == STORE_CORRUPT);
+  assert(!store_file_exists(original));
+
+  /* The preservation step itself must be atomic: no false recovery on
+     failed replace and no loss of either the corrupt source or good .bak. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_recover_previous(root, id, &record) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t count = 1;
+  assert(store_read_file(primary, bytes, sizeof(bytes), &count) == STORE_OK);
+  assert(count == 0);
+  assert(!store_file_exists(original));
+  assert(store_file_exists(backup));
+
+  assert(game_library_recover_previous(root, id, &record) == STORE_OK);
+  assert(record.revision == 1);
+  assert(store_read_file(original, bytes, sizeof(bytes), &count) == STORE_OK);
+  assert(count == 0);
+  assert(game_library_load(root, id, &record) == STORE_OK);
+  assert(record.revision == 1);
+  assert(store_file_exists(backup));
+  cleanup();
+}
+
 static void test_first_archive_after_unretained_hot_revisions(void) {
   prepare();
   ProfileSession won = make_session(SESSION_WON);
@@ -929,6 +976,7 @@ int main(void) {
   test_mixed_record_health_and_oversized_future_envelope();
   test_thousand_record_incremental_scan();
   test_recovery_copy_collision_is_lossless();
+  test_recover_empty_corrupt_primary_losslessly();
   test_first_archive_after_unretained_hot_revisions();
   test_write_fault_matrix_keeps_last_known_good();
   test_corrupt_receipt_isolates_one_attempt();

@@ -30,6 +30,10 @@ StoreStatus store_read_prefix(const char *path, unsigned char *data,
 StoreStatus store_atomic_write(const char *path, const char *backup_path,
                                const unsigned char *data, size_t size);
 StoreStatus store_copy_once(const char *source, const char *destination);
+/* Only for lossless opaque pre-recovery evidence, including a zero-byte file.
+   Normal profile and migration copies deliberately reject empty inputs. */
+StoreStatus store_copy_once_allow_empty(const char *source,
+                                       const char *destination);
 bool store_file_exists(const char *path);
 bool store_remove_file(const char *path);
 

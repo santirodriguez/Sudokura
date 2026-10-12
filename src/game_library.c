@@ -413,8 +413,7 @@ static StoreStatus preserve_pre_recovery(const char *root, GameAttemptId id,
       store_read_file(primary, original, sizeof(original), &count);
   if (status == STORE_NOT_FOUND) return STORE_OK;
   if (status != STORE_OK) return status;
-  if (count == 0) return STORE_CORRUPT; /* Leave an empty damaged file intact. */
-
+  /* A truncated-to-zero primary is still evidence: preserve it exactly. */
   for (unsigned index = 0; index < 16u; ++index) {
     char suffix[32];
     int n = index == 0
@@ -434,7 +433,7 @@ static StoreStatus preserve_pre_recovery(const char *root, GameAttemptId id,
       continue; /* Never overwrite a different immutable recovery copy. */
     }
     if (status != STORE_NOT_FOUND) return status;
-    status = store_copy_once(primary, copy);
+    status = store_copy_once_allow_empty(primary, copy);
     if (status != STORE_OK) return status;
     status = store_read_file(copy, existing, sizeof(existing),
                              &existing_count);

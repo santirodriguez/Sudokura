@@ -414,8 +414,9 @@ static bool write_temporary(const char *temporary,
 
 static StoreStatus write_atomic_internal(const char *path,
                                          const unsigned char *data,
-                                         size_t size) {
-  if (!path || !path[0] || !data || size == 0 ||
+                                         size_t size, bool allow_empty) {
+  if (!path || !path[0] || !data ||
+      (size == 0 && !allow_empty) ||
       size > SUDOKURA_STORE_IO_MAX_FILE_SIZE)
     return STORE_IO_ERROR;
 
@@ -445,7 +446,9 @@ static StoreStatus write_atomic_internal(const char *path,
   return sync_parent_directory(path) ? STORE_OK : STORE_IO_ERROR;
 }
 
-StoreStatus store_copy_once(const char *source, const char *destination) {
+static StoreStatus copy_once_internal(const char *source,
+                                      const char *destination,
+                                      bool allow_empty) {
   if (!source || !destination) return STORE_IO_ERROR;
   if (store_file_exists(destination)) return STORE_OK;
 
@@ -453,8 +456,17 @@ StoreStatus store_copy_once(const char *source, const char *destination) {
   size_t size = 0;
   StoreStatus status = store_read_file(source, data, sizeof(data), &size);
   if (status != STORE_OK) return status;
-  if (size == 0) return STORE_CORRUPT;
-  return write_atomic_internal(destination, data, size);
+  if (size == 0 && !allow_empty) return STORE_CORRUPT;
+  return write_atomic_internal(destination, data, size, allow_empty);
+}
+
+StoreStatus store_copy_once(const char *source, const char *destination) {
+  return copy_once_internal(source, destination, false);
+}
+
+StoreStatus store_copy_once_allow_empty(const char *source,
+                                       const char *destination) {
+  return copy_once_internal(source, destination, true);
 }
 
 StoreStatus store_atomic_write(const char *path, const char *backup_path,
@@ -467,10 +479,11 @@ StoreStatus store_atomic_write(const char *path, const char *backup_path,
     StoreStatus status =
         store_read_file(path, previous, sizeof(previous), &previous_size);
     if (status != STORE_OK || previous_size == 0) return STORE_IO_ERROR;
-    status = write_atomic_internal(backup_path, previous, previous_size);
+    status = write_atomic_internal(backup_path, previous, previous_size,
+                                   false);
     if (status != STORE_OK) return status;
   }
-  return write_atomic_internal(path, data, size);
+  return write_atomic_internal(path, data, size, false);
 }
 
 StoreLockStatus store_writer_lock_acquire(const char *directory,
