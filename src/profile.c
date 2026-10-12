@@ -209,6 +209,19 @@ static bool profile_links_valid(const ProfileData *profile) {
   if (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
       profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
     return false;
+  if (profile->codec_version == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY) {
+    if (profile->migration_pending || profile->migration_source_length ||
+        profile->migration_source_crc || profile->migration_source_suffix ||
+        profile->normal.retained || profile->daily.retained ||
+        profile->normal.revision || profile->daily.revision ||
+        attempt_id_present(profile->normal.attempt_id) ||
+        attempt_id_present(profile->daily.attempt_id))
+      return false;
+    for (uint16_t i = 0; i < profile->result_count; ++i)
+      if (profile->results[i].practice ||
+          attempt_id_present(profile->results[i].attempt_id))
+        return false;
+  }
   if (!slot_link_valid(&profile->normal) ||
       !slot_link_valid(&profile->daily))
     return false;
