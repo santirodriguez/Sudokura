@@ -434,6 +434,135 @@ static void test_collection_recovery_isolates_bad_and_previous_only(void) {
   cleanup();
 }
 
+static void test_preimage_write_fault_matrix(void) {
+  const StoreTestFault faults[] = {
+      STORE_TEST_FAULT_OPEN, STORE_TEST_FAULT_DURING_WRITE,
+      STORE_TEST_FAULT_NO_SPACE, STORE_TEST_FAULT_SYNC,
+      STORE_TEST_FAULT_REPLACE};
+  for (size_t i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) {
+    prepare();
+    write_legacy_profile();
+    ProfileData live;
+    assert(profile_load_file(primary, &live) == STORE_OK);
+    store_test_set_fault(faults[i]);
+    bool upgraded = true;
+    assert(game_migration_upgrade(root, primary, backup, &live,
+                                  &upgraded) == STORE_IO_ERROR);
+    assert(!upgraded);
+    store_test_set_fault(STORE_TEST_FAULT_NONE);
+    assert(!store_file_exists(intent));
+    ProfileData original;
+    assert(profile_load_file(primary, &original) == STORE_OK);
+    assert(original.codec_version ==
+           SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY);
+    assert(original.preferences.language == LANG_CA);
+    assert(game_migration_upgrade(root, primary, backup, &original,
+                                  &upgraded) == STORE_OK);
+    assert(upgraded);
+    assert_upgraded(&original);
+    cleanup();
+  }
+}
+
+typedef struct {
+  unsigned count;
+} MigrationRecordCount;
+
+static bool count_migrated_record(const GameLibraryEntry *entry,
+                                  void *context) {
+  MigrationRecordCount *result = (MigrationRecordCount *)context;
+  assert(entry->status == STORE_OK);
+  ++result->count;
+  return true;
+}
+
+static void test_immutable_intent_cutpoint_replays(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData initial;
+  assert(profile_load_file(primary, &initial) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &initial, NULL) ==
+         STORE_OK);
+  GameAttemptId id = initial.normal.attempt_id;
+  GameAttemptId daily_id = initial.daily.attempt_id;
+  GameAttemptId legacy_id = initial.results[1].attempt_id;
+  unsigned char preimage[16384], intent_bytes[16384];
+  size_t preimage_size = 0, intent_size = 0;
+  assert(store_read_file(source, preimage, sizeof(preimage),
+                         &preimage_size) == STORE_OK);
+  assert(store_read_file(intent, intent_bytes, sizeof(intent_bytes),
+                         &intent_size) == STORE_OK);
+
+  /* Cut after both immutable files, before publishing the pending profile. */
+  revert_to_immutable_source();
+  ProfileData staged;
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  assert(staged.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_OK);
+  assert(game_attempt_id_equal(staged.normal.attempt_id, id));
+
+  /* Cut after the pending profile, before one required record commit. */
+  ProfileData pending;
+  assert(profile_load_file(intent, &pending) == STORE_OK);
+  assert(pending.migration_pending);
+  assert(profile_save_file(primary, NULL, &pending) == STORE_OK);
+  char hex[33], record_path[SUDOKURA_STORE_PATH_CAPACITY];
+  game_attempt_id_hex(id, hex);
+  int n = snprintf(record_path, sizeof(record_path),
+                   "%s/games/%s.dat", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(record_path));
+  assert(store_remove_file(record_path));
+  assert(game_library_load(root, id, &(GameLibraryRecord){0}) ==
+         STORE_NOT_FOUND);
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  assert(staged.migration_pending);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_OK);
+  assert(game_attempt_id_equal(staged.normal.attempt_id, id));
+
+  /* Cut after records/readback, before clearing the pending bit. */
+  assert(profile_save_file(primary, NULL, &pending) == STORE_OK);
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary, &staged) == STORE_OK);
+  assert(staged.migration_pending);
+  assert(game_migration_upgrade(root, primary, backup, &staged, NULL) ==
+         STORE_OK);
+  assert_upgraded(&staged);
+  assert(game_attempt_id_equal(staged.normal.attempt_id, id));
+  assert(game_attempt_id_equal(staged.daily.attempt_id, daily_id));
+  assert(game_attempt_id_equal(staged.results[1].attempt_id, legacy_id));
+
+  unsigned char verified[16384];
+  size_t length = 0;
+  assert(store_read_file(source, verified, sizeof(verified), &length) ==
+         STORE_OK);
+  assert(length == preimage_size &&
+         memcmp(verified, preimage, preimage_size) == 0);
+  assert(store_read_file(intent, verified, sizeof(verified), &length) ==
+         STORE_OK);
+  assert(length == intent_size &&
+         memcmp(verified, intent_bytes, intent_size) == 0);
+  MigrationRecordCount count = {0};
+  assert(game_library_scan(root, count_migrated_record, &count) == STORE_OK);
+  assert(count.count == 3);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -445,6 +574,8 @@ int main(void) {
   test_missing_hot_pair_recovers_verified_intent();
   test_explicit_collection_recovery_and_ambiguity();
   test_collection_recovery_isolates_bad_and_previous_only();
+  test_preimage_write_fault_matrix();
+  test_immutable_intent_cutpoint_replays();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

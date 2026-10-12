@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -491,8 +492,17 @@ static void test_thousand_record_incremental_scan(void) {
     assert(game_library_save(root, &record) == STORE_OK);
   }
   size_t count = 0;
+  game_test_reset_generation_count();
+  clock_t started = clock();
   assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
+  clock_t finished = clock();
   assert(count == 1000u);
+  assert(game_test_generation_count() == 0u);
+  if (started != (clock_t)-1 && finished != (clock_t)-1 &&
+      finished >= started) {
+    printf("1000-entry metadata scan CPU time: %.2f ms\n",
+           1000.0 * (double)(finished - started) / CLOCKS_PER_SEC);
+  }
   count = 0;
   /* User cancellation must not allocate a list or scan the entire folder. */
   assert(game_library_scan(root, count_metadata, &count) == STORE_OK);
