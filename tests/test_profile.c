@@ -682,6 +682,125 @@ static void test_incompatible_legacy_is_preserved(void) {
   assert(!store_file_exists(profile_path));
 }
 
+static void test_v2_linkage_and_v1_read_compatibility(void) {
+  cleanup();
+  ProfileData profile;
+  profile_defaults(&profile);
+  assert(profile.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION);
+  SessionState normal = normal_state();
+  assert(profile_slot_set(&profile.normal, &normal, true));
+  profile.normal.attempt_id = (GameAttemptId){1, 2};
+  profile.normal.revision = 5;
+  profile.normal.retained = true;
+  profile.result_count = 1;
+  profile.results[0] = (ProfileResult){
+      .seed = UINT64_C(100), .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM, .mode = MODE_CLASSIC,
+      .status = SESSION_WON, .elapsed_ms = UINT64_C(120000),
+      .attempt_id = {3, 4},
+  };
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+  ProfileData loaded;
+  assert(profile_load_file(profile_path, &loaded) == STORE_OK);
+  assert(loaded.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION);
+  assert(loaded.normal.retained);
+  assert(loaded.normal.revision == 5);
+  assert(loaded.normal.attempt_id.high == 1 &&
+         loaded.normal.attempt_id.low == 2);
+  assert(loaded.results[0].attempt_id.high == 3);
+
+  profile.codec_version = SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY;
+  profile.normal.attempt_id = (GameAttemptId){0, 0};
+  profile.normal.revision = 0;
+  profile.normal.retained = false;
+  profile.results[0].attempt_id = (GameAttemptId){0, 0};
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+  assert(profile_load_file(profile_path, &loaded) == STORE_OK);
+  assert(loaded.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY);
+  assert(!loaded.normal.retained && loaded.normal.revision == 0);
+  assert(loaded.normal.attempt_id.high == 0);
+  assert(loaded.results[0].attempt_id.low == 0);
+  assert(profile_save_file(profile_path, NULL, &loaded) == STORE_OK);
+  unsigned char bytes[16384];
+  size_t count = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &count) == STORE_OK);
+  assert(bytes[18] == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY);
+  cleanup();
+}
+
+static void test_attempt_dedup_and_recent_practice(void) {
+  ProfileData profile;
+  profile_defaults(&profile);
+  ProfileResult result = {
+      .seed = UINT64_C(11), .generator_revision = SUDOKURA_GENERATOR_REVISION,
+      .difficulty = DIFFICULTY_MEDIUM, .mode = MODE_CLASSIC,
+      .status = SESSION_WON, .elapsed_ms = UINT64_C(5000),
+      .attempt_id = {1, 1},
+  };
+  bool inserted = false;
+  assert(profile_record_result(&profile, &result, &inserted) && inserted);
+  assert(profile_record_result(&profile, &result, &inserted) && !inserted);
+  ProfileResult second = result;
+  second.attempt_id = (GameAttemptId){1, 2};
+  assert(profile_record_result(&profile, &second, &inserted) && inserted);
+  assert(profile.result_count == 2);
+  second.elapsed_ms += 1000;
+  assert(!profile_record_result(&profile, &second, &inserted));
+  assert(profile.result_count == 2);
+
+  ProfileResult practice = result;
+  practice.attempt_id = (GameAttemptId){1, 3};
+  practice.practice = true;
+  practice.elapsed_ms = 100;
+  assert(profile_record_result(&profile, &practice, &inserted) && inserted);
+  ProfileResultSummary summary = profile_result_summary(&profile, &result);
+  assert(summary.best_time_available && summary.best_time_ms == 5000);
+  assert(profile_validate(&profile));
+}
+
+static void test_v2_maximum_result_payload(void) {
+  cleanup();
+  ProfileData profile;
+  profile_defaults(&profile);
+  for (uint16_t i = 0; i < SUDOKURA_RESULT_LIMIT; ++i) {
+    ProfileResult item = {
+        .seed = UINT64_C(1000) + i,
+        .generator_revision = SUDOKURA_GENERATOR_REVISION,
+        .difficulty = DIFFICULTY_EASY,
+        .mode = MODE_CLASSIC,
+        .status = SESSION_WON,
+        .elapsed_ms = UINT64_C(180000) + i,
+        .attempt_id = {1, (uint64_t)i + 1},
+    };
+    bool inserted = false;
+    assert(profile_record_result(&profile, &item, &inserted) && inserted);
+  }
+  SessionState normal = normal_state();
+  SessionState daily = daily_state();
+  assert(profile_slot_set(&profile.normal, &normal, true));
+  assert(profile_slot_set(&profile.daily, &daily, false));
+  profile.normal.attempt_id = (GameAttemptId){2, 1};
+  profile.daily.attempt_id = (GameAttemptId){2, 2};
+  profile.normal.revision = 1;
+  profile.daily.revision = 1;
+  profile.normal.retained = true;
+  profile.daily.retained = true;
+  assert(profile_validate(&profile));
+  assert(profile_save_file(profile_path, profile_backup_path, &profile) ==
+         STORE_OK);
+  unsigned char bytes[16384];
+  size_t count = 0;
+  assert(store_read_file(profile_path, bytes, sizeof(bytes), &count) == STORE_OK);
+  assert(count <= sizeof(bytes));
+  ProfileData loaded;
+  assert(profile_load_file(profile_path, &loaded) == STORE_OK);
+  assert(loaded.result_count == SUDOKURA_RESULT_LIMIT);
+  assert(loaded.results[127].attempt_id.low == 128);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_profile_roundtrip();
@@ -701,6 +820,9 @@ int main(void) {
   test_daily_uses_separate_slot();
   test_corrupt_legacy_inputs_fail_closed();
   test_incompatible_legacy_is_preserved();
+  test_v2_linkage_and_v1_read_compatibility();
+  test_attempt_dedup_and_recent_practice();
+  test_v2_maximum_result_payload();
   cleanup();
   puts("v1.3 profile model, recovery, slots, bounds, and v1.2 fixture migration passed");
   return 0;
