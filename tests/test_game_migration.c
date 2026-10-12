@@ -1090,6 +1090,112 @@ static void test_terminal_reconcile_after_unacknowledged_profile_replace(void) {
   cleanup();
 }
 
+static void test_orphan_profile_artifacts_prevent_fresh_initialization(void) {
+  prepare();
+  const char *lock = ".sudokura-migration-test/profile.lock";
+  const unsigned char bytes[] = "retained-evidence";
+  assert(store_atomic_write(lock, NULL, bytes, sizeof(bytes) - 1u) ==
+         STORE_OK);
+  assert(!game_migration_has_artifacts(root));
+  assert(store_remove_file(lock));
+
+  const char *names[] = {
+      "profile.dat.pre-recovery",
+      "profile.dat.pre-recovery.15",
+      "profile.dat.tmp.231.1",
+      "profile.dat.bak.tmp.231.2",
+      "profile.dat.v1.3.7-import.dat.tmp.231.3"
+  };
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+    char path[SUDOKURA_STORE_PATH_CAPACITY];
+    int n = snprintf(path, sizeof(path), "%s/%s", root, names[i]);
+    assert(n > 0 && (size_t)n < sizeof(path));
+    assert(store_atomic_write(path, NULL, bytes, sizeof(bytes) - 1u) ==
+           STORE_OK);
+    assert(game_migration_has_artifacts(root));
+
+    ProfileData preview, output;
+    profile_defaults(&output);
+    output.preferences.language = LANG_ES;
+    ProfileData before = output;
+    GameMigrationRecoverySummary scan = {0};
+    assert(game_migration_preview_collection(root, &preview, &scan) ==
+           STORE_OK);
+    assert(scan.compatible_records == 0u);
+    assert(game_migration_recover_collection(
+               root, primary, backup, &output, &scan) == STORE_IO_ERROR);
+    assert(profile_encoded_equal(&output, &before));
+    assert(!store_file_exists(primary));
+    assert(!store_file_exists(backup));
+    assert(store_file_exists(path));
+    assert(store_remove_file(path));
+    assert(!game_migration_has_artifacts(root));
+  }
+  cleanup();
+}
+
+static void test_collection_without_valid_primary_refuses_defaults(void) {
+  for (unsigned variant = 0; variant < 3u; ++variant) {
+    prepare();
+    ProfileData legacy = legacy_profile();
+    GameAttemptId id = {UINT64_C(0xdadedede), UINT64_C(100) + variant};
+    GameLibraryRecord record;
+    assert(game_library_make_exact(&record, id, 1u,
+                                   &legacy.normal.value, true));
+    assert(game_library_save(root, &record) == STORE_OK);
+
+    char hex[33], path[SUDOKURA_STORE_PATH_CAPACITY];
+    game_attempt_id_hex(id, hex);
+    int n = snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
+    assert(n > 0 && (size_t)n < sizeof(path));
+    if (variant == 0u) {
+      legacy.normal.value.session.elapsed_ms += UINT64_C(1000);
+      assert(game_library_make_exact(&record, id, 2u,
+                                     &legacy.normal.value, true));
+      assert(game_library_save(root, &record) == STORE_OK);
+      assert(store_remove_file(path)); /* Earlier copy exists but is not chosen. */
+    } else if (variant == 1u) {
+      unsigned char corrupted[SUDOKURA_GAME_RECORD_MAX_BYTES];
+      size_t length = 0;
+      assert(store_read_file(path, corrupted, sizeof(corrupted),
+                             &length) == STORE_OK);
+      assert(length > 0);
+      corrupted[length - 1u] ^= 0x5au;
+      assert(store_atomic_write(path, NULL, corrupted, length) == STORE_OK);
+    } else {
+      assert(game_library_delete(root, id) == STORE_OK);
+    }
+
+    assert(game_migration_has_artifacts(root));
+    ProfileData preview, output;
+    profile_defaults(&output);
+    output.preferences.language = LANG_ES;
+    ProfileData before = output;
+    GameMigrationRecoverySummary info = {0};
+    assert(game_migration_preview_collection(root, &preview, &info) ==
+           STORE_OK);
+    assert(info.compatible_records == 0u);
+    if (variant == 0u) assert(info.previous_only_records == 1u);
+    if (variant == 1u) assert(info.unavailable_records == 1u);
+    assert(game_migration_recover_collection(
+               root, primary, backup, &output, &info) == STORE_IO_ERROR);
+    assert(profile_encoded_equal(&output, &before));
+    assert(!store_file_exists(primary));
+    assert(!store_file_exists(backup));
+
+    if (variant == 0u) {
+      assert(game_library_recover_previous(root, id, &record) == STORE_OK);
+      assert(record.revision == 1u);
+    } else if (variant == 1u) {
+      assert(game_library_load(root, id, &record) == STORE_CORRUPT);
+    } else {
+      assert(game_library_receipt_status(root, id) == STORE_OK);
+      assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+    }
+    cleanup();
+  }
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -1111,6 +1217,8 @@ int main(void) {
   test_profile_backup_recovery_preserves_corrupt_primary();
   test_profile_backup_recovery_preserves_empty_primary();
   test_terminal_reconcile_after_unacknowledged_profile_replace();
+  test_orphan_profile_artifacts_prevent_fresh_initialization();
+  test_collection_without_valid_primary_refuses_defaults();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

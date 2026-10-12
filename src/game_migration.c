@@ -53,6 +53,16 @@ static bool any_entry(const char *name, void *context) {
   return false;
 }
 
+static bool profile_evidence_entry(const char *name, void *context) {
+  /* Do not initialize defaults over orphan recovery copies or interrupted
+     profile writes. profile.lock by itself is not retained user data. */
+  static const char prefix[] = "profile.dat.";
+  if (strncmp(name, prefix, sizeof(prefix) - 1u) != 0) return true;
+  bool *found = (bool *)context;
+  *found = true;
+  return false;
+}
+
 bool game_migration_has_artifacts(const char *root) {
   if (!root) return true;
   char path[SUDOKURA_STORE_PATH_CAPACITY];
@@ -63,9 +73,14 @@ bool game_migration_has_artifacts(const char *root) {
     if (!source_path(path, root, i)) return true;
     if (store_file_exists(path)) return true;
   }
-  if (!join(path, root, "games")) return true;
   bool found = false;
-  StoreStatus status = store_list_directory(path, any_entry, &found);
+  StoreStatus status = store_list_directory(root, profile_evidence_entry,
+                                           &found);
+  if (found || (status != STORE_OK && status != STORE_NOT_FOUND))
+    return true;
+  if (!join(path, root, "games")) return true;
+  found = false;
+  status = store_list_directory(path, any_entry, &found);
   return found || (status != STORE_OK && status != STORE_NOT_FOUND);
 }
 
@@ -592,6 +607,11 @@ StoreStatus game_migration_recover_collection(
   GameMigrationRecoverySummary preview;
   status = game_migration_preview_collection(root, &rebuilt, &preview);
   if (status != STORE_OK) return status;
+  if (preview.compatible_records == 0u) {
+    /* Backup-only, corrupt, receipt-only and orphan-file collections have
+       no validated record to rebuild. Never publish silent defaults. */
+    return STORE_IO_ERROR;
+  }
   status = profile_save_file(profile_path, NULL, &rebuilt);
   if (status != STORE_OK) return status;
   ProfileData checked;
