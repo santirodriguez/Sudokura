@@ -165,18 +165,33 @@ StoreStatus game_library_save(const char *root,
   GameLibraryRecord previous;
   StoreStatus status = game_library_load(root, record->id, &previous);
   if (status == STORE_OK) {
+    unsigned char old_bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+    size_t old_length = 0;
+    if (!game_library_encode(&previous, old_bytes, &old_length))
+      return STORE_IO_ERROR;
+    if (length == old_length &&
+        memcmp(encoded, old_bytes, length) == 0)
+      return STORE_OK; /* An identical retry does not rotate the backup. */
+    if (previous.revision >= record->revision)
+      return STORE_IO_ERROR;
     if (previous.kind == GAME_RECORD_EXACT &&
         previous.result.status != SESSION_ACTIVE)
       return STORE_IO_ERROR;
-    if (previous.revision > record->revision) return STORE_IO_ERROR;
-    if (previous.revision == record->revision) {
-      unsigned char old_bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
-      size_t old_length = 0;
-      if (!game_library_encode(&previous, old_bytes, &old_length))
+    if (previous.kind == GAME_RECORD_LEGACY_SUMMARY) {
+      /* A legacy summary can only gain its matching exact terminal board. */
+      const ProfileResult *a = &previous.result;
+      const ProfileResult *b = &record->result;
+      if (record->kind != GAME_RECORD_EXACT ||
+          a->seed != b->seed ||
+          a->generator_revision != b->generator_revision ||
+          a->difficulty != b->difficulty || a->mode != b->mode ||
+          a->status != b->status || a->assisted != b->assisted ||
+          a->is_daily != b->is_daily || a->elapsed_ms != b->elapsed_ms ||
+          a->mistakes != b->mistakes || a->strikes != b->strikes ||
+          a->daily_year != b->daily_year ||
+          a->daily_month != b->daily_month ||
+          a->daily_day != b->daily_day)
         return STORE_IO_ERROR;
-      return length == old_length &&
-                     memcmp(encoded, old_bytes, length) == 0
-                 ? STORE_OK : STORE_IO_ERROR;
     }
   } else if (status != STORE_NOT_FOUND) {
     return status;
