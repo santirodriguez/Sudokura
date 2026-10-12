@@ -380,3 +380,80 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
   if (upgraded) *upgraded = true;
   return STORE_OK;
 }
+
+static bool same_serialized_session(const ProfileSession *a,
+                                    const ProfileSession *b) {
+  unsigned char left[4096], right[4096];
+  size_t a_len = 0, b_len = 0;
+  return profile_session_encode_blob(a, left, sizeof(left), &a_len) &&
+         profile_session_encode_blob(b, right, sizeof(right), &b_len) &&
+         a_len == b_len && memcmp(left, right, a_len) == 0;
+}
+
+StoreStatus game_migration_reconcile(const char *root,
+                                     const char *profile_path,
+                                     const char *backup_path,
+                                     ProfileData *profile) {
+  if (!root || !profile_path || !backup_path || !profile ||
+      !profile_validate(profile) || profile->migration_pending)
+    return STORE_IO_ERROR;
+  ProfileData staged = *profile;
+  bool changed = false;
+  ProfileSlot *slots[2] = {&staged.normal, &staged.daily};
+  for (unsigned index = 0; index < 2; ++index) {
+    ProfileSlot *slot = slots[index];
+    if (!slot->present || !slot->retained) continue;
+    if (!game_attempt_id_valid(slot->attempt_id)) return STORE_CORRUPT;
+    StoreStatus receipt = game_library_receipt_status(root, slot->attempt_id);
+    if (receipt == STORE_OK) {
+      memset(slot, 0, sizeof(*slot));
+      changed = true;
+      continue;
+    }
+    if (receipt != STORE_NOT_FOUND) return receipt;
+    GameLibraryRecord disk;
+    StoreStatus status = game_library_load(root, slot->attempt_id, &disk);
+    if (status != STORE_OK) return status;
+    if (disk.kind != GAME_RECORD_EXACT ||
+        disk.result.is_daily != (index == 1) ||
+        disk.result.seed != slot->value.session.game.seed ||
+        disk.result.generator_revision !=
+            slot->value.session.game.generator_revision ||
+        disk.result.difficulty != slot->value.session.game.difficulty ||
+        disk.result.mode != slot->value.session.mode)
+      return STORE_CORRUPT;
+    if (disk.revision < slot->revision) return STORE_IO_ERROR;
+    if (disk.revision == slot->revision) {
+      if (!same_serialized_session(&disk.exact, &slot->value))
+        return STORE_CORRUPT;
+    } else {
+      slot->value = disk.exact;
+      slot->revision = disk.revision;
+      changed = true;
+    }
+  }
+  for (uint16_t i = 0; i < staged.result_count;) {
+    StoreStatus receipt = game_attempt_id_valid(staged.results[i].attempt_id)
+        ? game_library_receipt_status(root, staged.results[i].attempt_id)
+        : STORE_NOT_FOUND;
+    if (receipt == STORE_OK) {
+      memmove(&staged.results[i], &staged.results[i + 1],
+              (staged.result_count - i - 1u) * sizeof(staged.results[0]));
+      --staged.result_count;
+      changed = true;
+      continue;
+    }
+    if (receipt != STORE_NOT_FOUND) return receipt;
+    ++i;
+  }
+  if (!changed) return STORE_OK;
+  if (!profile_validate(&staged)) return STORE_CORRUPT;
+  StoreStatus status = profile_save_file(profile_path, backup_path, &staged);
+  if (status != STORE_OK) return status;
+  ProfileData loaded;
+  status = profile_load_file(profile_path, &loaded);
+  if (status != STORE_OK) return status;
+  if (!profile_encoded_equal(&loaded, &staged)) return STORE_CORRUPT;
+  *profile = loaded;
+  return STORE_OK;
+}
