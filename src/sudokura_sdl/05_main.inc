@@ -443,7 +443,7 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
     case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
-    case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_flush(p);return true;
+    case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_retry_current(p,game,ui);return true;
     default:
       if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
       return false;
@@ -471,9 +471,11 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   if (!ui || ui->screen != SCR_PLAY || ui->result != RES_NONE ||
       ui->pause_reasons != 0)
     return false;
-  AppActionOutcome outcome = app_check_terminal(game, ui, elapsed_time(ui));
+  uint64_t decision_ms = now_ms();
+  AppActionOutcome outcome =
+      app_check_terminal(game, ui, app_clock_elapsed_s(ui, decision_ms));
   if (!outcome.terminal) return false;
-  finish_terminal_action(ui);
+  finish_terminal_action(ui, decision_ms);
   result_keyboard_focus=0;
   (void)checkpoint_current_session(persistence, game, ui);
   return true;
@@ -1483,7 +1485,7 @@ int main(int argc, char **argv) {
         SDL_Keymod mod = key_event.modifiers;
         if (persistence_has_save_error(&persistence) && k == SDLK_r) {
           ui_button_click();
-          (void)persistence_flush(&persistence);
+          (void)persistence_retry_current(&persistence, &game, &ui);
           continue;
         }
         if (open_global_info_key(&persistence, &game, &ui, k))
@@ -1742,7 +1744,7 @@ int main(int argc, char **argv) {
         if (left && storage_retry_hit(&g, &ui, x, y)) {
           play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;
           ui_button_click();
-          (void)persistence_flush(&persistence);
+          (void)persistence_retry_current(&persistence, &game, &ui);
           continue;
         }
         if (left && hint_panel_interactive(&ui)) {
