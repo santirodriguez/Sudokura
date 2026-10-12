@@ -1378,7 +1378,8 @@ int main(int argc, char **argv) {
   Persistence persistence;
   persistence_init(&persistence);
   ui.language = persistence.preferences.language;
-  if (persistence.profile_status == STORE_CORRUPT &&
+  if ((persistence.profile_status == STORE_CORRUPT ||
+       persistence.profile_status == STORE_NOT_FOUND) &&
       persistence_previous_available(&persistence)) {
     bool recover = confirm_box(&g, &game, &ui, tr(ui.language, T_STORAGE_ERROR),
                                tr(ui.language, T_PROFILE_RECOVER_PROMPT),
