@@ -10,11 +10,6 @@
 #define SUDOKURA_GAME_RECORD_MAX_BYTES 8192u
 #define SUDOKURA_GAME_RECORD_VERSION 1u
 
-typedef struct {
-  uint64_t high;
-  uint64_t low;
-} GameAttemptId;
-
 typedef enum {
   GAME_RECORD_EXACT = 1,
   GAME_RECORD_LEGACY_SUMMARY = 2
