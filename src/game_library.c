@@ -178,7 +178,8 @@ bool game_library_new_id(const char *root, const GameAttemptId *reserved,
     for (size_t i = 0; i < reserved_count; ++i)
       if (game_attempt_id_equal(reserved[i], value)) collision = true;
     if (collision) continue;
-    const char *suffixes[] = {".dat", ".dat.bak", ".deleted"};
+    const char *suffixes[] = {
+        ".dat", ".dat.bak", ".deleted", ".dat.pre-recovery"};
     for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i) {
       char path[SUDOKURA_STORE_PATH_CAPACITY];
       if (!game_path(path, root, value, suffixes[i])) return false;
@@ -242,8 +243,8 @@ StoreStatus game_library_save(const char *root,
     }
   } else if (status != STORE_NOT_FOUND) {
     return status;
-  } else if (store_file_exists(backup)) {
-    /* A backup-only record must be explicitly recovered, never overwritten. */
+  } else if (store_file_exists(backup) || record->revision != 1u) {
+    /* A missing existing revision must not be treated as a new attempt. */
     return STORE_IO_ERROR;
   }
 
@@ -339,8 +340,8 @@ StoreStatus game_library_save_runtime(const char *root,
       return STORE_IO_ERROR;
   } else if (status != STORE_NOT_FOUND) {
     return status;
-  } else if (store_file_exists(backup)) {
-    /* Never rotate a recoverable backup when the primary disappeared. */
+  } else if (store_file_exists(backup) || record->revision != 1u) {
+    /* Missing durable state cannot be recreated as an older/newer save. */
     return STORE_IO_ERROR;
   }
 
@@ -361,6 +362,50 @@ StoreStatus game_library_save_runtime(const char *root,
   return STORE_OK;
 }
 
+/* Explicit previous-copy recovery must not destroy the existing primary,
+   including incompatible/corrupt bytes that might matter to a future reader.
+   Preserve it as opaque data before replacing it with validated backup bytes. */
+static StoreStatus preserve_pre_recovery(const char *root, GameAttemptId id,
+                                         const char *primary) {
+  unsigned char original[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+  size_t count = 0;
+  StoreStatus status =
+      store_read_file(primary, original, sizeof(original), &count);
+  if (status == STORE_NOT_FOUND) return STORE_OK;
+  if (status != STORE_OK) return status;
+  if (count == 0) return STORE_CORRUPT; /* Leave an empty damaged file intact. */
+
+  for (unsigned index = 0; index < 16u; ++index) {
+    char suffix[32];
+    int n = index == 0
+          ? snprintf(suffix, sizeof(suffix), ".dat.pre-recovery")
+          : snprintf(suffix, sizeof(suffix), ".dat.pre-recovery.%u", index);
+    if (n <= 0 || (size_t)n >= sizeof(suffix)) return STORE_IO_ERROR;
+    char copy[SUDOKURA_STORE_PATH_CAPACITY];
+    if (!game_path(copy, root, id, suffix)) return STORE_IO_ERROR;
+
+    unsigned char existing[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+    size_t existing_count = 0;
+    status = store_read_file(copy, existing, sizeof(existing),
+                             &existing_count);
+    if (status == STORE_OK) {
+      if (existing_count == count && memcmp(existing, original, count) == 0)
+        return STORE_OK;
+      continue; /* Never overwrite a different immutable recovery copy. */
+    }
+    if (status != STORE_NOT_FOUND) return status;
+    status = store_copy_once(primary, copy);
+    if (status != STORE_OK) return status;
+    status = store_read_file(copy, existing, sizeof(existing),
+                             &existing_count);
+    if (status != STORE_OK) return status;
+    if (existing_count != count || memcmp(existing, original, count) != 0)
+      return STORE_CORRUPT;
+    return STORE_OK;
+  }
+  return STORE_IO_ERROR; /* Preserve old primary when all slots are occupied. */
+}
+
 StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record) {
   if (!record || !root || !game_attempt_id_valid(id))
@@ -378,6 +423,8 @@ StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
     return STORE_IO_ERROR;
   char primary[SUDOKURA_STORE_PATH_CAPACITY];
   if (!game_path(primary, root, id, ".dat")) return STORE_IO_ERROR;
+  status = preserve_pre_recovery(root, id, primary);
+  if (status != STORE_OK) return status;
   status = store_atomic_write(primary, NULL, encoded, length);
   if (status != STORE_OK) return status;
   GameLibraryRecord verified;

@@ -179,6 +179,15 @@ static void test_save_revision_and_previous_recovery(void) {
   assert(recovered.revision == 1);
   assert(game_library_load(root, id, &recovered) == STORE_OK);
   assert(recovered.revision == 1);
+  char preserved[160];
+  (void)snprintf(preserved, sizeof(preserved),
+                 "%s/games/123456789abcdef00000000000000003.dat.pre-recovery",
+                 root);
+  unsigned char original[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t original_size = 0;
+  assert(store_read_file(preserved, original, sizeof(original),
+                         &original_size) == STORE_OK);
+  assert(original_size == count && memcmp(original, bytes, count) == 0);
   cleanup();
 }
 
@@ -494,6 +503,138 @@ static void test_thousand_record_incremental_scan(void) {
   cleanup();
 }
 
+static void test_recovery_copy_collision_is_lossless(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameAttemptId id = make_id(512);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, id, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  char hex[33], primary[160], first[160], second[160];
+  game_attempt_id_hex(id, hex);
+  (void)snprintf(primary, sizeof(primary), "%s/games/%s.dat", root, hex);
+  (void)snprintf(first, sizeof(first),
+                 "%s/games/%s.dat.pre-recovery", root, hex);
+  (void)snprintf(second, sizeof(second),
+                 "%s/games/%s.dat.pre-recovery.1", root, hex);
+
+  unsigned char corrupt[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t count = 0;
+  assert(store_read_file(primary, corrupt, sizeof(corrupt), &count) == STORE_OK);
+  corrupt[count - 1u] ^= 0x52u;
+  assert(store_atomic_write(primary, NULL, corrupt, count) == STORE_OK);
+  const unsigned char sentinel[] = "older-preserved-bytes";
+  assert(store_atomic_write(first, NULL, sentinel,
+                            sizeof(sentinel)) == STORE_OK);
+
+  assert(game_library_recover_previous(root, id, &record) == STORE_OK);
+  assert(record.revision == 1);
+  unsigned char checked[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t length = 0;
+  assert(store_read_file(first, checked, sizeof(checked), &length) == STORE_OK);
+  assert(length == sizeof(sentinel) &&
+         memcmp(checked, sentinel, length) == 0);
+  assert(store_read_file(second, checked, sizeof(checked), &length) == STORE_OK);
+  assert(length == count && memcmp(checked, corrupt, count) == 0);
+  cleanup();
+}
+
+static void test_missing_record_does_not_recreate_revision(void) {
+  prepare();
+  GameAttemptId id = make_id(513);
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameLibraryRecord record;
+  GameLibraryHotCache cache = {0};
+  assert(game_library_make_exact(&record, id, 2, &live, true));
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
+  assert(game_library_make_exact(&record, id, 1, &live, true));
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+  char hex[33], path[160];
+  game_attempt_id_hex(id, hex);
+  (void)snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
+  assert(store_remove_file(path));
+  live.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&record, id, 2, &live, true));
+  assert(game_library_save(root, &record) == STORE_IO_ERROR);
+  assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
+  cleanup();
+}
+
+static void test_write_fault_matrix_keeps_last_known_good(void) {
+  const StoreTestFault faults[] = {
+      STORE_TEST_FAULT_OPEN, STORE_TEST_FAULT_DURING_WRITE,
+      STORE_TEST_FAULT_NO_SPACE, STORE_TEST_FAULT_SYNC,
+      STORE_TEST_FAULT_REPLACE};
+  for (size_t i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) {
+    prepare();
+    ProfileSession live = make_session(SESSION_ACTIVE);
+    GameAttemptId id = make_id(520 + i);
+    GameLibraryRecord record;
+    GameLibraryHotCache cache = {0};
+    assert(game_library_make_exact_runtime(&record, id, 1, &live, true));
+    assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+    live.session.elapsed_ms += 1000;
+    assert(game_library_make_exact_runtime(&record, id, 2, &live, true));
+    store_test_set_fault(faults[i]);
+    assert(game_library_save_runtime(root, &record, &cache) == STORE_IO_ERROR);
+    store_test_set_fault(STORE_TEST_FAULT_NONE);
+    assert(cache.valid && cache.revision == 1);
+    GameLibraryRecord verified;
+    assert(game_library_load(root, id, &verified) == STORE_OK);
+    assert(verified.revision == 1);
+    assert(game_library_save_runtime(root, &record, &cache) == STORE_OK);
+    assert(game_library_load(root, id, &verified) == STORE_OK);
+    assert(verified.revision == 2);
+    cleanup();
+  }
+}
+
+typedef struct {
+  unsigned healthy;
+  unsigned corrupt;
+} ReceiptHealth;
+
+static bool receipt_health_visit(const GameLibraryEntry *entry,
+                                 void *context) {
+  ReceiptHealth *health = (ReceiptHealth *)context;
+  if (entry->status == STORE_OK) ++health->healthy;
+  else if (entry->status == STORE_CORRUPT) ++health->corrupt;
+  else assert(!"unexpected receipt status");
+  return true;
+}
+
+static void test_corrupt_receipt_isolates_one_attempt(void) {
+  prepare();
+  ProfileSession live = make_session(SESSION_ACTIVE);
+  GameAttemptId damaged = make_id(531);
+  GameAttemptId healthy = make_id(532);
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record, damaged, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  assert(game_library_make_exact(&record, healthy, 1, &live, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  char hex[33], receipt[160];
+  game_attempt_id_hex(damaged, hex);
+  (void)snprintf(receipt, sizeof(receipt),
+                 "%s/games/%s.deleted", root, hex);
+  const unsigned char bogus[34] = {0};
+  assert(store_atomic_write(receipt, NULL, bogus, sizeof(bogus)) == STORE_OK);
+  assert(game_library_receipt_status(root, damaged) == STORE_CORRUPT);
+  assert(game_library_load(root, damaged, &record) == STORE_CORRUPT);
+  assert(game_library_delete(root, damaged) == STORE_CORRUPT);
+  assert(game_library_load(root, healthy, &record) == STORE_OK);
+  ReceiptHealth health = {0};
+  assert(game_library_scan(root, receipt_health_visit, &health) == STORE_OK);
+  assert(health.healthy == 1 && health.corrupt == 1);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -510,6 +651,10 @@ int main(void) {
   test_hot_write_failure_keeps_last_good_revision();
   test_mixed_record_health_and_oversized_future_envelope();
   test_thousand_record_incremental_scan();
+  test_recovery_copy_collision_is_lossless();
+  test_missing_record_does_not_recreate_revision();
+  test_write_fault_matrix_keeps_last_known_good();
+  test_corrupt_receipt_isolates_one_attempt();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
