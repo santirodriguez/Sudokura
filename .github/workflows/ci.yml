@@ -81,11 +81,17 @@ jobs:
             src/profile.c src/store_io.c src/seed.c src/session.c src/game.c \
             src/human.c -o tests/test_game_library_san
           ./tests/test_profile_san
+          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
+            -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/test_game_migration.c src/game_library.c src/game_library_codec.c \
+            src/game_migration.c src/profile.c src/store_io.c src/seed.c \
+            src/session.c src/game.c src/human.c -o tests/test_game_migration_san
           ./tests/test_game_library_san
+          ./tests/test_game_migration_san
           ./tests/test_live_save_san
           ./tests/test_desktop_san
           ./tests/test_url_launcher_san
-          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_game_library_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san tests/test_desktop_san tests/test_url_launcher_san
+          rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_game_library_san tests/test_game_migration_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san tests/test_desktop_san tests/test_url_launcher_san
       - run: make WERROR=-Werror
       - name: Smoke without audio on the software renderer
         env:
