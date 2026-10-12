@@ -43,6 +43,8 @@ tests/test_profile: tests/test_profile.c src/profile.c src/profile.h src/session
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_profile.c src/profile.c src/session.c src/store_io.c src/game.c src/human.c -o $@
 tests/test_game_library: tests/test_game_library.c src/game_library.c src/game_library_codec.c src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_game_library.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
+tests/test_game_migration: tests/test_game_migration.c $(LIBRARY) src/game_migration.h src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_game_migration.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
 tests/test_live_save: tests/test_live_save.c src/profile.c src/profile.h src/save_policy.c src/save_policy.h src/session.c src/session.h src/store_io.c src/store_io.h src/store_status.h src/game.c src/game.h src/i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_live_save.c src/profile.c src/save_policy.c src/session.c src/store_io.c src/game.c src/human.c -o $@
 tests/test_human: tests/test_human.c src/human.c src/human.h
@@ -80,11 +82,12 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n t
 quality: tests/test_generator_quality tests/test_human_calibration
 	./tests/test_human_calibration
 	./tests/test_generator_quality
-test: tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
+test: tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
 	./tests/test_game_library
+	./tests/test_game_migration
 	./tests/test_session
 	./tests/test_store
 	./tests/test_save_policy
@@ -102,4 +105,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction
+	rm -f sudokura tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction
