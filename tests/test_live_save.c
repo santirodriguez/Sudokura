@@ -36,6 +36,52 @@ static SessionState make_session(void) {
   return state;
 }
 
+typedef struct {
+  const ProfileData *profile;
+  unsigned writes;
+} TerminalWriter;
+
+static StoreStatus write_terminal_snapshot(void *context) {
+  TerminalWriter *writer = (TerminalWriter *)context;
+  ++writer->writes;
+  return profile_save_runtime_file(active_path, backup_path, writer->profile);
+}
+
+static void test_winning_checkpoint_is_durable_without_debounce(void) {
+  cleanup();
+  ProfileData profile;
+  profile_defaults(&profile);
+  SessionState won = make_session();
+  won.mode = MODE_TIME;
+  won.elapsed_ms = UINT64_C(599999);
+  won.status = SESSION_WON;
+  for (int i = 0; i < 81; ++i) {
+    won.game.puzzle[i] = won.game.solution[i];
+    won.game.notes[i] = 0;
+  }
+  assert(session_validate(&won));
+  assert(profile_slot_set_runtime(&profile.normal, &won, false));
+
+  SavePolicy policy;
+  save_policy_init(&policy);
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL | SAVE_DIRTY_RESULTS, 100);
+  assert(!save_policy_checkpoint_due(&policy, 100));
+  TerminalWriter writer = {&profile, 0};
+  assert(save_policy_checkpoint_now(&policy, write_terminal_snapshot,
+                                    &writer, 100));
+  assert(writer.writes == 1);
+  assert(!save_policy_dirty(&policy));
+
+  ProfileData recovered;
+  assert(profile_load_file(active_path, &recovered) == STORE_OK);
+  assert(recovered.normal.present);
+  assert(recovered.normal.value.session.status == SESSION_WON);
+  assert(recovered.normal.value.session.elapsed_ms == UINT64_C(599999));
+  assert(!memcmp(recovered.normal.value.session.game.puzzle,
+                 won.game.puzzle, sizeof(won.game.puzzle)));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
 
@@ -91,6 +137,7 @@ int main(void) {
   assert(disk_session->elapsed_ms == UINT64_C(12000));
 
   cleanup();
+  test_winning_checkpoint_is_durable_without_debounce();
   puts("live profile remains authoritative across failed save and retry");
   return 0;
 }
