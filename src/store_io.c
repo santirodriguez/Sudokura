@@ -332,6 +332,40 @@ StoreStatus store_read_file(const char *path, unsigned char *data,
   return STORE_OK;
 }
 
+StoreStatus store_read_prefix(const char *path, unsigned char *data,
+                              size_t capacity, size_t *size_out) {
+  if (!path || !path[0] || !data || capacity == 0)
+    return STORE_IO_ERROR;
+  errno = 0;
+#if defined(_WIN32)
+  wchar_t wide_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(path, wide_path,
+                    sizeof(wide_path) / sizeof(wide_path[0])))
+    return STORE_IO_ERROR;
+  DWORD attributes = GetFileAttributesW(wide_path);
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  FILE *file = store_fopen(path, L"rb");
+#else
+  FILE *file = store_fopen(path, "rb");
+#endif
+  if (!file) {
+#if defined(_WIN32)
+    return STORE_IO_ERROR;
+#else
+    return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+#endif
+  }
+  size_t count = fread(data, 1, capacity, file);
+  bool failed = ferror(file) != 0;
+  if (fclose(file) != 0 || failed) return STORE_IO_ERROR;
+  if (size_out) *size_out = count;
+  return STORE_OK;
+}
+
 static bool write_temporary(const char *temporary,
                             const unsigned char *data, size_t size) {
 #ifdef SUDOKURA_STORE_TESTING

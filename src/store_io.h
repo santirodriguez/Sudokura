@@ -23,6 +23,10 @@ typedef struct {
 
 StoreStatus store_read_file(const char *path, unsigned char *data,
                             size_t capacity, size_t *size_out);
+/* Read at most capacity bytes without treating longer files as corruption.
+   For header inspection only; never a replacement for bounded full reads. */
+StoreStatus store_read_prefix(const char *path, unsigned char *data,
+                              size_t capacity, size_t *size_out);
 StoreStatus store_atomic_write(const char *path, const char *backup_path,
                                const unsigned char *data, size_t size);
 StoreStatus store_copy_once(const char *source, const char *destination);

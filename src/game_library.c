@@ -97,6 +97,45 @@ StoreStatus game_library_receipt_status(const char *root, GameAttemptId id) {
   return STORE_OK;
 }
 
+static StoreStatus read_record_file(const char *path,
+                                    unsigned char *bytes, size_t capacity,
+                                    size_t *size_out) {
+  StoreStatus status = store_read_file(path, bytes, capacity, size_out);
+  if (status != STORE_CORRUPT) return status;
+
+  /* Detect future container/payload versions before the current 8 KiB cap. */
+  unsigned char prefix[22];
+  size_t got = 0;
+  status = store_read_prefix(path, prefix, sizeof(prefix), &got);
+  if (status != STORE_OK) return status;
+  if (got >= 10u && memcmp(prefix, "SUDOGAME", 8u) == 0) {
+    uint16_t version = (uint16_t)(prefix[8] |
+                                 (uint16_t)((uint16_t)prefix[9] << 8));
+    if (version != SUDOKURA_GAME_RECORD_VERSION)
+      return STORE_INCOMPATIBLE;
+    if (got >= sizeof(prefix)) {
+      uint16_t payload_version = (uint16_t)(prefix[20] |
+                               (uint16_t)((uint16_t)prefix[21] << 8));
+      if (payload_version != 1u) return STORE_INCOMPATIBLE;
+    }
+  }
+  return STORE_CORRUPT;
+}
+
+static StoreStatus inspect_record_file(const char *path, GameAttemptId id,
+                                       GameLibraryEntry *entry) {
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t size = 0;
+  StoreStatus status = read_record_file(path, bytes, sizeof(bytes), &size);
+  if (status != STORE_OK) return status;
+  GameLibraryEntry candidate;
+  status = game_library_peek(bytes, size, &candidate);
+  if (status != STORE_OK) return status;
+  if (!game_attempt_id_equal(candidate.id, id)) return STORE_CORRUPT;
+  if (entry) *entry = candidate;
+  return STORE_OK;
+}
+
 static StoreStatus load_from_suffix(const char *root, GameAttemptId id,
                                     const char *suffix,
                                     GameLibraryRecord *record) {
@@ -105,7 +144,7 @@ static StoreStatus load_from_suffix(const char *root, GameAttemptId id,
   if (!game_path(path, root, id, suffix)) return STORE_IO_ERROR;
   unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
   size_t count = 0;
-  StoreStatus status = store_read_file(path, bytes, sizeof(bytes), &count);
+  StoreStatus status = read_record_file(path, bytes, sizeof(bytes), &count);
   if (status != STORE_OK) return status;
   GameLibraryRecord loaded;
   status = game_library_decode(bytes, count, &loaded);
@@ -419,28 +458,29 @@ static bool visit_game_name(const char *name, void *context) {
   memset(&item, 0, sizeof(item));
   item.id = id;
   item.only_backup = backup;
+  item.previous_status = STORE_NOT_FOUND;
   if (receipt != STORE_NOT_FOUND) {
     item.status = receipt;
   } else {
     char file[SUDOKURA_STORE_PATH_CAPACITY];
     if (!game_path(file, scan->root, id,
                    backup ? ".dat.bak" : ".dat")) return false;
-    unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
-    size_t size = 0;
-    item.status = store_read_file(file, bytes, sizeof(bytes), &size);
+    GameLibraryEntry decoded;
+    item.status = inspect_record_file(file, id, &decoded);
     if (item.status == STORE_OK) {
-      GameLibraryEntry decoded;
-      item.status = game_library_peek(bytes, size, &decoded);
-      if (item.status == STORE_OK) {
-        if (!game_attempt_id_equal(decoded.id, id))
-          item.status = STORE_CORRUPT;
-        else {
-          item.kind = decoded.kind;
-          item.result = decoded.result;
-          item.revision = decoded.revision;
-          if (backup) item.status = STORE_NOT_FOUND;
-        }
-      }
+      item.kind = decoded.kind;
+      item.result = decoded.result;
+      item.revision = decoded.revision;
+    }
+    if (backup) {
+      item.previous_status = item.status;
+      if (item.status == STORE_OK) item.status = STORE_NOT_FOUND;
+    } else {
+      char previous[SUDOKURA_STORE_PATH_CAPACITY];
+      if (!game_path(previous, scan->root, id, ".dat.bak"))
+        return false;
+      if (store_file_exists(previous))
+        item.previous_status = inspect_record_file(previous, id, NULL);
     }
   }
   return scan->callback(&item, scan->context);

@@ -39,6 +39,9 @@ typedef struct {
   GameAttemptId id;
   StoreStatus status;
   bool only_backup;
+  /* Metadata/CRC status of .bak; STORE_OK still requires full canonical
+     validation before an explicit recovery. */
+  StoreStatus previous_status;
   GameRecordKind kind;
   ProfileResult result;
   uint64_t revision;

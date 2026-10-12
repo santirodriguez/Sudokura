@@ -833,6 +833,26 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   unsigned char data[PROFILE_MAX_FILE_SIZE];
   size_t size = 0;
   StoreStatus status = store_read_file(path, data, sizeof(data), &size);
+  if (status == STORE_CORRUPT) {
+    /* Oversized known formats are corrupt; a recognizable future header
+       remains incompatible even when its payload exceeds today's cap. */
+    unsigned char prefix[PROFILE_HEADER_SIZE + 2u];
+    size_t prefix_size = 0;
+    StoreStatus probe = store_read_prefix(path, prefix, sizeof(prefix),
+                                          &prefix_size);
+    if (probe != STORE_OK) return probe;
+    if (prefix_size >= 10u &&
+        memcmp(prefix, profile_magic, sizeof(profile_magic)) == 0) {
+      if (get_u16(prefix + 8) != SUDOKURA_PROFILE_CONTAINER_VERSION)
+        return STORE_INCOMPATIBLE;
+      if (prefix_size >= sizeof(prefix)) {
+        uint16_t content = get_u16(prefix + PROFILE_HEADER_SIZE);
+        if (content != SUDOKURA_PROFILE_CONTENT_VERSION &&
+            content != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
+          return STORE_INCOMPATIBLE;
+      }
+    }
+  }
   if (status != STORE_OK) return status;
   if (size < PROFILE_HEADER_SIZE ||
       memcmp(data, profile_magic, sizeof(profile_magic)) != 0)
