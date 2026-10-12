@@ -179,7 +179,8 @@ static bool summary_matches_session(const GameLibraryRecord *record) {
   return true;
 }
 
-bool game_library_record_validate(const GameLibraryRecord *record) {
+static bool record_validate(const GameLibraryRecord *record,
+                            bool canonical) {
   if (!record || !game_attempt_id_valid(record->id) ||
       record->revision == 0 || !valid_summary(&record->result))
     return false;
@@ -215,14 +216,25 @@ bool game_library_record_validate(const GameLibraryRecord *record) {
     return false;
   unsigned char serialized[SUDOKURA_GAME_RECORD_MAX_BYTES];
   size_t written = 0;
-  return profile_session_encode_blob(&record->exact, serialized,
-                                     sizeof(serialized), &written) &&
-         written > 0 && summary_matches_session(record);
+  bool encoded = canonical
+      ? profile_session_encode_blob(&record->exact, serialized,
+                                    sizeof(serialized), &written)
+      : profile_session_encode_blob_runtime(&record->exact, serialized,
+                                            sizeof(serialized), &written);
+  return encoded && written > 0 && summary_matches_session(record);
 }
 
-bool game_library_make_exact(GameLibraryRecord *out, GameAttemptId id,
-                             uint64_t revision, const ProfileSession *session,
-                             bool retained) {
+bool game_library_record_validate(const GameLibraryRecord *record) {
+  return record_validate(record, true);
+}
+
+bool game_library_record_validate_runtime(const GameLibraryRecord *record) {
+  return record_validate(record, false);
+}
+
+static bool make_exact(GameLibraryRecord *out, GameAttemptId id,
+                       uint64_t revision, const ProfileSession *session,
+                       bool retained, bool canonical) {
   if (!out || !session || !game_attempt_id_valid(id) || revision == 0)
     return false;
   GameLibraryRecord value;
@@ -254,9 +266,22 @@ bool game_library_make_exact(GameLibraryRecord *out, GameAttemptId id,
     value.original[i] = (uint8_t)s->game.initial[i];
     value.solution[i] = (uint8_t)s->game.solution[i];
   }
-  if (!game_library_record_validate(&value)) return false;
+  if (!record_validate(&value, canonical)) return false;
   *out = value;
   return true;
+}
+
+bool game_library_make_exact(GameLibraryRecord *out, GameAttemptId id,
+                             uint64_t revision, const ProfileSession *session,
+                             bool retained) {
+  return make_exact(out, id, revision, session, retained, true);
+}
+
+bool game_library_make_exact_runtime(GameLibraryRecord *out, GameAttemptId id,
+                                     uint64_t revision,
+                                     const ProfileSession *session,
+                                     bool retained) {
+  return make_exact(out, id, revision, session, retained, false);
 }
 
 bool game_library_make_legacy(GameLibraryRecord *out, GameAttemptId id,
@@ -315,18 +340,22 @@ static void decode_result(Reader *r, ProfileResult *result) {
   result->is_daily = daily == 1;
 }
 
-bool game_library_encode(const GameLibraryRecord *record,
-                         unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES],
-                         size_t *size) {
-  if (!bytes || !size || !game_library_record_validate(record))
+static bool encode_record(const GameLibraryRecord *record,
+                          unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES],
+                          size_t *size, bool canonical) {
+  if (!bytes || !size || !record_validate(record, canonical))
     return false;
   unsigned char session_blob[SUDOKURA_GAME_RECORD_MAX_BYTES];
   size_t session_size = 0;
-  if (record->kind == GAME_RECORD_EXACT &&
-      (!profile_session_encode_blob(&record->exact, session_blob,
-                                    sizeof(session_blob), &session_size) ||
-       session_size > UINT16_MAX))
-    return false;
+  if (record->kind == GAME_RECORD_EXACT) {
+    bool valid = canonical
+        ? profile_session_encode_blob(&record->exact, session_blob,
+                                      sizeof(session_blob), &session_size)
+        : profile_session_encode_blob_runtime(&record->exact, session_blob,
+                                              sizeof(session_blob),
+                                              &session_size);
+    if (!valid || session_size > UINT16_MAX) return false;
+  }
 
   Writer w = {bytes + RECORD_HEADER_BYTES,
               SUDOKURA_GAME_RECORD_MAX_BYTES - RECORD_HEADER_BYTES, 0, true};
@@ -361,6 +390,18 @@ bool game_library_encode(const GameLibraryRecord *record,
   store32(bytes + 14, checksum(bytes + RECORD_HEADER_BYTES, w.pos));
   *size = RECORD_HEADER_BYTES + w.pos;
   return true;
+}
+
+bool game_library_encode(const GameLibraryRecord *record,
+                         unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES],
+                         size_t *size) {
+  return encode_record(record, bytes, size, true);
+}
+
+bool game_library_encode_runtime(
+    const GameLibraryRecord *record,
+    unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES], size_t *size) {
+  return encode_record(record, bytes, size, false);
 }
 
 static StoreStatus decode_record(const unsigned char *bytes, size_t size,
