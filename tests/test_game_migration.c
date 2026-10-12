@@ -397,6 +397,74 @@ static void test_record_first_failure_recovers_terminal_and_recent_result(void) 
 }
 
 
+static void test_intent_recovery_rejects_tampered_immutable_pair(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData saved;
+  assert(profile_load_file(primary, &saved) == STORE_OK);
+  assert(game_migration_upgrade(root, primary, backup, &saved, NULL) ==
+         STORE_OK);
+  GameAttemptId normal_id = saved.normal.attempt_id;
+  GameAttemptId daily_id = saved.daily.attempt_id;
+  unsigned char source_bytes[16384], intent_bytes[16384];
+  size_t source_length = 0, intent_length = 0;
+  assert(store_read_file(source, source_bytes, sizeof(source_bytes),
+                         &source_length) == STORE_OK);
+  assert(store_read_file(intent, intent_bytes, sizeof(intent_bytes),
+                         &intent_length) == STORE_OK);
+  assert(source_length > 0 && intent_length > 0);
+
+  assert(store_remove_file(primary));
+  assert(store_remove_file(backup));
+  ProfileData output;
+  profile_defaults(&output);
+  output.preferences.language = LANG_ES;
+  ProfileData sentinel = output;
+
+  /* A valid intent referencing modified pre-upgrade bytes must not write a
+     profile, even though the matching game records remain recoverable. */
+  unsigned char modified[16384];
+  memcpy(modified, source_bytes, source_length);
+  modified[source_length - 1u] ^= 0x42u;
+  assert(store_atomic_write(source, NULL, modified, source_length) == STORE_OK);
+  assert(game_migration_recover_intent(root, primary, backup, &output) ==
+         STORE_CORRUPT);
+  assert(profile_encoded_equal(&output, &sentinel));
+  assert(!store_file_exists(primary));
+  assert(!store_file_exists(backup));
+
+  assert(store_atomic_write(source, NULL, source_bytes, source_length) ==
+         STORE_OK);
+  memcpy(modified, intent_bytes, intent_length);
+  modified[intent_length - 1u] ^= 0x29u;
+  assert(store_atomic_write(intent, NULL, modified, intent_length) == STORE_OK);
+  assert(game_migration_recover_intent(root, primary, backup, &output) ==
+         STORE_CORRUPT);
+  assert(profile_encoded_equal(&output, &sentinel));
+  assert(!store_file_exists(primary));
+  assert(!store_file_exists(backup));
+
+  /* Restoring the exact immutable pair permits one consistent recovery with
+     the pre-existing attempt IDs, not a new import or duplicate result. */
+  assert(store_atomic_write(intent, NULL, intent_bytes, intent_length) ==
+         STORE_OK);
+  assert(game_migration_recover_intent(root, primary, backup, &output) ==
+         STORE_OK);
+  assert(output.codec_version == SUDOKURA_PROFILE_CONTENT_VERSION);
+  assert(!output.migration_pending);
+  assert(game_attempt_id_equal(output.normal.attempt_id, normal_id));
+  assert(game_attempt_id_equal(output.daily.attempt_id, daily_id));
+  assert(output.result_count == saved.result_count);
+  assert(output.preferences.language == LANG_CA);
+  ProfileData from_disk;
+  assert(profile_load_file(primary, &from_disk) == STORE_OK);
+  assert(profile_encoded_equal(&from_disk, &output));
+  GameLibraryRecord record;
+  assert(game_library_load(root, normal_id, &record) == STORE_OK);
+  assert(game_library_load(root, daily_id, &record) == STORE_OK);
+  cleanup();
+}
+
 static void test_missing_hot_pair_recovers_verified_intent(void) {
   prepare();
   write_legacy_profile();
@@ -868,6 +936,7 @@ int main(void) {
   test_record_first_failure_recovers_terminal_and_recent_result();
   test_existing_library_blocks_fresh_migration();
   test_missing_hot_pair_recovers_verified_intent();
+  test_intent_recovery_rejects_tampered_immutable_pair();
   test_explicit_collection_recovery_and_ambiguity();
   test_collection_recovery_isolates_bad_and_previous_only();
   test_preimage_write_fault_matrix();
