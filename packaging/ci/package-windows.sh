@@ -25,7 +25,7 @@ make WERROR=-Werror quality
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
-  src/sudokura_sdl.c src/app.c src/app_clock.c src/desktop.c src/url_launcher.c src/audio.c src/profile.c src/game_library.c src/game_library_codec.c src/save_policy.c src/store_io.c src/session.c src/seed.c src/progress.c src/input.c \
+  src/sudokura_sdl.c src/app.c src/app_clock.c src/desktop.c src/url_launcher.c src/audio.c src/profile.c src/game_library.c src/game_library_codec.c src/game_migration.c src/save_policy.c src/store_io.c src/session.c src/seed.c src/progress.c src/input.c \
   src/game.c src/human.c src/geometry.c src/i18n.c \
   assets/generated/window_icon.c assets/generated/wordmark.c \
   assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c icon.o \
