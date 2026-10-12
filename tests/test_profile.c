@@ -388,6 +388,60 @@ static void test_previous_copy_recovery(void) {
   assert(backup.preferences.language == LANG_ES);
 }
 
+static void test_missing_primary_preserves_valid_previous(void) {
+  cleanup();
+  ProfileData initial;
+  profile_defaults(&initial);
+  initial.preferences.language = LANG_ES;
+  SessionState session = normal_state();
+  assert(profile_slot_set(&initial.normal, &session, true));
+  assert(profile_save_file(profile_path, profile_backup_path, &initial) ==
+         STORE_OK);
+
+  ProfileData newer = initial;
+  newer.preferences.language = LANG_CA;
+  assert(profile_save_file(profile_path, profile_backup_path, &newer) ==
+         STORE_OK);
+  assert(store_remove_file(profile_path));
+
+  ProfileData candidate;
+  bool migrated = true;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, NULL,
+                                      &candidate, &migrated) == STORE_NOT_FOUND);
+  assert(!migrated);
+  assert(!store_file_exists(profile_path));
+
+  ProfileData intact;
+  assert(profile_load_file(profile_backup_path, &intact) == STORE_OK);
+  assert(intact.preferences.language == LANG_ES);
+  assert(intact.normal.present);
+  assert(!memcmp(&intact.normal.value.session.game, &session.game,
+                 sizeof(Game)));
+
+  assert(profile_recover_previous(profile_path, profile_backup_path,
+                                   &candidate) == STORE_OK);
+  assert(candidate.preferences.language == LANG_ES);
+  assert(candidate.normal.present);
+  assert(profile_load_file(profile_backup_path, &intact) == STORE_OK);
+  assert(intact.preferences.language == LANG_ES);
+  cleanup();
+}
+
+static void test_missing_primary_blocks_invalid_previous(void) {
+  cleanup();
+  ProfileData profile;
+  profile_defaults(&profile);
+  assert(store_atomic_write(profile_backup_path, NULL,
+                            (const unsigned char *)"bad", 3) == STORE_OK);
+  bool migrated = true;
+  assert(profile_load_or_migrate_v12(profile_path, profile_backup_path, NULL,
+                                      &profile, &migrated) == STORE_CORRUPT);
+  assert(!migrated);
+  assert(!store_file_exists(profile_path));
+  assert(store_file_exists(profile_backup_path));
+  cleanup();
+}
+
 static void write_legacy_audio(void) {
   FILE *file = fopen(legacy_audio_path, "wb");
   assert(file);
@@ -639,6 +693,8 @@ int main(void) {
   test_corruption_and_truncation();
   cleanup();
   test_previous_copy_recovery();
+  test_missing_primary_preserves_valid_previous();
+  test_missing_primary_blocks_invalid_previous();
   cleanup();
   test_v12_fixture_matrix();
   test_v12_migration_and_one_time_import();
