@@ -774,6 +774,92 @@ static void test_runtime_utc_dates_and_unknown_legacy(void) {
   cleanup();
 }
 
+static uint32_t fixture_crc32(const unsigned char *data, size_t size) {
+  uint32_t crc = UINT32_C(0xffffffff);
+  for (size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (unsigned bit = 0; bit < 8; ++bit)
+      crc = (crc >> 1) ^
+            (UINT32_C(0xedb88320) & (0u - (crc & 1u)));
+  }
+  return ~crc;
+}
+
+static void fixture_put_u32(unsigned char *out, uint32_t number) {
+  for (unsigned shift = 0; shift < 32; shift += 8)
+    out[shift / 8] = (unsigned char)(number >> shift);
+}
+
+typedef struct {
+  GameAttemptId id;
+  unsigned incompatible, healthy;
+} UnsupportedScan;
+
+static bool scan_unsupported(const GameLibraryEntry *entry, void *ctx) {
+  UnsupportedScan *scan = (UnsupportedScan *)ctx;
+  if (game_attempt_id_equal(entry->id, scan->id)) {
+    assert(entry->status == STORE_INCOMPATIBLE);
+    assert(entry->previous_status == STORE_OK);
+    ++scan->incompatible;
+  } else {
+    assert(entry->status == STORE_OK);
+    ++scan->healthy;
+  }
+  return true;
+}
+
+static void test_unsupported_generator_preserves_previous(void) {
+  prepare();
+  ProfileSession active = make_session(SESSION_ACTIVE);
+  GameAttemptId unsupported = make_id(580);
+  GameAttemptId healthy = make_id(581);
+  GameLibraryRecord old, updated, output;
+  assert(game_library_make_exact(&old, unsupported, 1, &active, true));
+  assert(game_library_save(root, &old) == STORE_OK);
+  active.session.elapsed_ms += 1000;
+  assert(game_library_make_exact(&updated, unsupported, 2, &active, true));
+  assert(game_library_save(root, &updated) == STORE_OK);
+  assert(game_library_make_exact(&updated, healthy, 1, &active, true));
+  assert(game_library_save(root, &updated) == STORE_OK);
+
+  char hex[33], primary[160], preserved[180];
+  game_attempt_id_hex(unsupported, hex);
+  (void)snprintf(primary, sizeof(primary),
+                 "%s/games/%s.dat", root, hex);
+  (void)snprintf(preserved, sizeof(preserved),
+                 "%s/games/%s.dat.pre-recovery", root, hex);
+  unsigned char bytes[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t size = 0;
+  assert(store_read_file(primary, bytes, sizeof(bytes), &size) == STORE_OK);
+  /* Schema v1: header 18, record identity 4+16+16+8+24+4,
+     result seed 8, then its generator revision u32. */
+  enum { HEADER_BYTES = 18, GENERATOR_OFFSET = 18 + 4 + 16 + 16 + 8 +
+                          24 + 4 + 8 };
+  assert(size > GENERATOR_OFFSET + 4u);
+  fixture_put_u32(bytes + GENERATOR_OFFSET, UINT32_C(99999));
+  fixture_put_u32(bytes + 14u,
+                  fixture_crc32(bytes + HEADER_BYTES, size - HEADER_BYTES));
+  assert(store_atomic_write(primary, NULL, bytes, size) == STORE_OK);
+
+  GameLibraryRecord unchanged = old;
+  assert(game_library_load(root, unsupported, &unchanged) ==
+         STORE_INCOMPATIBLE);
+  assert(memcmp(&unchanged, &old, sizeof(old)) == 0);
+  UnsupportedScan scan = {unsupported, 0, 0};
+  assert(game_library_scan(root, scan_unsupported, &scan) == STORE_OK);
+  assert(scan.incompatible == 1 && scan.healthy == 1);
+  assert(game_library_load(root, healthy, &output) == STORE_OK);
+
+  assert(game_library_recover_previous(root, unsupported, &output) == STORE_OK);
+  assert(output.revision == 1);
+  unsigned char before[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t preserved_size = 0;
+  assert(store_read_file(preserved, before, sizeof(before),
+                         &preserved_size) == STORE_OK);
+  assert(preserved_size == size && memcmp(before, bytes, size) == 0);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -795,6 +881,7 @@ int main(void) {
   test_write_fault_matrix_keeps_last_known_good();
   test_corrupt_receipt_isolates_one_attempt();
   test_runtime_utc_dates_and_unknown_legacy();
+  test_unsupported_generator_preserves_previous();
   cleanup();
   puts("game record codec, revisions, backup, receipts and >128 archive passed");
   return 0;
