@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <dirent.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -61,6 +62,99 @@ static FILE *store_fopen(const char *path, const char *mode) {
   return fopen(path, mode);
 }
 #endif
+
+StoreStatus store_ensure_directory(const char *path) {
+  if (!path || !path[0]) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(path, wide, sizeof(wide) / sizeof(wide[0])))
+    return STORE_IO_ERROR;
+  DWORD attributes = GetFileAttributesW(wide);
+  if (attributes != INVALID_FILE_ATTRIBUTES)
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) ? STORE_OK : STORE_IO_ERROR;
+  if (CreateDirectoryW(wide, NULL)) return STORE_OK;
+  attributes = GetFileAttributesW(wide);
+  return attributes != INVALID_FILE_ATTRIBUTES &&
+                 (attributes & FILE_ATTRIBUTE_DIRECTORY)
+             ? STORE_OK : STORE_IO_ERROR;
+#else
+  struct stat info;
+  if (stat(path, &info) == 0)
+    return S_ISDIR(info.st_mode) ? STORE_OK : STORE_IO_ERROR;
+  if (errno != ENOENT) return STORE_IO_ERROR;
+  if (mkdir(path, 0700) == 0) return STORE_OK;
+  return errno == EEXIST && stat(path, &info) == 0 &&
+                 S_ISDIR(info.st_mode)
+             ? STORE_OK : STORE_IO_ERROR;
+#endif
+}
+
+StoreStatus store_list_directory(const char *path,
+                                 StoreDirectoryEntryFn visitor,
+                                 void *context) {
+  if (!path || !path[0] || !visitor) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  char search[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!build_child_path(search, path, "*")) return STORE_IO_ERROR;
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(search, wide, sizeof(wide) / sizeof(wide[0])))
+    return STORE_IO_ERROR;
+  WIN32_FIND_DATAW entry;
+  HANDLE handle = FindFirstFileW(wide, &entry);
+  if (handle == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
+    return error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  StoreStatus status = STORE_OK;
+  do {
+    if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+    int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                   entry.cFileName, -1, NULL, 0, NULL, NULL);
+    if (count <= 0 || count > (int)SUDOKURA_STORE_PATH_CAPACITY) {
+      status = STORE_IO_ERROR;
+      break;
+    }
+    char name[SUDOKURA_STORE_PATH_CAPACITY];
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, entry.cFileName,
+                            -1, name, count, NULL, NULL) != count) {
+      status = STORE_IO_ERROR;
+      break;
+    }
+    if (!visitor(name, context)) {
+      status = STORE_CANCELLED;
+      break;
+    }
+  } while (FindNextFileW(handle, &entry));
+  DWORD error = GetLastError();
+  FindClose(handle);
+  if (status == STORE_OK && error != ERROR_NO_MORE_FILES)
+    status = STORE_IO_ERROR;
+  return status;
+#else
+  DIR *dir = opendir(path);
+  if (!dir) return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  StoreStatus status = STORE_OK;
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(dir);
+    if (!entry) {
+      if (errno != 0) status = STORE_IO_ERROR;
+      break;
+    }
+    if (entry->d_name[0] == '.' &&
+        (entry->d_name[1] == '\0' ||
+         (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+      continue;
+    if (!visitor(entry->d_name, context)) {
+      status = STORE_CANCELLED;
+      break;
+    }
+  }
+  if (closedir(dir) != 0 && status == STORE_OK) status = STORE_IO_ERROR;
+  return status;
+#endif
+}
 
 static bool sync_file(FILE *file) {
   if (!file || fflush(file) != 0) return false;
