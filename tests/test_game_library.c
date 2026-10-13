@@ -1296,10 +1296,165 @@ static void test_replay_and_selective_reference_pruning(void) {
                                       (GameAttemptId){0,0}));
 }
 
+static ProfileSession daily_fixture(int year, int month, int day,
+                                    SessionStatus status) {
+  ProfileSession out = make_session(SESSION_ACTIVE);
+  uint64_t seed=0;
+  assert(game_daily_seed_revision(year,month,day,
+                                  SUDOKURA_GENERATOR_REVISION_LEGACY,&seed));
+  assert(game_new_difficulty_revision(&out.session.game,seed,
+                                      DIFFICULTY_MEDIUM,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  out.session.is_daily=true;
+  out.session.daily_year=year;
+  out.session.daily_month=month;
+  out.session.daily_day=day;
+  out.session.status=status;
+  if(status==SESSION_WON)
+    for(size_t i=0;i<81;i++) {
+      out.session.game.puzzle[i]=out.session.game.solution[i];
+      out.session.game.notes[i]=0;
+    }
+  assert(session_validate(&out.session));
+  return out;
+}
+static bool daily_lookup_visit(const GameLibraryEntry *entry,void *ctx) {
+  game_library_daily_lookup_consider((GameDailyLookup *)ctx,entry,2026,10,13);
+  return true;
+}
+static void test_daily_lookup_metadata_and_errors(void) {
+  prepare();
+  ProfileSession active=daily_fixture(2026,10,13,SESSION_ACTIVE);
+  GameLibraryRecord original,other,practice;
+  GameAttemptId id=make_id(3901),replay_id=make_id(3902);
+  assert(game_library_make_exact(&original,id,1,&active,true));
+  assert(game_library_save(root,&original)==STORE_OK);
+  GameDailyLookup lookup={0};
+  assert(game_library_scan(root,daily_lookup_visit,&lookup)==STORE_OK);
+  assert(lookup.matching_attempts==1 && !lookup.uncertain);
+  assert(game_attempt_id_equal(lookup.match.id,id));
+  assert(game_library_is_original_daily_on(&lookup.match,2026,10,13));
+  assert(!game_library_is_original_daily_on(&lookup.match,2026,10,14));
+
+  ProfileSession terminal=daily_fixture(2026,10,13,SESSION_WON);
+  assert(game_library_make_exact(&original,id,2,&terminal,true));
+  assert(game_library_save(root,&original)==STORE_OK);
+  memset(&lookup,0,sizeof(lookup));
+  assert(game_library_scan(root,daily_lookup_visit,&lookup)==STORE_OK);
+  assert(lookup.matching_attempts==1);
+  assert(lookup.match.result.status==SESSION_WON);
+
+  assert(game_library_prepare_replay(&practice,&original,replay_id));
+  assert(practice.practice && !practice.result.is_daily);
+  assert(game_library_save(root,&practice)==STORE_OK);
+  memset(&lookup,0,sizeof(lookup));
+  assert(game_library_scan(root,daily_lookup_visit,&lookup)==STORE_OK);
+  assert(lookup.matching_attempts==1 && !lookup.uncertain);
+
+  assert(game_library_make_exact(&other,make_id(3903),1,&active,true));
+  assert(game_library_save(root,&other)==STORE_OK);
+  memset(&lookup,0,sizeof(lookup));
+  assert(game_library_scan(root,daily_lookup_visit,&lookup)==STORE_OK);
+  assert(lookup.matching_attempts==2);
+
+  assert(game_library_delete(root,other.id)==STORE_OK);
+  assert(game_library_delete(root,replay_id)==STORE_OK);
+  assert(game_library_delete(root,id)==STORE_OK);
+  memset(&lookup,0,sizeof(lookup));
+  assert(game_library_scan(root,daily_lookup_visit,&lookup)==STORE_OK);
+  assert(lookup.matching_attempts==0 && !lookup.uncertain);
+  cleanup();
+}
+static void test_daily_lookup_previous_copy_and_uncertainty(void) {
+  prepare();
+  const GameAttemptId id = make_id(3905);
+  ProfileSession active = daily_fixture(2026, 10, 13, SESSION_ACTIVE);
+  GameLibraryRecord record, previous;
+  assert(game_library_make_exact(&record, id, 1, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+  active.session.elapsed_ms += UINT64_C(1000);
+  assert(game_library_make_exact(&record, id, 2, &active, true));
+  assert(game_library_save(root, &record) == STORE_OK);
+
+  char hex[33], path[160];
+  game_attempt_id_hex(id, hex);
+  int written = snprintf(path, sizeof(path), "%s/games/%s.dat", root, hex);
+  assert(written > 0 && (size_t)written < sizeof(path));
+  const unsigned char invalid[10] = {0};
+  assert(store_atomic_write(path, NULL, invalid, sizeof(invalid)) == STORE_OK);
+
+  GameDailyLookup lookup = {0};
+  assert(game_library_scan(root, daily_lookup_visit, &lookup) == STORE_OK);
+  assert(lookup.matching_attempts == 1 && !lookup.uncertain);
+  assert(lookup.match.status == STORE_CORRUPT);
+  assert(lookup.match.previous_status == STORE_OK);
+  assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1 && previous.original_daily);
+  assert(game_library_load(root, id, &record) == STORE_OK);
+  assert(record.revision == 1);
+
+  assert(store_remove_file(path));
+  memset(&lookup, 0, sizeof(lookup));
+  assert(game_library_scan(root, daily_lookup_visit, &lookup) == STORE_OK);
+  assert(lookup.matching_attempts == 1 && !lookup.uncertain);
+  assert(lookup.match.status == STORE_NOT_FOUND);
+  assert(lookup.match.previous_status == STORE_OK);
+  assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
+
+  /* Damaged unknown entries must not be silently classified as other dates. */
+  GameLibraryEntry unknown;
+  memset(&unknown, 0, sizeof(unknown));
+  unknown.status = STORE_CORRUPT;
+  unknown.previous_status = STORE_NOT_FOUND;
+  memset(&lookup, 0, sizeof(lookup));
+  game_library_daily_lookup_consider(&lookup, &unknown, 2026, 10, 13);
+  assert(lookup.uncertain && lookup.matching_attempts == 0);
+  cleanup();
+}
+
+static void test_daily_rollover_retains_distinct_attempts(void) {
+  prepare();
+  ProfileSession previous = daily_fixture(2026, 10, 12, SESSION_ACTIVE);
+  GameAttemptId previous_id = make_id(3907);
+  GameAttemptId today_id = make_id(3908);
+  GameLibraryRecord record, loaded;
+  GameLibraryHotCache previous_cache = {0};
+  GameLibraryHotCache today_cache = {0};
+  /* An empty earlier Daily still needs a durable record. A failed
+     first write must not be reported as a retained attempt. */
+  assert(game_library_make_exact_runtime(&record, previous_id, 3,
+                                         &previous, true));
+  store_test_set_fault(STORE_TEST_FAULT_SYNC);
+  assert(game_library_save_runtime(root, &record, &previous_cache) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_load(root, previous_id, &loaded) == STORE_NOT_FOUND);
+  assert(game_library_save_runtime(root, &record, &previous_cache) == STORE_OK);
+  assert(game_library_load(root, previous_id, &loaded) == STORE_OK);
+  assert(loaded.revision == 3);
+  assert(loaded.original_daily && loaded.result.daily_day == 12);
+
+  ProfileSession today = daily_fixture(2026, 10, 13, SESSION_ACTIVE);
+  assert(game_library_make_exact_runtime(&record, today_id, 1, &today, true));
+  assert(game_library_save_runtime(root, &record, &today_cache) == STORE_OK);
+  GameDailyLookup lookup = {0};
+  assert(game_library_scan(root, daily_lookup_visit, &lookup) == STORE_OK);
+  assert(lookup.matching_attempts == 1 && !lookup.uncertain);
+  assert(game_attempt_id_equal(lookup.match.id, today_id));
+  assert(game_library_load(root, previous_id, &loaded) == STORE_OK);
+  assert(loaded.result.daily_day == 12 && loaded.revision == 3);
+  assert(game_library_load(root, today_id, &loaded) == STORE_OK);
+  assert(loaded.result.daily_day == 13 && loaded.revision == 1);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
   test_hex_and_collision();
+  test_daily_lookup_metadata_and_errors();
+  test_daily_lookup_previous_copy_and_uncertainty();
+  test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();

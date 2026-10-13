@@ -178,6 +178,9 @@ typedef struct {
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
+/* Home Daily scan runs incrementally. Rendering reads only this state. */
+static bool daily_lookup_scanning = false;
+
 /* Native message boxes can enqueue transient focus events. The SDL shell
    advances this guard after each modal so those older events cannot pause a
    session that starts after the dialog closes. */

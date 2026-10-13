@@ -130,6 +130,23 @@ bool game_library_prepare_replay(GameLibraryRecord *out,
 bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,
                                  GameAttemptId id);
 
+/* Match validated catalogue metadata without generating a puzzle or
+   consulting the wall clock; the caller supplies the frozen local date. */
+bool game_library_is_original_daily_on(const GameLibraryEntry *entry,
+                                       int year, int month, int day);
+
+/* Metadata-only lookup result. Saturate at two to flag conflicting originals. */
+typedef struct {
+  GameLibraryEntry match;
+  unsigned matching_attempts;
+  bool uncertain;
+} GameDailyLookup;
+
+/* Process one validated catalogue item without loading full boards. */
+void game_library_daily_lookup_consider(GameDailyLookup *lookup,
+                                        const GameLibraryEntry *entry,
+                                        int year, int month, int day);
+
 StoreStatus game_library_scan(const char *root, GameLibraryScanFn callback,
                               void *context);
 

@@ -323,24 +323,166 @@ static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   }
 }
 
-static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (!p || !game || !ui || !g) return;
+typedef struct {
+  GameLibraryScanCursor cursor;
+  GameDailyLookup lookup;
+  int year, month, day;
+  StoreStatus status;
+  bool active;
+} HomeDailyScan;
+static HomeDailyScan home_daily_scan;
+
+static void home_daily_cancel(void) {
+  game_library_scan_close(&home_daily_scan.cursor);
+  memset(&home_daily_scan, 0, sizeof(home_daily_scan));
+  daily_lookup_scanning = false;
+}
+static bool home_daily_visit(const GameLibraryEntry *entry, void *context) {
+  HomeDailyScan *scan = (HomeDailyScan *)context;
+  game_library_daily_lookup_consider(&scan->lookup, entry,
+                                     scan->year, scan->month, scan->day);
+  return true;
+}
+static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
+  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+                                tr(ui->language, T_DAILY),
+                                tr(ui->language, key));
+}
+static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  const HomeDailyScan scan = home_daily_scan;
+  home_daily_cancel();
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) || y!=scan.year || m!=scan.month || d!=scan.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  const ProfileSlot *hot=&p->profile.daily;
+  const SessionState *saved=profile_slot_session(hot);
+  bool hot_today=saved && saved_daily_matches(p,y,m,d);
+  if (scan.status!=STORE_OK || scan.lookup.uncertain) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  if (scan.lookup.matching_attempts>1u ||
+      (hot_today && scan.lookup.matching_attempts &&
+       !game_attempt_id_equal(hot->attempt_id,scan.lookup.match.id))) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DUPLICATE);
+    return;
+  }
+  if (hot_today) {
+    StoreStatus receipt=game_library_receipt_status(p->profile_directory,
+                                                     hot->attempt_id);
+    if (receipt!=STORE_NOT_FOUND) {
+      home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+      return;
+    }
+    if (scan.lookup.matching_attempts &&
+        (scan.lookup.match.status!=STORE_OK ||
+         scan.lookup.match.revision>hot->revision)) {
+      /* A valid older copy is offered for explicit recovery below. */
+    } else {
+      if (saved->status==SESSION_ACTIVE)
+        restore_saved_session(p,game,ui,true);
+      else if (!games_browser_open_focused(p,game,ui,gfx,hot->attempt_id,true))
+        home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+      return;
+    }
+  }
+  if (scan.lookup.matching_attempts) {
+    GameLibraryEntry entry=scan.lookup.match;
+    if (entry.status!=STORE_OK) {
+      if (entry.previous_status!=STORE_OK) {
+        home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+        return;
+      }
+      /* Never roll back to a previous copy without an explicit decision. */
+      bool recover=confirm_box(gfx,game,ui,
+              tr(ui->language,T_DAILY),
+              tr(ui->language,T_DAILY_RECOVER_PREVIOUS),
+              tr(ui->language,T_RECOVER),tr(ui->language,T_CANCEL));
+      if(!recover)return;
+      GameLibraryRecord recovered;
+      if (game_library_recover_previous(p->profile_directory,entry.id,
+                                        &recovered)!=STORE_OK ||
+          !recovered.original_daily || recovered.practice ||
+          recovered.result.daily_year!=(uint16_t)y ||
+          recovered.result.daily_month!=(uint8_t)m ||
+          recovered.result.daily_day!=(uint8_t)d) {
+        home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+        return;
+      }
+      entry.status=STORE_OK;
+      entry.kind=recovered.kind;
+      entry.result=recovered.result;
+      entry.revision=recovered.revision;
+    }
+    if (entry.result.status==SESSION_ACTIVE) {
+      if (!games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d))
+        home_daily_warning(game,ui,gfx,T_GAMES_ACTION_FAILED);
+    } else {
+      /* The original finished Daily remains read-only; no new attempt. */
+      if (!games_browser_open_focused(p,game,ui,gfx,entry.id,true))
+        home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+    }
+    return;
+  }
+  /* All older Daily attempts, including an empty autosave, remain
+     durably recoverable before today's new original is generated. */
+  if (!games_browser_retain_daily_for_rollover(p)) {
+    home_daily_warning(game,ui,gfx,T_SAVE_FAILED);
+    return;
+  }
   victory_animation_reset();
-
-  const SessionState *saved = profile_slot_session(&p->profile.daily);
-  if (saved && session_can_continue_runtime(saved)) {
-    restore_saved_session(p, game, ui, true);
+  (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
+}
+static void home_daily_scan_pump(Persistence *p, Game *game,
+                                 UI *ui, Gfx *gfx) {
+  if (!home_daily_scan.active) return;
+  bool finished=false;
+  home_daily_scan.status=game_library_scan_step(
+      &home_daily_scan.cursor,16u,home_daily_visit,&home_daily_scan,&finished);
+  if (finished || home_daily_scan.status!=STORE_OK)
+    home_daily_finish(p,game,ui,gfx);
+}
+static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
+  if (!p || !p->enabled || !game || !ui || !g || ui->screen!=SCR_TITLE) return;
+  if (home_daily_scan.active) { home_daily_cancel(); return; }
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day)) {
+    home_daily_warning(game,ui,g,T_DAILY_DATE_CHANGED);
     return;
   }
-
-  int year = 0, month = 0, day = 0;
-  if (!local_date(&year, &month, &day)) return;
-  if (saved_daily_matches(p, year, month, day)) {
-    restore_saved_session(p, game, ui, true);
+  const SessionState *saved=profile_slot_session(&p->profile.daily);
+  if (saved && session_can_continue_runtime(saved) &&
+      !saved_daily_matches(p,year,month,day)) {
+    char date[32],message[384];
+    (void)snprintf(date,sizeof(date),"%04d-%02d-%02d",
+                   saved->daily_year,saved->daily_month,saved->daily_day);
+    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,320,
+                   tr(ui->language,T_DAILY_CHOOSE_PROMPT));
+    int choice=choice_box(g,game,ui,tr(ui->language,T_DAILY_CHOOSE_TITLE),
+                          message,tr(ui->language,T_CANCEL),
+                          tr(ui->language,T_DAILY_OLDER),
+                          tr(ui->language,T_DAILY_TODAY));
+    if(choice==0)return;
+    if(choice==1) {
+      victory_animation_reset();
+      restore_saved_session(p,game,ui,true);
+      return;
+    }
+  }
+  if (!persistence_flush(p)) {
+    home_daily_warning(game,ui,g,T_SAVE_FAILED);
     return;
   }
-  if (replace_saved_session_confirmed(p, game, ui, g, true))
-    (void)start_daily_game_with_ui(p, game, ui, g, year, month, day);
+  memset(&home_daily_scan,0,sizeof(home_daily_scan));
+  home_daily_scan.year=year;home_daily_scan.month=month;home_daily_scan.day=day;
+  home_daily_scan.status=game_library_scan_begin(
+      p->profile_directory,&home_daily_scan.cursor);
+  home_daily_scan.active=true;
+  daily_lookup_scanning=true;
+  if(home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
+    home_daily_finish(p,game,ui,g);
 }
 
 static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
@@ -1149,14 +1291,16 @@ int main(int argc, char **argv) {
         REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT,
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
         REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
-        REVIEW_STATE_COUNT
+        REVIEW_HOME_DAILY_LOADING, REVIEW_HOME_DAILY_OLDER,
+        REVIEW_HOME_DAILY_FINISHED, REVIEW_STATE_COUNT
       };
       const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
-        "games-finished","games-detail"
+        "games-finished","games-detail",
+        "home-daily-loading","home-daily-older","home-daily-finished"
       };
       if(!make_directory(screenshot_dir)){
         fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
@@ -1200,6 +1344,7 @@ int main(int argc, char **argv) {
           free(games_browser.rows);
           memset(&games_browser, 0, sizeof(games_browser));
           save_policy_init(&review_persistence.save_policy);
+          daily_lookup_scanning=false;
 
           const char*focus="none";SDL_Rect focus_rect={0,0,0,0};
           AppGeometry geometry;
@@ -1215,6 +1360,27 @@ int main(int argc, char **argv) {
               ui.normal_resume.difficulty=DIFFICULTY_MEDIUM;ui.normal_resume.elapsed_ms=754000;
               home_focus=HOME_FOCUS_CONTINUE;focus="continue";
               focus_rect=sdl_rect(geometry.home_primary[1]);break;
+            case REVIEW_HOME_DAILY_LOADING:
+            case REVIEW_HOME_DAILY_OLDER:
+            case REVIEW_HOME_DAILY_FINISHED:
+              ui.screen=SCR_TITLE;
+              home_focus=HOME_FOCUS_DAILY;
+              focus="daily";
+              focus_rect=sdl_rect(geometry.home_primary[2]);
+              if(state==REVIEW_HOME_DAILY_LOADING) {
+                daily_lookup_scanning=true;
+              }else{
+                ui.daily_resume.present=true;
+                ui.daily_resume.year=2026;
+                ui.daily_resume.month=10;
+                ui.daily_resume.day=state==REVIEW_HOME_DAILY_OLDER?12:13;
+                ui.daily_resume.difficulty=DIFFICULTY_MEDIUM;
+                ui.daily_resume.elapsed_ms=72000;
+                ui.daily_resume.can_continue=state==REVIEW_HOME_DAILY_OLDER;
+                ui.daily_resume.completed=state==REVIEW_HOME_DAILY_FINISHED;
+                ui.daily_resume.today=state==REVIEW_HOME_DAILY_FINISHED;
+              }
+              break;
             case REVIEW_GAMES_EMPTY:{
               ui.screen=APP_SCREEN_GAMES;
               games_browser.focus=2;
@@ -1342,6 +1508,7 @@ int main(int argc, char **argv) {
         }
       }
 
+      daily_lookup_scanning=false;
       free(games_browser.rows);
       memset(&games_browser,0,sizeof(games_browser));
       const int help_audit_sizes[][2]={{360,640},{640,480},{1024,768}};
@@ -1459,7 +1626,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 135 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 160 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
@@ -1518,7 +1685,7 @@ int main(int argc, char **argv) {
   while (running) {
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
-                             games_browser.scanning))
+                             games_browser.scanning) || home_daily_scan.active)
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
     for(int have_event=ui_wait_event_timeout(&e,wait_ms);
         have_event;have_event=ui_poll_event(&e)){
@@ -1529,6 +1696,16 @@ int main(int argc, char **argv) {
       if (e.type == SDL_QUIT) {
         if (request_exit(&persistence, &game, &ui, &g))
           running = false;
+        continue;
+      }
+      if (home_daily_scan.active &&
+          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN ||
+           e.type == SDL_MOUSEWHEEL)) {
+        if ((e.type == SDL_KEYDOWN &&
+             e.key.keysym.sym == SDLK_ESCAPE) ||
+            (e.type == SDL_MOUSEBUTTONDOWN &&
+             e.button.button == SDL_BUTTON_LEFT))
+          home_daily_cancel();
         continue;
       }
       if (e.type == SDL_RENDER_DEVICE_RESET ||
@@ -2190,6 +2367,10 @@ int main(int argc, char **argv) {
 
     if (ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
+    if (home_daily_scan.active) {
+      home_daily_scan_pump(&persistence,&game,&ui,&g);
+      g.dirty=true;
+    }
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     uint64_t checkpoint_now = now_ms();
     if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
@@ -2207,6 +2388,7 @@ int main(int argc, char **argv) {
     else app_tick(&g,&game,&ui);
   }
 
+  home_daily_cancel();
   game_library_scan_close(&games_browser.scanner);
   free(games_browser.rows);
   app_shutdown(&g);

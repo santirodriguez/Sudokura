@@ -53,6 +53,16 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     check(rows, False, "reject missing finished detail scene")
 
     rows = [dict(row) for row in original]
+    daily = next(row for row in rows if row["state"] == "home-daily-loading")
+    daily["focus"] = "new-game"
+    check(rows, False, "reject Daily loading focus mismatch")
+
+    rows = [dict(row) for row in original]
+    daily = next(row for row in rows if row["state"] == "home-daily-older")
+    daily["state"] = "home-daily-finished"
+    check(rows, False, "reject missing older Daily scene")
+
+    rows = [dict(row) for row in original]
     row = next(row for row in rows
                if row["state"] == "games-unavailable" and
                (int(row["width"]), int(row["height"])) == (360, 640))

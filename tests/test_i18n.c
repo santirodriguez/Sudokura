@@ -63,6 +63,18 @@ int main(void) {
     assert(*tr((Language)language, T_GAMES_UNKNOWN_DATE));
     assert(*tr((Language)language, T_GAMES_KEEP_PROMPT));
     assert(*tr((Language)language, T_GAMES_NEW_PROMPT));
+    assert(*tr((Language)language, T_DAILY_CHECKING));
+    assert(*tr((Language)language, T_DAILY_CHECK_CANCEL));
+    assert(*tr((Language)language, T_DAILY_CHOOSE_TITLE));
+    assert(*tr((Language)language, T_DAILY_CHOOSE_PROMPT));
+    assert(*tr((Language)language, T_DAILY_READ_ERROR));
+    assert(*tr((Language)language, T_DAILY_DUPLICATE));
+    assert(*tr((Language)language, T_DAILY_DATE_CHANGED));
+    assert(*tr((Language)language, T_DAILY_RECOVER_PREVIOUS));
+    assert(strcmp(tr((Language)language, T_DAILY_OLDER),
+                  tr((Language)language, T_DAILY_TODAY)) != 0);
+    assert(strchr(tr((Language)language, T_DAILY_OLDER), '%') == NULL);
+    assert(strchr(tr((Language)language, T_DAILY_TODAY), '%') == NULL);
     assert(*tr((Language)language, T_SAVE));
     assert(*tr((Language)language, T_SAVED));
     assert(strstr(tr((Language)language, T_HELP_SHORTCUTS_BODY),

@@ -663,11 +663,62 @@ static bool visit_game_name(const char *name, void *context) {
       char previous[SUDOKURA_STORE_PATH_CAPACITY];
       if (!game_path(previous, scan->root, id, ".dat.bak"))
         return false;
-      if (store_file_exists(previous))
-        item.previous_status = inspect_record_file(previous, id, NULL);
+      if (store_file_exists(previous)) {
+        GameLibraryEntry previous_metadata;
+        item.previous_status =
+            inspect_record_file(previous, id, &previous_metadata);
+        /* Expose validated earlier metadata without implying the primary
+           is usable. The actual board still needs explicit recovery. */
+        if (item.status != STORE_OK &&
+            item.previous_status == STORE_OK) {
+          item.kind = previous_metadata.kind;
+          item.result = previous_metadata.result;
+          item.revision = previous_metadata.revision;
+          item.created_utc = previous_metadata.created_utc;
+          item.updated_utc = previous_metadata.updated_utc;
+          item.finished_utc = previous_metadata.finished_utc;
+        }
+      }
     }
   }
   return scan->callback(&item, scan->context);
+}
+
+/* Metadata-only Daily lookup: the date and puzzle class are immutable.
+   Practice records carry provenance but never count as original Daily. */
+bool game_library_is_original_daily_on(const GameLibraryEntry *entry,
+                                       int year, int month, int day) {
+  if (!entry || year < 1 || year > UINT16_MAX ||
+      month < 1 || month > 12 || day < 1 || day > 31)
+    return false;
+  if (entry->status != STORE_OK &&
+      entry->previous_status != STORE_OK)
+    return false;
+  const ProfileResult *result = &entry->result;
+  return (entry->kind == GAME_RECORD_EXACT ||
+          entry->kind == GAME_RECORD_LEGACY_SUMMARY) &&
+         result->is_daily && !result->practice &&
+         result->mode == MODE_CLASSIC &&
+         result->difficulty == DIFFICULTY_MEDIUM &&
+         result->daily_year == (uint16_t)year &&
+         result->daily_month == (uint8_t)month &&
+         result->daily_day == (uint8_t)day;
+}
+
+void game_library_daily_lookup_consider(GameDailyLookup *lookup,
+                                        const GameLibraryEntry *entry,
+                                        int year, int month, int day) {
+  if (!lookup || !entry) return;
+  if (game_library_is_original_daily_on(entry, year, month, day)) {
+    if (lookup->matching_attempts == 0) lookup->match = *entry;
+    if (lookup->matching_attempts < 2u) ++lookup->matching_attempts;
+  }
+  /* An unreadable primary might contain today's original. A good
+     backup-only entry is distinct: its validated metadata is known. */
+  if (entry->status != STORE_OK &&
+      !(entry->previous_status == STORE_OK &&
+        game_library_is_original_daily_on(entry, year, month, day)))
+    lookup->uncertain = true;
 }
 
 StoreStatus game_library_scan(const char *root, GameLibraryScanFn callback,

@@ -229,6 +229,11 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
     snprintf(daily_detail, sizeof daily_detail, "%s · %s",
              tr(ui->language, T_CLASSIC), tr(ui->language, T_MEDIUM));
   }
+  if (daily_lookup_scanning) {
+    daily_label = tr(ui->language, T_DAILY_CHECKING);
+    (void)snprintf(daily_detail, sizeof(daily_detail), "%s",
+                   tr(ui->language, T_DAILY_CHECK_CANCEL));
+  }
   polish_home_context_button(
       gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
       false, false, home_focus == HOME_FOCUS_DAILY, fonts.control);

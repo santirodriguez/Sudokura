@@ -8,7 +8,8 @@ HELP_AUDIT_SIZES={(360,640),(640,480),(1024,768)}
 STATES={"home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
-        "games-finished","games-detail"}
+        "games-finished","games-detail",
+        "home-daily-loading","home-daily-older","home-daily-finished"}
 LANGS={"English","Español","Català"}
 THEMES={"dark","light"}
 
@@ -33,16 +34,16 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==145,f"expected 145 manifest rows, found {len(rows)}"
+assert len(rows)==160,f"expected 160 manifest rows, found {len(rows)}"
 files=sorted(args.directory.glob("*.bmp"))
-assert len(files)==145,f"expected 145 BMPs, found {len(files)}"
+assert len(files)==160,f"expected 160 BMPs, found {len(files)}"
 by_name={p.name:p for p in files}
-assert len(by_name)==145
+assert len(by_name)==160
 assert len({r["file"] for r in rows})==len(rows),"duplicate manifest filename"
 assert {r["file"] for r in rows}==set(by_name),"manifest/BMP mismatch"
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==85 and len(audit)==60,(len(matrix),len(audit))
+assert len(matrix)==100 and len(audit)==60,(len(matrix),len(audit))
 matrix_keys=[(int(r["width"]),int(r["height"]),r["state"]) for r in matrix]
 assert len(set(matrix_keys))==len(matrix_keys),"duplicate matrix scene"
 assert set(matrix_keys)=={(w,h,state) for w,h in SIZES for state in STATES}, "matrix coverage mismatch"
@@ -57,6 +58,13 @@ for size in SIZES:
     fingerprints={hashlib.sha256(by_name[r["file"]].read_bytes()).digest()
                   for r in games}
     assert len(fingerprints)==5,(size,"Games scenes rendered identically")
+    daily=[r for r in matrix if
+           (int(r["width"]),int(r["height"]))==size and
+           r["state"] in {"home-daily-loading","home-daily-older",
+                          "home-daily-finished"}]
+    assert len(daily)==3,(size,"missing Daily state")
+    assert len({hashlib.sha256(by_name[r["file"]].read_bytes()).digest()
+                for r in daily})==3,(size,"Daily states rendered identically")
 assert {r["language"] for r in rows}==LANGS
 assert {r["theme"] for r in rows}==THEMES
 for state in ("help-top","help-bottom"):
@@ -137,6 +145,12 @@ for r in rows:
         heading=crop_colors(by_name[r["file"]],panel_x+14,detail_y+5,
                             panel_width-28,20)
         assert len(heading)>=4,(r["file"],"Games detail heading missing")
+    if r["state"] in {"home-daily-loading","home-daily-older",
+                      "home-daily-finished"}:
+        assert r["focus"]=="daily",(r["file"],"Daily control focus mismatch")
+        assert fw>=55 and fh>=35,(r["file"],"Daily button too small")
+        foreground=crop_colors(by_name[r["file"]],fx+8,fy+8,fw-16,fh-16)
+        assert len(foreground)>=4,(r["file"],"Daily text not visible")
     if r["state"]=="games-detail":
         assert fw>=55 and fh>=35,(r["file"],"Replay button too small")
         focused=crop_colors(by_name[r["file"]],fx+8,fy+8,fw-16,fh-16)
@@ -178,4 +192,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 145 diagnostic BMPs, including 25 distinct Games empty/active/unavailable/finished/detail scenes, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 160 diagnostic BMPs, including 25 distinct Games scenes and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
