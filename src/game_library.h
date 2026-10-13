@@ -135,6 +135,10 @@ bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,
 bool game_library_is_original_daily_on(const GameLibraryEntry *entry,
                                        int year, int month, int day);
 
+/* Only damaged/missing primaries with validated earlier metadata offer
+   explicit recovery. Future/incompatible and I/O-error files stay blocked. */
+bool game_library_entry_recoverable(const GameLibraryEntry *entry);
+
 /* Metadata-only lookup result. Saturate at two to flag conflicting originals. */
 typedef struct {
   GameLibraryEntry match;

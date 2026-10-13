@@ -1448,10 +1448,37 @@ static void test_daily_rollover_retains_distinct_attempts(void) {
   cleanup();
 }
 
+static void test_explicit_game_recovery_gate(void) {
+  GameLibraryEntry item;
+  memset(&item, 0, sizeof(item));
+  assert(!game_library_entry_recoverable(NULL));
+  item.id = make_id(3929);
+  item.status = STORE_CORRUPT;
+  item.previous_status = STORE_OK;
+  assert(game_library_entry_recoverable(&item));
+  item.status = STORE_NOT_FOUND;
+  assert(!game_library_entry_recoverable(&item));
+  item.only_backup = true;
+  assert(game_library_entry_recoverable(&item));
+  item.status = STORE_INCOMPATIBLE;
+  assert(!game_library_entry_recoverable(&item));
+  item.status = STORE_IO_ERROR;
+  assert(!game_library_entry_recoverable(&item));
+  item.status = STORE_OK;
+  assert(!game_library_entry_recoverable(&item));
+  item.status = STORE_CORRUPT;
+  item.previous_status = STORE_INCOMPATIBLE;
+  assert(!game_library_entry_recoverable(&item));
+  item.previous_status = STORE_OK;
+  item.id = (GameAttemptId){0, 0};
+  assert(!game_library_entry_recoverable(&item));
+}
+
 int main(void) {
   cleanup();
   prepare();
   test_hex_and_collision();
+  test_explicit_game_recovery_gate();
   test_daily_lookup_metadata_and_errors();
   test_daily_lookup_previous_copy_and_uncertainty();
   test_daily_rollover_retains_distinct_attempts();

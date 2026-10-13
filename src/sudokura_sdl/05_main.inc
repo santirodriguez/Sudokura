@@ -1290,7 +1290,7 @@ int main(int argc, char **argv) {
         REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
         REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT,
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
-        REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
+        REVIEW_GAMES_RECOVER, REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
         REVIEW_HOME_DAILY_LOADING, REVIEW_HOME_DAILY_OLDER,
         REVIEW_HOME_DAILY_FINISHED, REVIEW_STATE_COUNT
       };
@@ -1299,7 +1299,7 @@ int main(int argc, char **argv) {
         "home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
-        "games-finished","games-detail",
+        "games-recover","games-finished","games-detail",
         "home-daily-loading","home-daily-older","home-daily-finished"
       };
       if(!make_directory(screenshot_dir)){
@@ -1389,6 +1389,7 @@ int main(int argc, char **argv) {
             }
             case REVIEW_GAMES_ACTIVE:
             case REVIEW_GAMES_UNAVAILABLE:
+            case REVIEW_GAMES_RECOVER:
             case REVIEW_GAMES_FINISHED:
             case REVIEW_GAMES_DETAIL:{
               ui.screen=APP_SCREEN_GAMES;
@@ -1399,8 +1400,10 @@ int main(int argc, char **argv) {
               memset(&entry,0,sizeof(entry));
               entry.id=(GameAttemptId){1,2};
               entry.kind=GAME_RECORD_EXACT;
-              entry.status=state==REVIEW_GAMES_UNAVAILABLE?
-                           STORE_CORRUPT:STORE_OK;
+              entry.status=(state==REVIEW_GAMES_UNAVAILABLE ||
+                            state==REVIEW_GAMES_RECOVER)?STORE_CORRUPT:STORE_OK;
+              entry.previous_status=state==REVIEW_GAMES_RECOVER
+                  ? STORE_OK : STORE_NOT_FOUND;
               entry.result.mode=MODE_CLASSIC;
               entry.result.difficulty=DIFFICULTY_MEDIUM;
               entry.result.status=finished?SESSION_WON:SESSION_ACTIVE;
@@ -1411,7 +1414,8 @@ int main(int argc, char **argv) {
               if(!games_browser_push(&entry,false)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
-              games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE;
+              games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE &&
+                  state!=REVIEW_GAMES_RECOVER;
               games_browser.preview.game=game;
               if(finished){
                 for(int cell=0;cell<81;++cell)
@@ -1433,6 +1437,10 @@ int main(int argc, char **argv) {
               if(games_browser.detail_open){
                 games_browser.focus=3;
                 focus="games-replay";focus_rect=lay.replay;
+              }else if(state==REVIEW_GAMES_RECOVER){
+                games_browser.focus=1;
+                focus="games-recover";
+                focus_rect=lay.primary;
               }else{
                 focus=state==REVIEW_GAMES_ACTIVE?"games-active":
                       state==REVIEW_GAMES_UNAVAILABLE?"games-unavailable":
@@ -1626,7 +1634,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 160 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 165 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;

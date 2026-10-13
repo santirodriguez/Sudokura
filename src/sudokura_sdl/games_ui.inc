@@ -443,6 +443,56 @@ static bool games_browser_resume_daily(Persistence *p, Game *game, UI *ui,
   return true;
 }
 
+/* Recover one validated earlier library checkpoint on explicit user input.
+   This does not publish a hot slot or replace the current board. */
+static void games_browser_operation_error(Gfx *gfx, Game *game, UI *ui);
+
+static bool games_browser_recover_selected(Persistence *p, Game *game,
+                                           UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      games_browser.scanning || games_browser.selected >= games_browser.count)
+    return false;
+  GamesRow *row = &games_browser.rows[games_browser.selected];
+  if (row->hot_only || !game_library_entry_recoverable(&row->entry))
+    return false;
+  if (!confirm_destructive_box(gfx, game, ui,
+                               tr(ui->language, T_GAMES),
+                               tr(ui->language, T_GAMES_RECOVER_PROMPT),
+                               tr(ui->language, T_RECOVER)))
+    return false;
+  GameLibraryRecord current;
+  StoreStatus primary = game_library_load(
+      p->profile_directory, row->entry.id, &current);
+  /* Stale catalogue metadata cannot justify overriding a healthy,
+     incompatible or unreadable primary record. */
+  if (primary != STORE_CORRUPT && primary != STORE_NOT_FOUND) {
+    games_browser_operation_error(gfx, game, ui);
+    return false;
+  }
+  GameLibraryRecord recovered;
+  if (game_library_recover_previous(p->profile_directory, row->entry.id,
+                                    &recovered) != STORE_OK) {
+    games_browser_operation_error(gfx, game, ui);
+    return false;
+  }
+  row->entry.kind = recovered.kind;
+  row->entry.result = recovered.result;
+  row->entry.revision = recovered.revision;
+  row->entry.created_utc = recovered.created_utc;
+  row->entry.updated_utc = recovered.updated_utc;
+  row->entry.finished_utc = recovered.finished_utc;
+  row->entry.status = STORE_OK;
+  row->entry.previous_status = STORE_OK;
+  row->entry.only_backup = false;
+  games_browser.detail_open = false;
+  games_browser.focus = 0;
+  games_browser_preview_selected(p);
+  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_INFORMATION,
+                                tr(ui->language, T_GAMES),
+                                tr(ui->language, T_GAMES_RECOVERED));
+  return true;
+}
+
 static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
                                    Gfx *gfx) {
   if (games_browser.scanning || games_browser.selected >= games_browser.count ||
@@ -450,6 +500,8 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
     return false;
   GamesRow row = games_browser.rows[games_browser.selected];
   if (row.entry.status != STORE_OK) {
+    if (!row.hot_only && game_library_entry_recoverable(&row.entry))
+      return games_browser_recover_selected(p, game, ui, gfx);
     (void)show_simple_message_box(
         gfx, game, ui, SDL_MESSAGEBOX_WARNING, tr(ui->language, T_GAMES),
         tr(ui->language, T_GAMES_UNAVAILABLE));
@@ -870,8 +922,9 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     char label[192];
     /* Keep list labels short. The full diagnostic is shown below.
        Long status sentences must not disappear on compact viewports. */
-    const char *status = e->status != STORE_OK
-        ? tr(ui->language, T_UNAVAILABLE)
+    const char *status = game_library_entry_recoverable(e)
+        ? tr(ui->language, T_GAMES_RECOVER_LABEL)
+        : e->status != STORE_OK ? tr(ui->language, T_UNAVAILABLE)
         : e->result.practice ? tr(ui->language, T_GAMES_PRACTICE)
         : e->result.status == SESSION_ACTIVE
             ? (row->hot_only ? tr(ui->language, T_GAMES_AUTOSAVE)
@@ -901,7 +954,10 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     const ProfileResult *r = &row->entry.result;
     char detail[256];
     unsigned long long total = (unsigned long long)(r->elapsed_ms / 1000u);
-    if (row->entry.status != STORE_OK) {
+    if (game_library_entry_recoverable(&row->entry)) {
+      snprintf(detail, sizeof(detail), "%s",
+               tr(ui->language, T_GAMES_RECOVER_LABEL));
+    } else if (row->entry.status != STORE_OK) {
       snprintf(detail, sizeof(detail), "%s",
                tr(ui->language, T_GAMES_UNAVAILABLE));
     } else if (r->is_daily) {
@@ -932,7 +988,9 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     line.h = lay.detail.h - heading_h;
     if (games_browser.preview_valid && lay.detail.h >= 96)
       line.w -= 70; /* Reserve the right side for the board thumbnail. */
-    const char *description = !games_browser.preview_valid
+    const char *description = game_library_entry_recoverable(&row->entry)
+        ? tr(ui->language, T_GAMES_RECOVER_HINT)
+        : !games_browser.preview_valid
         ? tr(ui->language, T_GAMES_SUMMARY_ONLY)
         : tr(ui->language, T_GAMES_LATEST);
     (void)polish_draw_wrapped_fit(gfx, description, theme.dim,
@@ -969,9 +1027,15 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   bool can_open = !games_browser.scanning &&
                   games_browser.selected < games_browser.count &&
                   games_browser.rows[games_browser.selected].entry.status == STORE_OK;
+  bool can_recover = !games_browser.scanning &&
+      games_browser.selected < games_browser.count &&
+      !games_browser.rows[games_browser.selected].hot_only &&
+      game_library_entry_recoverable(&games_browser.rows[games_browser.selected].entry);
   games_browser_draw_button(gfx, theme, lay.primary,
-                            tr(ui->language, active ? T_GAMES_LOAD : T_GAMES_VIEW),
-                            games_browser.focus == 1, can_open, theme.btnfg);
+                            tr(ui->language, can_recover ? T_RECOVER :
+                                active ? T_GAMES_LOAD : T_GAMES_VIEW),
+                            games_browser.focus == 1, can_open || can_recover,
+                            theme.btnfg);
   bool can_replay=can_open &&
       !games_browser.rows[games_browser.selected].hot_only &&
       games_browser.rows[games_browser.selected].entry.kind==GAME_RECORD_EXACT &&
@@ -998,7 +1062,9 @@ static bool games_browser_focus_enabled(int focus) {
            row->entry.result.status!=SESSION_ACTIVE;
   if(games_browser.detail_open)return false;
   if(focus==0)return true;
-  return focus==1 && row->entry.status==STORE_OK;
+  return focus==1 && (row->entry.status==STORE_OK ||
+                       (!row->hot_only &&
+                        game_library_entry_recoverable(&row->entry)));
 }
 
 static bool games_browser_activate_focus(Persistence *p,Game *game,

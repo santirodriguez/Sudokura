@@ -43,6 +43,16 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
 
     check(original, True, "real matrix")
     rows = [dict(row) for row in original]
+    recovering = next(row for row in rows if row["state"] == "games-recover")
+    recovering["focus"] = "games-unavailable"
+    check(rows, False, "reject Recovery action focus mismatch")
+
+    rows = [dict(row) for row in original]
+    recovering = next(row for row in rows if row["state"] == "games-recover")
+    recovering["state"] = "games-unavailable"
+    check(rows, False, "reject missing Recovery scene")
+
+    rows = [dict(row) for row in original]
     finished = next(row for row in rows if row["state"] == "games-detail")
     finished["focus"] = "games-back"
     check(rows, False, "reject finished Replay focus mismatch")

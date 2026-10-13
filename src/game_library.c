@@ -684,6 +684,13 @@ static bool visit_game_name(const char *name, void *context) {
   return scan->callback(&item, scan->context);
 }
 
+bool game_library_entry_recoverable(const GameLibraryEntry *entry) {
+  return entry && game_attempt_id_valid(entry->id) &&
+         entry->previous_status == STORE_OK &&
+         (entry->status == STORE_CORRUPT ||
+          (entry->only_backup && entry->status == STORE_NOT_FOUND));
+}
+
 /* Metadata-only Daily lookup: the date and puzzle class are immutable.
    Practice records carry provenance but never count as original Daily. */
 bool game_library_is_original_daily_on(const GameLibraryEntry *entry,

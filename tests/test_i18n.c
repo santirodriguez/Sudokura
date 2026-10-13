@@ -63,6 +63,11 @@ int main(void) {
     assert(*tr((Language)language, T_GAMES_UNKNOWN_DATE));
     assert(*tr((Language)language, T_GAMES_KEEP_PROMPT));
     assert(*tr((Language)language, T_GAMES_NEW_PROMPT));
+    assert(*tr((Language)language, T_GAMES_RECOVER_LABEL));
+    assert(*tr((Language)language, T_GAMES_RECOVER_HINT));
+    assert(*tr((Language)language, T_GAMES_RECOVER_PROMPT));
+    assert(*tr((Language)language, T_GAMES_RECOVERED));
+
     assert(*tr((Language)language, T_DAILY_CHECKING));
     assert(*tr((Language)language, T_DAILY_CHECK_CANCEL));
     assert(*tr((Language)language, T_DAILY_CHOOSE_TITLE));
