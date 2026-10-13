@@ -963,7 +963,7 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
     save_policy_init(&latency_p.save_policy);
 
     double event_start=wall_clock_ms();
-    go_home_base(&latency_p,&action_game,&action_ui);
+    go_home_base(&latency_p,&action_game,&action_ui,false);
     double action_done=wall_clock_ms();
     app_frame(g,&action_game,&action_ui);
     double present_done=wall_clock_ms();
