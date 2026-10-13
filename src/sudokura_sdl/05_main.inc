@@ -455,10 +455,10 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   const SessionState *saved=profile_slot_session(&p->profile.daily);
   if (saved && session_can_continue_runtime(saved) &&
       !saved_daily_matches(p,year,month,day)) {
-    char date[32],message[384];
+    char date[64],message[384];
     (void)snprintf(date,sizeof(date),"%04d-%02d-%02d",
                    saved->daily_year,saved->daily_month,saved->daily_day);
-    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,320,
+    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,250,
                    tr(ui->language,T_DAILY_CHOOSE_PROMPT));
     int choice=choice_box(g,game,ui,tr(ui->language,T_DAILY_CHOOSE_TITLE),
                           message,tr(ui->language,T_CANCEL),
