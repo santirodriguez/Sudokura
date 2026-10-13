@@ -7,7 +7,7 @@ set -euo pipefail
 readonly APPIMAGETOOL_RELEASE=1.9.1
 readonly APPIMAGETOOL_ASSET_ID=324406736
 readonly APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
-readonly APPIMAGETOOL_URL="https://api.github.com/repos/AppImage/appimagetool/releases/assets/${APPIMAGETOOL_ASSET_ID}"
+readonly APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_RELEASE}/appimagetool-x86_64.AppImage"
 readonly APPIMAGETOOL_OUTPUT=${2:-appimagetool}
 
 # Stable type2 runtime release used explicitly by appimagetool. This prevents
@@ -15,7 +15,7 @@ readonly APPIMAGETOOL_OUTPUT=${2:-appimagetool}
 readonly RUNTIME_RELEASE=20251108
 readonly RUNTIME_ASSET_ID=326011592
 readonly RUNTIME_SHA256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
-readonly RUNTIME_URL="https://api.github.com/repos/AppImage/type2-runtime/releases/assets/${RUNTIME_ASSET_ID}"
+readonly RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/${RUNTIME_RELEASE}/runtime-x86_64"
 readonly RUNTIME_OUTPUT=${3:-appimage-runtime}
 
 fetch_asset() {
