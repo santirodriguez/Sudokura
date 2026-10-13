@@ -1275,7 +1275,7 @@ static void test_replay_and_selective_reference_pruning(void) {
   ProfileData profile, pruned;
   profile_defaults(&profile);
   ProfileSession current = make_session(SESSION_ACTIVE);
-  assert(profile_slot_set(&profile.normal, &current, false));
+  assert(profile_slot_set(&profile.normal, &current.session, false));
   profile.normal.attempt_id = original;
   profile.normal.revision = 1;
   profile.normal.retained = true;

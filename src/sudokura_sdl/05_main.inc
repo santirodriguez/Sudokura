@@ -1241,7 +1241,7 @@ int main(int argc, char **argv) {
               entry.result.elapsed_ms=754000;
               entry.result.practice=state==REVIEW_GAMES_DETAIL;
               entry.result.assisted=finished;
-              entry.finished_utc=finished?UINT64_C(1781300000):0;
+              entry.finished_utc=finished?UINT64_C(1791916200):0;
               if(!games_browser_push(&entry,false)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
@@ -1255,7 +1255,7 @@ int main(int argc, char **argv) {
                 games_browser.detail_record_valid=true;
                 games_browser.detail_record.kind=GAME_RECORD_EXACT;
                 games_browser.detail_record.id=entry.id;
-                games_browser.detail_record.parent=(GameAttemptId){1,11};
+                games_browser.detail_record.parent=(GameAttemptId){UINT64_C(0xabc1234500001234),11};
                 games_browser.detail_record.original_daily=
                     state==REVIEW_GAMES_DETAIL;
                 games_browser.detail_record.original_daily_year=2026;
