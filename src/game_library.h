@@ -86,6 +86,12 @@ StoreStatus game_library_peek(const unsigned char *bytes, size_t size,
                               GameLibraryEntry *entry);
 StoreStatus game_library_load(const char *root, GameAttemptId id,
                               GameLibraryRecord *record);
+/* Decide a same-attempt Load without rolling back a newer hot revision.
+   The record is a canonically validated exact record from game_library_load.
+   On a conflict, callers must leave both profile and live board untouched. */
+StoreStatus game_library_resolve_hot_record(const ProfileSlot *hot,
+                                            const GameLibraryRecord *record,
+                                            bool *prefer_record);
 StoreStatus game_library_save(const char *root,
                               const GameLibraryRecord *record);
 

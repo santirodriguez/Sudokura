@@ -552,17 +552,35 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
   }
   bool daily = target.exact.session.is_daily;
   ProfileSlot *departing = daily ? &p->profile.daily : &p->profile.normal;
-  if (departing->present &&
-      game_attempt_id_equal(departing->attempt_id, target.id)) {
+  bool same_attempt = departing->present &&
+      game_attempt_id_equal(departing->attempt_id, target.id);
+  bool prefer_record = !same_attempt;
+  if (same_attempt && !row.hot_only) {
+    StoreStatus resolution = game_library_resolve_hot_record(
+        departing, &target, &prefer_record);
+    if (resolution != STORE_OK) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
+  }
+  if (same_attempt && !prefer_record) {
     bool play_current = ui->prev_screen == SCR_PLAY && ui->session_open &&
                         ui->is_daily == daily &&
-                        game_attempt_id_equal(p->active_attempt_id,target.id);
+                        game_attempt_id_equal(p->active_attempt_id, target.id);
     games_browser_close(p, game, ui);
     if (!play_current) restore_saved_session(p, game, ui, daily);
     return true;
   }
-  if (!games_browser_gate_replacement(p, game, ui, gfx, daily))
+  /* A newer committed record of this same attempt is reconciliation,
+     not a new attempt or a reason to discard another live board. */
+  if (same_attempt) {
+    if (!persistence_flush(p)) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
+  } else if (!games_browser_gate_replacement(p, game, ui, gfx, daily)) {
     return false;
+  }
   ProfileData candidate = p->profile;
   ProfileSlot *slot = daily ? &candidate.daily : &candidate.normal;
   memset(slot, 0, sizeof(*slot));

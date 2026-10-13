@@ -181,6 +181,57 @@ StoreStatus game_library_load(const char *root, GameAttemptId id,
   return load_from_suffix(root, id, ".dat", record);
 }
 
+/* This runs only for a user-selected, canonically loaded full record,
+   never during catalogue enumeration or autosave. */
+StoreStatus game_library_resolve_hot_record(const ProfileSlot *hot,
+                                            const GameLibraryRecord *record,
+                                            bool *prefer_record) {
+  if (!hot || !record || !prefer_record) return STORE_IO_ERROR;
+  *prefer_record = false;
+  if (!hot->present || !game_attempt_id_valid(hot->attempt_id) ||
+      !game_attempt_id_equal(hot->attempt_id, record->id) ||
+      record->kind != GAME_RECORD_EXACT || hot->revision == 0 ||
+      record->revision == 0)
+    return STORE_CORRUPT;
+
+  const SessionState *live = &hot->value.session;
+  const SessionState *disk = &record->exact.session;
+  if (live->game.seed != disk->game.seed ||
+      live->game.generator_revision != disk->game.generator_revision ||
+      live->game.difficulty != disk->game.difficulty ||
+      live->mode != disk->mode || live->is_daily != disk->is_daily ||
+      live->daily_year != disk->daily_year ||
+      live->daily_month != disk->daily_month ||
+      live->daily_day != disk->daily_day)
+    return STORE_CORRUPT;
+
+  /* A finished attempt is immutable; never reactivate it from an older
+     active record, nor silently change its terminal outcome. */
+  if (live->status != SESSION_ACTIVE &&
+      disk->status != live->status)
+    return STORE_CORRUPT;
+  if (record->revision < hot->revision)
+    return hot->retained ? STORE_IO_ERROR : STORE_OK;
+  if (record->revision > hot->revision) {
+    *prefer_record = true;
+    return STORE_OK;
+  }
+
+  /* Equal revisions must represent exactly the same serialized state,
+     including notes, elapsed time and Undo/Redo—not merely the same seed. */
+  unsigned char hot_bytes[4096], disk_bytes[4096];
+  size_t hot_size = 0, disk_size = 0;
+  if (!profile_session_encode_blob(&hot->value, hot_bytes,
+                                   sizeof(hot_bytes), &hot_size) ||
+      !profile_session_encode_blob(&record->exact, disk_bytes,
+                                   sizeof(disk_bytes), &disk_size) ||
+      hot_size != disk_size || memcmp(hot_bytes, disk_bytes, hot_size) != 0)
+    return STORE_CORRUPT;
+  if (hot->retained && !record->retained) return STORE_CORRUPT;
+  *prefer_record = record->retained && !hot->retained;
+  return STORE_OK;
+}
+
 bool game_library_new_id(const char *root, const GameAttemptId *reserved,
                          size_t reserved_count, GameAttemptId *out) {
   if (!root || !out || (reserved_count && !reserved)) return false;

@@ -1474,11 +1474,83 @@ static void test_explicit_game_recovery_gate(void) {
   assert(!game_library_entry_recoverable(&item));
 }
 
+static void test_same_attempt_load_prefers_durable_revision(void) {
+  GameAttemptId id = make_id(3951);
+  ProfileSession saved = make_session(SESSION_ACTIVE);
+  ProfileSlot hot = {0};
+  hot.present = true;
+  hot.retained = true;
+  hot.attempt_id = id;
+  hot.revision = 1;
+  hot.value = saved;
+
+  GameLibraryRecord disk;
+  bool prefer = true;
+  assert(game_library_make_exact(&disk, id, 1, &saved, true));
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) == STORE_OK);
+  assert(!prefer);
+
+  ProfileSession newer = saved;
+  newer.session.elapsed_ms += UINT64_C(5000);
+  newer.session.selected_column = 6;
+  assert(game_library_make_exact(&disk, id, 2, &newer, true));
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) == STORE_OK);
+  assert(prefer);
+  /* The decision is pure: the old slot cannot be displaced until the
+     target's new hot pointer has been durably committed. */
+  assert(hot.revision == 1 &&
+         hot.value.session.elapsed_ms == saved.session.elapsed_ms);
+
+  hot.revision = 3;
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_IO_ERROR);
+  assert(!prefer);
+  hot.retained = false; /* Disposable hot-only progress may be newer. */
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) == STORE_OK);
+  assert(!prefer);
+
+  hot.retained = true;
+  hot.revision = 2;
+  /* Same revision with different notes/time/history is a collision,
+     never a tie decided by a filename or wall clock. */
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_CORRUPT);
+  hot.value = newer;
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) == STORE_OK);
+  assert(!prefer);
+  hot.retained = false;
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) == STORE_OK);
+  assert(prefer); /* Complete an interrupted retention linkage. */
+
+  hot.retained = true;
+  hot.value.session.game.seed ^= UINT64_C(1);
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_CORRUPT);
+  hot.value = newer;
+  hot.value.session.is_daily = true;
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_CORRUPT);
+
+  hot.value = make_session(SESSION_WON);
+  hot.revision = 3;
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_CORRUPT); /* Never reactivate a finished attempt. */
+  hot.value = newer;
+  assert(game_library_resolve_hot_record(NULL, &disk, &prefer) ==
+         STORE_IO_ERROR);
+  assert(game_library_resolve_hot_record(&hot, &disk, NULL) ==
+         STORE_IO_ERROR);
+  disk.id = make_id(3952);
+  assert(game_library_resolve_hot_record(&hot, &disk, &prefer) ==
+         STORE_CORRUPT);
+}
+
 int main(void) {
   cleanup();
   prepare();
   test_hex_and_collision();
   test_explicit_game_recovery_gate();
+  test_same_attempt_load_prefers_durable_revision();
   test_daily_lookup_metadata_and_errors();
   test_daily_lookup_previous_copy_and_uncertainty();
   test_daily_rollover_retains_distinct_attempts();
