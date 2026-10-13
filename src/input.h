@@ -50,6 +50,17 @@ InputPlayShortcut input_play_shortcut(SDL_Keycode key, SDL_Keymod modifiers);
 const char *input_primary_modifier_label(void);
 
 typedef enum {
+  INPUT_LIBRARY_NONE = 0,
+  INPUT_LIBRARY_SAVE,
+  INPUT_LIBRARY_OPEN
+} InputLibraryShortcut;
+
+/* Interpret per-event modifiers before gameplay WASD dispatch. */
+InputLibraryShortcut input_library_shortcut(SDL_Keycode key,
+                                            SDL_Keymod modifiers,
+                                            bool repeat);
+
+typedef enum {
   INPUT_AUDIO_NONE = 0,
   INPUT_AUDIO_MASTER,
   INPUT_AUDIO_POPUP,

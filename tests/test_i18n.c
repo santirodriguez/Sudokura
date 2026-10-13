@@ -47,6 +47,19 @@ int main(void) {
     assert(*tr((Language)language, T_HELP_CONTROLS_TITLE));
     assert(*tr((Language)language, T_HELP_HINTS_TITLE));
     assert(*tr((Language)language, T_HELP_SHORTCUTS_TITLE));
+    assert(*tr((Language)language, T_GAMES));
+    assert(*tr((Language)language, T_GAMES_EMPTY));
+    assert(*tr((Language)language, T_GAMES_LOADING));
+    assert(*tr((Language)language, T_GAMES_UNAVAILABLE));
+    assert(*tr((Language)language, T_GAMES_LOAD));
+    assert(*tr((Language)language, T_GAMES_KEEP_PROMPT));
+    assert(*tr((Language)language, T_GAMES_NEW_PROMPT));
+    assert(*tr((Language)language, T_SAVE));
+    assert(*tr((Language)language, T_SAVED));
+    assert(strstr(tr((Language)language, T_HELP_SHORTCUTS_BODY),
+                  "Ctrl/Cmd+S") != NULL);
+    assert(strstr(tr((Language)language, T_HELP_SHORTCUTS_BODY),
+                  "Ctrl/Cmd+O") != NULL);
   }
   puts("EN/ES/CA semantic states, structured Help and UTF-8 validation passed");
   return 0;

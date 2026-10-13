@@ -116,6 +116,17 @@ InputPlayShortcut input_play_shortcut(SDL_Keycode key, SDL_Keymod modifiers) {
   return INPUT_PLAY_NONE;
 }
 
+InputLibraryShortcut input_library_shortcut(SDL_Keycode key,
+                                            SDL_Keymod modifiers,
+                                            bool repeat) {
+  if (repeat || !input_primary_modifier_active(modifiers) ||
+      (modifiers & (KMOD_SHIFT | KMOD_ALT)) != 0)
+    return INPUT_LIBRARY_NONE;
+  if (key == SDLK_s) return INPUT_LIBRARY_SAVE;
+  if (key == SDLK_o) return INPUT_LIBRARY_OPEN;
+  return INPUT_LIBRARY_NONE;
+}
+
 const char *input_primary_modifier_label(void) {
 #if defined(__APPLE__)
   return "Cmd";

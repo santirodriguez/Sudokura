@@ -2,6 +2,7 @@
 #define SUDOKURA_GAME_LIBRARY_H
 
 #include "profile.h"
+#include "store_io.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -117,5 +118,19 @@ StoreStatus game_library_receipt_status(const char *root, GameAttemptId id);
 StoreStatus game_library_delete(const char *root, GameAttemptId id);
 StoreStatus game_library_scan(const char *root, GameLibraryScanFn callback,
                               void *context);
+
+/* Incremental catalogue scan: one open iterator and bounded names/frame.
+   The selected callback is still responsible for bounded metadata storage.
+   Cursor must be initialized to zero and closed on cancellation. */
+typedef struct {
+  StoreDirectoryCursor directory;
+  char root[SUDOKURA_STORE_PATH_CAPACITY];
+  bool finished;
+} GameLibraryScanCursor;
+StoreStatus game_library_scan_begin(const char *root, GameLibraryScanCursor *scan);
+StoreStatus game_library_scan_step(GameLibraryScanCursor *scan, size_t name_budget,
+                                   GameLibraryScanFn callback, void *context,
+                                   bool *finished);
+void game_library_scan_close(GameLibraryScanCursor *scan);
 
 #endif

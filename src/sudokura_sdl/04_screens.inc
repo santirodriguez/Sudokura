@@ -239,7 +239,7 @@ static int choice_box(Gfx*g,const Game*game,UI*ui,const char*title,
 
 static void app_render_base(Gfx*g,const Game*game,UI*ui){
   update_font_tiers(g,ui);
-  if(ui->screen==SCR_TITLE){
+  if(ui->screen==SCR_TITLE||ui->screen==APP_SCREEN_GAMES){
     Theme th=ui->dark_theme?theme_dark():theme_light();
     SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
     SDL_RenderClear(g->ren);

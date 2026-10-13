@@ -31,6 +31,17 @@ int main(void) {
       assert_inside(g.about_study, g.about_study_link);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
+      assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
+      assert(GEOMETRY_TITLE_BUTTON_COUNT == 8);
+      for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
+        assert_rect(g.home_secondary[i], width, height);
+        if (i > 0 && portrait) {
+          if ((i % 2) == 0)
+            assert(g.home_secondary[i].y > g.home_secondary[i - 1].y);
+          else
+            assert(g.home_secondary[i].y == g.home_secondary[i - 1].y);
+        }
+      }
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
       for (int action = 0; action < PLAY_ACTION_COUNT; ++action)

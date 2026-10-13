@@ -163,6 +163,8 @@ typedef struct {
   char audio_v12_backup_path[PATH_MAX];
   SavePolicy save_policy;
   GameLibraryHotCache game_cache[2];
+  /* Identifies the LIVE attempt; matching puzzle seeds is not sufficient. */
+  GameAttemptId active_attempt_id;
   bool capture_failed;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
@@ -516,6 +518,7 @@ static bool persistence_recover_previous(Persistence*p){
   if(status!=STORE_OK)return false;
   p->profile=recovered;
   p->preferences=recovered.preferences;
+  p->active_attempt_id=(GameAttemptId){0,0};
   p->capture_failed=false;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
@@ -688,6 +691,8 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   ProfileSlot*slot=state.is_daily?&p->profile.daily:&p->profile.normal;
   bool same_identity=
       slot->present &&
+      game_attempt_id_valid(p->active_attempt_id) &&
+      game_attempt_id_equal(slot->attempt_id,p->active_attempt_id) &&
       slot->value.session.game.seed==state.game.seed &&
       slot->value.session.game.generator_revision==state.game.generator_revision &&
       slot->value.session.game.difficulty==state.game.difficulty &&
@@ -720,6 +725,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
     return false;
   }
   slot->attempt_id=id;
+  p->active_attempt_id=id;
   slot->revision=next_revision;
   slot->retained=retained||state.status==SESSION_WON;
   slot->value.undo_count=ui->undo_count;
@@ -769,6 +775,7 @@ static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
 
 static void persistence_begin_distinct_attempt(Persistence*p,bool daily){
   if(!p)return;
+  p->active_attempt_id=(GameAttemptId){0,0};
   ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
   if(!slot->present)return;
   slot->attempt_id=(GameAttemptId){0,0};
@@ -781,6 +788,7 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
   const SessionState*s=profile_slot_session(slot);
   if(!s||!session_validate_runtime(s))return;
+  p->active_attempt_id=slot->attempt_id;
   *game=s->game;ui->mode=s->mode;set_mode_params(ui);
   ui->sel_r=s->selected_row;ui->sel_c=s->selected_column;ui->notes_mode=s->notes_mode;
   ui->strict_mode=s->strict_mode;ui->mistakes=s->mistakes;ui->strikes=s->strikes;
@@ -868,6 +876,7 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
 
 static void go_home_base(Persistence*p,const Game*game,UI*ui){
   if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)checkpoint_current_session(p,game,ui);}
+  if(p)p->active_attempt_id=(GameAttemptId){0,0};
   clear_hint_preview(ui);
   ui->session_open=false;ui->screen=SCR_TITLE;ui->prev_screen=SCR_TITLE;ui->result=RES_NONE;
   ui->pause_reasons=0;ui->mode=p->preferences.mode;ui->strict_mode=p->preferences.strict_mode;

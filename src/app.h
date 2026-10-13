@@ -14,7 +14,8 @@ typedef enum {
   APP_SCREEN_RESULT = 2,
   APP_SCREEN_HELP = 3,
   APP_SCREEN_ABOUT = 4,
-  APP_SCREEN_SETTINGS = 5
+  APP_SCREEN_SETTINGS = 5,
+  APP_SCREEN_GAMES = 6
 } AppScreen;
 
 typedef enum {

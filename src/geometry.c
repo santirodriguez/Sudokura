@@ -88,7 +88,7 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
     grid_gap((GeoRect){home_x, y, home_w, primary_h}, 1, 8, g->home_primary,
              GEOMETRY_HOME_PRIMARY_COUNT);
     y += primary_h + 12;
-    int secondary_h = 40 * 2 + 8;
+    int secondary_h = 40 * 3 + 8 * 2;
     grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 2, 8,
              g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
   } else {
@@ -97,7 +97,7 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
     grid_gap((GeoRect){home_x, y, home_w, primary_h}, 3, 8, g->home_primary,
              GEOMETRY_HOME_PRIMARY_COUNT);
     y += primary_h + 10;
-    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 4, 8,
+    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 5, 8,
              g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
   }
 

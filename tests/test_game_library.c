@@ -594,6 +594,37 @@ static void test_thousand_record_incremental_scan(void) {
   ScanProbe cancel = {0, false, true};
   assert(game_library_scan(root, scan_callback, &cancel) == STORE_CANCELLED);
   assert(cancel.count == 1u);
+
+  /* Drive the same thousand-file catalogue through bounded UI-sized batches. */
+  GameLibraryScanCursor cursor = {0};
+  assert(game_library_scan_begin(root, &cursor) == STORE_OK);
+  assert(!cursor.finished);
+  size_t streamed = 0;
+  unsigned frames = 0;
+  bool complete = false;
+  do {
+    assert(++frames <= 125u);
+    assert(game_library_scan_step(&cursor, 16u, count_metadata,
+                                  &streamed, &complete) == STORE_OK);
+  } while (!complete);
+  assert(streamed == 1000u && frames > 1u);
+  assert(game_test_generation_count() == 0u);
+  game_library_scan_close(&cursor);
+  game_library_scan_close(&cursor);
+
+  GameLibraryScanCursor interrupted = {0};
+  assert(game_library_scan_begin(root, &interrupted) == STORE_OK);
+  ScanProbe stop = {0, false, true};
+  assert(game_library_scan_step(&interrupted, 16u, scan_callback,
+                                &stop, &complete) == STORE_CANCELLED);
+  assert(complete && stop.count == 1u);
+  game_library_scan_close(&interrupted);
+
+  GameLibraryScanCursor missing = {0};
+  assert(game_library_scan_begin(".sudokura-missing-library-test", &missing)
+         == STORE_OK);
+  assert(missing.finished);
+  game_library_scan_close(&missing);
   cleanup();
 }
 

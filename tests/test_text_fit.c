@@ -134,11 +134,14 @@ int main(void) {
                     settings_width, g.actions[PLAY_ACTION_AUDIO].h));
 
         int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
-        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap) / 2;
+        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap * 2) / 3;
         assert(fits(font, tr((Language)language, T_MENU), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_MENU].h));
         assert(fits(font, tr((Language)language, T_PAUSE), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_MENU].h));
+        assert(fits(font, tr((Language)language, T_SAVE), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_MENU].h));
+        split_w = (g.actions[PLAY_ACTION_PAUSE].w - split_gap) / 2;
         assert(fits(font, tr((Language)language, T_UNDO), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_PAUSE].h));
         assert(fits(font, tr((Language)language, T_REDO), tier.control, 9,
@@ -161,6 +164,12 @@ int main(void) {
         assert(fits(font, tr((Language)language, T_RETRY_SAVE), 14, 9,
                     save_retry_w, save_retry_h - 2));
 
+        const TextKey home_secondary[] = {
+            T_GAMES, T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
+        for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+          assert(fits(font, tr((Language)language, home_secondary[i]),
+                      tier.control, 10,
+                      g.home_secondary[i].w, g.home_secondary[i].h));
         int home_main_h = g.home_primary[1].h * 3 / 5;
         int home_sub_h = g.home_primary[1].h - home_main_h + 1;
         assert(fits(font, tr((Language)language, T_CONTINUE_NORMAL),

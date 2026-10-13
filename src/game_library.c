@@ -600,3 +600,53 @@ StoreStatus game_library_scan(const char *root, GameLibraryScanFn callback,
   StoreStatus status = store_list_directory(folder, visit_game_name, &scan);
   return status == STORE_NOT_FOUND ? STORE_OK : status;
 }
+
+StoreStatus game_library_scan_begin(const char *root, GameLibraryScanCursor *scan) {
+  if (!root || !root[0] || !scan || scan->directory.state) return STORE_IO_ERROR;
+  size_t len = strlen(root);
+  if (len >= sizeof(scan->root)) return STORE_IO_ERROR;
+  char folder[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!games_directory(folder, root)) return STORE_IO_ERROR;
+  memcpy(scan->root, root, len + 1u);
+  scan->finished = false;
+  StoreStatus status = store_directory_open(folder, &scan->directory);
+  if (status == STORE_NOT_FOUND) {
+    scan->finished = true;
+    return STORE_OK;
+  }
+  if (status != STORE_OK) scan->finished = true;
+  return status;
+}
+
+StoreStatus game_library_scan_step(GameLibraryScanCursor *scan,
+                                   size_t name_budget,
+                                   GameLibraryScanFn callback, void *context,
+                                   bool *finished) {
+  if (!scan || !callback || !finished || !name_budget) return STORE_IO_ERROR;
+  *finished = scan->finished;
+  if (scan->finished) return STORE_OK;
+  ScanContext scan_context = {scan->root, callback, context};
+  for (size_t processed = 0; processed < name_budget; ++processed) {
+    char name[SUDOKURA_STORE_PATH_CAPACITY];
+    StoreStatus status = store_directory_next(&scan->directory, name);
+    if (status == STORE_NOT_FOUND) {
+      scan->finished = true;
+      *finished = true;
+      store_directory_close(&scan->directory);
+      return STORE_OK;
+    }
+    if (status != STORE_OK || !visit_game_name(name, &scan_context)) {
+      scan->finished = true;
+      *finished = true;
+      store_directory_close(&scan->directory);
+      return status == STORE_OK ? STORE_CANCELLED : status;
+    }
+  }
+  return STORE_OK;
+}
+
+void game_library_scan_close(GameLibraryScanCursor *scan) {
+  if (!scan) return;
+  store_directory_close(&scan->directory);
+  scan->finished = true;
+}

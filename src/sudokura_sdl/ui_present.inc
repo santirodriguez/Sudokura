@@ -127,7 +127,7 @@ static void polish_home_context_button(
   (void)draw_fitted_text(gfx, label, main_color, main, preferred, 9);
   if (detail && detail[0]) {
     int sub_preferred = preferred > 13 ? preferred - 4 : 10;
-    (void)draw_fitted_text(gfx, detail, theme.dim, sub, sub_preferred, 9);
+    (void)draw_fitted_text(gfx, detail, disabled ? theme.dim : main_color, sub, sub_preferred, 9);
   }
   if (focused && !disabled) draw_focus_ring(gfx->ren, rect, theme.sel_outline);
 }
@@ -234,7 +234,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       false, false, home_focus == HOME_FOCUS_DAILY, fonts.control);
 
   const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT] = {
-      T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
+      T_GAMES, T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
   for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
     const char *text = tr(ui->language, secondary_keys[i]);
     polish_home_button(gfx, theme, sdl_rect(geometry.home_secondary[i]), text,
@@ -516,7 +516,8 @@ static void ui_audio_control_cancel_interaction(void) {
 static bool ui_audio_control_available(const UI *ui) {
   if (!ui) return false;
   if (ui->hint_preview_active || ui->generating) return false;
-  if (settings_open || ui->screen == APP_SCREEN_SETTINGS) return false;
+  if (settings_open || ui->screen == APP_SCREEN_SETTINGS ||
+      ui->screen == APP_SCREEN_GAMES) return false;
   if ((ui->pause_reasons & PAUSE_USER_VISIBLE) != 0) return false;
   return true;
 }
@@ -1080,9 +1081,15 @@ static void split_control_rects(SDL_Rect combined, SDL_Rect *left,
                         combined.w - left_w - gap, combined.h};
 }
 
-static void menu_pause_rects(SDL_Rect combined, SDL_Rect *menu,
-                             SDL_Rect *pause) {
-  split_control_rects(combined, menu, pause);
+static void menu_pause_save_rects(SDL_Rect combined, SDL_Rect *menu,
+                                  SDL_Rect *pause, SDL_Rect *save) {
+  int gap = combined.w >= 180 ? 6 : 4;
+  int width = (combined.w - gap * 2) / 3;
+  if (menu) *menu = (SDL_Rect){combined.x, combined.y, width, combined.h};
+  if (pause) *pause = (SDL_Rect){combined.x + width + gap, combined.y,
+                                width, combined.h};
+  if (save) *save = (SDL_Rect){combined.x + 2 * (width + gap), combined.y,
+                              combined.w - 2 * (width + gap), combined.h};
 }
 
 static void undo_redo_rects(SDL_Rect combined, SDL_Rect *undo,
@@ -1104,7 +1111,7 @@ static bool clear_selected_available(const Game *game, const UI *ui) {
 }
 
 typedef enum{
-  PLAY_FOCUS_MENU=0,PLAY_FOCUS_PAUSE,PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,
+  PLAY_FOCUS_MENU=0,PLAY_FOCUS_PAUSE,PLAY_FOCUS_SAVE,PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,
   PLAY_FOCUS_RESTART,PLAY_FOCUS_CLEAR,PLAY_FOCUS_HINT,PLAY_FOCUS_NOTES,
   PLAY_FOCUS_VERIFY,PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_STRICT,
   PLAY_FOCUS_SAVE_RETRY,PLAY_FOCUS_NUMBER_1,PLAY_FOCUS_NUMBER_2,PLAY_FOCUS_NUMBER_3,
@@ -1115,6 +1122,7 @@ typedef enum{
 static int play_keyboard_focus=-1;
 static bool play_focus_enabled(const Game*game,const UI*ui,int focus){
   if(!game||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return false;
+  if(focus==PLAY_FOCUS_SAVE)return app_play_interactions_allowed(ui);
   if(focus==PLAY_FOCUS_UNDO)return ui->undo_count>0;
   if(focus==PLAY_FOCUS_REDO)return ui->redo_count>0;
   if(focus==PLAY_FOCUS_CLEAR)return clear_selected_available(game,ui);
@@ -1137,7 +1145,7 @@ static void play_move_focus(const Game*game,const UI*ui,int direction){
 static SDL_Rect play_focus_rect(const Gfx*gfx,const UI*ui,int focus){
   if(!gfx||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return(SDL_Rect){0,0,0,0};
   Layout layout=compute_layout(gfx->width,gfx->height,ui->mode);SidebarRects controls;compute_sidebar_rects(&layout,&controls);SDL_Rect left,right;
-  if(focus==PLAY_FOCUS_MENU||focus==PLAY_FOCUS_PAUSE){menu_pause_rects(controls.btn[PLAY_ACTION_MENU],&left,&right);return focus==PLAY_FOCUS_MENU?left:right;}
+  if(focus==PLAY_FOCUS_MENU||focus==PLAY_FOCUS_PAUSE||focus==PLAY_FOCUS_SAVE){SDL_Rect save;menu_pause_save_rects(controls.btn[PLAY_ACTION_MENU],&left,&right,&save);return focus==PLAY_FOCUS_MENU?left:(focus==PLAY_FOCUS_PAUSE?right:save);}
   if(focus==PLAY_FOCUS_UNDO||focus==PLAY_FOCUS_REDO){undo_redo_rects(controls.btn[PLAY_ACTION_PAUSE],&left,&right);return focus==PLAY_FOCUS_UNDO?left:right;}
   if(focus==PLAY_FOCUS_RESTART||focus==PLAY_FOCUS_CLEAR){restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],&left,&right);return focus==PLAY_FOCUS_RESTART?left:right;}
   if(focus==PLAY_FOCUS_HINT)return controls.btn[PLAY_ACTION_HINT];
@@ -1184,21 +1192,21 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
     if (action == PLAY_ACTION_ABOUT) continue;
     SDL_Rect rect = controls.btn[action];
     if (action == PLAY_ACTION_MENU) {
-      SDL_Rect menu_rect, pause_rect;
-      menu_pause_rects(rect, &menu_rect, &pause_rect);
-      bool menu_hover = point_in(menu_rect, mx, my);
-      bool pause_hover = point_in(pause_rect, mx, my);
-      SDL_Rect menu_face = polish_button_face(
-          gfx, theme, menu_rect, theme.title,
-          menu_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), false);
-      SDL_Rect pause_face = polish_button_face(
-          gfx, theme, pause_rect,
-          pause_hover ? theme.hover : theme.palette_bg,
-          pause_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), false);
-      (void)draw_fitted_text(gfx, tr(ui->language, T_MENU), theme.bg,
-                             menu_face, fonts.control, 9);
-      (void)draw_fitted_text(gfx, tr(ui->language, T_PAUSE), theme.btnfg,
-                             pause_face, fonts.control, 9);
+      SDL_Rect menu_rect, pause_rect, save_rect;
+      menu_pause_save_rects(rect, &menu_rect, &pause_rect, &save_rect);
+      SDL_Rect buttons[3] = {menu_rect, pause_rect, save_rect};
+      const TextKey keys[3] = {T_MENU, T_PAUSE, T_SAVE};
+      for (int i = 0; i < 3; ++i) {
+        bool hover = point_in(buttons[i], mx, my);
+        bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+        SDL_Color color = i == 0 ? theme.title :
+                          (hover ? theme.hover : theme.palette_bg);
+        SDL_Rect face = polish_button_face(gfx, theme, buttons[i],
+                                          color, pressed, false);
+        (void)draw_fitted_text(gfx, tr(ui->language, keys[i]),
+                               i == 0 ? theme.bg : theme.btnfg,
+                               face, fonts.control, 9);
+      }
       continue;
     }
 
@@ -1281,7 +1289,8 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
 
 static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
   if (!gfx || !ui || !audio_persistence ||
-      !persistence_has_save_error(audio_persistence))
+      !persistence_has_save_error(audio_persistence) ||
+      ui->screen == APP_SCREEN_GAMES)
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   StorageBannerLayout layout = storage_banner_layout(gfx, ui);
@@ -1416,6 +1425,8 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
               fx.x + fx.w - 8, fx.y + fx.h - 7, theme.conflict);
 }
 
+static void games_browser_render(Gfx *gfx, const Game *game, UI *ui);
+
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   text_cache_sync(gfx,ui);
   app_render_base(gfx, game, ui);
@@ -1425,6 +1436,8 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
     polish_render_play(gfx, game, ui);
   else if (ui->screen == SCR_ABOUT)
     polish_render_about(gfx, ui);
+  else if (ui->screen == APP_SCREEN_GAMES)
+    games_browser_render(gfx, game, ui);
   rc2_render_play_controls(gfx, game, ui);
   rc2_render_hint_panel(gfx, ui);
   rc2_render_settings_panel(gfx, ui);

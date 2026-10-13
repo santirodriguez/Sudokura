@@ -44,6 +44,17 @@ StoreStatus store_list_directory(const char *path,
                                  StoreDirectoryEntryFn visitor,
                                  void *context);
 
+/* Owns an open OS directory handle; zero-initialize before opening. The
+   caller may consume bounded batches without rescanning earlier names. */
+typedef struct {
+  void *state;
+} StoreDirectoryCursor;
+StoreStatus store_directory_open(const char *path, StoreDirectoryCursor *cursor);
+/* STORE_OK yields a name; STORE_NOT_FOUND means end of enumeration. */
+StoreStatus store_directory_next(StoreDirectoryCursor *cursor,
+                                 char name[SUDOKURA_STORE_PATH_CAPACITY]);
+void store_directory_close(StoreDirectoryCursor *cursor);
+
 StoreLockStatus store_writer_lock_acquire(const char *directory,
                                           StoreWriterLock *lock);
 void store_writer_lock_release(StoreWriterLock *lock);

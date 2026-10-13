@@ -170,6 +170,105 @@ StoreStatus store_list_directory(const char *path,
 #endif
 }
 
+/* A streaming directory cursor keeps expensive catalogue work out of one
+   UI frame. It never owns user data and must be closed on every exit path. */
+typedef struct {
+#if defined(_WIN32)
+  HANDLE handle;
+  WIN32_FIND_DATAW entry;
+  bool first;
+#else
+  DIR *dir;
+#endif
+} StoreDirectoryState;
+
+StoreStatus store_directory_open(const char *path, StoreDirectoryCursor *cursor) {
+  if (!path || !path[0] || !cursor || cursor->state)
+    return STORE_IO_ERROR;
+  StoreDirectoryState *state = (StoreDirectoryState *)calloc(1, sizeof(*state));
+  if (!state) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  char search[SUDOKURA_STORE_PATH_CAPACITY];
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!build_child_path(search, path, "*") ||
+      !utf8_to_wide(search, wide, sizeof(wide) / sizeof(wide[0]))) {
+    free(state);
+    return STORE_IO_ERROR;
+  }
+  state->handle = FindFirstFileW(wide, &state->entry);
+  if (state->handle == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
+    free(state);
+    return error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  state->first = true;
+#else
+  state->dir = opendir(path);
+  if (!state->dir) {
+    int error = errno;
+    free(state);
+    return error == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+#endif
+  cursor->state = state;
+  return STORE_OK;
+}
+
+StoreStatus store_directory_next(StoreDirectoryCursor *cursor,
+                                 char name[SUDOKURA_STORE_PATH_CAPACITY]) {
+  if (!cursor || !cursor->state || !name) return STORE_IO_ERROR;
+  StoreDirectoryState *state = (StoreDirectoryState *)cursor->state;
+#if defined(_WIN32)
+  for (;;) {
+    if (state->first) {
+      state->first = false;
+    } else if (!FindNextFileW(state->handle, &state->entry)) {
+      return GetLastError() == ERROR_NO_MORE_FILES
+                 ? STORE_NOT_FOUND : STORE_IO_ERROR;
+    }
+    if (state->entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+    int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                    state->entry.cFileName, -1, NULL, 0,
+                                    NULL, NULL);
+    if (length <= 0 || length > (int)SUDOKURA_STORE_PATH_CAPACITY)
+      return STORE_IO_ERROR;
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                            state->entry.cFileName, -1, name, length,
+                            NULL, NULL) != length)
+      return STORE_IO_ERROR;
+    return STORE_OK;
+  }
+#else
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(state->dir);
+    if (!entry)
+      return errno == 0 ? STORE_NOT_FOUND : STORE_IO_ERROR;
+    if (entry->d_name[0] == '.' &&
+        (entry->d_name[1] == '\0' ||
+         (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+      continue;
+    size_t length = strlen(entry->d_name);
+    if (length >= SUDOKURA_STORE_PATH_CAPACITY) return STORE_IO_ERROR;
+    memcpy(name, entry->d_name, length + 1u);
+    return STORE_OK;
+  }
+#endif
+}
+
+void store_directory_close(StoreDirectoryCursor *cursor) {
+  if (!cursor || !cursor->state) return;
+  StoreDirectoryState *state = (StoreDirectoryState *)cursor->state;
+#if defined(_WIN32)
+  FindClose(state->handle);
+#else
+  (void)closedir(state->dir);
+#endif
+  free(state);
+  cursor->state = NULL;
+}
+
 static bool sync_file(FILE *file) {
   if (!file || fflush(file) != 0) return false;
 #ifdef SUDOKURA_STORE_TESTING

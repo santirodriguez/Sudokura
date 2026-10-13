@@ -203,6 +203,26 @@ static void test_utf8_path(void) {
   assert_contents(profile_unicode_path, "utf8-path");
 }
 
+static void test_directory_cursor(void) {
+  StoreDirectoryCursor cursor = {0};
+  assert(store_directory_open(profile_directory, &cursor) == STORE_OK);
+  char name[SUDOKURA_STORE_PATH_CAPACITY];
+  bool saw_unicode = false;
+  for (;;) {
+    StoreStatus status = store_directory_next(&cursor, name);
+    if (status == STORE_NOT_FOUND) break;
+    assert(status == STORE_OK);
+    if (strcmp(name, "profile-\xc3\xb1.dat") == 0)
+      saw_unicode = true;
+  }
+  assert(saw_unicode);
+  store_directory_close(&cursor);
+  store_directory_close(&cursor);
+  assert(store_directory_open(".sudokura-no-such-directory", &cursor) ==
+         STORE_NOT_FOUND);
+  assert(cursor.state == NULL);
+}
+
 #if !defined(_WIN32)
 static void test_permission_failure(void) {
   const unsigned char value[] = "blocked";
@@ -299,6 +319,7 @@ int main(int argc, char **argv) {
   test_parent_sync_failure_after_replace();
   test_targeted_parent_sync_after_backup_rotation();
   test_utf8_path();
+  test_directory_cursor();
 #if !defined(_WIN32)
   test_permission_failure();
 #endif

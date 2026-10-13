@@ -44,7 +44,7 @@ void app_state_init(AppState *state) {
 
 bool app_screen_is_auxiliary(AppScreen screen) {
   return screen == APP_SCREEN_HELP || screen == APP_SCREEN_SETTINGS ||
-         screen == APP_SCREEN_ABOUT;
+         screen == APP_SCREEN_ABOUT || screen == APP_SCREEN_GAMES;
 }
 
 bool app_pause_hides_play(const AppState *state) {
@@ -81,7 +81,7 @@ bool app_return_aux(AppState *state) {
 }
 
 bool app_navigate(AppState *state, AppScreen target) {
-  if (!state || target < APP_SCREEN_HOME || target > APP_SCREEN_SETTINGS)
+  if (!state || target < APP_SCREEN_HOME || target > APP_SCREEN_GAMES)
     return false;
   if (app_screen_is_auxiliary(target)) return app_open_aux(state, target);
   if (state->screen == target) return false;

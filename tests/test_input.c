@@ -140,6 +140,15 @@ int main(void) {
   assert(input_play_shortcut(primary_undo_snapshot.key,
                              primary_undo_snapshot.modifiers) == INPUT_PLAY_UNDO);
 
+  assert(input_library_shortcut(SDLK_s, primary, false) == INPUT_LIBRARY_SAVE);
+  assert(input_library_shortcut(SDLK_o, primary, false) == INPUT_LIBRARY_OPEN);
+  assert(input_library_shortcut(SDLK_s, primary, true) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, other, false) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, KMOD_NONE, false) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_o, (SDL_Keymod)(primary | KMOD_SHIFT), false) ==
+         INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, (SDL_Keymod)(primary | KMOD_ALT), false) ==
+         INPUT_LIBRARY_NONE);
   assert(input_play_shortcut(SDLK_z, primary) == INPUT_PLAY_UNDO);
   assert(input_play_shortcut(SDLK_z, (SDL_Keymod)(primary | KMOD_SHIFT)) ==
          INPUT_PLAY_REDO);

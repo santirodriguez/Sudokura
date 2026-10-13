@@ -43,6 +43,30 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
 
     check(original, True, "real matrix")
     rows = [dict(row) for row in original]
+    row = next(row for row in rows
+               if row["state"] == "games-unavailable" and
+               (int(row["width"]), int(row["height"])) == (360, 640))
+    row["focus"] = "games-active"
+    check(rows, False, "reject unavailable Games focus mismatch")
+
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows
+               if row["state"] == "games-active" and
+               (int(row["width"]), int(row["height"])) == (640, 480))
+    row["state"] = "games-empty"
+    check(rows, False, "reject missing Games scene and duplicate state")
+
+    games = [row for row in original if
+             (int(row["width"]), int(row["height"])) == (360, 640)]
+    active = next(row for row in games if row["state"] == "games-active")
+    empty = next(row for row in games if row["state"] == "games-empty")
+    active_link = root / active["file"]
+    active_link.unlink()
+    active_link.symlink_to(source / empty["file"])
+    check(original, False, "reject identical Games screen render")
+    active_link.unlink()
+    active_link.symlink_to(source / active["file"])
+    rows = [dict(row) for row in original]
     for row in rows:
         if (row["state"] == "help-bottom" and
                 (int(row["width"]), int(row["height"])) == (1024, 768) and
