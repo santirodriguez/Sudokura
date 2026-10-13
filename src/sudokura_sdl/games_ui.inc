@@ -742,7 +742,7 @@ static bool games_browser_delete_selected(Persistence *p,Game *game,
   if(deleting_live){
     games_browser.modal_owned=false;
     games_browser_close(p,game,ui);
-    go_home_base(p,game,ui);
+    go_home_base(p,game,ui,false);
   }else{
     size_t index=games_browser.selected;
     if(index+1u<games_browser.count)

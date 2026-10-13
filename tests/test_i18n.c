@@ -67,6 +67,7 @@ int main(void) {
     assert(*tr((Language)language, T_GAMES_RECOVER_HINT));
     assert(*tr((Language)language, T_GAMES_RECOVER_PROMPT));
     assert(*tr((Language)language, T_GAMES_RECOVERED));
+    assert(*tr((Language)language, T_UNSAVED_HOME));
 
     assert(*tr((Language)language, T_DAILY_CHECKING));
     assert(*tr((Language)language, T_DAILY_CHECK_CANCEL));

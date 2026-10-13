@@ -465,7 +465,9 @@ static void go_home_polish(Persistence *persistence, const Game *game,
                            UI *ui) {
   bool leaving_play = ui && ui->screen == SCR_PLAY && ui->result == RES_NONE;
   if (leaving_play) audio_play_effect(AUDIO_EFFECT_LEAVE);
-  go_home_base(persistence, game, ui);
+  /* Every Home navigation here passed go_home_checked. Never retry a
+     checkpoint after releasing the live board. */
+  go_home_base(persistence, game, ui, true);
 }
 
 /* RC2 interaction/presentation corrections that stay outside Sudoku rules. */

@@ -23,6 +23,11 @@ bool save_policy_has_error(const SavePolicy *policy) {
   return save_policy_dirty(policy) && policy->last_status != STORE_OK;
 }
 
+bool save_policy_transition_ready(const SavePolicy *policy,
+                                  bool checkpoint_succeeded) {
+  return checkpoint_succeeded && policy && !save_policy_dirty(policy);
+}
+
 bool save_policy_slot_dirty(const SavePolicy *policy, bool daily) {
   if (!policy) return false;
   unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;

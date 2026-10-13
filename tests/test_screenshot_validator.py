@@ -42,6 +42,17 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
         print(f"PASS {name}")
 
     check(original, True, "real matrix")
+
+    rows = [dict(row) for row in original]
+    pending = next(row for row in rows if row["state"] == "result-save-error")
+    pending["focus"] = "home"
+    check(rows, False, "reject pending result save focus mismatch")
+
+    rows = [dict(row) for row in original]
+    pending = next(row for row in rows if row["state"] == "result-save-error")
+    pending["state"] = "win"
+    check(rows, False, "reject missing pending result save scene")
+
     rows = [dict(row) for row in original]
     recovering = next(row for row in rows if row["state"] == "games-recover")
     recovering["focus"] = "games-unavailable"

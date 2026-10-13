@@ -6,7 +6,7 @@ import argparse,csv,hashlib,struct
 SIZES={(640,480),(1024,768),(1366,768),(360,640),(1920,1080)}
 HELP_AUDIT_SIZES={(360,640),(640,480),(1024,768)}
 STATES={"home-empty","home-save","notes","conflict","hint","save-error",
-        "pause","loss","win","help","settings","about",
+        "result-save-error","pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
         "games-finished","games-detail","games-recover",
         "home-daily-loading","home-daily-older","home-daily-finished"}
@@ -34,16 +34,16 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==165,f"expected 165 manifest rows, found {len(rows)}"
+assert len(rows)==170,f"expected 170 manifest rows, found {len(rows)}"
 files=sorted(args.directory.glob("*.bmp"))
-assert len(files)==165,f"expected 165 BMPs, found {len(files)}"
+assert len(files)==170,f"expected 170 BMPs, found {len(files)}"
 by_name={p.name:p for p in files}
-assert len(by_name)==165
+assert len(by_name)==170
 assert len({r["file"] for r in rows})==len(rows),"duplicate manifest filename"
 assert {r["file"] for r in rows}==set(by_name),"manifest/BMP mismatch"
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==105 and len(audit)==60,(len(matrix),len(audit))
+assert len(matrix)==110 and len(audit)==60,(len(matrix),len(audit))
 matrix_keys=[(int(r["width"]),int(r["height"]),r["state"]) for r in matrix]
 assert len(set(matrix_keys))==len(matrix_keys),"duplicate matrix scene"
 assert set(matrix_keys)=={(w,h,state) for w,h in SIZES for state in STATES}, "matrix coverage mismatch"
@@ -188,7 +188,9 @@ for r in rows:
     pixels=data[offset:];assert len(pixels)>w*h,r["file"]
     sample=pixels[::max(1,len(pixels)//12000)]
     assert len(set(sample))>=8,f"blank-looking frame: {r['file']}"
-    if r["state"]=="save-error":
+    if r["state"] in {"save-error","result-save-error"}:
+        assert r["focus"]=="retry-save",(r["file"],"Save retry focus mismatch")
+        assert fw>=55 and fh>=25,(r["file"],"Save retry button too small")
         # The retry button used to render while an overlong warning silently
         # disappeared. Inspect a button-free slice immediately to its left.
         crop_left=max(0,fx-150)
@@ -197,4 +199,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 165 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 170 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

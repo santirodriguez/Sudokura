@@ -94,6 +94,35 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
   }
 }
 
+/* Keep the live session and terminal archive in memory until every
+   required persistence domain is acknowledged. Home has no discard path:
+   explicit discarding remains available through the Exit gate. */
+static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  bool checkpointed = ui->session_open
+      ? checkpoint_current_session(p, game, ui)
+      : persistence_flush(p);
+  if (!save_policy_transition_ready(&p->save_policy, checkpointed)) {
+    bool modal_owned = clock_pause(ui, PAUSE_MODAL);
+    bool retry = confirm_box(gfx, game, ui,
+                             tr(ui->language, T_UNSAVED_TITLE),
+                             tr(ui->language, T_UNSAVED_HOME),
+                             tr(ui->language, T_RETRY_SAVE),
+                             tr(ui->language, T_BACK));
+    bool saved = retry && persistence_retry_current(p, game, ui);
+    if (retry && !saved)
+      (void)show_simple_message_box(gfx, game, ui,
+                                    SDL_MESSAGEBOX_WARNING,
+                                    tr(ui->language, T_STORAGE_ERROR),
+                                    tr(ui->language, T_SAVE_FAILED));
+    if (modal_owned) (void)clock_resume(ui, PAUSE_MODAL);
+    if (!save_policy_transition_ready(&p->save_policy, saved))
+      return false;
+  }
+  go_home(p, game, ui);
+  return true;
+}
+
 static void home_set_language(Persistence *p, UI *ui, Language language) {
   ui->language = language;
   (void)save_preferences(p, ui);
@@ -569,14 +598,14 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   ui_button_click();victory_animation_reset();
-  if(result_keyboard_focus==1){go_home(p,game,ui);return;}
+  if(result_keyboard_focus==1){go_home_checked(p,game,ui,g);return;}
   if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,game,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
   else if(restart_current_session_confirmed(p,game,ui,g))restart_current_session(p,game,ui);
 }
-static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
+static void activate_pause_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   ui_button_click();
   if(pause_keyboard_focus==0){if(resume_user_pause(ui))(void)checkpoint_current_session(p,game,ui);}
-  else go_home(p,game,ui);
+  else go_home_checked(p,game,ui,g);
 }
 static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
   if(!hint_panel_interactive(ui))return false;
@@ -590,7 +619,7 @@ static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
 static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   if(!play_focus_enabled(game,ui,play_keyboard_focus))return false;
   switch(play_keyboard_focus){
-    case PLAY_FOCUS_MENU:ui_button_click();go_home(p,game,ui);return true;
+    case PLAY_FOCUS_MENU:ui_button_click();go_home_checked(p,game,ui,g);return true;
     case PLAY_FOCUS_PAUSE:ui_button_click();pause_keyboard_focus=0;clock_pause(ui,PAUSE_MANUAL);(void)checkpoint_current_session(p,game,ui);return true;
     case PLAY_FOCUS_SAVE:ui_button_click();(void)games_browser_save_current(p,game,ui,g);return true;
     case PLAY_FOCUS_UNDO:
@@ -1287,7 +1316,7 @@ int main(int argc, char **argv) {
     if (screenshot_dir) {
       enum {
         REVIEW_HOME_EMPTY=0, REVIEW_HOME_SAVE, REVIEW_NOTES, REVIEW_CONFLICT,
-        REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
+        REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_RESULT_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
         REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT,
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
         REVIEW_GAMES_RECOVER, REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
@@ -1297,7 +1326,7 @@ int main(int argc, char **argv) {
       const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
-        "pause","loss","win","help","settings","about",
+        "result-save-error","pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
         "games-recover","games-finished","games-detail",
         "home-daily-loading","home-daily-older","home-daily-finished"
@@ -1471,6 +1500,14 @@ int main(int argc, char **argv) {
               save_policy_record_result(&review_persistence.save_policy,STORE_IO_ERROR,now_ms());
               play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;focus="retry-save";
               focus_rect=storage_banner_layout(&g,&ui).retry;break;
+            case REVIEW_RESULT_SAVE_ERROR:
+              ui.screen=SCR_END;ui.result=RES_WIN;ui.pause_reasons=PAUSE_END;
+              save_policy_mark(&review_persistence.save_policy,
+                               SAVE_DIRTY_RESULTS|SAVE_DIRTY_NORMAL,now_ms());
+              save_policy_record_result(&review_persistence.save_policy,
+                                        STORE_IO_ERROR,now_ms());
+              play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;focus="retry-save";
+              focus_rect=storage_banner_layout(&g,&ui).retry;break;
             case REVIEW_PAUSE:
               ui.screen=SCR_PLAY;ui.pause_reasons=PAUSE_MANUAL;pause_keyboard_focus=1;focus="pause-menu";
               focus_rect=sdl_rect(geometry.pause_buttons[1]);break;
@@ -1634,7 +1671,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 165 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 170 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
@@ -1884,7 +1921,7 @@ int main(int argc, char **argv) {
         }
         if (ui.screen == SCR_END) {
           if (k == SDLK_ESCAPE) {
-            ui_button_click();victory_animation_reset();go_home(&persistence,&game,&ui);
+            ui_button_click();victory_animation_reset();go_home_checked(&persistence,&game,&ui,&g);
           } else if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
                      k == SDLK_UP || k == SDLK_DOWN) {
             int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
@@ -1901,11 +1938,11 @@ int main(int argc, char **argv) {
             int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
             pause_keyboard_focus=input_focus_step(pause_keyboard_focus,2,direction);
           } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && input_activation_key(k)) {
-            activate_pause_focus(&persistence,&game,&ui);
+            activate_pause_focus(&persistence,&game,&ui,&g);
           } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && k == SDLK_p) {
-            pause_keyboard_focus=0;activate_pause_focus(&persistence,&game,&ui);
+            pause_keyboard_focus=0;activate_pause_focus(&persistence,&game,&ui,&g);
           } else if (k == SDLK_ESCAPE) {
-            ui_button_click();go_home(&persistence,&game,&ui);
+            ui_button_click();go_home_checked(&persistence,&game,&ui,&g);
           }
           continue;
         }
@@ -1968,7 +2005,7 @@ int main(int argc, char **argv) {
         }
         if (k == SDLK_ESCAPE) {
           ui_button_click();
-          go_home(&persistence, &game, &ui);
+          go_home_checked(&persistence, &game, &ui, &g);
         } else if (k == SDLK_UP || k == SDLK_w) {
           play_keyboard_focus=-1;ui.sel_r = (ui.sel_r + 8) % 9;
         } else if (k == SDLK_DOWN || k == SDLK_s) {
@@ -2182,7 +2219,7 @@ int main(int argc, char **argv) {
             result_keyboard_focus=1;
             ui_button_click();
             victory_animation_reset();
-            go_home(&persistence, &game, &ui);
+            go_home_checked(&persistence, &game, &ui, &g);
           }
           continue;
         }
@@ -2221,7 +2258,7 @@ int main(int argc, char **argv) {
               } else if (point_in(sdl_rect(a.pause_buttons[1]), x, y)) {
                 pause_keyboard_focus=1;
                 ui_button_click();
-                go_home(&persistence, &game, &ui);
+                go_home_checked(&persistence, &game, &ui, &g);
               }
             }
           }
@@ -2274,7 +2311,7 @@ int main(int argc, char **argv) {
             if (point_in(menu_rect, x, y)) {
               play_keyboard_focus=PLAY_FOCUS_MENU;
               ui_button_click();
-              go_home(&persistence, &game, &ui);
+              go_home_checked(&persistence, &game, &ui, &g);
             } else if (point_in(pause_rect, x, y)) {
               play_keyboard_focus=PLAY_FOCUS_PAUSE;
               ui_button_click();

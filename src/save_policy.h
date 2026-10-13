@@ -28,6 +28,10 @@ void save_policy_init(SavePolicy *policy);
 void save_policy_mark(SavePolicy *policy, unsigned dirty_mask, uint64_t now_ms);
 bool save_policy_dirty(const SavePolicy *policy);
 bool save_policy_has_error(const SavePolicy *policy);
+/* A transition may release its live board only after a successful complete
+   checkpoint, with no outstanding dirty persistence domains. */
+bool save_policy_transition_ready(const SavePolicy *policy,
+                                  bool checkpoint_succeeded);
 bool save_policy_slot_dirty(const SavePolicy *policy, bool daily);
 bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms);
 typedef StoreStatus (*SavePolicyWriteFn)(void *context);

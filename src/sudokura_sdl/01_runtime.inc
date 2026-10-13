@@ -959,8 +959,13 @@ static void restart_current_session(Persistence*p,Game*game,UI*ui){
   (void)checkpoint_current_session(p,game,ui);
 }
 
-static void go_home_base(Persistence*p,const Game*game,UI*ui){
-  if(ui->session_open){clock_pause(ui,PAUSE_HOME);(void)checkpoint_current_session(p,game,ui);}
+static void go_home_base(Persistence*p,const Game*game,UI*ui,
+                         bool checkpoint_already_committed){
+  if(ui->session_open){
+    clock_pause(ui,PAUSE_HOME);
+    if(!checkpoint_already_committed)
+      (void)checkpoint_current_session(p,game,ui);
+  }
   if(p){
     p->active_attempt_id=(GameAttemptId){0,0};
     persistence_set_replay_origin(p,NULL);
