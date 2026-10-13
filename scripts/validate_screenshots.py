@@ -194,12 +194,20 @@ for r in rows:
         # 24px at 360x640); result screens use the taller bottom banner.
         min_height = 20 if r["state"]=="save-error" else 32
         assert fw>=55 and fh>=min_height,(r["file"],"Save retry button too small")
-        # The retry button used to render while an overlong warning silently
-        # disappeared. Inspect a button-free slice immediately to its left.
-        crop_left=max(0,fx-150)
-        crop_right=fx-4
-        assert crop_right>crop_left,(r["file"],"missing save-warning area")
-        colors=crop_colors(by_name[r["file"]],crop_left,fy,
-                           crop_right-crop_left,fh)
+        # Check the warning itself, not just the retry button. The in-play
+        # strip is narrow; the result screen centers short copy in a much
+        # wider message rectangle, leaving its right edge legitimately blank.
+        if r["state"]=="result-save-error":
+            margin=8 if w<640 else 14
+            banner_width=min(w-2*margin,760)
+            crop_left=(w-banner_width)//2+14
+            crop_right=fx-12
+            crop_y,crop_height=fy+3,fh-6
+        else:
+            crop_left,crop_right=max(0,fx-150),fx-4
+            crop_y,crop_height=fy,fh
+        assert crop_right>crop_left and crop_height>0,(r["file"],"missing save-warning area")
+        colors=crop_colors(by_name[r["file"]],crop_left,crop_y,
+                           crop_right-crop_left,crop_height)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
 print("validated 170 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

@@ -219,3 +219,36 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
             data[pixel:pixel + pixel_size] = fill
     frame.write_bytes(data)
     check(rows, False, "reject invisible save warning")
+    frame.unlink()
+    frame.symlink_to(source / row["file"])
+
+    # The result banner's message starts near the left of its wider card.
+    # Remove its actual message region; an empty right-side slice alone is
+    # not evidence that the warning disappeared.
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows if row["state"] == "result-save-error")
+    frame = root / row["file"]
+    frame.unlink()
+    data = bytearray((source / row["file"]).read_bytes())
+    offset = int.from_bytes(data[10:14], "little")
+    width = int(row["width"])
+    height = int.from_bytes(data[22:26], "little", signed=True)
+    bpp = int.from_bytes(data[28:30], "little")
+    assert bpp in (24, 32)
+    pixel_size = bpp // 8
+    stride = ((width * pixel_size + 3) // 4) * 4
+    fx, fy, fh = (int(row[key]) for key in ("fx", "fy", "fh"))
+    margin = 8 if width < 640 else 14
+    banner_width = min(width - 2 * margin, 760)
+    left, right = (width - banner_width) // 2 + 14, fx - 12
+    top, bottom = fy + 3, fy + fh - 3
+    stored_sample_y = abs(height) - 1 - top if height > 0 else top
+    sample = offset + stored_sample_y * stride + left * pixel_size
+    fill = bytes(data[sample:sample + pixel_size])
+    for logical_y in range(top, bottom):
+        stored_y = abs(height) - 1 - logical_y if height > 0 else logical_y
+        for logical_x in range(left, right):
+            pixel = offset + stored_y * stride + logical_x * pixel_size
+            data[pixel:pixel + pixel_size] = fill
+    frame.write_bytes(data)
+    check(rows, False, "reject invisible result save warning")
