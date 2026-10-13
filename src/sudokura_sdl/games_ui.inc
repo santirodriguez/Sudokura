@@ -419,8 +419,10 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                     selected ? theme.hover : theme.palette_bg);
     const GameLibraryEntry *e = &row->entry;
     char label[192];
+    /* Keep list labels short. The full diagnostic is shown below.
+       Long status sentences must not disappear on compact viewports. */
     const char *status = e->status != STORE_OK
-        ? tr(ui->language, T_GAMES_UNAVAILABLE)
+        ? tr(ui->language, T_UNAVAILABLE)
         : e->result.status == SESSION_ACTIVE
             ? (row->hot_only ? tr(ui->language, T_GAMES_AUTOSAVE)
                              : tr(ui->language, T_GAMES_IN_PROGRESS))
@@ -469,10 +471,15 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                r->assisted ? tr(ui->language, T_ASSISTED) : "");
     }
     SDL_Rect line = lay.detail;
-    line.h = 28;
-    (void)draw_fitted_text(gfx, detail, theme.btnfg, line, 16, 10);
-    line.y += 28;
-    line.h = lay.detail.h - 28;
+    int heading_h = row->entry.status == STORE_OK ? 28 : 44;
+    line.h = heading_h;
+    if (row->entry.status == STORE_OK)
+      (void)draw_fitted_text(gfx, detail, theme.btnfg, line, 16, 10);
+    else
+      (void)polish_draw_wrapped_fit(gfx, detail, theme.btnfg,
+                                   line, 16, 10, true);
+    line.y += heading_h;
+    line.h = lay.detail.h - heading_h;
     if (games_browser.preview_valid && lay.detail.h >= 96)
       line.w -= 70; /* Reserve the right side for the board thumbnail. */
     const char *description = !games_browser.preview_valid

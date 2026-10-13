@@ -66,6 +66,38 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     check(original, False, "reject identical Games screen render")
     active_link.unlink()
     active_link.symlink_to(source / active["file"])
+
+    # A focused Games row may have a valid outline but no visible text.
+    rows = [dict(row) for row in original]
+    row = next(row for row in rows
+               if row["state"] == "games-unavailable" and
+               (int(row["width"]), int(row["height"])) == (360, 640))
+    frame = root / row["file"]
+    frame.unlink()
+    data = bytearray((source / row["file"]).read_bytes())
+    offset = int.from_bytes(data[10:14], "little")
+    height = int.from_bytes(data[22:26], "little", signed=True)
+    bpp = int.from_bytes(data[28:30], "little")
+    assert bpp in (24, 32)
+    pixel_size = bpp // 8
+    width = int(row["width"])
+    stride = ((width * pixel_size + 3) // 4) * 4
+    fx, fy, fw, fh = (int(row[key]) for key in ("fx", "fy", "fw", "fh"))
+    left, right, top, bottom = fx + 14, fx + fw - 14, fy + 10, fy + fh - 10
+    def pixel_offset(x, y):
+        stored_y = abs(height) - 1 - y if height > 0 else y
+        return offset + stored_y * stride + x * pixel_size
+    sample = pixel_offset(left, top)
+    fill = bytes(data[sample:sample + pixel_size])
+    for py in range(top, bottom):
+        for px in range(left, right):
+            position = pixel_offset(px, py)
+            data[position:position + pixel_size] = fill
+    frame.write_bytes(data)
+    check(rows, False, "reject missing Games selected-row text")
+    frame.unlink()
+    frame.symlink_to(source / row["file"])
+
     rows = [dict(row) for row in original]
     for row in rows:
         if (row["state"] == "help-bottom" and

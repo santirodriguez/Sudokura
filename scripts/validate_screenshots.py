@@ -112,6 +112,25 @@ for r in rows:
     assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
     assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     assert r["focus"]!="none",r["file"]
+    if r["state"] in {"games-active","games-unavailable"}:
+        # Exclude the focus outline; ensure selected-row text actually rendered.
+        # This catches long translations silently disappearing on narrow screens.
+        assert fw>28 and fh>20,(r["file"],"invalid Games row bounds")
+        colors=crop_colors(by_name[r["file"]],fx+14,fy+10,fw-28,fh-20)
+        assert len(colors)>=4,(r["file"],"Games row label missing")
+        # The selected game's detail title must be readable, not just its
+        # fallback summary. Derive the same panel geometry as GamesBrowser.
+        margin=12 if w<640 else 24
+        panel_width=min(w-margin*2,850)
+        panel_x=(w-panel_width)//2
+        list_y=(55 if h<520 else 76)+49
+        detail_height=76 if h<550 else 104
+        list_height=max(48,(h-margin)-40-12-detail_height-12-list_y)
+        detail_y=list_y+list_height+8
+        assert detail_y+25<h,(r["file"],"invalid Games detail bounds")
+        heading=crop_colors(by_name[r["file"]],panel_x+14,detail_y+5,
+                            panel_width-28,20)
+        assert len(heading)>=4,(r["file"],"Games detail heading missing")
     scroll,scroll_max=int(r["scroll"]),int(r["scroll_max"])
     assert 0<=scroll<=scroll_max,(r["file"],scroll,scroll_max)
     if r["state"]=="help-bottom":
