@@ -44,6 +44,18 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
     check(original, True, "real matrix")
 
     rows = [dict(row) for row in original]
+    compact = next(row for row in rows
+                   if row["state"] == "save-error"
+                   and (int(row["width"]), int(row["height"])) == (640, 480))
+    compact["fh"] = "19"
+    check(rows, False, "reject undersized compact in-play save retry")
+
+    rows = [dict(row) for row in original]
+    pending = next(row for row in rows if row["state"] == "result-save-error")
+    pending["fh"] = "31"
+    check(rows, False, "reject undersized result save retry")
+
+    rows = [dict(row) for row in original]
     pending = next(row for row in rows if row["state"] == "result-save-error")
     pending["focus"] = "home"
     check(rows, False, "reject pending result save focus mismatch")

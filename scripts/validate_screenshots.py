@@ -190,7 +190,10 @@ for r in rows:
     assert len(set(sample))>=8,f"blank-looking frame: {r['file']}"
     if r["state"] in {"save-error","result-save-error"}:
         assert r["focus"]=="retry-save",(r["file"],"Save retry focus mismatch")
-        assert fw>=55 and fh>=25,(r["file"],"Save retry button too small")
+        # In-play uses the compact status strip (22px at 640x480 and
+        # 24px at 360x640); result screens use the taller bottom banner.
+        min_height = 20 if r["state"]=="save-error" else 32
+        assert fw>=55 and fh>=min_height,(r["file"],"Save retry button too small")
         # The retry button used to render while an overlong warning silently
         # disappeared. Inspect a button-free slice immediately to its left.
         crop_left=max(0,fx-150)
