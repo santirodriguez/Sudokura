@@ -1148,13 +1148,15 @@ int main(int argc, char **argv) {
         REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
         REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT,
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
+        REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
         REVIEW_STATE_COUNT
       };
       const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about",
-        "games-empty","games-active","games-unavailable"
+        "games-empty","games-active","games-unavailable",
+        "games-finished","games-detail"
       };
       if(!make_directory(screenshot_dir)){
         fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
@@ -1220,27 +1222,58 @@ int main(int argc, char **argv) {
               focus="games-back";focus_rect=lay.back;break;
             }
             case REVIEW_GAMES_ACTIVE:
-            case REVIEW_GAMES_UNAVAILABLE:{
+            case REVIEW_GAMES_UNAVAILABLE:
+            case REVIEW_GAMES_FINISHED:
+            case REVIEW_GAMES_DETAIL:{
               ui.screen=APP_SCREEN_GAMES;
               games_browser.focus=0;
+              bool finished=state==REVIEW_GAMES_FINISHED||
+                            state==REVIEW_GAMES_DETAIL;
               GameLibraryEntry entry;
               memset(&entry,0,sizeof(entry));
               entry.id=(GameAttemptId){1,2};
               entry.kind=GAME_RECORD_EXACT;
-              entry.status=state==REVIEW_GAMES_ACTIVE ? STORE_OK : STORE_CORRUPT;
+              entry.status=state==REVIEW_GAMES_UNAVAILABLE?
+                           STORE_CORRUPT:STORE_OK;
               entry.result.mode=MODE_CLASSIC;
               entry.result.difficulty=DIFFICULTY_MEDIUM;
-              entry.result.status=SESSION_ACTIVE;
+              entry.result.status=finished?SESSION_WON:SESSION_ACTIVE;
               entry.result.elapsed_ms=754000;
+              entry.result.practice=state==REVIEW_GAMES_DETAIL;
+              entry.result.assisted=finished;
+              entry.finished_utc=finished?UINT64_C(1781300000):0;
               if(!games_browser_push(&entry,false)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
-              games_browser.preview_valid=state==REVIEW_GAMES_ACTIVE;
+              games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE;
               games_browser.preview.game=game;
+              if(finished){
+                for(int cell=0;cell<81;++cell)
+                  if(!games_browser.preview.game.initial[cell])
+                    games_browser.preview.game.puzzle[cell]=
+                        games_browser.preview.game.solution[cell];
+                games_browser.detail_record_valid=true;
+                games_browser.detail_record.kind=GAME_RECORD_EXACT;
+                games_browser.detail_record.id=entry.id;
+                games_browser.detail_record.parent=(GameAttemptId){1,11};
+                games_browser.detail_record.original_daily=
+                    state==REVIEW_GAMES_DETAIL;
+                games_browser.detail_record.original_daily_year=2026;
+                games_browser.detail_record.original_daily_month=10;
+                games_browser.detail_record.original_daily_day=13;
+              }
+              games_browser.detail_open=state==REVIEW_GAMES_DETAIL;
               GamesBrowserLayout lay=games_browser_layout(&g);
-              focus=state==REVIEW_GAMES_ACTIVE?"games-active":"games-unavailable";
-              focus_rect=(SDL_Rect){lay.list.x+5,lay.list.y+3,
-                                    lay.list.w-10,lay.row_height-5};
+              if(games_browser.detail_open){
+                games_browser.focus=3;
+                focus="games-replay";focus_rect=lay.replay;
+              }else{
+                focus=state==REVIEW_GAMES_ACTIVE?"games-active":
+                      state==REVIEW_GAMES_UNAVAILABLE?"games-unavailable":
+                      "games-finished";
+                focus_rect=(SDL_Rect){lay.list.x+5,lay.list.y+3,
+                                      lay.list.w-10,lay.row_height-5};
+              }
               break;
             }
             case REVIEW_NOTES:

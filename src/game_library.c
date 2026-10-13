@@ -495,7 +495,10 @@ StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
   return STORE_OK;
 }
 
-StoreStatus game_library_delete(const char *root, GameAttemptId id) {
+StoreStatus game_library_delete_with_receipt(const char *root,
+                                             GameAttemptId id,
+                                             bool *receipt_committed) {
+  if (receipt_committed) *receipt_committed = false;
   if (!root || !game_attempt_id_valid(id)) return STORE_IO_ERROR;
   char receipt_path[SUDOKURA_STORE_PATH_CAPACITY];
   char primary[SUDOKURA_STORE_PATH_CAPACITY];
@@ -508,6 +511,7 @@ StoreStatus game_library_delete(const char *root, GameAttemptId id) {
     return STORE_IO_ERROR;
   StoreStatus status = game_library_receipt_status(root, id);
   if (status != STORE_NOT_FOUND && status != STORE_OK) return status;
+  if (status == STORE_OK && receipt_committed) *receipt_committed = true;
   if (status == STORE_NOT_FOUND) {
     unsigned char data[RECEIPT_BYTES];
     memcpy(data, receipt_magic, sizeof(receipt_magic));
@@ -522,6 +526,7 @@ StoreStatus game_library_delete(const char *root, GameAttemptId id) {
     if (status != STORE_OK) return status;
     status = game_library_receipt_status(root, id);
     if (status != STORE_OK) return status;
+    if (receipt_committed) *receipt_committed = true;
   }
   /* The receipt is durable before either copy may be removed. */
   if (store_file_exists(primary) && !store_remove_file(primary))
@@ -529,6 +534,80 @@ StoreStatus game_library_delete(const char *root, GameAttemptId id) {
   if (store_file_exists(backup) && !store_remove_file(backup))
     return STORE_IO_ERROR;
   return STORE_OK;
+}
+
+StoreStatus game_library_delete(const char *root, GameAttemptId id) {
+  return game_library_delete_with_receipt(root, id, NULL);
+}
+
+bool game_library_prepare_replay(GameLibraryRecord *out,
+                                 const GameLibraryRecord *source,
+                                 GameAttemptId fresh_id) {
+  if (!out || !source || out == source ||
+      source->kind != GAME_RECORD_EXACT ||
+      source->result.status == SESSION_ACTIVE ||
+      !game_attempt_id_valid(fresh_id) ||
+      game_attempt_id_equal(fresh_id, source->id) ||
+      !game_library_record_validate(source))
+    return false;
+  ProfileSession fresh = source->exact;
+  Game *board = &fresh.session.game;
+  game_restart(board);
+  fresh.session.status = SESSION_ACTIVE;
+  fresh.session.elapsed_ms = 0;
+  fresh.session.mistakes = 0;
+  fresh.session.strikes = 0;
+  fresh.session.selected_row = 4;
+  fresh.session.selected_column = 4;
+  fresh.session.notes_mode = false;
+  fresh.session.manual_paused = false;
+  fresh.session.is_daily = false;
+  fresh.session.daily_year = 0;
+  fresh.session.daily_month = 0;
+  fresh.session.daily_day = 0;
+  fresh.undo_count = 0;
+  fresh.redo_count = 0;
+  memset(fresh.undo, 0, sizeof(fresh.undo));
+  memset(fresh.redo, 0, sizeof(fresh.redo));
+  GameLibraryRecord candidate;
+  if (!game_library_make_exact(&candidate, fresh_id, 1, &fresh, true))
+    return false;
+  candidate.practice = true;
+  candidate.parent = source->id;
+  candidate.result.practice = true;
+  candidate.original_daily = source->original_daily;
+  candidate.original_daily_year = source->original_daily_year;
+  candidate.original_daily_month = source->original_daily_month;
+  candidate.original_daily_day = source->original_daily_day;
+  if (!game_library_record_validate(&candidate)) return false;
+  *out = candidate;
+  return true;
+}
+
+bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,
+                                 GameAttemptId id) {
+  if (!out || !source || out == source ||
+      !game_attempt_id_valid(id) || !profile_validate(source) ||
+      source->result_count > SUDOKURA_RESULT_LIMIT)
+    return false;
+  ProfileData candidate = *source;
+  if (candidate.normal.present &&
+      game_attempt_id_equal(candidate.normal.attempt_id, id))
+    memset(&candidate.normal, 0, sizeof(candidate.normal));
+  if (candidate.daily.present &&
+      game_attempt_id_equal(candidate.daily.attempt_id, id))
+    memset(&candidate.daily, 0, sizeof(candidate.daily));
+  uint16_t write_index = 0;
+  for (uint16_t i = 0; i < source->result_count; ++i) {
+    if (game_attempt_id_equal(source->results[i].attempt_id, id)) continue;
+    candidate.results[write_index++] = source->results[i];
+  }
+  for (uint16_t i = write_index; i < source->result_count; ++i)
+    memset(&candidate.results[i], 0, sizeof(candidate.results[i]));
+  candidate.result_count = write_index;
+  if (!profile_validate(&candidate)) return false;
+  *out = candidate;
+  return true;
 }
 
 typedef struct {

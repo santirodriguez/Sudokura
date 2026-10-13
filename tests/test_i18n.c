@@ -52,6 +52,15 @@ int main(void) {
     assert(*tr((Language)language, T_GAMES_LOADING));
     assert(*tr((Language)language, T_GAMES_UNAVAILABLE));
     assert(*tr((Language)language, T_GAMES_LOAD));
+    assert(*tr((Language)language, T_GAMES_REPLAY));
+    assert(*tr((Language)language, T_GAMES_DELETE));
+    assert(*tr((Language)language, T_GAMES_DELETE_PROMPT));
+    assert(*tr((Language)language, T_GAMES_DELETE_PENDING));
+    assert(*tr((Language)language, T_GAMES_ACTION_FAILED));
+    assert(*tr((Language)language, T_GAMES_PRACTICE));
+    assert(*tr((Language)language, T_GAMES_SOURCE_DAILY));
+    assert(*tr((Language)language, T_GAMES_FINISHED_AT));
+    assert(*tr((Language)language, T_GAMES_UNKNOWN_DATE));
     assert(*tr((Language)language, T_GAMES_KEEP_PROMPT));
     assert(*tr((Language)language, T_GAMES_NEW_PROMPT));
     assert(*tr((Language)language, T_SAVE));

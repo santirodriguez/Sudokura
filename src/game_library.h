@@ -116,6 +116,20 @@ StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record);
 StoreStatus game_library_receipt_status(const char *root, GameAttemptId id);
 StoreStatus game_library_delete(const char *root, GameAttemptId id);
+/* True when the receipt has been durably acknowledged. A later cleanup
+   failure may still be reported by the returned status. */
+StoreStatus game_library_delete_with_receipt(const char *root,
+                                             GameAttemptId id,
+                                             bool *receipt_committed);
+/* Build a separately identified, retained practice attempt from an immutable
+   exact terminal board. Never modifies source or creates a hot Daily slot. */
+bool game_library_prepare_replay(GameLibraryRecord *out,
+                                 const GameLibraryRecord *source,
+                                 GameAttemptId fresh_id);
+/* Remove only references belonging to a deleted attempt. Pure, all-or-nothing. */
+bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,
+                                 GameAttemptId id);
+
 StoreStatus game_library_scan(const char *root, GameLibraryScanFn callback,
                               void *context);
 

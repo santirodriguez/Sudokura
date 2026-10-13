@@ -237,6 +237,26 @@ static int choice_box(Gfx*g,const Game*game,UI*ui,const char*title,
   return buttonid;
 }
 
+/* Cancellation remains the default for destructive actions. */
+static bool confirm_destructive_box(Gfx *gfx,const Game *game,UI *ui,
+                                    const char *title,const char *message,
+                                    const char *delete_label) {
+  if(!gfx||!gfx->win)return false;
+  native_dialog_prepare(gfx,game,ui);
+  const SDL_MessageBoxButtonData buttons[]={
+    {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT |
+     SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,
+     tr(ui->language,T_CANCEL)},
+    {0,1,delete_label}
+  };
+  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,gfx->win,
+      title,message,2,buttons,NULL};
+  int pressed=0;
+  int status=SDL_ShowMessageBox(&data,&pressed);
+  window_focus_guard_reset();
+  return status==0&&pressed==1;
+}
+
 static void app_render_base(Gfx*g,const Game*game,UI*ui){
   update_font_tiers(g,ui);
   if(ui->screen==SCR_TITLE||ui->screen==APP_SCREEN_GAMES){

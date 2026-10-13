@@ -199,7 +199,8 @@ static bool record_validate(const GameLibraryRecord *record,
   if (!record || !game_attempt_id_valid(record->id) ||
       record->revision == 0 || !valid_summary(&record->result))
     return false;
-  if (!valid_record_timestamps(record)) return false;
+  if (!valid_record_timestamps(record) ||
+      record->practice != record->result.practice) return false;
   if (record->practice) {
     if (!game_attempt_id_valid(record->parent) ||
         game_attempt_id_equal(record->parent, record->id))
@@ -465,6 +466,8 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
   candidate.original_daily_month = r8(&r);
   candidate.original_daily_day = r8(&r);
   decode_result(&r, &candidate.result);
+  /* Practice is serialized once in the record flags, not the summary blob. */
+  candidate.result.practice = candidate.practice;
   uint16_t session_size = r16(&r);
   if (!r.ok || !game_attempt_id_valid(candidate.id) ||
       candidate.revision == 0 || !valid_record_timestamps(&candidate))

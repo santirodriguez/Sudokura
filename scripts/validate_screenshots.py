@@ -7,7 +7,8 @@ SIZES={(640,480),(1024,768),(1366,768),(360,640),(1920,1080)}
 HELP_AUDIT_SIZES={(360,640),(640,480),(1024,768)}
 STATES={"home-empty","home-save","notes","conflict","hint","save-error",
         "pause","loss","win","help","settings","about",
-        "games-empty","games-active","games-unavailable"}
+        "games-empty","games-active","games-unavailable",
+        "games-finished","games-detail"}
 LANGS={"English","Español","Català"}
 THEMES={"dark","light"}
 
@@ -32,16 +33,16 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==135,f"expected 135 manifest rows, found {len(rows)}"
+assert len(rows)==145,f"expected 145 manifest rows, found {len(rows)}"
 files=sorted(args.directory.glob("*.bmp"))
-assert len(files)==135,f"expected 135 BMPs, found {len(files)}"
+assert len(files)==145,f"expected 145 BMPs, found {len(files)}"
 by_name={p.name:p for p in files}
-assert len(by_name)==135
+assert len(by_name)==145
 assert len({r["file"] for r in rows})==len(rows),"duplicate manifest filename"
 assert {r["file"] for r in rows}==set(by_name),"manifest/BMP mismatch"
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==75 and len(audit)==60,(len(matrix),len(audit))
+assert len(matrix)==85 and len(audit)==60,(len(matrix),len(audit))
 matrix_keys=[(int(r["width"]),int(r["height"]),r["state"]) for r in matrix]
 assert len(set(matrix_keys))==len(matrix_keys),"duplicate matrix scene"
 assert set(matrix_keys)=={(w,h,state) for w,h in SIZES for state in STATES}, "matrix coverage mismatch"
@@ -50,11 +51,12 @@ for size in SIZES:
            (int(r["width"]),int(r["height"]))==size and
            r["state"].startswith("games-")]
     assert {r["state"] for r in games}=={
-        "games-empty","games-active","games-unavailable"
+        "games-empty","games-active","games-unavailable",
+        "games-finished","games-detail"
     },(size,"missing Games state")
     fingerprints={hashlib.sha256(by_name[r["file"]].read_bytes()).digest()
                   for r in games}
-    assert len(fingerprints)==3,(size,"Games scenes rendered identically")
+    assert len(fingerprints)==5,(size,"Games scenes rendered identically")
 assert {r["language"] for r in rows}==LANGS
 assert {r["theme"] for r in rows}==THEMES
 for state in ("help-top","help-bottom"):
@@ -88,11 +90,14 @@ for r in rows:
     audio_popup=int(r["audio_popup"])
     audio_pressed=int(r["audio_pressed"])
     assert audio_visible in (0,1) and audio_popup in (0,1) and audio_pressed in (0,1),r["file"]
-    if r["state"] in {"games-empty","games-active","games-unavailable"}:
+    if r["state"] in {"games-empty","games-active","games-unavailable",
+        "games-finished","games-detail"}:
         expected_focus={
             "games-empty":"games-back",
             "games-active":"games-active",
             "games-unavailable":"games-unavailable",
+            "games-finished":"games-finished",
+            "games-detail":"games-replay",
         }[r["state"]]
         assert r["focus"]==expected_focus,(r["file"],"Games focus mismatch")
         assert audio_popup==0 and audio_pressed==0,(r["file"],"Games audio overlay")
@@ -112,7 +117,7 @@ for r in rows:
     assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
     assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     assert r["focus"]!="none",r["file"]
-    if r["state"] in {"games-active","games-unavailable"}:
+    if r["state"] in {"games-active","games-unavailable","games-finished"}:
         # Exclude the focus outline; ensure selected-row text actually rendered.
         # This catches long translations silently disappearing on narrow screens.
         assert fw>28 and fh>20,(r["file"],"invalid Games row bounds")
@@ -125,12 +130,35 @@ for r in rows:
         panel_x=(w-panel_width)//2
         list_y=(55 if h<520 else 76)+49
         detail_height=76 if h<550 else 104
-        list_height=max(48,(h-margin)-40-12-detail_height-12-list_y)
+        action_space=88 if w<760 else 40
+        list_height=max(48,(h-margin)-action_space-12-detail_height-12-list_y)
         detail_y=list_y+list_height+8
         assert detail_y+25<h,(r["file"],"invalid Games detail bounds")
         heading=crop_colors(by_name[r["file"]],panel_x+14,detail_y+5,
                             panel_width-28,20)
         assert len(heading)>=4,(r["file"],"Games detail heading missing")
+    if r["state"]=="games-detail":
+        assert fw>=55 and fh>=35,(r["file"],"Replay button too small")
+        focused=crop_colors(by_name[r["file"]],fx+8,fy+8,fw-16,fh-16)
+        assert len(focused)>=4,(r["file"],"Replay text not visible")
+        # The destructive control is not the default focus, but its caption
+        # must remain readable in both desktop and compact two-row layout.
+        delete_x=fx+fw+(5 if w<640 else 8)
+        assert delete_x+fw<=w,(r["file"],"Delete action clipped")
+        delete_colors=crop_colors(by_name[r["file"]],
+                                  delete_x+8,fy+8,fw-16,fh-16)
+        assert len(delete_colors)>=4,(r["file"],"Delete text not visible")
+        board_top=(55 if h<520 else 76)+42+7
+        margin=12 if w<640 else 24
+        first_button_y=h-margin-(88 if w<760 else 40)-8
+        usable=first_button_y-board_top-92
+        side=min(w-margin*2,850,usable,432)
+        side=(max(81,side)//9)*9
+        left=(w-side)//2
+        board=crop_colors(by_name[r["file"]],
+                          left+side//3,board_top+side//3,
+                          side//3,side//3)
+        assert len(board)>=4,(r["file"],"Finished board missing")
     scroll,scroll_max=int(r["scroll"]),int(r["scroll_max"])
     assert 0<=scroll<=scroll_max,(r["file"],scroll,scroll_max)
     if r["state"]=="help-bottom":
@@ -150,4 +178,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,fy,
                            crop_right-crop_left,fh)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 135 diagnostic BMPs, including 15 distinct Games empty/active/unavailable scenes, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 145 diagnostic BMPs, including 25 distinct Games empty/active/unavailable/finished/detail scenes, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

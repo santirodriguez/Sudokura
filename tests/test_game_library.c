@@ -1246,10 +1246,61 @@ static void test_unacknowledged_delete_receipt_blocks_resurrection(void) {
   cleanup();
 }
 
+static void test_replay_and_selective_reference_pruning(void) {
+  ProfileSession completed = make_session(SESSION_WON);
+  GameLibraryRecord source, replay;
+  GameAttemptId original = make_id(810);
+  GameAttemptId fresh = make_id(811);
+  assert(game_library_make_exact(&source, original, 3, &completed, true));
+  assert(game_library_prepare_replay(&replay, &source, fresh));
+  assert(game_library_record_validate(&replay));
+  assert(replay.practice && replay.retained && replay.result.practice);
+  assert(game_attempt_id_equal(replay.parent, original));
+  assert(game_attempt_id_equal(replay.id, fresh) && replay.revision == 1);
+  assert(replay.exact.session.status == SESSION_ACTIVE);
+  assert(replay.exact.session.elapsed_ms == 0);
+  assert(replay.exact.undo_count == 0 && replay.exact.redo_count == 0);
+  for (int i = 0; i < 81; ++i) {
+    assert(replay.exact.session.game.initial[i] ==
+           source.exact.session.game.initial[i]);
+    assert(replay.exact.session.game.puzzle[i] ==
+           source.exact.session.game.initial[i]);
+    assert(replay.exact.session.game.notes[i] == 0);
+    assert(replay.exact.session.game.hinted[i] == 0);
+  }
+  assert(source.result.status == SESSION_WON);
+  assert(!game_library_prepare_replay(&replay, &source, original));
+  assert(!game_library_prepare_replay(&replay, &replay, make_id(812)));
+
+  ProfileData profile, pruned;
+  profile_defaults(&profile);
+  ProfileSession current = make_session(SESSION_ACTIVE);
+  assert(profile_slot_set(&profile.normal, &current, false));
+  profile.normal.attempt_id = original;
+  profile.normal.revision = 1;
+  profile.normal.retained = true;
+  ProfileResult old_result = source.result;
+  old_result.attempt_id = original;
+  ProfileResult other_result = source.result;
+  other_result.attempt_id = fresh;
+  bool inserted = false;
+  assert(profile_record_result(&profile, &old_result, &inserted) && inserted);
+  assert(profile_record_result(&profile, &other_result, &inserted) && inserted);
+  assert(profile_validate(&profile));
+  assert(game_library_forget_attempt(&pruned, &profile, original));
+  assert(!pruned.normal.present && pruned.result_count == 1);
+  assert(game_attempt_id_equal(pruned.results[0].attempt_id, fresh));
+  assert(profile_validate(&pruned));
+  assert(profile.normal.present && profile.result_count == 2);
+  assert(!game_library_forget_attempt(&pruned, &profile,
+                                      (GameAttemptId){0,0}));
+}
+
 int main(void) {
   cleanup();
   prepare();
   test_hex_and_collision();
+  test_replay_and_selective_reference_pruning();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();
   cleanup();
