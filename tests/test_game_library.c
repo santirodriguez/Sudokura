@@ -1608,9 +1608,13 @@ static void test_replay_intent_survives_failed_cuts(void) {
   assert(game_library_replay_pending_matches(&original, &reread));
 
   char primary[160], backup[160], intent_path[160];
-  int n = snprintf(primary, sizeof(primary), "%s/profile.dat", root);
+  /* Keep the fault-injection profile inside the fixture directory cleared
+     by prepare(): normal tests and sanitizers run in separate processes. */
+  int n = snprintf(primary, sizeof(primary),
+                   "%s/games/replay-profile-cut.dat", root);
   assert(n > 0 && (size_t)n < sizeof(primary));
-  n = snprintf(backup, sizeof(backup), "%s/profile.dat.bak", root);
+  n = snprintf(backup, sizeof(backup),
+               "%s/games/replay-profile-cut.dat.bak", root);
   assert(n > 0 && (size_t)n < sizeof(backup));
   n = snprintf(intent_path, sizeof(intent_path), "%s/games/replay.intent", root);
   assert(n > 0 && (size_t)n < sizeof(intent_path));
@@ -1623,6 +1627,7 @@ static void test_replay_intent_survives_failed_cuts(void) {
   candidate.normal.revision = reread.revision;
   candidate.normal.value = reread.exact;
   assert(profile_validate(&candidate));
+  assert(!store_file_exists(primary));
 
   store_test_set_fault(STORE_TEST_FAULT_REPLACE);
   assert(profile_save_file(primary, backup, &candidate) ==
