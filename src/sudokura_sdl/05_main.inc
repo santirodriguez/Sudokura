@@ -55,6 +55,43 @@ static void home_move_focus(const UI *ui, int direction) {
 
 static void ui_button_click(void) { audio_play_effect(AUDIO_EFFECT_CLICK); }
 
+static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
+                                        const UI *ui) {
+  if (!gfx || !ui || settings_open || audio_control_popup_open) return;
+  SDL_Rect rect = {0, 0, 0, 0};
+  if (ui->screen == SCR_TITLE) {
+    AppGeometry g;
+    if (!get_geometry(gfx, ui, &g)) return;
+    switch (home_focus) {
+      case HOME_FOCUS_MODE:
+        rect = sdl_rect(g.home_mode[ui->mode]);
+        break;
+      case HOME_FOCUS_DIFFICULTY:
+        rect = sdl_rect(g.home_difficulty[home_difficulty]);
+        break;
+      case HOME_FOCUS_NEW: rect = sdl_rect(g.home_primary[0]); break;
+      case HOME_FOCUS_CONTINUE:
+        if (ui->has_session) rect = sdl_rect(g.home_primary[1]);
+        break;
+      case HOME_FOCUS_DAILY: rect = sdl_rect(g.home_primary[2]); break;
+      case HOME_FOCUS_GAMES: rect = sdl_rect(g.home_secondary[0]); break;
+      case HOME_FOCUS_HELP: rect = sdl_rect(g.home_secondary[1]); break;
+      case HOME_FOCUS_ABOUT: rect = sdl_rect(g.home_secondary[2]); break;
+      case HOME_FOCUS_SETTINGS: rect = sdl_rect(g.home_secondary[3]); break;
+      case HOME_FOCUS_QUIT: rect = sdl_rect(g.home_secondary[4]); break;
+      default: break;
+    }
+  } else if (ui->screen == SCR_PLAY && game &&
+             app_play_interactions_allowed(ui) &&
+             !hint_panel_interactive(ui) &&
+             play_focus_enabled(game, ui, play_keyboard_focus)) {
+    rect = play_focus_rect(gfx, ui, play_keyboard_focus);
+  }
+  if (rect.w > 0 && rect.h > 0)
+    ui_feedback_keyboard_press(ui, rect);
+}
+
+
 typedef enum {
   SAVE_GATE_BACK = 0,
   SAVE_GATE_SAVED,
@@ -1796,6 +1833,10 @@ int main(int argc, char **argv) {
     int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
                              games_browser.scanning) || home_daily_scan.active)
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
+    int button_feedback_wait = ui_feedback_remaining(&ui);
+    if (button_feedback_wait > 0 &&
+        (wait_ms < 0 || wait_ms > button_feedback_wait))
+      wait_ms = button_feedback_wait;
     for(int have_event=ui_wait_event_timeout(&e,wait_ms);
         have_event;have_event=ui_poll_event(&e)){
       g.dirty=true;
@@ -1859,6 +1900,9 @@ int main(int argc, char **argv) {
         InputKeySnapshot key_event = input_key_snapshot(&e.key);
         SDL_Keycode k = key_event.key;
         SDL_Keymod mod = key_event.modifiers;
+        if (!key_event.repeat && input_activation_key(k) &&
+            (mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI)) == 0)
+          ui_keyboard_button_feedback(&g, &game, &ui);
         if (ui.screen == APP_SCREEN_GAMES) {
           (void)games_browser_key(&persistence, &game, &ui, &g,
                                   k, mod, key_event.repeat);
@@ -2148,6 +2192,10 @@ int main(int argc, char **argv) {
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
         if (!left && !right) continue;
+        if (left && (ui.screen == SCR_TITLE || ui.screen == SCR_PLAY) &&
+            !settings_open && !audio_control_popup_open &&
+            !hint_panel_interactive(&ui))
+          ui_feedback_pointer_press(&ui, x, y);
         if (ui.screen == APP_SCREEN_GAMES) {
           if (left)
             (void)games_browser_click(&persistence, &game, &ui, &g, x, y);
@@ -2493,6 +2541,7 @@ int main(int argc, char **argv) {
       g.dirty=true;
     }
     if(desktop_dynamic_frame_due(&ui))g.dirty=true;
+    if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);
     else app_tick(&g,&game,&ui);
   }

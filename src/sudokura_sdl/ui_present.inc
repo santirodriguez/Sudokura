@@ -2,7 +2,37 @@
    Home/About/play presentation and final controls/settings overlays share one
    explicit render route; the former polish/rc2 layers are no longer composed. */
 /* Presentation helpers used by the single explicit SDL render pipeline. */
+#include "button_feedback.h"
+
 static SDL_Texture *app_icon_texture = NULL;
+static ButtonFeedback ui_button_feedback = {0};
+static int ui_feedback_render_screen = -1;
+
+static void ui_feedback_pointer_press(const UI *ui, int x, int y) {
+  if (!ui) return;
+  button_feedback_pointer(&ui_button_feedback, (int)ui->screen, x, y,
+                          SDL_GetTicks64());
+}
+
+static void ui_feedback_keyboard_press(const UI *ui, SDL_Rect rect) {
+  if (!ui) return;
+  button_feedback_keyboard(&ui_button_feedback, (int)ui->screen,
+                           rect.x, rect.y, rect.w, rect.h, SDL_GetTicks64());
+}
+
+static int ui_feedback_remaining(const UI *ui) {
+  return ui ? button_feedback_remaining_ms(&ui_button_feedback,
+                                            (int)ui->screen,
+                                            SDL_GetTicks64()) : 0;
+}
+
+static bool ui_feedback_finish(const UI *ui) {
+  if (!ui || !ui_button_feedback.active) return false;
+  if (ui_feedback_remaining(ui) > 0) return false;
+  bool redraw = ui_button_feedback.screen == (int)ui->screen;
+  ui_button_feedback.active = false;
+  return redraw;
+}
 
 static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
                                    SDL_Color background, bool pressed,
@@ -31,13 +61,39 @@ static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
 static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
                                   SDL_Color background, bool pressed,
                                   bool disabled) {
-  (void)theme;
   SDL_Rect face = rect;
-  if (!disabled && pressed && face.h > 4) {
-    face.y += 1;
-    face.h -= 1;
+  if (disabled || rect.w < 5 || rect.h < 5) {
+    draw_round_rect(gfx->ren, face, 7, background);
+    return face;
   }
-  draw_round_rect(gfx->ren, face, 7, background);
+
+  int mx = 0, my = 0;
+  (void)SDL_GetMouseState(&mx, &my);
+  bool hovered = point_in(rect, mx, my);
+  bool latched = button_feedback_matches(
+      &ui_button_feedback, ui_feedback_render_screen, SDL_GetTicks64(),
+      rect.x, rect.y, rect.w, rect.h);
+  bool down = pressed || latched;
+
+  /* A light rim defines the hit target without bringing back heavy shadows.
+     While pressed, both face and text move down and the face darkens. */
+  SDL_Color rim = theme.sel_outline;
+  rim.a = down ? 220 : (hovered ? 165 : 62);
+  draw_round_rect(gfx->ren, rect, 7, rim);
+  face.x++;
+  face.y++;
+  face.w -= 2;
+  face.h -= 2;
+  if (down && face.h > 6) {
+    face.y += 2;
+    face.h -= 2;
+  }
+  draw_round_rect(gfx->ren, face, 6, background);
+  if (down) {
+    SDL_Color shade = theme.shadow;
+    shade.a = 72;
+    draw_round_rect(gfx->ren, face, 6, shade);
+  }
   return face;
 }
 
@@ -1514,6 +1570,7 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui);
 
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
+  ui_feedback_render_screen = ui ? (int)ui->screen : -1;
   text_cache_sync(gfx,ui);
   app_render_base(gfx, game, ui);
   if (ui->screen == SCR_TITLE)
