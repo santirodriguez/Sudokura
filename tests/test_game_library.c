@@ -1296,15 +1296,16 @@ static void test_replay_and_selective_reference_pruning(void) {
                                       (GameAttemptId){0,0}));
 }
 
-static ProfileSession daily_fixture(int year, int month, int day,
-                                    SessionStatus status) {
+static ProfileSession daily_fixture_revision(int year, int month, int day,
+                                             SessionStatus status,
+                                             uint8_t generator_revision) {
   ProfileSession out = make_session(SESSION_ACTIVE);
   uint64_t seed=0;
   assert(game_daily_seed_revision(year,month,day,
-                                  SUDOKURA_GENERATOR_REVISION_LEGACY,&seed));
+                                  generator_revision,&seed));
   assert(game_new_difficulty_revision(&out.session.game,seed,
                                       DIFFICULTY_MEDIUM,
-                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+                                      generator_revision));
   out.session.is_daily=true;
   out.session.daily_year=year;
   out.session.daily_month=month;
@@ -1317,6 +1318,11 @@ static ProfileSession daily_fixture(int year, int month, int day,
     }
   assert(session_validate(&out.session));
   return out;
+}
+static ProfileSession daily_fixture(int year, int month, int day,
+                                    SessionStatus status) {
+  return daily_fixture_revision(year, month, day, status,
+                                SUDOKURA_GENERATOR_REVISION_LEGACY);
 }
 static bool daily_lookup_visit(const GameLibraryEntry *entry,void *ctx) {
   game_library_daily_lookup_consider((GameDailyLookup *)ctx,entry,2026,10,13);
@@ -1365,6 +1371,103 @@ static void test_daily_lookup_metadata_and_errors(void) {
   assert(lookup.matching_attempts==0 && !lookup.uncertain);
   cleanup();
 }
+static void test_daily_replay_revisions_survive_disk_roundtrip(void) {
+  const uint8_t generators[] = {
+      SUDOKURA_GENERATOR_REVISION_LEGACY, SUDOKURA_GENERATOR_REVISION};
+  for (size_t variant = 0;
+       variant < sizeof(generators) / sizeof(generators[0]); ++variant) {
+    prepare();
+    GameAttemptId original_id = make_id(4100u + (uint64_t)variant * 2u);
+    GameAttemptId replay_id = make_id(4101u + (uint64_t)variant * 2u);
+    ProfileSession won = daily_fixture_revision(
+        2026, 10, 13, SESSION_WON, generators[variant]);
+    GameLibraryRecord source, replay, disk, updated;
+    assert(game_library_make_exact(&source, original_id, 1, &won, true));
+    assert(game_library_save(root, &source) == STORE_OK);
+    assert(game_library_load(root, original_id, &source) == STORE_OK);
+    assert(source.original_daily && source.result.is_daily);
+    assert(game_library_prepare_replay(&replay, &source, replay_id));
+    GameLibraryHotCache cache = {0};
+    assert(game_library_save_runtime_at(
+        root, &replay, &cache, UINT64_C(1791916200)) == STORE_OK);
+    assert(game_library_load(root, replay_id, &disk) == STORE_OK);
+    assert(disk.revision == 1 && disk.practice && disk.result.practice);
+    assert(disk.original_daily && !disk.exact.session.is_daily);
+    assert(disk.original_daily_year == 2026 &&
+           disk.original_daily_month == 10 && disk.original_daily_day == 13);
+    assert(game_attempt_id_equal(disk.parent, original_id));
+    assert(game_library_replay_pending_matches(&source, &disk));
+
+    /* A later normal-slot checkpoint must keep the source Daily identity. */
+    ProfileSession progressed = disk.exact;
+    progressed.session.elapsed_ms = UINT64_C(4321);
+    progressed.session.selected_row = 2;
+    progressed.session.selected_column = 3;
+    progressed.session.notes_mode = true;
+    assert(game_library_make_exact_runtime(
+        &updated, replay_id, 2, &progressed, true));
+    updated.practice = disk.practice;
+    updated.parent = disk.parent;
+    updated.result.practice = disk.result.practice;
+    updated.original_daily = disk.original_daily;
+    updated.original_daily_year = disk.original_daily_year;
+    updated.original_daily_month = disk.original_daily_month;
+    updated.original_daily_day = disk.original_daily_day;
+    assert(game_library_record_validate_runtime(&updated));
+    assert(game_library_save_runtime_at(
+        root, &updated, &cache, UINT64_C(1791916240)) == STORE_OK);
+    assert(game_library_load(root, replay_id, &disk) == STORE_OK);
+    assert(disk.revision == 2 && disk.practice && disk.result.practice);
+    assert(disk.exact.session.elapsed_ms == UINT64_C(4321) &&
+           disk.exact.session.selected_row == 2 &&
+           disk.exact.session.selected_column == 3);
+    assert(!disk.exact.session.is_daily &&
+           disk.original_daily && disk.original_daily_year == 2026);
+    assert(game_attempt_id_equal(disk.parent, original_id));
+    assert(!game_library_replay_pending_matches(&source, &disk));
+
+    /* A won Replay is separate from the immutable original Daily. */
+    ProfileSession completed = disk.exact;
+    for (size_t cell = 0; cell < 81; ++cell) {
+      completed.session.game.puzzle[cell] =
+          completed.session.game.solution[cell];
+      completed.session.game.notes[cell] = 0;
+    }
+    completed.session.status = SESSION_WON;
+    completed.session.elapsed_ms = UINT64_C(12345);
+    assert(session_validate_runtime(&completed.session));
+    assert(game_library_make_exact_runtime(
+        &updated, replay_id, 3, &completed, true));
+    updated.practice = disk.practice;
+    updated.parent = disk.parent;
+    updated.result.practice = disk.result.practice;
+    updated.original_daily = disk.original_daily;
+    updated.original_daily_year = disk.original_daily_year;
+    updated.original_daily_month = disk.original_daily_month;
+    updated.original_daily_day = disk.original_daily_day;
+    assert(game_library_record_validate_runtime(&updated));
+    assert(game_library_save_runtime_at(
+        root, &updated, &cache, UINT64_C(1791916290)) == STORE_OK);
+    assert(game_library_load(root, replay_id, &disk) == STORE_OK);
+    assert(disk.revision == 3 && disk.result.status == SESSION_WON);
+    assert(disk.practice && disk.result.practice && !disk.result.is_daily);
+    assert(disk.original_daily && disk.original_daily_year == 2026 &&
+           disk.original_daily_month == 10 && disk.original_daily_day == 13);
+    assert(disk.exact.session.status == SESSION_WON &&
+           !disk.exact.session.is_daily);
+    assert(disk.finished_utc == UINT64_C(1791916290));
+    assert(game_attempt_id_equal(disk.parent, original_id));
+    assert(!game_library_replay_pending_matches(&source, &disk));
+    assert(game_library_load(root, original_id, &source) == STORE_OK);
+    assert(source.result.status == SESSION_WON && source.original_daily);
+    GameDailyLookup lookup = {0};
+    assert(game_library_scan(root, daily_lookup_visit, &lookup) == STORE_OK);
+    assert(lookup.matching_attempts == 1 && !lookup.uncertain);
+    assert(game_attempt_id_equal(lookup.match.id, original_id));
+    cleanup();
+  }
+}
+
 static void test_daily_lookup_previous_copy_and_uncertainty(void) {
   prepare();
   const GameAttemptId id = make_id(3905);
@@ -1795,6 +1898,7 @@ int main(void) {
   test_same_attempt_load_prefers_durable_revision();
   test_daily_lookup_metadata_and_errors();
   test_daily_lookup_previous_copy_and_uncertainty();
+  test_daily_replay_revisions_survive_disk_roundtrip();
   test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
   test_replay_intent_survives_failed_cuts();
