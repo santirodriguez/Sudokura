@@ -549,6 +549,51 @@ static bool persistence_previous_available(const Persistence*p){
   return profile_load_file(p->profile_backup_path,&previous)==STORE_OK;
 }
 
+/* Do not treat lost primary+backup as a new installation when durable
+   collection or migration evidence is still present. Offer an explicit
+   locked-writer recovery action; never silently create default profiles. */
+static bool persistence_missing_hot_recovery_available(
+    const Persistence *p, GameMigrationRecoveryRoute *route) {
+  if (!p || !route || p->lock_status != STORE_LOCK_ACQUIRED ||
+      p->enabled || p->profile_status != STORE_IO_ERROR)
+    return false;
+  return game_migration_missing_hot_route(
+      p->profile_directory, p->profile_path, p->profile_backup_path,
+      route) == STORE_OK;
+}
+
+static bool persistence_recover_missing_hot(
+    Persistence *p, GameMigrationRecoveryRoute requested) {
+  GameMigrationRecoveryRoute current = GAME_MIGRATION_RECOVERY_NONE;
+  if (!persistence_missing_hot_recovery_available(p, &current) ||
+      current != requested)
+    return false;
+  ProfileData recovered;
+  StoreStatus status = STORE_IO_ERROR;
+  if (requested == GAME_MIGRATION_RECOVERY_IMPORT) {
+    status = game_migration_recover_intent(
+        p->profile_directory, p->profile_path, p->profile_backup_path,
+        &recovered);
+  } else if (requested == GAME_MIGRATION_RECOVERY_COLLECTION) {
+    GameMigrationRecoverySummary summary = {0};
+    status = game_migration_recover_collection(
+        p->profile_directory, p->profile_path, p->profile_backup_path,
+        &recovered, &summary);
+  }
+  p->profile_status = status;
+  if (status != STORE_OK) return false;
+  p->profile = recovered;
+  p->preferences = recovered.preferences;
+  p->active_attempt_id = (GameAttemptId){0, 0};
+  memset(&p->active_replay, 0, sizeof(p->active_replay));
+  p->capture_failed = false;
+  persistence_refresh_normal(p);
+  save_policy_init(&p->save_policy);
+  p->last_periodic_checkpoint_ms = now_ms();
+  p->enabled = true;
+  return true;
+}
+
 static void persistence_init_base(Persistence*p){
   if(!p)return;
   memset(p,0,sizeof(*p));

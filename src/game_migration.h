@@ -24,6 +24,19 @@ typedef struct {
   size_t daily_active_candidates;
 } GameMigrationRecoverySummary;
 
+/* Read-only startup routing when both hot profile files are absent.
+   Import takes precedence over collection rebuilding; neither may be
+   selected for a corrupt/incompatible/unreadable existing profile. */
+typedef enum {
+  GAME_MIGRATION_RECOVERY_NONE = 0,
+  GAME_MIGRATION_RECOVERY_IMPORT,
+  GAME_MIGRATION_RECOVERY_COLLECTION
+} GameMigrationRecoveryRoute;
+
+StoreStatus game_migration_missing_hot_route(
+    const char *root, const char *profile_path, const char *backup_path,
+    GameMigrationRecoveryRoute *route);
+
 /* Read-only preview: recovered preferences default when both hot files are
    lost and no explicit immutable-intent recovery has been chosen. */
 StoreStatus game_migration_preview_collection(

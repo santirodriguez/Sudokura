@@ -586,6 +586,37 @@ StoreStatus game_migration_preview_collection(
   return STORE_OK;
 }
 
+StoreStatus game_migration_missing_hot_route(
+    const char *root, const char *profile_path, const char *backup_path,
+    GameMigrationRecoveryRoute *route) {
+  if (!root || !route) return STORE_IO_ERROR;
+  /* Reads through the storage API distinguish missing from unreadable. */
+  StoreStatus status = missing_hot_pair(profile_path, backup_path);
+  if (status != STORE_OK) return status;
+  if (!game_migration_has_artifacts(root)) return STORE_NOT_FOUND;
+
+  char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!join(intent_path, root, "profile.dat.v1.3.7-import.dat"))
+    return STORE_IO_ERROR;
+  unsigned char prefix = 0;
+  status = store_read_prefix(intent_path, &prefix, 1u, NULL);
+  if (status == STORE_OK) {
+    /* A damaged intent still takes precedence; recovery will validate it
+       and fail closed, never re-import a stale source over existing games. */
+    *route = GAME_MIGRATION_RECOVERY_IMPORT;
+    return STORE_OK;
+  }
+  if (status != STORE_NOT_FOUND) return status;
+
+  ProfileData preview;
+  GameMigrationRecoverySummary summary = {0};
+  status = game_migration_preview_collection(root, &preview, &summary);
+  if (status != STORE_OK) return status;
+  if (summary.compatible_records == 0u) return STORE_NOT_FOUND;
+  *route = GAME_MIGRATION_RECOVERY_COLLECTION;
+  return STORE_OK;
+}
+
 StoreStatus game_migration_recover_collection(
     const char *root, const char *profile_path, const char *backup_path,
     ProfileData *profile, GameMigrationRecoverySummary *summary) {

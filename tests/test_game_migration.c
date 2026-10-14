@@ -482,6 +482,11 @@ static void test_missing_hot_pair_recovers_verified_intent(void) {
   assert(store_remove_file(primary));
   assert(store_remove_file(backup));
   assert(game_migration_has_artifacts(root));
+  GameMigrationRecoveryRoute route = GAME_MIGRATION_RECOVERY_NONE;
+  assert(game_migration_missing_hot_route(root, primary, backup, &route) ==
+         STORE_OK);
+  assert(route == GAME_MIGRATION_RECOVERY_IMPORT);
+  assert(!store_file_exists(primary) && !store_file_exists(backup));
 
   ProfileData recovered;
   profile_defaults(&recovered);
@@ -505,6 +510,10 @@ static void test_missing_hot_pair_recovers_verified_intent(void) {
 static void test_explicit_collection_recovery_and_ambiguity(void) {
   prepare();
   assert(!game_migration_has_artifacts(root));
+  GameMigrationRecoveryRoute route = GAME_MIGRATION_RECOVERY_IMPORT;
+  assert(game_migration_missing_hot_route(root, primary, backup, &route) ==
+         STORE_NOT_FOUND);
+  assert(route == GAME_MIGRATION_RECOVERY_IMPORT);
   ProfileData legacy = legacy_profile();
   ProfileSession first = legacy.normal.value;
   GameLibraryRecord record;
@@ -512,6 +521,21 @@ static void test_explicit_collection_recovery_and_ambiguity(void) {
   GameAttemptId b = {UINT64_C(0xdeadbeef), 2};
   assert(game_library_make_exact(&record, a, 1, &first, true));
   assert(game_library_save(root, &record) == STORE_OK);
+  route = GAME_MIGRATION_RECOVERY_NONE;
+  assert(game_migration_missing_hot_route(root, primary, backup, &route) ==
+         STORE_OK);
+  assert(route == GAME_MIGRATION_RECOVERY_COLLECTION);
+  assert(!store_file_exists(primary) && !store_file_exists(backup));
+  /* Even an invalid but existing backup prevents a fresh rebuild. */
+  const unsigned char incompatible_backup[] = {0x53, 0x50, 0x01};
+  assert(store_atomic_write(backup, NULL, incompatible_backup,
+                            sizeof(incompatible_backup)) == STORE_OK);
+  route = GAME_MIGRATION_RECOVERY_NONE;
+  assert(game_migration_missing_hot_route(root, primary, backup, &route) ==
+         STORE_IO_ERROR);
+  assert(route == GAME_MIGRATION_RECOVERY_NONE);
+  assert(store_remove_file(backup));
+  assert(!store_file_exists(primary) && !store_file_exists(backup));
 
   ProfileData candidate;
   GameMigrationRecoverySummary info = {0};
@@ -545,6 +569,10 @@ static void test_explicit_collection_recovery_and_ambiguity(void) {
   assert(!recovered.daily.present);
   assert(info.normal_active_candidates == 2);
   assert(game_library_load(root, b, &record) == STORE_OK);
+  route = GAME_MIGRATION_RECOVERY_NONE;
+  assert(game_migration_missing_hot_route(root, primary, backup, &route) ==
+         STORE_IO_ERROR);
+  assert(route == GAME_MIGRATION_RECOVERY_NONE);
   assert(game_migration_recover_collection(
              root, primary, backup, &recovered, &info) == STORE_IO_ERROR);
   cleanup();

@@ -1702,6 +1702,33 @@ int main(int argc, char **argv) {
     ui.language = persistence.preferences.language;
     audio_apply_preferences(&persistence);
   }
+  GameMigrationRecoveryRoute missing_route = GAME_MIGRATION_RECOVERY_NONE;
+  if (persistence_missing_hot_recovery_available(&persistence,
+                                                  &missing_route)) {
+    /* Explicit user consent is required before publishing any recovered
+       hot profile. Native Cancel/Escape always quits without a write. */
+    TextKey prompt = missing_route == GAME_MIGRATION_RECOVERY_IMPORT
+        ? T_PROFILE_RECOVER_IMPORT_PROMPT
+        : T_PROFILE_RECOVER_COLLECTION_PROMPT;
+    if (!confirm_box(&g, &game, &ui,
+                     tr(ui.language, T_STORAGE_ERROR),
+                     tr(ui.language, prompt),
+                     tr(ui.language, T_RECOVER),
+                     tr(ui.language, T_QUIT))) {
+      app_shutdown(&g);
+      return 1;
+    }
+    if (!persistence_recover_missing_hot(&persistence, missing_route)) {
+      (void)show_simple_message_box(
+          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
+          tr(ui.language, T_STORAGE_ERROR),
+          tr(ui.language, T_PROFILE_IO_ERROR));
+      app_shutdown(&g);
+      return 1;
+    }
+    ui.language = persistence.preferences.language;
+    audio_apply_preferences(&persistence);
+  }
   const char *startup_error =
       persistence_startup_error(&persistence, ui.language);
   if (startup_error) {
