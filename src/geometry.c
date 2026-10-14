@@ -308,54 +308,19 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     g->sidebar = xl ? (GeoRect){x + board + gap, board_y, sidebar_w, board}
                     : (GeoRect){x + board + gap, shell_y, sidebar_w, shell_h};
 
+    /* The gameplay header has no visible language picker or wordmark.
+       Keep geometry anchors small and give the live status room. */
     bool compact = g->sidebar.h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
-    int language_h = compact ? 34 : (xl ? 48 : 40);
-    int title_h = compact ? 38 : (xl ? 82 : 60);
-    int hud_item_h = compact ? 22 : (xl ? 34 : 26);
-    int hud_rows = (g->hud_count + 1) / 2;
-    int hud_gap = compact ? 4 : (xl ? 8 : 5);
-    int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
-    int action_item_h = compact ? 40 : (xl ? 56 : 44);
-    int action_gap = compact ? 4 : (xl ? 8 : 6);
-    int actions_h = action_item_h * 3 + action_gap * 2;
-    int palette_item_h = compact ? 30 : (xl ? 48 : 38);
-    int palette_gap = compact ? 4 : (xl ? 8 : 6);
-    int palette_h = palette_item_h * 3 + palette_gap * 2;
-    int palette_label_h = compact ? 16 : (xl ? 24 : 20);
-    int progress_h = compact ? 22 : (xl ? 34 : 26);
-
-    int fixed_h = language_h + title_h + hud_h + actions_h + palette_label_h +
-                  palette_h + progress_h;
-    int available_gap = g->sidebar.h - fixed_h;
-    int gap_count = 6;
-    int preferred_gap = compact ? 4 : (xl ? 24 : 20);
-    int vertical_gap = available_gap > 0 ? available_gap / gap_count : 0;
-    if (vertical_gap > preferred_gap) vertical_gap = preferred_gap;
-    if (vertical_gap < (compact ? 3 : 5)) vertical_gap = compact ? 3 : 5;
-    int used_h = fixed_h + vertical_gap * gap_count;
-    int edge_space = g->sidebar.h - used_h;
-    if (edge_space < 0) edge_space = 0;
-    int top_pad = edge_space / 2;
-    if (top_pad > (xl ? 36 : 24)) top_pad = xl ? 36 : 24;
-    int sy = g->sidebar.y + top_pad;
-
-    g->play_language = (GeoRect){sx, sy, sw, language_h};
-    sy += language_h + vertical_gap;
-    g->play_title = (GeoRect){sx, sy, sw, title_h};
-    sy += title_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, hud_h}, 2, hud_gap, g->hud,
+    int item_h = compact ? 24 : (xl ? 34 : 30);
+    int row_gap = compact ? 5 : (xl ? 9 : 8);
+    int rows = (g->hud_count + 1) / 2;
+    int hud_h = rows * item_h + (rows - 1) * row_gap;
+    int hud_y = g->sidebar.y + (compact ? 12 : (xl ? 28 : 22));
+    g->play_language = (GeoRect){sx, g->sidebar.y + 2, sw, 1};
+    g->play_title = (GeoRect){sx, g->sidebar.y + 5, sw, 1};
+    grid_gap((GeoRect){sx, hud_y, sw, hud_h}, 2, row_gap, g->hud,
              g->hud_count);
-    sy += hud_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, actions_h}, 3, action_gap, g->actions,
-             GEOMETRY_ACTION_COUNT);
-    sy += actions_h + vertical_gap;
-    g->palette_label = (GeoRect){sx, sy, sw, palette_label_h};
-    sy += palette_label_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, palette_h}, 3, palette_gap, g->palette,
-             GEOMETRY_PALETTE_COUNT);
-    sy += palette_h + vertical_gap;
-    g->progress = (GeoRect){sx, sy, sw, progress_h};
   }
 
   common_screens(width, height, portrait, g);
@@ -612,7 +577,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     if (geometry_final_rect_bottom(geometry->hud[i]) > hud_bottom)
       hud_bottom = geometry_final_rect_bottom(geometry->hud[i]);
 
-  int top = hud_bottom + 4;
+  int top = hud_bottom + (geometry->sidebar.h >= 600 ? 18 : 8);
   int bottom = geometry_final_rect_bottom(geometry->sidebar);
   int remaining = bottom - top;
   bool xl = width >= 1600 && height >= 900;
@@ -629,6 +594,16 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     palette_gap = 6;
     progress_h = 30;
     status_h = 42;
+  } else if (remaining >= 495) {
+    section_gap = 10;
+    action_gap = 7;
+    menu_h = 42;
+    row_h = 40;
+    palette_label_h = 18;
+    palette_item_h = 36;
+    palette_gap = 7;
+    progress_h = 26;
+    status_h = 34;
   } else if (remaining >= 390) {
     section_gap = 5;
     action_gap = 4;
@@ -654,6 +629,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   int x = geometry->sidebar.x;
   int w = geometry->sidebar.w;
   int action_group_gap = xl && remaining >= 540 ? 12 :
+                         remaining >= 495 ? 16 :
                          remaining >= 390 ? 8 : 2;
   int y = geometry_final_place_action_rows(
       geometry, x, top, w, menu_h, row_h, action_group_gap, action_gap);

@@ -105,8 +105,19 @@ int main(void) {
       for (int language = 0; language < LANG_COUNT; ++language) {
         int play_segment = g.play_language.w / 3 - 40;
         int screen_segment = g.screen_language.w / 3 - 40;
-        assert(fits(font, language_name((Language)language), tier.help, 10,
-                    play_segment, g.play_language.h));
+        if (width < 640)
+          assert(fits(font, language_name((Language)language), tier.help, 10,
+                      play_segment, g.play_language.h));
+        else {
+          char heading[128];
+          snprintf(heading, sizeof heading, "%s · %s",
+                   tr((Language)language, T_TIME_ATTACK),
+                   tr((Language)language, T_HARD));
+          int heading_w =
+              g.hud[1].x + g.hud[1].w - g.hud[0].x - 12;
+          assert(fits(font, heading, tier.control + 2, 12,
+                      heading_w, g.hud[0].h));
+        }
         assert(fits(font, language_name((Language)language), tier.help, 10,
                     screen_segment, g.screen_language.h));
         assert(fits(font, tr((Language)language, T_MODE), tier.help, 10,

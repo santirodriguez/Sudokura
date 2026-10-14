@@ -28,14 +28,17 @@ static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
   return face;
 }
 
-static void polish_draw_icon(Gfx *gfx, SDL_Rect box) {
-  if (!app_icon_texture || box.w <= 0 || box.h <= 0) return;
-  int size = box.w < box.h ? box.w : box.h;
-  size -= 8;
-  if (size < 12) return;
-  SDL_Rect dst = {box.x + (box.w - size) / 2, box.y + (box.h - size) / 2,
-                  size, size};
-  SDL_RenderCopy(gfx->ren, app_icon_texture, NULL, &dst);
+static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
+                                  SDL_Color background, bool pressed,
+                                  bool disabled) {
+  (void)theme;
+  SDL_Rect face = rect;
+  if (!disabled && pressed && face.h > 4) {
+    face.y += 1;
+    face.h -= 1;
+  }
+  draw_round_rect(gfx->ren, face, 7, background);
+  return face;
 }
 
 /* Lightweight line glyphs share the existing SDL renderer; no image library. */
@@ -183,7 +186,7 @@ static void polish_home_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   SDL_Color foreground = primary ? theme.bg : (disabled ? theme.dim : theme.btnfg);
   if (disabled) background = theme.palette_bg;
   SDL_Rect face =
-      polish_button_face(gfx, theme, rect, background, pressed, disabled);
+      polish_quiet_face(gfx, theme, rect, background, pressed, disabled);
   (void)draw_fitted_text(gfx, label, foreground, face, preferred, 10);
   if (focused && !disabled) draw_focus_ring(gfx->ren, rect, theme.sel_outline);
 }
@@ -200,7 +203,7 @@ static void polish_home_context_button(
       disabled ? theme.palette_bg
                : (primary ? theme.title : (hover ? theme.hover : theme.btn));
   SDL_Rect face =
-      polish_button_face(gfx, theme, rect, background, pressed, disabled);
+      polish_quiet_face(gfx, theme, rect, background, pressed, disabled);
   SDL_Color main_color =
       disabled ? theme.dim : (primary ? theme.bg : theme.btnfg);
   SDL_Rect main = {face.x + 2, face.y + 1, face.w - 4,
@@ -225,9 +228,6 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
     SDL_Rect card = {geometry.home_logo.x - 18, geometry.home_logo.y - 16,
                      geometry.home_logo.w + 36,
                      polish_home_bottom(&geometry) - geometry.home_logo.y + 32};
-    SDL_Rect shadow = card;
-    shadow.y += 5;
-    draw_round_rect(gfx->ren, shadow, 14, theme.shadow);
     draw_round_rect(gfx->ren, card, 14, theme.palette_bg);
   }
 
@@ -246,7 +246,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
     SDL_Color background = active ? theme.title : (hover ? theme.hover : theme.btn);
     SDL_Color foreground = active ? theme.bg : theme.btnfg;
-    SDL_Rect face = polish_button_face(gfx, theme, rect, background, pressed, false);
+    SDL_Rect face = polish_quiet_face(gfx, theme, rect, background, pressed, false);
     (void)draw_fitted_text(gfx, tr(ui->language, mode_key((Mode)i)), foreground,
                            face, fonts.control, 10);
     if (home_focus == HOME_FOCUS_MODE && active)
@@ -262,7 +262,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
     SDL_Color background = active ? theme.title : (hover ? theme.hover : theme.btn);
     SDL_Color foreground = active ? theme.bg : theme.btnfg;
-    SDL_Rect face = polish_button_face(gfx, theme, rect, background, pressed, false);
+    SDL_Rect face = polish_quiet_face(gfx, theme, rect, background, pressed, false);
     (void)draw_fitted_text(gfx, difficulty_name(ui->language, (GameDifficulty)i),
                            foreground, face, fonts.control, 10);
     if (home_focus == HOME_FOCUS_DIFFICULTY && active)
@@ -328,7 +328,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
 
   SDL_Rect library = sdl_rect(geometry.home_secondary[0]);
   bool library_hover = point_in(library,mx,my);
-  SDL_Rect library_face = polish_button_face(
+  SDL_Rect library_face = polish_quiet_face(
       gfx,theme,library,library_hover ? theme.hover : theme.btn,
       library_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
   SDL_Rect folder = {library_face.x + 14,
@@ -365,56 +365,11 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
 
-  SDL_Rect title = sdl_rect(layout.model.play_title);
-  draw_round_rect(gfx->ren,title,8,theme.palette_bg);
-  int brand_side = title.h - 8;
-  if (brand_side > 52) brand_side = 52;
-  SDL_Rect brand_icon = {title.x+12,title.y+(title.h-brand_side)/2,
-                         brand_side,brand_side};
-  polish_draw_icon(gfx,brand_icon);
-  SDL_Rect brand_text = {brand_icon.x+brand_side+10,title.y,
-                         title.w-brand_side-34,title.h};
-  (void)draw_fitted_text(gfx,"Sudokura",theme.btnfg,brand_text,
-                         fonts.control,10);
-
-  if (ui->mode == MODE_CLASSIC && layout.model.hud_count > 3) {
-    SDL_Rect hints = sdl_rect(layout.model.hud[3]);
-    draw_round_rect(gfx->ren, hints, hints.h / 2, theme.palette_bg);
-    char label[96];
-    if (ui->assisted)
-      snprintf(label, sizeof label, "%s: %d · %s", tr(ui->language, T_HINTS),
-               game_hint_count(game), tr(ui->language, T_ASSISTED));
-    else
-      snprintf(label, sizeof label, "%s: %d", tr(ui->language, T_HINTS),
-               game_hint_count(game));
-    (void)draw_fitted_text(gfx, label, theme.dim, hints, fonts.hud, 10);
-  }
-
-  /* Subtle group dividers: information / session / board / tools /
-     utilities / numbers. Prefer breathing room over extra panel boxes. */
-  SDL_Color separator = theme.dim;
-  separator.a = 42;
-  SDL_Rect menu = controls.btn[PLAY_ACTION_MENU];
-  SDL_Rect board_actions = controls.btn[PLAY_ACTION_PAUSE];
-  SDL_Rect tools = controls.btn[PLAY_ACTION_HINT];
-  SDL_Rect utilities = controls.btn[PLAY_ACTION_AUDIO];
-  SDL_Rect numbers_label = controls.palette_label;
-  int divider_ys[] = {
-      menu.y - 5,
-      (menu.y+menu.h+board_actions.y)/2,
-      (controls.btn[PLAY_ACTION_RESTART].y+
-       controls.btn[PLAY_ACTION_RESTART].h+tools.y)/2,
-      (utilities.y+utilities.h+numbers_label.y)/2
-  };
-  for (unsigned i=0;i<sizeof(divider_ys)/sizeof(divider_ys[0]);++i) {
-    int y=divider_ys[i];
-    if (y > layout.side.y+5 && y < layout.side.y+layout.side.h-5)
-      draw_line(gfx->ren,layout.side.x+12,y,
-                layout.side.x+layout.side.w-13,y,separator);
-  }
-
-  (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
-                         controls.palette_label, fonts.help, 10);
+  /* The game HUD identifies the puzzle without extra branding.
+     Group actions with spacing instead of decoration or thin rules. */
+  if (gfx->width >= 1600 && controls.palette_label.h >= 20)
+    (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
+                           controls.palette_label, fonts.help, 10);
 
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
@@ -429,7 +384,7 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
                                : (selected ? theme.title
                                            : (hover ? theme.hover : theme.palette_bg));
     SDL_Color foreground = complete ? theme.dim : theme.palette_fg;
-    SDL_Rect face = polish_button_face(gfx, theme, rect, background,
+    SDL_Rect face = polish_quiet_face(gfx, theme, rect, background,
                                        pressed && !complete, complete);
     char label[2] = {(char)('0' + number), 0};
     (void)draw_fitted_text(gfx, label, foreground, face, fonts.control + 4, 12);
@@ -1336,17 +1291,13 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       for (int i = 0; i < 3; ++i) {
         bool hover = point_in(buttons[i], mx, my);
         bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-        SDL_Color color = i == 0 ? theme.title :
+        SDL_Color color = i == 2 ? theme.title :
                           (hover ? theme.hover : theme.palette_bg);
-        SDL_Rect face = polish_button_face(gfx, theme, buttons[i],
+        SDL_Rect face = polish_quiet_face(gfx, theme, buttons[i],
                                           color, pressed, false);
-        if (i == 2)
-          ui_draw_icon_label(gfx,face,tr(ui->language,keys[i]),
-                             UI_GLYPH_SAVE,theme.btnfg,fonts.control);
-        else
-          (void)draw_fitted_text(gfx, tr(ui->language, keys[i]),
-                                 i == 0 ? theme.bg : theme.btnfg,
-                                 face, fonts.control, 9);
+        (void)draw_fitted_text(gfx, tr(ui->language, keys[i]),
+                               i == 2 ? theme.bg : theme.btnfg,
+                               face, fonts.control, 10);
       }
       continue;
     }
@@ -1359,7 +1310,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       TextKey labels[2] = {T_UNDO, T_REDO};
       for (int i = 0; i < 2; ++i) {
         bool hover = enabled[i] && point_in(parts[i], mx, my);
-        SDL_Rect face = polish_button_face(
+        SDL_Rect face = polish_quiet_face(
             gfx, theme, parts[i],
             hover ? theme.hover : theme.palette_bg,
             hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)), !enabled[i]);
@@ -1376,7 +1327,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       bool restart_hover = point_in(restart_rect, mx, my);
       bool restart_pressed =
           restart_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-      SDL_Rect restart_face = polish_button_face(
+      SDL_Rect restart_face = polish_quiet_face(
           gfx, theme, restart_rect,
           restart_hover ? theme.hover : theme.palette_bg, restart_pressed,
           false);
@@ -1387,7 +1338,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       bool clear_hover = clear_enabled && point_in(clear_rect, mx, my);
       bool clear_pressed =
           clear_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-      SDL_Rect clear_face = polish_button_face(
+      SDL_Rect clear_face = polish_quiet_face(
           gfx, theme, clear_rect,
           clear_hover ? theme.hover : theme.palette_bg, clear_pressed,
           !clear_enabled);
@@ -1409,7 +1360,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
         active ? theme.title : (hover ? theme.hover : theme.palette_bg);
     SDL_Color foreground = active ? theme.bg : theme.btnfg;
     SDL_Rect face =
-        polish_button_face(gfx, theme, rect, background, pressed, false);
+        polish_quiet_face(gfx, theme, rect, background, pressed, false);
     (void)draw_fitted_text(gfx, tr(ui->language, keys[action]), foreground,
                            face, fonts.control, 10);
   }
@@ -1530,7 +1481,7 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
   SDL_GetMouseState(&mx, &my);
   bool hover = point_in(button, mx, my);
   SDL_Color bg = hover ? theme.hover : theme.btn;
-  SDL_Rect face = polish_button_face(gfx, theme, button, bg, false, false);
+  SDL_Rect face = polish_quiet_face(gfx, theme, button, bg, false, false);
   rc2_draw_speaker_icon(gfx, theme, face, !audio_is_enabled());
 
   if (!audio_control_popup_open) return;

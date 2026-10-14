@@ -122,7 +122,15 @@ int main(void) {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[2].y > g.about_links[0].y);
-        assert(g.play_title.h >= 38);
+        /* Desktop play uses the top area for a readable HUD, not
+           for a duplicate brand strip or an invisible language row. */
+        assert(g.play_language.h == 1);
+        assert(g.play_title.h == 1);
+        assert(g.hud[0].y >= g.sidebar.y + 10);
+        assert(g.hud[0].y < g.sidebar.y + 50);
+        assert(g.actions[PLAY_ACTION_MENU].y >=
+               g.hud[g.hud_count - 1].y +
+               g.hud[g.hud_count - 1].h + 8);
         assert(g.actions[PLAY_ACTION_PAUSE].h >= 28);
         assert(g.actions[PLAY_ACTION_RESTART].h >= 28);
         assert(g.play_language.y - g.sidebar.y <= 36);
