@@ -189,6 +189,27 @@ for r in rows:
                         third,third)
                     assert len(glyph)>=2,(r["file"],"Saved pencil note missing",
                                           note_row,note_col)
+    if r["state"]=="home-empty":
+        # New Game is the focused full-width primary button. Saved Games
+        # occupies its own readable full-width row below the Continue cards.
+        portrait=w<640
+        short_desktop=w>=640 and h<600
+        group_h=12 if short_desktop else 14 if portrait else 16
+        continuation_h=46 if portrait else 44 if short_desktop else (
+            61 if w>=1600 and h>=900 else 55)
+        between_new=5 if short_desktop else 9
+        library_y=fy+fh+between_new+group_h+(
+            2 if short_desktop else 4)+continuation_h*(
+                2 if portrait else 1)+(5 if portrait else 0)+(
+                7 if short_desktop else 10)
+        library_h=41 if portrait else 37 if short_desktop else (
+            49 if w>=1600 and h>=900 else 44)
+        assert library_y+library_h<=h,(r["file"],"Saved Games offscreen")
+        text_width=min(250,fw-105)
+        assert text_width>=80,(r["file"],"Saved Games label squeezed")
+        caption=crop_colors(by_name[r["file"]],fx+66,
+                            library_y+7,text_width,library_h-14)
+        assert len(caption)>=4,(r["file"],"Saved Games label not visible")
     if r["state"] in {"home-daily-loading","home-daily-older",
                       "home-daily-finished"}:
         assert r["focus"]=="daily",(r["file"],"Daily control focus mismatch")

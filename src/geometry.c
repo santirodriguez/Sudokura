@@ -311,7 +311,7 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     bool compact = g->sidebar.h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
     int language_h = compact ? 34 : (xl ? 48 : 40);
-    int title_h = compact ? 40 : (xl ? 82 : 60);
+    int title_h = compact ? 38 : (xl ? 82 : 60);
     int hud_item_h = compact ? 22 : (xl ? 34 : 26);
     int hud_rows = (g->hud_count + 1) / 2;
     int hud_gap = compact ? 4 : (xl ? 8 : 5);
@@ -643,7 +643,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     section_gap = 2;
     action_gap = 2;
     menu_h = 28;
-    row_h = 26;
+    row_h = 28;
     palette_label_h = 12;
     palette_item_h = 22;
     palette_gap = 2;
@@ -654,7 +654,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   int x = geometry->sidebar.x;
   int w = geometry->sidebar.w;
   int action_group_gap = xl && remaining >= 540 ? 12 :
-                         remaining >= 390 ? 8 : 4;
+                         remaining >= 390 ? 8 : 2;
   int y = geometry_final_place_action_rows(
       geometry, x, top, w, menu_h, row_h, action_group_gap, action_gap);
   y += section_gap;

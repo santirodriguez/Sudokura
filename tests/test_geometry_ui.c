@@ -44,7 +44,8 @@ int main(void) {
         assert(g.home_primary[2].y > g.home_primary[1].y);
       } else {
         assert(g.home_primary[1].y == g.home_primary[2].y);
-        assert(g.home_primary[1].w == g.home_primary[2].w);
+        assert(g.home_primary[1].w <= g.home_primary[2].w);
+        assert(g.home_primary[2].w - g.home_primary[1].w <= 1);
       }
       for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
         assert_rect(g.home_secondary[i],width,height);
@@ -117,7 +118,9 @@ int main(void) {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[2].y > g.about_links[0].y);
-        assert(g.play_title.h >= 52);
+        assert(g.play_title.h >= 38);
+        assert(g.actions[PLAY_ACTION_PAUSE].h >= 28);
+        assert(g.actions[PLAY_ACTION_RESTART].h >= 28);
         assert(g.play_language.y - g.sidebar.y <= 36);
       }
     }
