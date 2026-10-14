@@ -797,6 +797,34 @@ bool game_library_replay_pending_matches(const GameLibraryRecord *source,
          memcmp(left, right, left_size) == 0;
 }
 
+StoreStatus game_library_replay_linked_selection(
+    const GameReplayIntent *intent, GameAttemptId selected_source,
+    const ProfileSlot *hot, const GameLibraryRecord *record,
+    bool *resume_selected) {
+  if (!intent || !hot || !record || !resume_selected)
+    return STORE_IO_ERROR;
+  if (intent->state != GAME_REPLAY_PREPARED ||
+      !game_attempt_id_valid(selected_source) ||
+      !hot->present || !hot->retained ||
+      !game_attempt_id_equal(hot->attempt_id, intent->attempt_id) ||
+      record->kind != GAME_RECORD_EXACT || !record->practice ||
+      !game_attempt_id_equal(record->parent, intent->source_id) ||
+      !game_library_record_validate(record))
+    return STORE_CORRUPT;
+
+  bool prefer_record = false;
+  StoreStatus status = game_library_resolve_hot_record(
+      hot, record, &prefer_record);
+  if (status != STORE_OK) return status;
+  /* A newer record needs its own durable Load reconciliation; never
+     finalize the marker and resume an older hot snapshot instead. */
+  if (prefer_record) return STORE_IO_ERROR;
+
+  *resume_selected = game_attempt_id_equal(
+      intent->source_id, selected_source);
+  return STORE_OK;
+}
+
 bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,
                                  GameAttemptId id) {
   if (!out || !source || out == source ||

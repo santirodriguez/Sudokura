@@ -1545,6 +1545,69 @@ static void test_same_attempt_load_prefers_durable_revision(void) {
          STORE_CORRUPT);
 }
 
+static void test_replay_linked_selection_respects_source(void) {
+  const GameAttemptId source_id = make_id(9811);
+  const GameAttemptId attempt_id = make_id(9812);
+  const GameAttemptId other_source = make_id(9813);
+  ProfileSession finished = make_session(SESSION_WON);
+  GameLibraryRecord source, replay;
+  assert(game_library_make_exact(&source, source_id, 1, &finished, true));
+  assert(game_library_prepare_replay(&replay, &source, attempt_id));
+  assert(game_library_record_validate(&replay));
+  GameReplayIntent intent = {
+      source_id, attempt_id, GAME_REPLAY_PREPARED};
+  ProfileSlot hot = {0};
+  hot.present = true;
+  hot.retained = true;
+  hot.attempt_id = attempt_id;
+  hot.revision = replay.revision;
+  hot.value = replay.exact;
+
+  bool resume = false;
+  assert(game_library_replay_linked_selection(
+      &intent, source_id, &hot, &replay, &resume) == STORE_OK);
+  assert(resume); /* Retry Replay of A resumes A, no duplicate ID. */
+
+  resume = true;
+  assert(game_library_replay_linked_selection(
+      &intent, other_source, &hot, &replay, &resume) == STORE_OK);
+  assert(!resume); /* Replay of B must not unexpectedly reopen A. */
+  assert(intent.state == GAME_REPLAY_PREPARED &&
+         hot.revision == replay.revision &&
+         game_attempt_id_equal(hot.attempt_id, attempt_id));
+
+  /* A source/parent collision, wrong live slot, or a newer disk snapshot
+     must not finalize the marker and publish an older or unrelated board. */
+  GameLibraryRecord unrelated = replay;
+  unrelated.parent = other_source;
+  resume = true;
+  assert(game_library_replay_linked_selection(
+      &intent, source_id, &hot, &unrelated, &resume) == STORE_CORRUPT);
+  assert(resume); /* Failed resolution leaves the result untouched. */
+  ProfileSlot wrong = hot;
+  wrong.attempt_id = other_source;
+  assert(game_library_replay_linked_selection(
+      &intent, source_id, &wrong, &replay, &resume) == STORE_CORRUPT);
+
+  GameLibraryRecord newer_disk = replay;
+  ++newer_disk.revision;
+  assert(game_library_record_validate(&newer_disk));
+  assert(game_library_replay_linked_selection(
+      &intent, source_id, &hot, &newer_disk, &resume) == STORE_IO_ERROR);
+
+  GameReplayIntent completed = intent;
+  completed.state = GAME_REPLAY_COMMITTED;
+  assert(game_library_replay_linked_selection(
+      &completed, source_id, &hot, &replay, &resume) == STORE_CORRUPT);
+  assert(game_library_replay_linked_selection(
+      &intent, (GameAttemptId){0, 0}, &hot, &replay, &resume) ==
+         STORE_CORRUPT);
+  assert(game_library_replay_linked_selection(
+      NULL, source_id, &hot, &replay, &resume) == STORE_IO_ERROR);
+  assert(game_library_replay_linked_selection(
+      &intent, source_id, &hot, &replay, NULL) == STORE_IO_ERROR);
+}
+
 static void test_replay_intent_survives_failed_cuts(void) {
   prepare();
   GameAttemptId source_id = make_id(9801);
@@ -1735,6 +1798,7 @@ int main(void) {
   test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
   test_replay_intent_survives_failed_cuts();
+  test_replay_linked_selection_respects_source();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();
   cleanup();

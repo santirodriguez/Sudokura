@@ -675,35 +675,35 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
       return false;
     }
     if (linked) {
-      bool prefer_record = false;
+      bool resume_selected = false;
       if (record_status != STORE_OK ||
-          interrupted.kind != GAME_RECORD_EXACT ||
-          !interrupted.practice ||
-          !game_attempt_id_equal(interrupted.parent, intent.source_id) ||
-          game_library_resolve_hot_record(&p->profile.normal, &interrupted,
-                                          &prefer_record) != STORE_OK) {
+          game_library_replay_linked_selection(
+              &intent, source.id, &p->profile.normal, &interrupted,
+              &resume_selected) != STORE_OK) {
         games_browser_operation_error(gfx, game, ui);
         return false;
       }
+      /* A previously committed hot pointer settles the old intent, but
+         must never override the user's distinct newly selected source. */
       intent.state = GAME_REPLAY_COMMITTED;
       if (game_library_replay_intent_write(p->profile_directory, &intent) !=
           STORE_OK) {
         games_browser_operation_error(gfx, game, ui);
         return false;
       }
-      /* The profile pointer was already durably committed before an
-         interrupted operation could clear its marker. Resume that exact
-         attempt rather than starting a second one. */
-      games_browser.modal_owned = false;
-      game_library_scan_close(&games_browser.scanner);
-      free(games_browser.rows);
-      memset(&games_browser, 0, sizeof(games_browser));
-      victory_animation_reset();
-      restore_saved_session(p, game, ui, false);
-      return true;
-    }
-
-    if (!game_attempt_id_equal(intent.source_id, source.id)) {
+      if (resume_selected) {
+        games_browser.modal_owned = false;
+        game_library_scan_close(&games_browser.scanner);
+        free(games_browser.rows);
+        memset(&games_browser, 0, sizeof(games_browser));
+        victory_animation_reset();
+        restore_saved_session(p, game, ui, false);
+        return true;
+      }
+      /* Start a fresh Replay of the requested source. The old committed
+         practice attempt and its profile record remain discoverable. */
+      pending = false;
+    } else if (!game_attempt_id_equal(intent.source_id, source.id)) {
       if (!confirm_destructive_box(gfx, game, ui,
              tr(ui->language, T_GAMES_REPLAY),
              tr(ui->language, T_GAMES_REPLAY_PENDING_OTHER),

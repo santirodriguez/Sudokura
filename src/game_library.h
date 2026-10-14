@@ -150,6 +150,15 @@ StoreStatus game_library_replay_intent_write(const char *root,
    not an unrelated or progressed practice game with the same parent ID. */
 bool game_library_replay_pending_matches(const GameLibraryRecord *source,
                                          const GameLibraryRecord *candidate);
+/* Resolve an already linked Prepared Replay without changing any state.
+   Resume only if the selected source is the source of that Replay; a
+   different selected source may begin its own attempt after finalization.
+   Conflicting or newer unlinked records must be reconciled separately. */
+StoreStatus game_library_replay_linked_selection(
+    const GameReplayIntent *intent, GameAttemptId selected_source,
+    const ProfileSlot *hot, const GameLibraryRecord *record,
+    bool *resume_selected);
+
 
 /* Build a separately identified, retained practice attempt from an immutable
    exact terminal board. Never modifies source or creates a hot Daily slot. */
