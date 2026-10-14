@@ -1463,6 +1463,15 @@ int main(int argc, char **argv) {
               games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE &&
                   state!=REVIEW_GAMES_RECOVER;
               games_browser.preview.game=game;
+              if(state==REVIEW_GAMES_ACTIVE){
+                /* Explicitly test the lowest and highest note digits in
+                   the saved-board preview; never show hidden answers. */
+                games_browser.preview.game.fixed[0]=0;
+                games_browser.preview.game.initial[0]=0;
+                games_browser.preview.game.puzzle[0]=0;
+                games_browser.preview.game.hinted[0]=0;
+                games_browser.preview.game.notes[0]=(1u<<1)|(1u<<9);
+              }
               if(finished){
                 for(int cell=0;cell<81;++cell)
                   if(!games_browser.preview.game.initial[cell])

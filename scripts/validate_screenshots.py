@@ -172,6 +172,23 @@ for r in rows:
                               board_x+side//3,board_y+side//3,
                               side//3,side//3)
             assert len(image)>=4,(r["file"],"Saved preview missing")
+            # The Games-active synthetic fixture stores notes 1 and 9 in
+            # its first cell. Both must remain visible at their true 3x3
+            # positions, even though tiny fitted text would be suppressed.
+            cell=side//9
+            if cell>=30:
+                actual_side=cell*9
+                actual_x=board_x+(side-actual_side)//2
+                actual_y=board_y+(side-actual_side)//2
+                third=cell//3
+                for note_row,note_col in ((0,0),(2,2)):
+                    glyph=crop_colors(
+                        by_name[r["file"]],
+                        actual_x+1+note_col*third,
+                        actual_y+1+note_row*third,
+                        third,third)
+                    assert len(glyph)>=2,(r["file"],"Saved pencil note missing",
+                                          note_row,note_col)
     if r["state"] in {"home-daily-loading","home-daily-older",
                       "home-daily-finished"}:
         assert r["focus"]=="daily",(r["file"],"Daily control focus mismatch")

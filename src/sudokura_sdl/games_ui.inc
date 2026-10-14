@@ -1112,14 +1112,32 @@ static void games_browser_draw_saved_board(Gfx *gfx, Theme theme,
                              cell > 33 ? 24 : cell-5,10);
     } else if (board->notes[index] && cell >= 18) {
       for (int digit = 1; digit <= 9; ++digit) {
-        if (!(board->notes[index] & (1u<<(digit-1)))) continue;
+        /* Notes use bit positions 1..9, not 0..8. */
+        if (!(board->notes[index] & (1u<<digit))) continue;
         int nx = square.x+(digit-1)%3*(cell/3);
         int ny = square.y+(digit-1)/3*(cell/3);
         if (cell >= 30) {
           char note[2] = {(char)('0'+digit),0};
-          (void)draw_fitted_text(
-              gfx,note,theme.dim,
-              (SDL_Rect){nx,ny,cell/3,cell/3},11,10);
+          int width=0,height=0;
+          SDL_Texture *texture = render_text(
+              gfx,cached_font(gfx,12),note,theme.dim,&width,&height);
+          int available=cell/3-2;
+          if (!texture || width<=0 || height<=0 || available<=0) continue;
+          /* draw_fitted_text reserves 8px horizontally and 4px vertically,
+             which rejects most pencil glyphs in a 3x3 mini-cell. Scale
+             the cached glyph directly, preserving its proportions. */
+          if (width>available) {
+            height=(height*available+width/2)/width;
+            width=available;
+          }
+          if (height>available) {
+            width=(width*available+height/2)/height;
+            height=available;
+          }
+          if (width<1 || height<1) continue;
+          SDL_Rect dst={nx+(cell/3-width)/2,ny+(cell/3-height)/2,
+                        width,height};
+          (void)SDL_RenderCopy(gfx->ren,texture,NULL,&dst);
         } else {
           draw_rect(gfx->ren,nx+cell/6,ny+cell/6,2,2,theme.dim);
         }
