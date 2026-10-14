@@ -30,53 +30,67 @@ static void games_append_text(char *destination, size_t capacity,
 }
 
 typedef struct {
-  SDL_Rect title, list, detail, primary, back, replay, remove;
+  SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
   int row_height, visible;
+  bool side_by_side;
 } GamesBrowserLayout;
 
 static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
   GamesBrowserLayout layout;
-  memset(&layout, 0, sizeof(layout));
+  memset(&layout,0,sizeof(layout));
   int margin = gfx->width < 640 ? 12 : 24;
-  int width = gfx->width - margin * 2;
-  if (width > 850) width = 850;
-  int x = (gfx->width - width) / 2;
-  int header_y = gfx->height < 520 ? 55 : 76;
-  layout.title = (SDL_Rect){x, header_y, width, 42};
-  int bottom = gfx->height - margin;
-  int detail_h = gfx->height < 550 ? 76 : 104;
-  int buttons_h = 40;
-  bool compact_actions = gfx->width < 760;
-  int action_gap = 8;
-  int action_space = compact_actions ? 2 * buttons_h + action_gap : buttons_h;
-  int list_y = header_y + 49;
-  int list_h = bottom - action_space - 12 - detail_h - 12 - list_y;
-  if (list_h < 48) list_h = 48;
-  layout.list = (SDL_Rect){x, list_y, width, list_h};
-  layout.row_height = gfx->height < 550 ? 44 : 52;
-  layout.visible = list_h / layout.row_height;
-  if (layout.visible < 1) layout.visible = 1;
-  layout.detail = (SDL_Rect){x, list_y + list_h + 8, width, detail_h};
-  int button_y = layout.detail.y + detail_h + 8;
-  int gap = width < 640 ? 5 : 8;
-  if (compact_actions) {
-    int half = (width - gap) / 2;
-    layout.back = (SDL_Rect){x,button_y,half,buttons_h};
-    layout.primary = (SDL_Rect){x+half+gap,button_y,
-                                width-half-gap,buttons_h};
-    layout.replay = (SDL_Rect){x,button_y+buttons_h+action_gap,
-                               half,buttons_h};
-    layout.remove = (SDL_Rect){x+half+gap,button_y+buttons_h+action_gap,
-                               width-half-gap,buttons_h};
+  int width = gfx->width - margin*2;
+  int max_width = gfx->width >= 1600 ? 1480 : 1240;
+  if (width > max_width) width = max_width;
+  int x = (gfx->width - width)/2;
+  int header_y = gfx->height < 520 ? 51 : 69;
+  layout.title = (SDL_Rect){x,header_y,width,39};
+  layout.subtitle = (SDL_Rect){x,header_y + 42,width,38};
+  int action_gap = 8, button_height = 44;
+  bool compact_actions = width < 760;
+  int action_space = compact_actions ? 2*button_height + action_gap
+                                     : button_height;
+  int buttons_y = gfx->height - margin - action_space;
+  int content_y = header_y + 83;
+  int content_h = buttons_y - content_y - 12;
+  if (content_h < 105) content_h = 105;
+  layout.side_by_side = width >= 860 && content_h >= 320;
+  if (layout.side_by_side) {
+    int space = 14;
+    int left_width = (width-space)*44/100;
+    layout.list = (SDL_Rect){x,content_y,left_width,content_h};
+    layout.detail = (SDL_Rect){x+left_width+space,content_y,
+                                width-left_width-space,content_h};
   } else {
-    int button_w = (width - gap * 3) / 4;
-    layout.back = (SDL_Rect){x, button_y, button_w, buttons_h};
-    layout.primary = (SDL_Rect){x + button_w + gap, button_y,
-                                button_w, buttons_h};
-    layout.replay = (SDL_Rect){x + (button_w + gap) * 2, button_y,
-                               button_w, buttons_h};
-    layout.remove = (SDL_Rect){x + (button_w + gap) * 3, button_y,
-                               width - (button_w + gap) * 3, buttons_h};
+    int detail_h = content_h*40/100;
+    if (detail_h < 86) detail_h = 86;
+    if (detail_h > 206) detail_h = 206;
+    int list_h = content_h-detail_h-10;
+    if (list_h < 48) list_h = 48;
+    layout.list = (SDL_Rect){x,content_y,width,list_h};
+    layout.detail = (SDL_Rect){x,content_y+list_h+10,width,detail_h};
+  }
+  layout.row_height = gfx->height < 550 ? 51 : 64;
+  layout.visible = layout.list.h / layout.row_height;
+  if (layout.visible < 1) layout.visible = 1;
+  int gap = width < 640 ? 6 : 10;
+  if (compact_actions) {
+    int half = (width-gap)/2;
+    layout.back = (SDL_Rect){x,buttons_y,half,button_height};
+    layout.primary = (SDL_Rect){x+half+gap,buttons_y,
+                                 width-half-gap,button_height};
+    layout.replay = (SDL_Rect){x,buttons_y+button_height+action_gap,
+                                half,button_height};
+    layout.remove = (SDL_Rect){x+half+gap,
+                                buttons_y+button_height+action_gap,
+                                width-half-gap,button_height};
+  } else {
+    int bw = (width-gap*3)/4;
+    layout.back = (SDL_Rect){x,buttons_y,bw,button_height};
+    layout.primary = (SDL_Rect){x+bw+gap,buttons_y,bw,button_height};
+    layout.replay = (SDL_Rect){x+(bw+gap)*2,buttons_y,bw,button_height};
+    layout.remove = (SDL_Rect){x+(bw+gap)*3,buttons_y,
+                                width-(bw+gap)*3,button_height};
   }
   return layout;
 }
@@ -359,6 +373,17 @@ static bool games_browser_save_current(Persistence *p, Game *game, UI *ui,
   bool ok = stage_current_session(p, game, ui);
   if (ok) ok = games_browser_save_hot(p, ui->is_daily);
   if (ok) ok = persistence_flush(p);
+  if (ok) {
+    /* A visible Saved confirmation is a durable claim. Check both the full
+       archive and the exact hot profile, including notes and entered digits. */
+    const ProfileSlot *slot = ui->is_daily
+        ? &p->profile.daily : &p->profile.normal;
+    ProfileData disk;
+    ok = game_library_verify_retained_snapshot(
+             p->profile_directory,slot) == STORE_OK &&
+         profile_load_file(p->profile_path,&disk) == STORE_OK &&
+         profile_encoded_equal(&disk,&p->profile);
+  }
   if (ok) {
     p->last_periodic_checkpoint_ms = now_ms();
     show_toast(ui, tr(ui->language, T_SAVED));
@@ -1074,291 +1099,349 @@ static bool games_browser_delete_selected(Persistence *p,Game *game,
   return true;
 }
 
+/* Record previews show only visible saved digits and notes, never the
+   hidden solution. The entered digits use the established accent color. */
+static void games_browser_draw_saved_board(Gfx *gfx, Theme theme,
+                                            const Game *board, SDL_Rect area) {
+  if (!gfx || !board || area.w < 72 || area.h < 72) return;
+  int side = area.w < area.h ? area.w : area.h;
+  int cell = side/9;
+  if (cell < 8) return;
+  side = cell*9;
+  int x = area.x + (area.w-side)/2;
+  int y = area.y + (area.h-side)/2;
+  draw_round_rect(gfx->ren,(SDL_Rect){x-3,y-3,side+6,side+6},5,theme.btn);
+  for (int index = 0; index < 81; ++index) {
+    int col = index%9, row = index/9;
+    SDL_Rect square = {x+col*cell+1,y+row*cell+1,cell-2,cell-2};
+    if (board->puzzle[index]) {
+      char number[2] = {(char)('0'+board->puzzle[index]),0};
+      SDL_Color ink = board->fixed[index] ? theme.btnfg : theme.title;
+      (void)draw_fitted_text(gfx,number,ink,square,
+                             cell > 33 ? 24 : cell-5,10);
+    } else if (board->notes[index] && cell >= 18) {
+      for (int digit = 1; digit <= 9; ++digit) {
+        if (!(board->notes[index] & (1u<<(digit-1)))) continue;
+        int nx = square.x+(digit-1)%3*(cell/3);
+        int ny = square.y+(digit-1)/3*(cell/3);
+        if (cell >= 30) {
+          char note[2] = {(char)('0'+digit),0};
+          (void)draw_fitted_text(
+              gfx,note,theme.dim,
+              (SDL_Rect){nx,ny,cell/3,cell/3},11,10);
+        } else {
+          draw_rect(gfx->ren,nx+cell/6,ny+cell/6,2,2,theme.dim);
+        }
+      }
+    }
+  }
+  for (int index = 0; index <= 9; ++index) {
+    SDL_Color border = index%3==0 ? theme.btnfg : theme.dim;
+    int grid_x = x+index*cell, grid_y = y+index*cell;
+    draw_line(gfx->ren,grid_x,y,grid_x,y+side,border);
+    draw_line(gfx->ren,x,grid_y,x+side,grid_y,border);
+    if (index%3==0 && index<9) {
+      draw_line(gfx->ren,grid_x+1,y,grid_x+1,y+side,border);
+      draw_line(gfx->ren,x,grid_y+1,x+side,grid_y+1,border);
+    }
+  }
+}
+
+static void games_browser_progress(const Game *board,int *filled,int *total) {
+  *filled=0;
+  *total=0;
+  if (!board) return;
+  for (int i=0;i<81;++i) {
+    if (!board->fixed[i]) {
+      ++*total;
+      if (board->puzzle[i]) ++*filled;
+    }
+  }
+}
+
 static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
                                       const char *text, bool focused,
-                                      bool enabled, SDL_Color color) {
-  int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
-  bool pressed = enabled && point_in(rect, mx, my) &&
-                 (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-  SDL_Rect face = polish_button_face(
-      gfx, theme, rect, enabled ? theme.btn : theme.palette_bg, pressed,
-      !enabled);
-  (void)draw_fitted_text(gfx, text, enabled ? color : theme.dim, face, 17, 10);
-  if (focused && enabled) draw_focus_ring(gfx->ren, rect, theme.sel_outline);
+                                      bool enabled, SDL_Color color,
+                                      UiGlyph glyph, bool primary) {
+  int mx=0,my=0;
+  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  bool hovered=enabled&&point_in(rect,mx,my);
+  bool pressed=hovered&&(mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+  SDL_Color background=!enabled ? theme.palette_bg :
+                       primary ? theme.title :
+                       hovered ? theme.hover : theme.btn;
+  SDL_Color foreground=!enabled ? theme.dim :
+                       primary ? theme.bg : color;
+  SDL_Rect face=polish_button_face(gfx,theme,rect,background,
+                                    pressed,!enabled);
+  ui_draw_icon_label(gfx,face,text,glyph,foreground,17);
+  if (focused&&enabled)draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   (void)game;
-  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  GamesBrowserLayout lay = games_browser_layout(gfx);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_GAMES), theme.btnfg,
-                         lay.title, 30, 16);
+  Theme theme=ui->dark_theme?theme_dark():theme_light();
+  GamesBrowserLayout lay=games_browser_layout(gfx);
+  SDL_Rect heading=lay.title;
+  ui_draw_glyph(gfx->ren,
+                (SDL_Rect){heading.x+4,heading.y+8,24,24},
+                UI_GLYPH_FOLDER,theme.title);
+  heading.x+=31;
+  heading.w-=31;
+  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES_LIBRARY_TITLE),
+                         theme.btnfg,heading,30,15);
+  (void)polish_draw_wrapped_fit(gfx,tr(ui->language,T_GAMES_HELP),
+                                theme.dim,lay.subtitle,15,10,true);
+
   if (games_browser.detail_open) {
-    const GamesRow *selected = &games_browser.rows[games_browser.selected];
-    const ProfileResult *result = &selected->entry.result;
-    int y = lay.title.y + lay.title.h + 7;
-    int usable = lay.back.y - y - 92;
-    int side = lay.list.w < usable ? lay.list.w : usable;
-    if (side > 432) side = 432;
-    if (side < 81) side = 81;
-    int cell = side / 9;
-    side = cell * 9;
-    int x = (gfx->width - side) / 2;
-    if (games_browser.preview_valid) {
-      const Game *board = &games_browser.preview.game;
-      SDL_Rect surface = {x, y, side, side};
-      draw_round_rect(gfx->ren, surface, 4, theme.palette_bg);
-      for (int index = 0; index < 81; ++index) {
-        int px = x + index % 9 * cell;
-        int py = y + index / 9 * cell;
-        if (!board->puzzle[index]) continue;
-        char number[2] = {(char)('0' + board->puzzle[index]), '\0'};
-        SDL_Rect box = {px+1,py+1,cell-2,cell-2};
-        SDL_Color ink = board->initial[index] ? theme.btnfg : theme.title;
-        (void)draw_fitted_text(gfx, number, ink, box, cell-3, 10);
-        if (board->hinted[index])
-          draw_rect(gfx->ren, px+cell-5,py+2,2,2,theme.sel_outline);
-      }
-      SDL_SetRenderDrawColor(gfx->ren,theme.dim.r,theme.dim.g,theme.dim.b,255);
-      for (int index = 0; index <= 9; ++index) {
-        int thick = index % 3 == 0 ? 2 : 1;
-        SDL_Rect vertical = {x+index*cell,y,thick,side};
-        SDL_Rect horizontal = {x,y+index*cell,side,thick};
-        SDL_RenderFillRect(gfx->ren,&vertical);
-        SDL_RenderFillRect(gfx->ren,&horizontal);
-      }
-    } else {
-      SDL_Rect empty = {lay.list.x,y,lay.list.w,side};
-      (void)polish_draw_wrapped_fit(
-          gfx,tr(ui->language,T_GAMES_SUMMARY_ONLY),
-          theme.dim,empty,19,10,true);
-    }
-    unsigned long long seconds =
-        (unsigned long long)(result->elapsed_ms / 1000u);
-    char summary[256];
-    (void)snprintf(summary,sizeof(summary),"%s · %s · %s · %02llu:%02llu%s%s",
-        tr(ui->language,result->status==SESSION_WON?T_YOU_WIN:T_YOU_LOSE),
-        tr(ui->language,mode_key(result->mode)),
-        difficulty_name(ui->language,result->difficulty),
-        seconds/60u,seconds%60u,
-        result->assisted?" · ":"",
-        result->assisted?tr(ui->language,T_ASSISTED):"");
-    SDL_Rect info={lay.list.x,y+side+8,lay.list.w,
-                   lay.back.y-(y+side+8)-8};
-    int line_h=info.h>=96?23:18;
-    SDL_Rect line={info.x,info.y,info.w,line_h};
-    (void)draw_fitted_text(gfx,summary,theme.btnfg,line,16,10);
-    int reveals=0;
+    const GamesRow *row=&games_browser.rows[games_browser.selected];
+    const ProfileResult *result=&row->entry.result;
+    SDL_Rect surface={lay.title.x,lay.list.y,lay.title.w,
+                       lay.back.y-lay.list.y-12};
+    draw_round_rect(gfx->ren,surface,11,theme.palette_bg);
+    int free_height=surface.h-128;
+    int side=surface.w-40;
+    if (side>free_height)side=free_height;
+    int detail_max_side=gfx->width>=2200?560:
+                         gfx->width>=1500?480:420;
+    if (side>detail_max_side)side=detail_max_side;
+    if (side<80)side=80;
+    SDL_Rect board={surface.x+(surface.w-side)/2,surface.y+12,side,side};
     if(games_browser.preview_valid)
-      for(int index=0;index<81;++index)
-        if(games_browser.preview.game.hinted[index])++reveals;
-    char details[256];
-    (void)snprintf(details,sizeof(details),"%s: %u · %s: %u · %s: %d",
-        tr(ui->language,T_ERRORS),(unsigned)result->mistakes,
-        tr(ui->language,T_GAMES_STRIKES),(unsigned)result->strikes,
-        tr(ui->language,T_GAMES_REVEALS),reveals);
-    line.y+=line_h;
-    (void)draw_fitted_text(gfx,details,theme.btnfg,line,14,10);
-    char provenance[256];
-    (void)snprintf(provenance,sizeof(provenance),"%s%s%s%s",
-        result->assisted?tr(ui->language,T_ASSISTED):"",
-        result->assisted && result->practice?" · ":"",
-        result->practice?tr(ui->language,T_GAMES_PRACTICE):"",
-        "");
-    if(result->practice && games_browser.detail_record_valid){
-      char id[33];
-      game_attempt_id_hex(games_browser.detail_record.parent,id);
-      char suffix[32];
-      (void)snprintf(suffix, sizeof(suffix), " · #%.*s", 8, id);
-      games_append_text(provenance, sizeof(provenance), suffix);
-    }
-    if(!provenance[0])
-      (void)snprintf(provenance,sizeof(provenance),"%s",
-                     tr(ui->language,T_GAMES_FINISHED));
-    line.y+=line_h;
-    (void)draw_fitted_text(gfx,provenance,theme.dim,line,13,10);
-    char date[160];
-    (void)snprintf(date,sizeof(date),"%s",
-                   tr(ui->language,T_GAMES_UNKNOWN_DATE));
-    uint64_t utc=selected->entry.finished_utc;
-    time_t stamp=(time_t)utc;
-    if(utc && stamp>0 && (uint64_t)stamp==utc){
-      struct tm *finished=gmtime(&stamp);
-      if(finished)
-        (void)snprintf(date,sizeof(date),"%s: %04d-%02d-%02d",
-            tr(ui->language,T_GAMES_FINISHED_AT),
-            finished->tm_year+1900,finished->tm_mon+1,finished->tm_mday);
-    }
+      games_browser_draw_saved_board(
+          gfx,theme,&games_browser.preview.game,board);
+    else
+      (void)polish_draw_wrapped_fit(
+          gfx,tr(ui->language,T_GAMES_SUMMARY_ONLY),theme.dim,board,17,10,true);
+    char heading_info[250];
+    unsigned long long seconds=(unsigned long long)(result->elapsed_ms/1000u);
+    (void)snprintf(heading_info,sizeof(heading_info),
+                   "%s · %s · %s · %02llu:%02llu",
+                   tr(ui->language,result->status==SESSION_WON
+                       ?T_YOU_WIN:T_YOU_LOSE),
+                   tr(ui->language,mode_key(result->mode)),
+                   difficulty_name(ui->language,result->difficulty),
+                   seconds/60u,seconds%60u);
+    SDL_Rect info={surface.x+16,board.y+side+15,surface.w-32,26};
+    (void)draw_fitted_text(gfx,heading_info,theme.btnfg,info,17,10);
+    char detail[260];
+    int revealed=0;
+    if(games_browser.preview_valid)
+      for(int k=0;k<81;k++)
+        if(games_browser.preview.game.hinted[k])++revealed;
+    (void)snprintf(detail,sizeof(detail),"%s: %u · %s: %u · %s: %d",
+                   tr(ui->language,T_ERRORS),(unsigned)result->mistakes,
+                   tr(ui->language,T_GAMES_STRIKES),(unsigned)result->strikes,
+                   tr(ui->language,T_GAMES_REVEALS),revealed);
+    info.y+=29;info.h=21;
+    (void)draw_fitted_text(gfx,detail,theme.dim,info,14,10);
+    const char *provenance=result->practice
+        ?tr(ui->language,T_GAMES_PRACTICE)
+        :tr(ui->language,T_GAMES_FINISHED);
+    info.y+=22;
+    (void)draw_fitted_text(gfx,provenance,theme.dim,info,13,10);
     if(games_browser.detail_record_valid &&
-       games_browser.detail_record.original_daily){
+       games_browser.detail_record.original_daily) {
       const GameLibraryRecord *record=&games_browser.detail_record;
-      char suffix[128];
-      (void)snprintf(suffix, sizeof(suffix), " · %.*s %04u-%02u-%02u",
-          48, tr(ui->language,T_GAMES_SOURCE_DAILY),
+      char source[120];
+      (void)snprintf(source,sizeof(source),"%s · %04u-%02u-%02u",
+          tr(ui->language,T_GAMES_SOURCE_DAILY),
           (unsigned)record->original_daily_year,
           (unsigned)record->original_daily_month,
           (unsigned)record->original_daily_day);
-      games_append_text(date, sizeof(date), suffix);
+      info.y+=21;
+      (void)draw_fitted_text(gfx,source,theme.dim,info,13,10);
     }
-    line.y+=line_h;
-    if(line.y+line_h<=lay.back.y)
-      (void)draw_fitted_text(gfx,date,theme.dim,line,13,10);
-    bool can_replay=!selected->hot_only &&
-        selected->entry.kind==GAME_RECORD_EXACT &&
-        selected->entry.status==STORE_OK;
+    bool can_replay=!row->hot_only&&row->entry.kind==GAME_RECORD_EXACT&&
+                    row->entry.status==STORE_OK;
     games_browser_draw_button(gfx,theme,lay.back,tr(ui->language,T_BACK),
-                              games_browser.focus==2,true,theme.btnfg);
+        games_browser.focus==2,true,theme.btnfg,UI_GLYPH_BACK,false);
     games_browser_draw_button(gfx,theme,lay.replay,
-                              tr(ui->language,T_GAMES_REPLAY),
-                              games_browser.focus==3,can_replay,theme.btnfg);
+        tr(ui->language,T_GAMES_REPLAY),games_browser.focus==3,can_replay,
+        theme.btnfg,UI_GLYPH_REPLAY,false);
     games_browser_draw_button(gfx,theme,lay.remove,
-                              tr(ui->language,T_GAMES_DELETE),
-                              games_browser.focus==4,true,theme.btnfg);
+        tr(ui->language,T_GAMES_DELETE),games_browser.focus==4,true,
+        theme.btnfg,UI_GLYPH_TRASH,false);
     return;
   }
-  draw_round_rect(gfx->ren, lay.list, 10, theme.palette_bg);
-  size_t end = games_browser.scroll + (size_t)lay.visible;
-  if (end > games_browser.count) end = games_browser.count;
-  for (size_t index = games_browser.scroll; index < end; ++index) {
-    const GamesRow *row = &games_browser.rows[index];
-    SDL_Rect rect = {lay.list.x + 5,
-                     lay.list.y + (int)(index - games_browser.scroll) *
-                         lay.row_height + 3,
-                     lay.list.w - 10, lay.row_height - 5};
-    bool selected = index == games_browser.selected;
-    draw_round_rect(gfx->ren, rect, 6,
-                    selected ? theme.hover : theme.palette_bg);
-    const GameLibraryEntry *e = &row->entry;
-    char label[192];
-    /* Keep list labels short. The full diagnostic is shown below.
-       Long status sentences must not disappear on compact viewports. */
-    const char *status = game_library_entry_recoverable(e)
-        ? tr(ui->language, T_GAMES_RECOVER_LABEL)
-        : e->status != STORE_OK ? tr(ui->language, T_UNAVAILABLE)
-        : e->result.practice ? tr(ui->language, T_GAMES_PRACTICE)
-        : e->result.status == SESSION_ACTIVE
-            ? (row->hot_only ? tr(ui->language, T_GAMES_AUTOSAVE)
-                             : tr(ui->language, T_GAMES_IN_PROGRESS))
-            : (e->result.status == SESSION_WON
-                ? tr(ui->language, T_YOU_WIN)
-                : tr(ui->language, T_YOU_LOSE));
-    if (e->status == STORE_OK)
-      snprintf(label, sizeof(label), "%s · %s · %s",
-               tr(ui->language, mode_key(e->result.mode)),
-               difficulty_name(ui->language, e->result.difficulty), status);
+
+  draw_round_rect(gfx->ren,lay.list,11,theme.palette_bg);
+  draw_round_rect(gfx->ren,lay.detail,11,theme.palette_bg);
+
+  size_t last=games_browser.scroll+(size_t)lay.visible;
+  if(last>games_browser.count)last=games_browser.count;
+  for(size_t index=games_browser.scroll;index<last;++index) {
+    const GamesRow *row=&games_browser.rows[index];
+    const GameLibraryEntry *entry=&row->entry;
+    SDL_Rect rect={lay.list.x+7,
+                   lay.list.y+(int)(index-games_browser.scroll)*lay.row_height+5,
+                   lay.list.w-14,lay.row_height-7};
+    bool selected=index==games_browser.selected;
+    draw_round_rect(gfx->ren,rect,8,
+                    selected?theme.hover:theme.palette_bg);
+    if(selected)
+      draw_round_rect(gfx->ren,(SDL_Rect){rect.x,rect.y,4,rect.h},
+                      2,theme.title);
+    SDL_Rect glyph={rect.x+9,rect.y+(rect.h-21)/2,21,21};
+    ui_draw_glyph(gfx->ren,glyph,
+        entry->result.status==SESSION_ACTIVE?UI_GLYPH_PLAY:UI_GLYPH_EYE,
+        selected?theme.title:theme.dim);
+    char caption[180];
+    const char *status=game_library_entry_recoverable(entry)
+        ?tr(ui->language,T_GAMES_RECOVER_LABEL)
+        :entry->status!=STORE_OK?tr(ui->language,T_GAMES_UNAVAILABLE)
+        :entry->result.practice?tr(ui->language,T_GAMES_PRACTICE)
+        :entry->result.status==SESSION_ACTIVE
+            ?(row->hot_only?tr(ui->language,T_GAMES_AUTOSAVE)
+                            :tr(ui->language,T_GAMES_IN_PROGRESS))
+            :tr(ui->language,entry->result.status==SESSION_WON
+                                  ?T_YOU_WIN:T_YOU_LOSE);
+    if(entry->status==STORE_OK)
+      (void)snprintf(caption,sizeof(caption),"%s · %s",
+           tr(ui->language,mode_key(entry->result.mode)),
+           difficulty_name(ui->language,entry->result.difficulty));
     else
-      snprintf(label, sizeof(label), "%s", status);
-    (void)draw_fitted_text(gfx, label, theme.btnfg, rect, 17, 10);
-    if (selected && games_browser.focus == 0)
-      draw_focus_ring(gfx->ren, rect, theme.sel_outline);
+      (void)snprintf(caption,sizeof(caption),"%s",
+                     tr(ui->language,T_GAMES_UNAVAILABLE));
+    int label_x=rect.x+38;
+    SDL_Rect main_label={label_x,rect.y+2,rect.w-48,26};
+    SDL_Rect sub_label={label_x,rect.y+rect.h-25,rect.w-48,21};
+    (void)draw_fitted_text(gfx,caption,theme.btnfg,main_label,17,10);
+    (void)draw_fitted_text(gfx,status,theme.dim,sub_label,13,10);
+    if(selected&&games_browser.focus==0)
+      draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
-  if (!games_browser.count) {
-    SDL_Rect empty = {lay.list.x + 12, lay.list.y + 14,
-                      lay.list.w - 24, lay.list.h - 28};
-    (void)polish_draw_wrapped_fit(gfx, tr(ui->language, games_browser.scanning
-                                        ? T_GAMES_LOADING : T_GAMES_EMPTY),
-                                  theme.dim, empty, 18, 10, true);
+  if(!games_browser.count) {
+    SDL_Rect empty={lay.list.x+18,lay.list.y+24,lay.list.w-36,
+                    lay.list.h-48};
+    (void)polish_draw_wrapped_fit(gfx,
+        tr(ui->language,games_browser.scanning
+            ?T_GAMES_LOADING:T_GAMES_EMPTY),theme.dim,empty,17,10,true);
   }
-  if (games_browser.selected < games_browser.count) {
-    const GamesRow *row = &games_browser.rows[games_browser.selected];
-    const ProfileResult *r = &row->entry.result;
-    char detail[256];
-    unsigned long long total = (unsigned long long)(r->elapsed_ms / 1000u);
-    if (game_library_entry_recoverable(&row->entry)) {
-      snprintf(detail, sizeof(detail), "%s",
-               tr(ui->language, T_GAMES_RECOVER_LABEL));
-    } else if (row->entry.status != STORE_OK) {
-      snprintf(detail, sizeof(detail), "%s",
-               tr(ui->language, T_GAMES_UNAVAILABLE));
-    } else if (r->is_daily) {
-      snprintf(detail, sizeof(detail), "%04u-%02u-%02u · %s · %02llu:%02llu%s%s",
-               (unsigned)r->daily_year, (unsigned)r->daily_month,
-               (unsigned)r->daily_day,
-               difficulty_name(ui->language, r->difficulty),
-               total / 60u, total % 60u,
-               r->assisted ? " · " : "",
-               r->assisted ? tr(ui->language, T_ASSISTED) : "");
+
+  SDL_Rect detail_header={lay.detail.x+12,lay.detail.y+8,
+                          lay.detail.w-24,27};
+  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES_PREVIEW),
+                         theme.btnfg,detail_header,17,11);
+  if(games_browser.selected<games_browser.count) {
+    const GamesRow *row=&games_browser.rows[games_browser.selected];
+    const ProfileResult *result=&row->entry.result;
+    const Game *board=games_browser.preview_valid
+        ?&games_browser.preview.game:NULL;
+    bool spacious=lay.side_by_side;
+    SDL_Rect preview;
+    SDL_Rect summary;
+    if(spacious) {
+      int side=lay.detail.w-48;
+      int height_limit=lay.detail.h-167;
+      if(side>height_limit)side=height_limit;
+      int preview_max_side=gfx->width>=2500?600:
+                           gfx->width>=1500?520:380;
+      if(side>preview_max_side)side=preview_max_side;
+      if(side<81)side=81;
+      preview=(SDL_Rect){lay.detail.x+(lay.detail.w-side)/2,
+                         lay.detail.y+44,side,side};
+      summary=(SDL_Rect){lay.detail.x+18,preview.y+side+16,
+                          lay.detail.w-36,lay.detail.h-side-68};
+    } else if(lay.detail.h>=118 && lay.detail.w>=300) {
+      int side=lay.detail.h-53;
+      if(side>118)side=118;
+      preview=(SDL_Rect){lay.detail.x+12,lay.detail.y+38,side,side};
+      summary=(SDL_Rect){lay.detail.x+side+22,lay.detail.y+37,
+                          lay.detail.w-side-34,lay.detail.h-42};
     } else {
-      snprintf(detail, sizeof(detail), "%s · %s · %02llu:%02llu%s%s",
-               tr(ui->language, mode_key(r->mode)),
-               difficulty_name(ui->language, r->difficulty),
-               total / 60u, total % 60u,
-               r->assisted ? " · " : "",
-               r->assisted ? tr(ui->language, T_ASSISTED) : "");
+      preview=(SDL_Rect){0,0,0,0};
+      summary=(SDL_Rect){lay.detail.x+15,lay.detail.y+37,
+                          lay.detail.w-30,lay.detail.h-43};
     }
-    SDL_Rect line = lay.detail;
-    int heading_h = row->entry.status == STORE_OK ? 28 : 44;
-    line.h = heading_h;
-    if (row->entry.status == STORE_OK)
-      (void)draw_fitted_text(gfx, detail, theme.btnfg, line, 16, 10);
-    else
-      (void)polish_draw_wrapped_fit(gfx, detail, theme.btnfg,
-                                   line, 16, 10, true);
-    line.y += heading_h;
-    line.h = lay.detail.h - heading_h;
-    if (games_browser.preview_valid && lay.detail.h >= 96)
-      line.w -= 70; /* Reserve the right side for the board thumbnail. */
-    const char *description = game_library_entry_recoverable(&row->entry)
-        ? tr(ui->language, T_GAMES_RECOVER_HINT)
-        : !games_browser.preview_valid
-        ? tr(ui->language, T_GAMES_SUMMARY_ONLY)
-        : tr(ui->language, T_GAMES_LATEST);
-    (void)polish_draw_wrapped_fit(gfx, description, theme.dim,
-                                  line, 15, 10, true);
-    /* Neutral fill-only preview: no solution/correctness information. */
-    if (games_browser.preview_valid && lay.detail.h >= 96) {
-      const Game *board = &games_browser.preview.game;
-      int size = 54;
-      int x = lay.detail.x + lay.detail.w - size - 8;
-      int y = lay.detail.y + 32;
-      int side = size / 9;
-      for (int cell = 0; cell < 81; ++cell) {
-        if (board->puzzle[cell] != 0)
-          draw_rect(gfx->ren, x + (cell % 9) * side,
-                    y + (cell / 9) * side, side - 1, side - 1,
-                    theme.title);
+    if(board && preview.w>=72)
+      games_browser_draw_saved_board(gfx,theme,board,preview);
+    else if(!board && preview.w>=72)
+      (void)polish_draw_wrapped_fit(
+          gfx,tr(ui->language,T_GAMES_SUMMARY_ONLY),theme.dim,
+          preview,13,10,true);
+
+    char summary_line[220];
+    unsigned long long sec=(unsigned long long)(result->elapsed_ms/1000u);
+    (void)snprintf(summary_line,sizeof(summary_line),"%s · %s · %02llu:%02llu",
+         tr(ui->language,mode_key(result->mode)),
+         difficulty_name(ui->language,result->difficulty),
+         sec/60u,sec%60u);
+    SDL_Rect text_rect={summary.x,summary.y,summary.w,26};
+    (void)draw_fitted_text(gfx,summary_line,theme.btnfg,
+                           text_rect,16,10);
+    if(board) {
+      int filled=0,total=0;
+      games_browser_progress(board,&filled,&total);
+      char progress[160];
+      (void)snprintf(progress,sizeof(progress),
+                     tr(ui->language,T_GAMES_FILLED_FMT),filled,total);
+      text_rect.y+=28;text_rect.h=25;
+      (void)draw_fitted_text(gfx,progress,theme.dim,text_rect,14,10);
+      int bar_y=text_rect.y+text_rect.h+5;
+      if(bar_y+8<summary.y+summary.h && summary.w>36) {
+        SDL_Rect track={summary.x+7,bar_y,summary.w-14,6};
+        draw_round_rect(gfx->ren,track,3,theme.btn);
+        if(total>0&&filled>0) {
+          SDL_Rect bar=track;
+          bar.w=track.w*filled/total;
+          if(bar.w<3)bar.w=3;
+          draw_round_rect(gfx->ren,bar,3,theme.title);
+        }
       }
+    } else {
+      text_rect.y+=28;
+      text_rect.h=summary.h>39?24:summary.h-27;
+      if(text_rect.h>10)
+        (void)polish_draw_wrapped_fit(gfx,
+            tr(ui->language,game_library_entry_recoverable(&row->entry)
+                ?T_GAMES_RECOVER_HINT:T_GAMES_SUMMARY_ONLY),
+            theme.dim,text_rect,13,10,true);
     }
+    if(games_browser.incomplete) {
+      SDL_Rect warning={lay.detail.x+12,lay.detail.y+lay.detail.h-25,
+                        lay.detail.w-24,19};
+      (void)draw_fitted_text(gfx,
+          tr(ui->language,T_GAMES_SCAN_INCOMPLETE),
+          theme.text_wrong,warning,12,10);
+    }
+  } else if(!games_browser.scanning) {
+    SDL_Rect message={lay.detail.x+12,lay.detail.y+37,
+                      lay.detail.w-24,lay.detail.h-51};
+    (void)polish_draw_wrapped_fit(gfx,
+        tr(ui->language,T_GAMES_EMPTY),theme.dim,message,16,10,true);
   }
-  if (games_browser.incomplete) {
-    SDL_Rect notice = lay.title;
-    notice.y += 29;
-    notice.h = 18;
-    (void)draw_fitted_text(gfx, tr(ui->language, T_GAMES_SCAN_INCOMPLETE),
-                           theme.text_wrong, notice, 13, 10);
-  }
-  bool active = !games_browser.scanning &&
-                 games_browser.selected < games_browser.count &&
-                games_browser.rows[games_browser.selected].entry.status == STORE_OK &&
-                games_browser.rows[games_browser.selected].entry.result.status ==
-                    SESSION_ACTIVE;
-  games_browser_draw_button(gfx, theme, lay.back, tr(ui->language, T_BACK),
-                            games_browser.focus == 2, true, theme.btnfg);
-  bool can_open = !games_browser.scanning &&
-                  games_browser.selected < games_browser.count &&
-                  games_browser.rows[games_browser.selected].entry.status == STORE_OK;
-  bool can_recover = !games_browser.scanning &&
-      games_browser.selected < games_browser.count &&
+
+  bool selected=games_browser.selected<games_browser.count;
+  bool active=!games_browser.scanning && selected &&
+      games_browser.rows[games_browser.selected].entry.status==STORE_OK &&
+      games_browser.rows[games_browser.selected].entry.result.status==
+          SESSION_ACTIVE;
+  bool can_open=!games_browser.scanning && selected &&
+      games_browser.rows[games_browser.selected].entry.status==STORE_OK;
+  bool can_recover=!games_browser.scanning && selected &&
       !games_browser.rows[games_browser.selected].hot_only &&
-      game_library_entry_recoverable(&games_browser.rows[games_browser.selected].entry);
-  games_browser_draw_button(gfx, theme, lay.primary,
-                            tr(ui->language, can_recover ? T_RECOVER :
-                                active ? T_GAMES_LOAD : T_GAMES_VIEW),
-                            games_browser.focus == 1, can_open || can_recover,
-                            theme.btnfg);
+      game_library_entry_recoverable(
+          &games_browser.rows[games_browser.selected].entry);
   bool can_replay=can_open &&
       !games_browser.rows[games_browser.selected].hot_only &&
       games_browser.rows[games_browser.selected].entry.kind==GAME_RECORD_EXACT &&
-      games_browser.rows[games_browser.selected].entry.result.status!=SESSION_ACTIVE;
-  games_browser_draw_button(gfx, theme, lay.replay,
-                            tr(ui->language, T_GAMES_REPLAY),
-                            games_browser.focus == 3, can_replay,theme.btnfg);
-  games_browser_draw_button(gfx, theme, lay.remove,
-                            tr(ui->language, T_GAMES_DELETE),
-                            games_browser.focus == 4,
-                            !games_browser.scanning && games_browser.count>0,
-                            theme.btnfg);
+      games_browser.rows[games_browser.selected].entry.result.status!=
+          SESSION_ACTIVE;
+  games_browser_draw_button(gfx,theme,lay.back,tr(ui->language,T_BACK),
+      games_browser.focus==2,true,theme.btnfg,UI_GLYPH_BACK,false);
+  games_browser_draw_button(gfx,theme,lay.primary,
+      tr(ui->language,can_recover?T_RECOVER:
+         active?T_GAMES_LOAD:T_GAMES_VIEW),
+      games_browser.focus==1,can_open||can_recover,theme.btnfg,
+      active?UI_GLYPH_PLAY:UI_GLYPH_EYE,active);
+  games_browser_draw_button(gfx,theme,lay.replay,
+      tr(ui->language,T_GAMES_REPLAY),games_browser.focus==3,can_replay,
+      theme.btnfg,UI_GLYPH_REPLAY,false);
+  games_browser_draw_button(gfx,theme,lay.remove,
+      tr(ui->language,T_GAMES_DELETE),games_browser.focus==4,
+      !games_browser.scanning&&games_browser.count>0,
+      theme.btnfg,UI_GLYPH_TRASH,false);
 }
 
 static bool games_browser_focus_enabled(int focus) {

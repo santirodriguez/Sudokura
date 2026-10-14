@@ -430,6 +430,12 @@ static bool app_init_base(Gfx*g,const char*font_cli){
     app_shutdown_base(g);return false;
   }
   SDL_SetWindowMinimumSize(g->win,360,480);
+  /* Surface immediately, before font discovery, texture generation and
+     profile migration. Keep a real visible window during slow first runs. */
+  char loading_title[160];
+  (void)snprintf(loading_title,sizeof(loading_title),"%s - %s",
+                 SUDOKURA_NAME_VERSION,tr(LANG_EN,T_STARTUP_LOADING));
+  SDL_SetWindowTitle(g->win,loading_title);
   g->ren=SDL_CreateRenderer(g->win,-1,
       SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
   if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);
@@ -441,6 +447,9 @@ static bool app_init_base(Gfx*g,const char*font_cli){
   if(SDL_GetRendererInfo(g->ren,&info)==0)
     g->software_renderer=(info.flags&SDL_RENDERER_SOFTWARE)!=0;
   if(!gfx_refresh_metrics(g)){app_shutdown_base(g);return false;}
+  SDL_SetRenderDrawColor(g->ren,16,19,30,255);
+  SDL_RenderClear(g->ren);
+  SDL_RenderPresent(g->ren);
 
   SDL_Surface*icon=SDL_CreateRGBSurfaceWithFormatFrom(
       (void*)sudokura_icon_rgba,(int)sudokura_icon_width,

@@ -473,6 +473,30 @@ StoreStatus game_library_save_runtime(const char *root,
                                        now > 0 ? (uint64_t)now : 0);
 }
 
+StoreStatus game_library_verify_retained_snapshot(
+    const char *root, const ProfileSlot *slot) {
+  if (!root || !slot || !slot->present || !slot->retained ||
+      !game_attempt_id_valid(slot->attempt_id) || !slot->revision)
+    return STORE_IO_ERROR;
+  GameLibraryRecord record;
+  StoreStatus status = game_library_load(root, slot->attempt_id, &record);
+  if (status != STORE_OK) return status;
+  if (record.kind != GAME_RECORD_EXACT || !record.retained ||
+      !game_attempt_id_equal(record.id,slot->attempt_id) ||
+      record.revision != slot->revision) return STORE_CORRUPT;
+  unsigned char live_bytes[4096],disk_bytes[4096];
+  size_t live_length=0,disk_length=0;
+  if (!profile_session_encode_blob_runtime(
+          &slot->value,live_bytes,sizeof(live_bytes),&live_length) ||
+      !profile_session_encode_blob(
+          &record.exact,disk_bytes,sizeof(disk_bytes),&disk_length))
+    return STORE_CORRUPT;
+  if (live_length!=disk_length ||
+      memcmp(live_bytes,disk_bytes,live_length)!=0)
+    return STORE_CORRUPT;
+  return STORE_OK;
+}
+
 /* An unretained hot slot can have a newer retained record after the first
    Save succeeded but the profile link or its acknowledgement failed. */
 static bool retention_same_attempt(const ProfileSlot *hot,

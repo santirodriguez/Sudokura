@@ -121,6 +121,11 @@ StoreStatus game_library_save_runtime_at(const char *root,
 /* First Save/Keep of an unretained hot slot: record before hot pointer.
    retry_pending allows only this writer's interrupted first retention.
    The output slot is unchanged on any failure. */
+/* Verify a successful explicit Save against the durable full record.
+   Equality includes entered digits, pencil notes, selection and Undo/Redo. */
+StoreStatus game_library_verify_retained_snapshot(
+    const char *root, const ProfileSlot *slot);
+
 StoreStatus game_library_retain_hot_slot_runtime(
     const char *root, const ProfileSlot *hot, GameLibraryHotCache *cache,
     bool retry_pending, ProfileSlot *out);

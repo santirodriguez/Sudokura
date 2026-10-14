@@ -88,6 +88,90 @@ static ProfileSession make_session(SessionStatus status) {
   return slot.value;
 }
 
+static void test_saved_board_roundtrip_after_restart(void) {
+  prepare();
+  ProfileSession edited = make_session(SESSION_ACTIVE);
+  int cells[3],count=0;
+  for(int index=0;index<81 && count<3;++index)
+    if(!edited.session.game.fixed[index] &&
+       !edited.session.game.puzzle[index]) cells[count++]=index;
+  assert(count==3);
+  int a=cells[0],b=cells[1],c=cells[2];
+  edited.session.game.puzzle[a]=edited.session.game.solution[a];
+  edited.session.game.notes[b]=1u<<2;
+  edited.session.selected_row=(uint8_t)(a/9);
+  edited.session.selected_column=(uint8_t)(a%9);
+  edited.session.elapsed_ms=UINT64_C(47000);
+  assert(session_validate(&edited.session));
+
+  GameAttemptId id=make_id(9951);
+  ProfileData hot,loaded;
+  profile_defaults(&hot);
+  hot.normal.present=true;
+  hot.normal.retained=true;
+  hot.normal.revision=7;
+  hot.normal.attempt_id=id;
+  hot.normal.value=edited;
+  assert(profile_validate(&hot));
+  char primary[160],backup[160];
+  int n=snprintf(primary,sizeof(primary),"%s/profile.dat",root);
+  assert(n>0 && (size_t)n<sizeof(primary));
+  n=snprintf(backup,sizeof(backup),"%s/profile.dat.bak",root);
+  assert(n>0 && (size_t)n<sizeof(backup));
+
+  GameLibraryRecord record,disk;
+  assert(game_library_make_exact(&record,id,7,&edited,true));
+  assert(game_library_save(root,&record)==STORE_OK);
+  assert(profile_save_runtime_file(primary,backup,&hot)==STORE_OK);
+  assert(game_library_verify_retained_snapshot(
+      root,&hot.normal)==STORE_OK);
+
+  /* Simulate a fresh process: load independently from both disk files. */
+  assert(profile_load_file(primary,&loaded)==STORE_OK);
+  assert(game_library_load(root,id,&disk)==STORE_OK);
+  assert(game_attempt_id_equal(loaded.normal.attempt_id,id));
+  assert(disk.exact.session.game.puzzle[a]==edited.session.game.puzzle[a]);
+  assert(disk.exact.session.game.notes[b]==(1u<<2));
+  assert(disk.exact.session.selected_row==(uint8_t)(a/9));
+  assert(disk.exact.session.selected_column==(uint8_t)(a%9));
+  assert(disk.exact.session.elapsed_ms==UINT64_C(47000));
+  assert(loaded.normal.value.session.game.puzzle[a]==
+         edited.session.game.solution[a]);
+  assert(loaded.normal.value.session.game.notes[b]==(1u<<2));
+  assert(game_library_verify_retained_snapshot(root,&loaded.normal)==STORE_OK);
+  bool prefer_record=true;
+  assert(game_library_resolve_hot_record(
+      &loaded.normal,&disk,&prefer_record)==STORE_OK);
+  assert(!prefer_record);
+
+  /* Save means latest revision, not an immutable original board. */
+  edited.session.game.notes[b]=0;
+  edited.session.game.puzzle[b]=edited.session.game.solution[b];
+  edited.session.game.notes[c]=1u<<5;
+  edited.session.elapsed_ms=UINT64_C(88000);
+  assert(session_validate(&edited.session));
+  hot.normal.revision=8;
+  hot.normal.value=edited;
+  assert(game_library_verify_retained_snapshot(root,&hot.normal)==STORE_CORRUPT);
+  assert(game_library_make_exact(&record,id,8,&edited,true));
+  assert(game_library_save(root,&record)==STORE_OK);
+  assert(profile_save_runtime_file(primary,backup,&hot)==STORE_OK);
+  assert(profile_load_file(primary,&loaded)==STORE_OK);
+  assert(game_library_load(root,id,&disk)==STORE_OK);
+  assert(game_library_verify_retained_snapshot(root,&loaded.normal)==STORE_OK);
+  assert(loaded.normal.value.session.game.puzzle[a]==
+         edited.session.game.solution[a]);
+  assert(loaded.normal.value.session.game.puzzle[b]==
+         edited.session.game.solution[b]);
+  assert(loaded.normal.value.session.game.notes[b]==0);
+  assert(loaded.normal.value.session.game.notes[c]==(1u<<5));
+  assert(disk.revision==8 && loaded.normal.revision==8);
+
+  (void)store_remove_file(primary);
+  (void)store_remove_file(backup);
+  cleanup();
+}
+
 static void test_hex_and_collision(void) {
   GameAttemptId id = make_id(1);
   char hex[33];
@@ -2072,6 +2156,7 @@ int main(void) {
   test_codec_and_atomic_decode();
   cleanup();
   test_save_revision_and_previous_recovery();
+  test_saved_board_roundtrip_after_restart();
   test_first_save_record_cuts_and_terminal_retry();
   test_first_save_profile_ack_preserves_previous_copy();
   test_backup_only_scan_and_recovery();

@@ -132,20 +132,46 @@ for r in rows:
         assert fw>28 and fh>20,(r["file"],"invalid Games row bounds")
         colors=crop_colors(by_name[r["file"]],fx+14,fy+10,fw-28,fh-20)
         assert len(colors)>=4,(r["file"],"Games row label missing")
-        # The selected game's detail title must be readable, not just its
-        # fallback summary. Derive the same panel geometry as GamesBrowser.
+        # Derive the responsive library geometry rather than accepting a
+        # screenshot just because the selected list row has a visible outline.
         margin=12 if w<640 else 24
-        panel_width=min(w-margin*2,850)
+        panel_width=min(w-2*margin,1480 if w>=1600 else 1240)
         panel_x=(w-panel_width)//2
-        list_y=(55 if h<520 else 76)+49
-        detail_height=76 if h<550 else 104
-        action_space=88 if w<760 else 40
-        list_height=max(48,(h-margin)-action_space-12-detail_height-12-list_y)
-        detail_y=list_y+list_height+8
-        assert detail_y+25<h,(r["file"],"invalid Games detail bounds")
-        heading=crop_colors(by_name[r["file"]],panel_x+14,detail_y+5,
-                            panel_width-28,20)
-        assert len(heading)>=4,(r["file"],"Games detail heading missing")
+        header_y=51 if h<520 else 69
+        content_y=header_y+83
+        compact=panel_width<760
+        button_space=96 if compact else 44
+        buttons_y=h-margin-button_space
+        content_height=max(105,buttons_y-content_y-12)
+        split=panel_width>=860 and content_height>=320
+        if split:
+            list_width=(panel_width-14)*44//100
+            detail_x=panel_x+list_width+14
+            detail_y=content_y
+            detail_width=panel_width-list_width-14
+            detail_height=content_height
+        else:
+            detail_height=max(86,min(206,content_height*40//100))
+            list_height=max(48,content_height-detail_height-10)
+            detail_x=panel_x
+            detail_y=content_y+list_height+10
+            detail_width=panel_width
+        assert detail_y+detail_height<=h,(r["file"],"invalid Games detail bounds")
+        heading=crop_colors(by_name[r["file"]],detail_x+12,detail_y+8,
+                            detail_width-24,27)
+        assert len(heading)>=4,(r["file"],"Games preview heading missing")
+        if split and r["state"]=="games-active":
+            # The two-panel layout must include a legible saved board,
+            # not merely a list and a blank side panel.
+            side=min(detail_width-48,detail_height-167)
+            side=min(side,600 if w>=2500 else 520 if w>=1500 else 380)
+            assert side>=81,(r["file"],"invalid saved-board preview")
+            board_x=detail_x+(detail_width-side)//2
+            board_y=detail_y+44
+            image=crop_colors(by_name[r["file"]],
+                              board_x+side//3,board_y+side//3,
+                              side//3,side//3)
+            assert len(image)>=4,(r["file"],"Saved preview missing")
     if r["state"] in {"home-daily-loading","home-daily-older",
                       "home-daily-finished"}:
         assert r["focus"]=="daily",(r["file"],"Daily control focus mismatch")
@@ -162,20 +188,26 @@ for r in rows:
         assert len(focused)>=4,(r["file"],"Replay text not visible")
         # The destructive control is not the default focus, but its caption
         # must remain readable in both desktop and compact two-row layout.
-        delete_x=fx+fw+(5 if w<640 else 8)
+        panel_width=min(w-2*(12 if w<640 else 24),
+                        1480 if w>=1600 else 1240)
+        delete_x=fx+fw+(6 if panel_width<640 else 10)
         assert delete_x+fw<=w,(r["file"],"Delete action clipped")
         delete_colors=crop_colors(by_name[r["file"]],
                                   delete_x+8,fy+8,fw-16,fh-16)
         assert len(delete_colors)>=4,(r["file"],"Delete text not visible")
-        board_top=(55 if h<520 else 76)+42+7
         margin=12 if w<640 else 24
-        first_button_y=h-margin-(88 if w<760 else 40)-8
-        usable=first_button_y-board_top-92
-        side=min(w-margin*2,850,usable,432)
-        side=(max(81,side)//9)*9
-        left=(w-side)//2
+        panel_width=min(w-2*margin,1480 if w>=1600 else 1240)
+        panel_x=(w-panel_width)//2
+        content_y=(51 if h<520 else 69)+83
+        action_space=96 if panel_width<760 else 44
+        buttons_y=h-margin-action_space
+        surface_height=buttons_y-content_y-12
+        max_side=560 if w>=2200 else 480 if w>=1500 else 420
+        side=max(80,min(panel_width-40,surface_height-128,max_side))
+        board_x=panel_x+(panel_width-side)//2
+        board_y=content_y+12
         board=crop_colors(by_name[r["file"]],
-                          left+side//3,board_top+side//3,
+                          board_x+side//3,board_y+side//3,
                           side//3,side//3)
         assert len(board)>=4,(r["file"],"Finished board missing")
     scroll,scroll_max=int(r["scroll"]),int(r["scroll_max"])

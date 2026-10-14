@@ -1149,12 +1149,29 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
   return 0;
 }
 
+static void app_render_startup_splash(Gfx *gfx, Language language) {
+  if (!gfx || !gfx->ren) return;
+  SDL_SetRenderDrawColor(gfx->ren,16,19,30,255);
+  SDL_RenderClear(gfx->ren);
+  int width=gfx->width<640?gfx->width-36:520;
+  if(width<120)width=120;
+  SDL_Rect logo={(gfx->width-width)/2,gfx->height/2-103,width,90};
+  draw_wordmark(gfx,logo);
+  SDL_Rect message={(gfx->width-width)/2,gfx->height/2+18,width,52};
+  (void)draw_fitted_text(gfx,tr(language,T_STARTUP_LOADING),
+                         (SDL_Color){200,214,245,255},
+                         message,19,10);
+  SDL_RenderPresent(gfx->ren);
+  gfx->dirty=true;
+}
+
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
   bool smoke_test = false;
   bool desktop_benchmark = false;
+  bool startup_timings = false;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--font") && i + 1 < argc)
       font_cli = argv[++i];
@@ -1162,12 +1179,15 @@ int main(int argc, char **argv) {
       smoke_test = true;
     else if (!strcmp(argv[i], "--desktop-benchmark"))
       desktop_benchmark = true;
+    else if (!strcmp(argv[i], "--startup-timings"))
+      startup_timings = true;
     else if (!strcmp(argv[i], "--render-screenshots") && i + 1 < argc)
       screenshot_dir = argv[++i];
   }
 
   Gfx g;
   if (!app_init(&g, font_cli)) return 1;
+  double initialized_at_ms=wall_clock_ms();
   Game game;
   memset(&game, 0, sizeof(game));
   UI ui;
@@ -1471,8 +1491,8 @@ int main(int argc, char **argv) {
                 focus=state==REVIEW_GAMES_ACTIVE?"games-active":
                       state==REVIEW_GAMES_UNAVAILABLE?"games-unavailable":
                       "games-finished";
-                focus_rect=(SDL_Rect){lay.list.x+5,lay.list.y+3,
-                                      lay.list.w-10,lay.row_height-5};
+                focus_rect=(SDL_Rect){lay.list.x+7,lay.list.y+5,
+                                      lay.list.w-14,lay.row_height-7};
               }
               break;
             }
@@ -1674,8 +1694,11 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  app_render_startup_splash(&g,LANG_EN);
+  double profile_start_ms=wall_clock_ms();
   Persistence persistence;
   persistence_init(&persistence);
+  double profile_end_ms=wall_clock_ms();
   ui.language = persistence.preferences.language;
   if ((persistence.profile_status == STORE_CORRUPT ||
        persistence.profile_status == STORE_NOT_FOUND) &&
@@ -1747,6 +1770,14 @@ int main(int argc, char **argv) {
   home_focus = ui.normal_resume.can_continue
                    ? HOME_FOCUS_CONTINUE
                    : HOME_FOCUS_NEW;
+  SDL_SetWindowTitle(g.win,SUDOKURA_NAME_VERSION);
+  if (startup_timings) {
+    double ready_ms=wall_clock_ms();
+    fprintf(stderr,
+        "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
+        initialized_at_ms-process_start_ms,
+        profile_end_ms-profile_start_ms,ready_ms-process_start_ms);
+  }
   window_focus_guard_reset();
 
   bool running = true;

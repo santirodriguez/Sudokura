@@ -38,6 +38,80 @@ static void polish_draw_icon(Gfx *gfx, SDL_Rect box) {
   SDL_RenderCopy(gfx->ren, app_icon_texture, NULL, &dst);
 }
 
+/* Lightweight line glyphs share the existing SDL renderer; no image library. */
+typedef enum {
+  UI_GLYPH_FOLDER, UI_GLYPH_SAVE, UI_GLYPH_PLAY, UI_GLYPH_BACK,
+  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE
+} UiGlyph;
+
+static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
+                          SDL_Color color) {
+  if (!renderer || box.w < 12 || box.h < 12) return;
+  int side = box.w < box.h ? box.w : box.h;
+  if (side > 20) side = 20;
+  int x = box.x + (box.w - side) / 2;
+  int y = box.y + (box.h - side) / 2;
+  int end_x = x + side - 2;
+  int end_y = y + side - 2;
+  if (glyph == UI_GLYPH_FOLDER) {
+    draw_line(renderer, x + 1,y + 5,x + side/2,y + 5,color);
+    draw_line(renderer, x + 1,y + 5,x + 1,end_y - 1,color);
+    draw_line(renderer, x + 1,end_y - 1,end_x,end_y - 1,color);
+    draw_line(renderer, end_x,y + 8,end_x,end_y - 1,color);
+    draw_line(renderer, x + 1,y + 8,end_x,y + 8,color);
+  } else if (glyph == UI_GLYPH_SAVE) {
+    SDL_Rect outline = {x + 2,y + 2,side - 4,side - 4};
+    SDL_SetRenderDrawColor(renderer,color.r,color.g,color.b,color.a);
+    SDL_RenderDrawRect(renderer,&outline);
+    draw_rect(renderer,x + 5,y + 3,side - 10,side/4,color);
+    draw_line(renderer,x + 6,y + side - 5,x + side - 7,y + side - 5,color);
+    draw_line(renderer,x + 6,y + side - 8,x + side - 7,y + side - 8,color);
+  } else if (glyph == UI_GLYPH_PLAY) {
+    draw_line(renderer,x + 4,y + 3,x + 4,end_y - 2,color);
+    draw_line(renderer,x + 4,y + 3,end_x - 1,y + side/2,color);
+    draw_line(renderer,end_x - 1,y + side/2,x + 4,end_y - 2,color);
+  } else if (glyph == UI_GLYPH_BACK) {
+    draw_line(renderer,x + 3,y + side/2,end_x - 1,y + side/2,color);
+    draw_line(renderer,x + 3,y + side/2,x + side/2,y + 3,color);
+    draw_line(renderer,x + 3,y + side/2,x + side/2,end_y - 1,color);
+  } else if (glyph == UI_GLYPH_REPLAY) {
+    draw_line(renderer,x + 4,y + 5,x + side - 6,y + 5,color);
+    draw_line(renderer,x + side - 6,y + 5,end_x,y + 9,color);
+    draw_line(renderer,end_x,y + 9,end_x,y + side - 6,color);
+    draw_line(renderer,end_x,y + side - 6,x + 6,y + side - 6,color);
+    draw_line(renderer,x + 6,y + side - 6,x + 3,y + side - 9,color);
+  } else if (glyph == UI_GLYPH_TRASH) {
+    draw_line(renderer,x + 3,y + 5,end_x - 1,y + 5,color);
+    draw_line(renderer,x + 7,y + 2,x + side - 8,y + 2,color);
+    draw_line(renderer,x + 5,y + 7,x + 6,end_y - 1,color);
+    draw_line(renderer,end_x - 3,y + 7,end_x - 4,end_y - 1,color);
+    draw_line(renderer,x + 6,end_y - 1,end_x - 4,end_y - 1,color);
+  } else if (glyph == UI_GLYPH_EYE) {
+    draw_line(renderer,x + 2,y + side/2,x + side/2,y + 4,color);
+    draw_line(renderer,x + side/2,y + 4,end_x,y + side/2,color);
+    draw_line(renderer,end_x,y + side/2,x + side/2,end_y - 2,color);
+    draw_line(renderer,x + side/2,end_y - 2,x + 2,y + side/2,color);
+    draw_rect(renderer,x + side/2 - 1,y + side/2 - 1,3,3,color);
+  }
+}
+
+static void ui_draw_icon_label(Gfx *gfx, SDL_Rect face, const char *text,
+                               UiGlyph glyph, SDL_Color color,
+                               int preferred_font) {
+  if (face.w < 94 || face.h < 24) {
+    (void)draw_fitted_text(gfx,text,color,face,preferred_font,10);
+    return;
+  }
+  int icon_size = face.h - 12;
+  if (icon_size > 20) icon_size = 20;
+  SDL_Rect icon = {face.x + 9,face.y + (face.h - icon_size)/2,
+                   icon_size,icon_size};
+  ui_draw_glyph(gfx->ren,icon,glyph,color);
+  SDL_Rect label = {face.x + icon_size + 12,face.y,
+                    face.w - icon_size - 17,face.h};
+  (void)draw_fitted_text(gfx,text,color,label,preferred_font,10);
+}
+
 static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
                                     SDL_Rect rect, int preferred, int minimum,
                                     bool centered) {
@@ -242,9 +316,20 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       T_GAMES, T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
   for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
     const char *text = tr(ui->language, secondary_keys[i]);
-    polish_home_button(gfx, theme, sdl_rect(geometry.home_secondary[i]), text,
-                       false, false, home_focus == HOME_FOCUS_HELP + i,
-                       fonts.control);
+    SDL_Rect rect = sdl_rect(geometry.home_secondary[i]);
+    if (i == 0) {
+      bool hovered = point_in(rect, mx, my);
+      SDL_Rect face = polish_button_face(
+          gfx,theme,rect,hovered ? theme.hover : theme.btn,
+          hovered && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+      ui_draw_icon_label(gfx,face,text,UI_GLYPH_FOLDER,theme.btnfg,
+                         fonts.control);
+      if (home_focus == HOME_FOCUS_GAMES)
+        draw_focus_ring(gfx->ren,rect,theme.sel_outline);
+    } else {
+      polish_home_button(gfx, theme, rect, text,false,false,
+                         home_focus == HOME_FOCUS_HELP + i,fonts.control);
+    }
   }
 }
 
@@ -1210,9 +1295,13 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
                           (hover ? theme.hover : theme.palette_bg);
         SDL_Rect face = polish_button_face(gfx, theme, buttons[i],
                                           color, pressed, false);
-        (void)draw_fitted_text(gfx, tr(ui->language, keys[i]),
-                               i == 0 ? theme.bg : theme.btnfg,
-                               face, fonts.control, 9);
+        if (i == 2)
+          ui_draw_icon_label(gfx,face,tr(ui->language,keys[i]),
+                             UI_GLYPH_SAVE,theme.btnfg,fonts.control);
+        else
+          (void)draw_fitted_text(gfx, tr(ui->language, keys[i]),
+                                 i == 0 ? theme.bg : theme.btnfg,
+                                 face, fonts.control, 9);
       }
       continue;
     }
