@@ -421,8 +421,14 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
 
-  /* The game HUD identifies the puzzle without extra branding.
-     Group actions with spacing instead of decoration or thin rules. */
+  /* Restore the original compact identity at the top-right of gameplay.
+     Keep the approved status row, controls and Home wordmark unchanged. */
+  GeoRect icon_geometry = geometry_play_brand_icon(&layout.model, gfx->width);
+  if (app_icon_texture && icon_geometry.w > 0 && icon_geometry.h > 0) {
+    SDL_Rect icon = sdl_rect(icon_geometry);
+    SDL_RenderCopy(gfx->ren, app_icon_texture, NULL, &icon);
+  }
+
   if (gfx->width >= 1600 && controls.palette_label.h >= 20)
     (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
                            controls.palette_label, fonts.help, 10);

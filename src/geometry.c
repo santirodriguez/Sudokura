@@ -308,8 +308,8 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     g->sidebar = xl ? (GeoRect){x + board + gap, board_y, sidebar_w, board}
                     : (GeoRect){x + board + gap, shell_y, sidebar_w, shell_h};
 
-    /* The gameplay header has no visible language picker or wordmark.
-       Keep geometry anchors small and give the live status room. */
+    /* A compact identity icon shares the first HUD row without a wordmark.
+       Keep geometry anchors small and the remaining status area readable. */
     bool compact = g->sidebar.h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
     int item_h = compact ? 24 : (xl ? 34 : 30);
@@ -721,6 +721,40 @@ bool geometry_compute(int width, int height, GeometryMode mode,
     geometry_final_shift_rect_y(&geometry->home_secondary[i], delta);
 
   return geometry_play_valid(geometry, width, height);
+}
+
+
+
+/* Keep the canonical compact icon near the top-right of the play surface.
+   Neither the live HUD nor gameplay controls move to accommodate it. */
+GeoRect geometry_play_brand_icon(const AppGeometry *geometry, int width) {
+  GeoRect empty = {0, 0, 0, 0};
+  if (!geometry || width <= 0) return empty;
+  if (width < 640) {
+    const int size = 30;
+    return (GeoRect){
+        geometry->play_title.x + geometry->play_title.w - size - 8,
+        geometry->play_language.y + geometry->play_language.h + 1,
+        size, size};
+  }
+
+  const bool compact = geometry->sidebar.h < 600;
+  const bool xl = geometry->hud[0].h >= 34;
+  const int size = compact ? 36 : (xl ? 56 : 48);
+  const int top = compact ? 3 : (xl ? 10 : 6);
+  return (GeoRect){geometry->sidebar.x + geometry->sidebar.w - size - 8,
+                   geometry->sidebar.y + top, size, size};
+}
+
+GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width) {
+  GeoRect empty = {0, 0, 0, 0};
+  if (!geometry || width < 640) return empty;
+  GeoRect icon = geometry_play_brand_icon(geometry, width);
+  int left = geometry->hud[0].x + 8;
+  int right = icon.x - 8;
+  if (right <= left) return empty;
+  return (GeoRect){left, geometry->hud[0].y,
+                   right - left, geometry->hud[0].h};
 }
 
 

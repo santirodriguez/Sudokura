@@ -115,6 +115,9 @@ bool geometry_normalize_window_size(int requested_width, int requested_height,
 bool geometry_contains(GeoRect rect, int x, int y);
 bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
+/* Compact identity in the play header, without a separate title row. */
+GeoRect geometry_play_brand_icon(const AppGeometry *geometry, int width);
+GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width);
 GeometryFonts geometry_font_sizes(const AppGeometry *geometry, int width, int height);
 GeometryStyle geometry_style(const AppGeometry *geometry, int width, int height);
 AudioControlGeometry geometry_audio_control(int width, int height,

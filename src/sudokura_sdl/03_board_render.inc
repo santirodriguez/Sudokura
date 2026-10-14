@@ -459,9 +459,8 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
     bool hover = strict_chip && point_in(hr, mx, my);
     if (desktop_hud && i == 1) continue;
     if (desktop_hud && i == 0) {
-      SDL_Rect right = sdl_rect(L.model.hud[1]);
-      SDL_Rect heading = {hr.x + 6, hr.y,
-                          right.x + right.w - hr.x - 12, hr.h};
+      SDL_Rect heading = sdl_rect(
+          geometry_play_heading_rect(&L.model, g->width));
       (void)draw_fitted_text(g, hud[0], th.btnfg, heading,
                              fonts.control + 2, 12);
       continue;

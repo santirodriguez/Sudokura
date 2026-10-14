@@ -113,10 +113,12 @@ int main(void) {
           snprintf(heading, sizeof heading, "%s · %s",
                    tr((Language)language, T_TIME_ATTACK),
                    tr((Language)language, T_HARD));
-          int heading_w =
-              g.hud[1].x + g.hud[1].w - g.hud[0].x - 12;
+          GeoRect heading_rect = geometry_play_heading_rect(&g, width);
+          GeoRect brand = geometry_play_brand_icon(&g, width);
+          assert(heading_rect.w > 0);
+          assert(heading_rect.x + heading_rect.w + 8 <= brand.x);
           assert(fits(font, heading, tier.control + 2, 12,
-                      heading_w, g.hud[0].h));
+                      heading_rect.w, heading_rect.h));
         }
         assert(fits(font, language_name((Language)language), tier.help, 10,
                     screen_segment, g.screen_language.h));

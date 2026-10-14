@@ -66,6 +66,24 @@ int main(void) {
       assert(g.home_secondary[0].y > g.home_primary[2].y);
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
+
+      /* Restored compact identity never covers the board or HUD text. */
+      GeoRect brand = geometry_play_brand_icon(&g, width);
+      assert_rect(brand, width, height);
+      assert(brand.w >= 30 && brand.h == brand.w);
+      if (portrait) {
+        assert(brand.y >= g.play_language.y + g.play_language.h);
+        assert(brand.y + brand.h <= g.board.y);
+        assert(brand.x + brand.w <= g.play_title.x + g.play_title.w);
+      } else {
+        assert_inside(g.sidebar, brand);
+        assert(brand.y + brand.h <= g.hud[2].y);
+        GeoRect heading = geometry_play_heading_rect(&g, width);
+        assert_rect(heading, width, height);
+        assert(heading.w >= 100);
+        assert(heading.y == g.hud[0].y);
+        assert(heading.x + heading.w + 8 <= brand.x);
+      }
       for (int action = 0; action < PLAY_ACTION_COUNT; ++action)
         assert_rect(g.actions[action], width, height);
       for (int number = 0; number < GEOMETRY_PALETTE_COUNT; ++number)
