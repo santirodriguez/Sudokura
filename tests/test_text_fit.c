@@ -103,20 +103,16 @@ int main(void) {
         assert_rect(g.about_links[i], width, height);
 
       for (int language = 0; language < LANG_COUNT; ++language) {
-        int play_segment = g.play_language.w / 3 - 40;
         int screen_segment = g.screen_language.w / 3 - 40;
-        if (width < 640)
-          assert(fits(font, language_name((Language)language), tier.help, 10,
-                      play_segment, g.play_language.h));
-        else {
+        if (width >= 640) {
           char heading[128];
           snprintf(heading, sizeof heading, "%s · %s",
                    tr((Language)language, T_TIME_ATTACK),
                    tr((Language)language, T_HARD));
           GeoRect heading_rect = geometry_play_heading_rect(&g, width);
-          GeoRect brand = geometry_play_brand_icon(&g, width);
+          GeoRect brand = geometry_play_wordmark_rect(&g, width);
           assert(heading_rect.w > 0);
-          assert(heading_rect.x + heading_rect.w + 8 <= brand.x);
+          assert(brand.y + brand.h + 8 <= heading_rect.y);
           assert(fits(font, heading, tier.control + 2, 12,
                       heading_rect.w, heading_rect.h));
         }

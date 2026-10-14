@@ -421,13 +421,10 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
 
-  /* Restore the original compact identity at the top-right of gameplay.
-     Keep the approved status row, controls and Home wordmark unchanged. */
-  GeoRect icon_geometry = geometry_play_brand_icon(&layout.model, gfx->width);
-  if (app_icon_texture && icon_geometry.w > 0 && icon_geometry.h > 0) {
-    SDL_Rect icon = sdl_rect(icon_geometry);
-    SDL_RenderCopy(gfx->ren, app_icon_texture, NULL, &icon);
-  }
+  /* Reuse the exact Home artwork in its dedicated gameplay header band. */
+  GeoRect wordmark = geometry_play_wordmark_rect(&layout.model, gfx->width);
+  if (wordmark.w > 0 && wordmark.h > 0)
+    draw_wordmark(gfx, sdl_rect(wordmark));
 
   if (gfx->width >= 1600 && controls.palette_label.h >= 20)
     (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,

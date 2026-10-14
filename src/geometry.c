@@ -308,19 +308,54 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     g->sidebar = xl ? (GeoRect){x + board + gap, board_y, sidebar_w, board}
                     : (GeoRect){x + board + gap, shell_y, sidebar_w, shell_h};
 
-    /* A compact identity icon shares the first HUD row without a wordmark.
-       Keep geometry anchors small and the remaining status area readable. */
-    bool compact = g->sidebar.h < 600;
+    /* An unboxed, centered full wordmark has its own band above the HUD.
+       Preserve the controls' current size tier as vertical room varies. */
+    int side_h = g->sidebar.h;
+    bool compact = side_h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
     int item_h = compact ? 24 : (xl ? 34 : 30);
     int row_gap = compact ? 5 : (xl ? 9 : 8);
     int rows = (g->hud_count + 1) / 2;
     int hud_h = rows * item_h + (rows - 1) * row_gap;
-    int hud_y = g->sidebar.y + (compact ? 12 : (xl ? 28 : 22));
+    int original_offset = compact ? 12 : (xl ? 28 : 22);
+    int desired_offset = side_h < 480 ? 58 :
+                         side_h < 600 ? 68 :
+                         side_h < 700 ? 76 :
+                         side_h < 900 ? 100 : 126;
+    int original_remaining = side_h - (original_offset + hud_h +
+                                       (side_h >= 600 ? 18 : 8));
+    int tier_floor = xl && original_remaining >= 540 ? 540 :
+                     original_remaining >= 495 ? 495 :
+                     original_remaining >= 390 ? 390 : 0;
+    int available_shift = original_remaining - tier_floor;
+    if (available_shift < 0) available_shift = 0;
+    int shift = desired_offset - original_offset;
+    if (shift > available_shift) shift = available_shift;
+    if (shift < 0) shift = 0;
+    int hud_offset = original_offset + shift;
+    int logo_top = side_h < 480 ? 4 :
+                   side_h < 600 ? 6 :
+                   side_h < 700 ? 8 :
+                   side_h < 900 ? 12 : 18;
+    int logo_gap = side_h < 600 ? 8 : 12;
+    /* At size-tier boundaries, retaining a taller button tier could
+       otherwise reduce the wordmark band to only a handful of pixels.
+       Prefer a readable brand and then validate action bounds below. */
+    int min_logo_height = side_h < 600 ? 38 : 48;
+    if (hud_offset - logo_top - logo_gap < min_logo_height)
+      hud_offset = desired_offset;
+    int logo_width = side_h < 480 ? 176 :
+                     side_h < 600 ? 195 :
+                     side_h < 700 ? 210 :
+                     side_h < 900 ? 240 : 280;
+    if (logo_width > sw - 24) logo_width = sw - 24;
+    int logo_height = hud_offset - logo_top - logo_gap;
     g->play_language = (GeoRect){sx, g->sidebar.y + 2, sw, 1};
-    g->play_title = (GeoRect){sx, g->sidebar.y + 5, sw, 1};
-    grid_gap((GeoRect){sx, hud_y, sw, hud_h}, 2, row_gap, g->hud,
-             g->hud_count);
+    g->play_title = (GeoRect){
+        sx + (sw - logo_width) / 2, g->sidebar.y + logo_top,
+        logo_width, logo_height};
+    grid_gap((GeoRect){sx, g->sidebar.y + hud_offset, sw, hud_h},
+             2, row_gap, g->hud, g->hud_count);
   }
 
   common_screens(width, height, portrait, g);
@@ -533,7 +568,9 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   int actions_h = menu_h + action_h * 4 +
                   section_gap * 2 + action_gap * 2;
 
-  geometry->play_language = (GeoRect){margin, margin, shell_w, 38};
+  /* The full wordmark occupies the existing header space in portrait.
+     Language switching remains available on Home and in Settings. */
+  geometry->play_language = (GeoRect){margin, margin, 1, 1};
   geometry->play_title = (GeoRect){margin, margin + 42, shell_w, 24};
   int board_y = geometry_final_rect_bottom(geometry->play_title) + 4;
   int reserve = section_gap + hud_h + section_gap + actions_h + section_gap +
@@ -672,8 +709,24 @@ bool geometry_compute(int width, int height, GeometryMode mode,
 
   if (width < 640) {
     if (!geometry_final_layout_portrait_play(width, height, geometry)) return false;
-  } else if (!geometry_final_layout_desktop_play(width, height, geometry)) {
-    return false;
+  } else {
+    int min_hud_offset = geometry->sidebar.h < 600 ? 12 :
+                         width >= 1600 && height >= 900 ? 28 : 22;
+    int min_hud_y = geometry->sidebar.y + min_hud_offset;
+    bool fitted = false;
+    /* The narrowest heights may require a smaller branding band. Keep
+       every control's existing minimum dimensions and usable hit areas. */
+    for (;;) {
+      if (geometry_final_layout_desktop_play(width, height, geometry)) {
+        fitted = true;
+        break;
+      }
+      if (geometry->hud[0].y <= min_hud_y) break;
+      for (int i = 0; i < geometry->hud_count; ++i)
+        --geometry->hud[i].y;
+      if (geometry->play_title.h > 1) --geometry->play_title.h;
+    }
+    if (!fitted) return false;
   }
 
   geometry_final_reserve_audio(&geometry->screen_language, width);
@@ -725,39 +778,34 @@ bool geometry_compute(int width, int height, GeometryMode mode,
 
 
 
-/* Keep the canonical compact icon near the top-right of the play surface.
-   Neither the live HUD nor gameplay controls move to accommodate it. */
-GeoRect geometry_play_brand_icon(const AppGeometry *geometry, int width) {
+/* The complete canonical Home artwork is reused during gameplay.
+   Desktop geometry provides a separate band; portrait reuses the existing
+   unused space above the board without shrinking Sudoku cells. */
+GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
   GeoRect empty = {0, 0, 0, 0};
   if (!geometry || width <= 0) return empty;
-  if (width < 640) {
-    const int size = 30;
-    return (GeoRect){
-        geometry->play_title.x + geometry->play_title.w - size - 8,
-        geometry->play_language.y + geometry->play_language.h + 1,
-        size, size};
-  }
+  if (width >= 640) return geometry->play_title;
 
-  const bool compact = geometry->sidebar.h < 600;
-  const bool xl = geometry->hud[0].h >= 34;
-  const int size = compact ? 36 : (xl ? 56 : 48);
-  const int top = compact ? 3 : (xl ? 10 : 6);
-  return (GeoRect){geometry->sidebar.x + geometry->sidebar.w - size - 8,
-                   geometry->sidebar.y + top, size, size};
+  int logo_width = geometry->play_title.w / 2;
+  if (logo_width > 188) logo_width = 188;
+  int top = geometry->play_title.y - 36;
+  int bottom = geometry->board.y - 8;
+  int logo_height = bottom - top;
+  if (logo_width <= 0 || logo_height <= 0) return empty;
+  return (GeoRect){geometry->play_title.x + geometry->play_title.w -
+                       logo_width - 8,
+                   top, logo_width, logo_height};
 }
 
 GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width) {
   GeoRect empty = {0, 0, 0, 0};
   if (!geometry || width < 640) return empty;
-  GeoRect icon = geometry_play_brand_icon(geometry, width);
-  int left = geometry->hud[0].x + 8;
-  int right = icon.x - 8;
+  int left = geometry->hud[0].x + 6;
+  int right = geometry->hud[1].x + geometry->hud[1].w - 6;
   if (right <= left) return empty;
   return (GeoRect){left, geometry->hud[0].y,
                    right - left, geometry->hud[0].h};
 }
-
-
 
 AudioControlGeometry geometry_audio_control(int width, int height,
                                             const AppGeometry *app,

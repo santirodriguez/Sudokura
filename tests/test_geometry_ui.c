@@ -67,22 +67,26 @@ int main(void) {
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
 
-      /* Restored compact identity never covers the board or HUD text. */
-      GeoRect brand = geometry_play_brand_icon(&g, width);
+      /* Full canonical wordmark has a reserved, noninteractive band. */
+      GeoRect brand = geometry_play_wordmark_rect(&g, width);
       assert_rect(brand, width, height);
-      assert(brand.w >= 30 && brand.h == brand.w);
+      assert(brand.w >= 150 && brand.w <= 280);
       if (portrait) {
-        assert(brand.y >= g.play_language.y + g.play_language.h);
-        assert(brand.y + brand.h <= g.board.y);
+        assert(g.play_language.w == 1 && g.play_language.h == 1);
+        assert(brand.y > g.play_language.y + g.play_language.h);
+        assert(brand.y + brand.h + 4 <= g.board.y);
         assert(brand.x + brand.w <= g.play_title.x + g.play_title.w);
       } else {
         assert_inside(g.sidebar, brand);
-        assert(brand.y + brand.h <= g.hud[2].y);
+        assert(brand.x + brand.w / 2 ==
+               g.sidebar.x + g.sidebar.w / 2);
+        assert(brand.y + brand.h + 8 <= g.hud[0].y);
         GeoRect heading = geometry_play_heading_rect(&g, width);
         assert_rect(heading, width, height);
-        assert(heading.w >= 100);
+        assert(heading.w >= 180);
         assert(heading.y == g.hud[0].y);
-        assert(heading.x + heading.w + 8 <= brand.x);
+        assert(heading.x >= g.sidebar.x);
+        assert(heading.x + heading.w <= g.sidebar.x + g.sidebar.w);
       }
       for (int action = 0; action < PLAY_ACTION_COUNT; ++action)
         assert_rect(g.actions[action], width, height);
@@ -140,12 +144,11 @@ int main(void) {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[2].y > g.about_links[0].y);
-        /* Desktop play uses the top area for a readable HUD, not
-           for a duplicate brand strip or an invisible language row. */
+        /* Wordmark, title and controls use separate vertical regions. */
         assert(g.play_language.h == 1);
-        assert(g.play_title.h == 1);
-        assert(g.hud[0].y >= g.sidebar.y + 10);
-        assert(g.hud[0].y < g.sidebar.y + 50);
+        assert(g.play_title.h >= 32);
+        assert(g.hud[0].y >= g.sidebar.y + 50);
+        assert(g.hud[0].y <= g.sidebar.y + 126);
         assert(g.actions[PLAY_ACTION_MENU].y >=
                g.hud[g.hud_count - 1].y +
                g.hud[g.hud_count - 1].h + 8);
