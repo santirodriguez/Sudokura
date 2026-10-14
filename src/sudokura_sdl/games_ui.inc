@@ -13,7 +13,6 @@ typedef struct {
   SessionState preview;
   GameLibraryRecord detail_record;
   bool detail_record_valid;
-  GameAttemptId pending_replay_id, pending_source_id;
   GameAttemptId focus_after_scan;
   bool detail_after_scan;
   int focus; /* 0: rows, 1: primary action, 2: Back */
@@ -624,76 +623,196 @@ static void games_browser_operation_error(Gfx *gfx, Game *game,
                                 tr(ui->language,T_GAMES_ACTION_FAILED));
 }
 
-/* Pending attempt ID stays stable when the record committed but its hot
-   profile pointer could not be written. Retrying never forks again. */
-static bool games_browser_replay_selected(Persistence *p,Game *game,
-                                          UI *ui,Gfx *gfx) {
-  if(!p||!p->enabled||games_browser.scanning||
-     games_browser.selected>=games_browser.count)return false;
-  const GamesRow row=games_browser.rows[games_browser.selected];
-  if(row.hot_only||row.entry.status!=STORE_OK||
-     row.entry.kind!=GAME_RECORD_EXACT||
-     row.entry.result.status==SESSION_ACTIVE)return false;
+/* The intent is a tiny durable operation marker, not a collection index.
+   A failed profile write can be retried after Games closes or Sudokura
+   restarts without allocating a second practice attempt. */
+static bool games_browser_replay_selected(Persistence *p, Game *game,
+                                          UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      games_browser.scanning || games_browser.selected >= games_browser.count)
+    return false;
+  const GamesRow row = games_browser.rows[games_browser.selected];
+  if (row.hot_only || row.entry.status != STORE_OK ||
+      row.entry.kind != GAME_RECORD_EXACT ||
+      row.entry.result.status == SESSION_ACTIVE)
+    return false;
+
   GameLibraryRecord source;
-  if(game_library_load(p->profile_directory,row.entry.id,&source)!=STORE_OK ||
-     source.kind!=GAME_RECORD_EXACT ||
-     source.result.status==SESSION_ACTIVE) {
-    games_browser_operation_error(gfx,game,ui);
+  if (game_library_load(p->profile_directory, row.entry.id, &source) !=
+          STORE_OK ||
+      source.kind != GAME_RECORD_EXACT ||
+      source.result.status == SESSION_ACTIVE) {
+    games_browser_operation_error(gfx, game, ui);
     return false;
   }
-  if(!games_browser_gate_replacement(p,game,ui,gfx,false))return false;
+  if (!games_browser_gate_replacement(p, game, ui, gfx, false))
+    return false;
+
+  GameReplayIntent intent = {0};
+  StoreStatus status = game_library_replay_intent_load(
+      p->profile_directory, &intent);
+  if (status != STORE_OK && status != STORE_NOT_FOUND) {
+    games_browser_operation_error(gfx, game, ui);
+    return false;
+  }
+  bool pending = status == STORE_OK &&
+                 intent.state == GAME_REPLAY_PREPARED;
+
+  if (pending) {
+    GameLibraryRecord interrupted;
+    StoreStatus record_status = game_library_load(
+        p->profile_directory, intent.attempt_id, &interrupted);
+    bool linked = p->profile.normal.present &&
+        p->profile.normal.retained &&
+        game_attempt_id_equal(p->profile.normal.attempt_id,
+                              intent.attempt_id);
+    StoreStatus receipt = record_status == STORE_NOT_FOUND
+        ? game_library_receipt_status(p->profile_directory,
+                                      intent.attempt_id)
+        : STORE_NOT_FOUND;
+    if (receipt != STORE_NOT_FOUND && receipt != STORE_OK) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
+    if (linked) {
+      bool prefer_record = false;
+      if (record_status != STORE_OK ||
+          interrupted.kind != GAME_RECORD_EXACT ||
+          !interrupted.practice ||
+          !game_attempt_id_equal(interrupted.parent, intent.source_id) ||
+          game_library_resolve_hot_record(&p->profile.normal, &interrupted,
+                                          &prefer_record) != STORE_OK) {
+        games_browser_operation_error(gfx, game, ui);
+        return false;
+      }
+      intent.state = GAME_REPLAY_COMMITTED;
+      if (game_library_replay_intent_write(p->profile_directory, &intent) !=
+          STORE_OK) {
+        games_browser_operation_error(gfx, game, ui);
+        return false;
+      }
+      /* The profile pointer was already durably committed before an
+         interrupted operation could clear its marker. Resume that exact
+         attempt rather than starting a second one. */
+      games_browser.modal_owned = false;
+      game_library_scan_close(&games_browser.scanner);
+      free(games_browser.rows);
+      memset(&games_browser, 0, sizeof(games_browser));
+      victory_animation_reset();
+      restore_saved_session(p, game, ui, false);
+      return true;
+    }
+
+    if (!game_attempt_id_equal(intent.source_id, source.id)) {
+      if (!confirm_destructive_box(gfx, game, ui,
+             tr(ui->language, T_GAMES_REPLAY),
+             tr(ui->language, T_GAMES_REPLAY_PENDING_OTHER),
+             tr(ui->language, T_DISCARD)))
+        return false;
+      intent.state = GAME_REPLAY_ABANDONED;
+      if (game_library_replay_intent_write(p->profile_directory, &intent) !=
+          STORE_OK) {
+        games_browser_operation_error(gfx, game, ui);
+        return false;
+      }
+      pending = false;
+    } else if ((record_status == STORE_OK &&
+                 !game_library_replay_pending_matches(&source, &interrupted)) ||
+               receipt == STORE_OK) {
+      /* It might be a genuine older practice attempt. Never overwrite it
+         or silently call it an unfinished duplicate. */
+      if (!confirm_destructive_box(gfx, game, ui,
+             tr(ui->language, T_GAMES_REPLAY),
+             tr(ui->language, T_GAMES_REPLAY_PENDING_CONFLICT),
+             tr(ui->language, T_DISCARD)))
+        return false;
+      intent.state = GAME_REPLAY_ABANDONED;
+      if (game_library_replay_intent_write(p->profile_directory, &intent) !=
+          STORE_OK) {
+        games_browser_operation_error(gfx, game, ui);
+        return false;
+      }
+      pending = false;
+    } else if (record_status != STORE_NOT_FOUND &&
+               record_status != STORE_OK) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
+  }
 
   GameLibraryRecord replay;
-  GameLibraryHotCache new_cache={0};
-  bool pending=game_attempt_id_valid(games_browser.pending_replay_id) &&
-               game_attempt_id_equal(games_browser.pending_source_id,source.id);
-  if(pending){
-    if(game_library_load(p->profile_directory,
-                         games_browser.pending_replay_id,&replay)!=STORE_OK ||
-       !replay.practice || replay.result.status!=SESSION_ACTIVE ||
-       !game_attempt_id_equal(replay.parent,source.id)){
-      games_browser_operation_error(gfx,game,ui);
-      return false;
-    }
-  }else{
+  GameLibraryHotCache new_cache = {0};
+  if (!pending) {
     GameAttemptId fresh;
-    if(!persistence_new_attempt_id(p,&fresh) ||
-       !game_library_prepare_replay(&replay,&source,fresh) ||
-       game_library_save_runtime(p->profile_directory,&replay,
-                                 &new_cache)!=STORE_OK ||
-       game_library_load(p->profile_directory,fresh,&replay)!=STORE_OK){
-      games_browser_operation_error(gfx,game,ui);
+    if (!persistence_new_attempt_id(p, &fresh)) {
+      games_browser_operation_error(gfx, game, ui);
       return false;
     }
-    games_browser.pending_replay_id=fresh;
-    games_browser.pending_source_id=source.id;
+    intent = (GameReplayIntent){source.id, fresh, GAME_REPLAY_PREPARED};
+    if (game_library_replay_intent_write(p->profile_directory, &intent) !=
+        STORE_OK) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
   }
 
-  ProfileData candidate=p->profile;
-  ProfileSlot *normal=&candidate.normal;
-  memset(normal,0,sizeof(*normal));
-  normal->present=true;
-  normal->retained=true;
-  normal->attempt_id=replay.id;
-  normal->revision=replay.revision;
-  normal->value=replay.exact;
-  candidate.preferences=p->preferences;
-  if(!profile_validate(&candidate) ||
-     profile_save_runtime_file(p->profile_path,p->profile_backup_path,
-                               &candidate)!=STORE_OK){
-    games_browser_operation_error(gfx,game,ui);
+  status = game_library_load(p->profile_directory, intent.attempt_id, &replay);
+  if (status == STORE_NOT_FOUND) {
+    /* A crash after intent publication but before record commit reuses the
+       reserved attempt ID. No second Replay gets silently created. */
+    if (!game_library_prepare_replay(&replay, &source, intent.attempt_id) ||
+        game_library_save_runtime(p->profile_directory, &replay, &new_cache) !=
+            STORE_OK ||
+        game_library_load(p->profile_directory, intent.attempt_id, &replay) !=
+            STORE_OK) {
+      games_browser_operation_error(gfx, game, ui);
+      return false;
+    }
+  } else if (status != STORE_OK) {
+    games_browser_operation_error(gfx, game, ui);
     return false;
   }
-  p->profile=candidate;
-  p->game_cache[0]=new_cache;
+  if (!game_library_replay_pending_matches(&source, &replay)) {
+    games_browser_operation_error(gfx, game, ui);
+    return false;
+  }
+
+  ProfileData candidate = p->profile;
+  ProfileSlot *normal = &candidate.normal;
+  memset(normal, 0, sizeof(*normal));
+  normal->present = true;
+  normal->retained = true;
+  normal->attempt_id = replay.id;
+  normal->revision = replay.revision;
+  normal->value = replay.exact;
+  candidate.preferences = p->preferences;
+  if (!profile_validate(&candidate) ||
+      profile_save_runtime_file(p->profile_path, p->profile_backup_path,
+                                &candidate) != STORE_OK) {
+    games_browser_operation_error(gfx, game, ui);
+    return false; /* The Prepared intent and record remain available. */
+  }
+
+  p->profile = candidate;
+  p->game_cache[0] = new_cache;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
-  games_browser.modal_owned=false;
+  games_browser.modal_owned = false;
   game_library_scan_close(&games_browser.scanner);
   free(games_browser.rows);
-  memset(&games_browser,0,sizeof(games_browser));
+  memset(&games_browser, 0, sizeof(games_browser));
   victory_animation_reset();
-  restore_saved_session(p,game,ui,false);
+  restore_saved_session(p, game, ui, false);
+
+  /* Profile activation already succeeded: a marker-cleanup error must
+     never strand the live board or pretend the Replay was not saved. */
+  intent.state = GAME_REPLAY_COMMITTED;
+  if (game_library_replay_intent_write(p->profile_directory, &intent) !=
+      STORE_OK) {
+    (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+          tr(ui->language, T_STORAGE_ERROR),
+          tr(ui->language, T_GAMES_REPLAY_FINALIZE_FAILED));
+  }
   return true;
 }
 

@@ -127,6 +127,30 @@ StoreStatus game_library_delete(const char *root, GameAttemptId id);
 StoreStatus game_library_delete_with_receipt(const char *root,
                                              GameAttemptId id,
                                              bool *receipt_committed);
+/* One small durable Replay operation per writer, independent of any hot
+   profile pointer. A finished/abandoned intent permits a distinct Replay.
+   An unresolved prepared intent must keep its original attempt ID. */
+typedef enum {
+  GAME_REPLAY_PREPARED = 1,
+  GAME_REPLAY_COMMITTED = 2,
+  GAME_REPLAY_ABANDONED = 3
+} GameReplayIntentState;
+
+typedef struct {
+  GameAttemptId source_id;
+  GameAttemptId attempt_id;
+  GameReplayIntentState state;
+} GameReplayIntent;
+
+StoreStatus game_library_replay_intent_load(const char *root,
+                                            GameReplayIntent *intent);
+StoreStatus game_library_replay_intent_write(const char *root,
+                                             const GameReplayIntent *intent);
+/* Require that a prepared attempt is still the untouched original Replay,
+   not an unrelated or progressed practice game with the same parent ID. */
+bool game_library_replay_pending_matches(const GameLibraryRecord *source,
+                                         const GameLibraryRecord *candidate);
+
 /* Build a separately identified, retained practice attempt from an immutable
    exact terminal board. Never modifies source or creates a hot Daily slot. */
 bool game_library_prepare_replay(GameLibraryRecord *out,

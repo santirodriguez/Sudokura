@@ -235,6 +235,9 @@ StoreStatus game_library_resolve_hot_record(const ProfileSlot *hot,
 bool game_library_new_id(const char *root, const GameAttemptId *reserved,
                          size_t reserved_count, GameAttemptId *out) {
   if (!root || !out || (reserved_count && !reserved)) return false;
+  GameReplayIntent reserved_replay = {0};
+  bool intent_owns_id =
+      game_library_replay_intent_load(root, &reserved_replay) == STORE_OK;
   for (unsigned attempt = 0; attempt < 32; ++attempt) {
     GameAttemptId value;
     if (!seed_system_random_u64(&value.high))
@@ -242,7 +245,8 @@ bool game_library_new_id(const char *root, const GameAttemptId *reserved,
     if (!seed_system_random_u64(&value.low))
       value.low = seed_random_u64();
     if (!game_attempt_id_valid(value)) continue;
-    bool collision = false;
+    bool collision = intent_owns_id &&
+        game_attempt_id_equal(value, reserved_replay.attempt_id);
     for (size_t i = 0; i < reserved_count; ++i)
       if (game_attempt_id_equal(reserved[i], value)) collision = true;
     if (collision) continue;
@@ -633,6 +637,164 @@ bool game_library_prepare_replay(GameLibraryRecord *out,
   if (!game_library_record_validate(&candidate)) return false;
   *out = candidate;
   return true;
+}
+
+enum { REPLAY_INTENT_BYTES = 48u, REPLAY_INTENT_CRC_BYTES = 44u };
+static const unsigned char replay_intent_magic[8] = {
+    'S','U','D','O','R','P','L','Y'};
+
+static bool replay_intent_path(
+    char path[SUDOKURA_STORE_PATH_CAPACITY], const char *root) {
+  char directory[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!games_directory(directory, root)) return false;
+  const char suffix[] = "/replay.intent";
+  size_t count = strlen(directory);
+  if (count > SUDOKURA_STORE_PATH_CAPACITY - sizeof(suffix))
+    return false;
+  memcpy(path, directory, count);
+  memcpy(path + count, suffix, sizeof(suffix));
+  return true;
+}
+
+static bool replay_intent_valid(const GameReplayIntent *intent) {
+  return intent && game_attempt_id_valid(intent->source_id) &&
+         game_attempt_id_valid(intent->attempt_id) &&
+         !game_attempt_id_equal(intent->source_id, intent->attempt_id) &&
+         (intent->state == GAME_REPLAY_PREPARED ||
+          intent->state == GAME_REPLAY_COMMITTED ||
+          intent->state == GAME_REPLAY_ABANDONED);
+}
+
+static uint32_t replay_intent_crc(const unsigned char bytes[REPLAY_INTENT_BYTES]) {
+  unsigned char covered[REPLAY_INTENT_CRC_BYTES];
+  memcpy(covered, bytes, 12u);
+  memcpy(covered + 12u, bytes + 16u, 32u);
+  return checksum(covered, sizeof(covered));
+}
+
+StoreStatus game_library_replay_intent_load(const char *root,
+                                            GameReplayIntent *intent) {
+  if (!root || !intent) return STORE_IO_ERROR;
+  char path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!replay_intent_path(path, root)) return STORE_IO_ERROR;
+  unsigned char bytes[REPLAY_INTENT_BYTES];
+  size_t count = 0;
+  StoreStatus status = store_read_file(path, bytes, sizeof(bytes), &count);
+  if (status == STORE_CORRUPT) {
+    /* The current fixed bound cannot turn a future valid version into
+       a corrupt v1 record eligible for replacement. */
+    unsigned char prefix[10];
+    size_t got = 0;
+    status = store_read_prefix(path, prefix, sizeof(prefix), &got);
+    if (status != STORE_OK) return status;
+    if (got >= sizeof(prefix) &&
+        memcmp(prefix, replay_intent_magic, 8u) == 0 &&
+        read16(prefix + 8u) != 1u)
+      return STORE_INCOMPATIBLE;
+    return STORE_CORRUPT;
+  }
+  if (status != STORE_OK) return status;
+  if (count >= 10u &&
+      memcmp(bytes, replay_intent_magic, 8u) == 0 &&
+      read16(bytes + 8u) != 1u)
+    return STORE_INCOMPATIBLE;
+  if (count != sizeof(bytes) ||
+      memcmp(bytes, replay_intent_magic, 8u) != 0 ||
+      read16(bytes + 8u) != 1u ||
+      bytes[11] != 0u ||
+      read32(bytes + 12u) != replay_intent_crc(bytes))
+    return STORE_CORRUPT;
+  GameReplayIntent decoded = {
+      .source_id = {read64(bytes + 16u), read64(bytes + 24u)},
+      .attempt_id = {read64(bytes + 32u), read64(bytes + 40u)},
+      .state = (GameReplayIntentState)bytes[10]};
+  if (!replay_intent_valid(&decoded)) return STORE_CORRUPT;
+  *intent = decoded;
+  return STORE_OK;
+}
+
+StoreStatus game_library_replay_intent_write(const char *root,
+                                             const GameReplayIntent *intent) {
+  if (!root || !replay_intent_valid(intent)) return STORE_IO_ERROR;
+  GameReplayIntent old;
+  StoreStatus status = game_library_replay_intent_load(root, &old);
+  if (status == STORE_OK) {
+    bool same = game_attempt_id_equal(old.source_id, intent->source_id) &&
+                game_attempt_id_equal(old.attempt_id, intent->attempt_id);
+    /* Retry an identical marker through atomic write, not only a read:
+       a preceding parent-directory sync may have failed after rename. */
+    if (same && old.state == intent->state) {
+      /* Valid idempotent re-publication; no state transition. */
+    } else if (old.state == GAME_REPLAY_PREPARED) {
+      if (!same || intent->state == GAME_REPLAY_PREPARED)
+        return STORE_IO_ERROR;
+    } else if (intent->state != GAME_REPLAY_PREPARED ||
+               game_attempt_id_equal(old.attempt_id, intent->attempt_id)) {
+      return STORE_IO_ERROR;
+    }
+  } else if (status != STORE_NOT_FOUND) {
+    return status; /* Never overwrite corrupt or future-version intent data. */
+  } else if (intent->state != GAME_REPLAY_PREPARED) {
+    return STORE_IO_ERROR;
+  }
+  char directory[SUDOKURA_STORE_PATH_CAPACITY];
+  char path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!games_directory(directory, root) ||
+      !replay_intent_path(path, root))
+    return STORE_IO_ERROR;
+  status = store_ensure_directory(directory);
+  if (status != STORE_OK) return status;
+
+  unsigned char bytes[REPLAY_INTENT_BYTES] = {0};
+  memcpy(bytes, replay_intent_magic, sizeof(replay_intent_magic));
+  write16(bytes + 8u, 1u);
+  bytes[10] = (unsigned char)intent->state;
+  write64(bytes + 16u, intent->source_id.high);
+  write64(bytes + 24u, intent->source_id.low);
+  write64(bytes + 32u, intent->attempt_id.high);
+  write64(bytes + 40u, intent->attempt_id.low);
+  write32(bytes + 12u, replay_intent_crc(bytes));
+  status = store_atomic_write(path, NULL, bytes, sizeof(bytes));
+  if (status != STORE_OK) return status;
+  GameReplayIntent verified;
+  status = game_library_replay_intent_load(root, &verified);
+  if (status != STORE_OK) return status;
+  return game_attempt_id_equal(verified.source_id, intent->source_id) &&
+         game_attempt_id_equal(verified.attempt_id, intent->attempt_id) &&
+         verified.state == intent->state ? STORE_OK : STORE_CORRUPT;
+}
+
+bool game_library_replay_pending_matches(const GameLibraryRecord *source,
+                                         const GameLibraryRecord *candidate) {
+  if (!source || !candidate ||
+      !game_library_record_validate(source) ||
+      !game_library_record_validate(candidate) ||
+      candidate->kind != GAME_RECORD_EXACT ||
+      candidate->revision != 1u || !candidate->retained ||
+      !candidate->practice ||
+      candidate->result.status != SESSION_ACTIVE ||
+      !game_attempt_id_equal(candidate->parent, source->id))
+    return false;
+  GameLibraryRecord expected;
+  if (!game_library_prepare_replay(&expected, source, candidate->id))
+    return false;
+  if (expected.original_daily != candidate->original_daily ||
+      expected.original_daily_year != candidate->original_daily_year ||
+      expected.original_daily_month != candidate->original_daily_month ||
+      expected.original_daily_day != candidate->original_daily_day ||
+      memcmp(expected.original, candidate->original,
+             sizeof(expected.original)) != 0 ||
+      memcmp(expected.solution, candidate->solution,
+             sizeof(expected.solution)) != 0)
+    return false;
+  unsigned char left[4096], right[4096];
+  size_t left_size = 0, right_size = 0;
+  return profile_session_encode_blob(&expected.exact, left, sizeof(left),
+                                     &left_size) &&
+         profile_session_encode_blob(&candidate->exact, right, sizeof(right),
+                                     &right_size) &&
+         left_size == right_size &&
+         memcmp(left, right, left_size) == 0;
 }
 
 bool game_library_forget_attempt(ProfileData *out, const ProfileData *source,

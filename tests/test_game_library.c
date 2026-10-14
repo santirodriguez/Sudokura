@@ -1545,6 +1545,180 @@ static void test_same_attempt_load_prefers_durable_revision(void) {
          STORE_CORRUPT);
 }
 
+static void test_replay_intent_survives_failed_cuts(void) {
+  prepare();
+  GameAttemptId source_id = make_id(9801);
+  GameAttemptId first = make_id(9802);
+  GameAttemptId second = make_id(9803);
+  GameReplayIntent intent = {source_id, first, GAME_REPLAY_PREPARED};
+  GameReplayIntent loaded = {make_id(9), make_id(10),
+                             GAME_REPLAY_ABANDONED};
+  GameReplayIntent untouched = loaded;
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_NOT_FOUND);
+  assert(game_attempt_id_equal(untouched.source_id, loaded.source_id) &&
+         game_attempt_id_equal(untouched.attempt_id, loaded.attempt_id) &&
+         untouched.state == loaded.state);
+
+  /* A failed intent publication creates no record and no fresh attempt.
+     The very next retry can still safely publish this same reservation. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_replay_intent_write(root, &intent) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_NOT_FOUND);
+  assert(game_library_replay_intent_write(root, &intent) == STORE_OK);
+  assert(game_library_replay_intent_write(root, &intent) == STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK);
+  assert(loaded.state == GAME_REPLAY_PREPARED &&
+         game_attempt_id_equal(loaded.attempt_id, first));
+
+  GameReplayIntent competing = {source_id, second, GAME_REPLAY_PREPARED};
+  assert(game_library_replay_intent_write(root, &competing) ==
+         STORE_IO_ERROR);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK &&
+         game_attempt_id_equal(loaded.attempt_id, first));
+
+  GameLibraryRecord original, replay, reread;
+  ProfileSession won = make_session(SESSION_WON);
+  assert(game_library_make_exact(&original, source_id, 1, &won, true));
+  assert(game_library_save(root, &original) == STORE_OK);
+  assert(game_library_prepare_replay(&replay, &original, first));
+  assert(game_library_replay_pending_matches(&original, &replay));
+
+  GameLibraryRecord changed = replay;
+  changed.exact.session.elapsed_ms += 1000u;
+  changed.result.elapsed_ms += 1000u;
+  assert(!game_library_replay_pending_matches(&original, &changed));
+  changed = replay;
+  changed.parent = make_id(9804);
+  assert(!game_library_replay_pending_matches(&original, &changed));
+
+  GameLibraryHotCache cache = {0};
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_save_runtime(root, &replay, &cache) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_load(root, first, &reread) == STORE_NOT_FOUND);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK &&
+         game_attempt_id_equal(loaded.attempt_id, first));
+
+  /* Simulate process restart: no GamesBrowser state, only the intent ID. */
+  assert(game_library_save_runtime(root, &replay, &cache) == STORE_OK);
+  assert(game_library_load(root, loaded.attempt_id, &reread) == STORE_OK);
+  assert(game_library_replay_pending_matches(&original, &reread));
+
+  char primary[160], backup[160], intent_path[160];
+  int n = snprintf(primary, sizeof(primary), "%s/profile.dat", root);
+  assert(n > 0 && (size_t)n < sizeof(primary));
+  n = snprintf(backup, sizeof(backup), "%s/profile.dat.bak", root);
+  assert(n > 0 && (size_t)n < sizeof(backup));
+  n = snprintf(intent_path, sizeof(intent_path), "%s/games/replay.intent", root);
+  assert(n > 0 && (size_t)n < sizeof(intent_path));
+
+  ProfileData candidate;
+  profile_defaults(&candidate);
+  candidate.normal.present = true;
+  candidate.normal.retained = true;
+  candidate.normal.attempt_id = reread.id;
+  candidate.normal.revision = reread.revision;
+  candidate.normal.value = reread.exact;
+  assert(profile_validate(&candidate));
+
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_file(primary, backup, &candidate) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  ProfileData disk;
+  assert(profile_load_file(primary, &disk) == STORE_NOT_FOUND);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK);
+  assert(loaded.state == GAME_REPLAY_PREPARED);
+  assert(game_library_load(root, first, &reread) == STORE_OK);
+
+  assert(profile_save_file(primary, backup, &candidate) == STORE_OK);
+  assert(profile_load_file(primary, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&candidate, &disk));
+  intent.state = GAME_REPLAY_COMMITTED;
+  assert(game_library_replay_intent_write(root, &intent) == STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK &&
+         loaded.state == GAME_REPLAY_COMMITTED);
+  assert(game_library_load(root, first, &reread) == STORE_OK);
+
+  /* An explicit later Replay of the same parent gets a distinct ID.
+     Earlier successful and pending records stay discoverable. */
+  assert(game_library_replay_intent_write(root, &competing) == STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK);
+  assert(loaded.state == GAME_REPLAY_PREPARED &&
+         game_attempt_id_equal(loaded.attempt_id, second));
+  assert(game_library_replay_intent_write(root, &intent) == STORE_IO_ERROR);
+  competing.state = GAME_REPLAY_ABANDONED;
+  assert(game_library_replay_intent_write(root, &competing) == STORE_OK);
+  assert(game_library_load(root, first, &reread) == STORE_OK);
+  /* An explicitly deleted pending ID cannot be silently resurrected. */
+  assert(game_library_delete(root, second) == STORE_OK);
+  GameLibraryRecord forbidden;
+  GameLibraryHotCache forbidden_cache = {0};
+  assert(game_library_prepare_replay(&forbidden, &original, second));
+  assert(game_library_save_runtime(root, &forbidden, &forbidden_cache) ==
+         STORE_IO_ERROR);
+
+  /* Reject damaged markers rather than guessing another attempt ID. */
+  unsigned char bytes[48], original_bytes[48];
+  size_t length = 0;
+  assert(store_read_file(intent_path, bytes, sizeof(bytes), &length) ==
+         STORE_OK && length == sizeof(bytes));
+  memcpy(original_bytes, bytes, length);
+  bytes[16] ^= 0x01u;
+  assert(store_atomic_write(intent_path, NULL, bytes, length) == STORE_OK);
+  untouched = loaded;
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_CORRUPT);
+  assert(game_attempt_id_equal(loaded.source_id, untouched.source_id) &&
+         game_attempt_id_equal(loaded.attempt_id, untouched.attempt_id) &&
+         loaded.state == untouched.state);
+  assert(game_library_replay_intent_write(root, &intent) == STORE_CORRUPT);
+
+  memcpy(bytes, original_bytes, length);
+  bytes[8] = 2u;
+  assert(store_atomic_write(intent_path, NULL, bytes, length) == STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) ==
+         STORE_INCOMPATIBLE);
+  assert(game_library_replay_intent_write(root, &intent) ==
+         STORE_INCOMPATIBLE);
+  assert(store_atomic_write(intent_path, NULL, original_bytes, length) ==
+         STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK &&
+         loaded.state == GAME_REPLAY_ABANDONED);
+
+  /* An oversized future version remains incompatible, not corrupt. */
+  unsigned char future[80] = {0};
+  memcpy(future, original_bytes, length);
+  future[8] = 2u;
+  assert(store_atomic_write(intent_path, NULL, future, sizeof(future)) ==
+         STORE_OK);
+  assert(game_library_replay_intent_load(root, &loaded) ==
+         STORE_INCOMPATIBLE);
+  assert(store_atomic_write(intent_path, NULL, original_bytes, length) ==
+         STORE_OK);
+
+  /* An acknowledged rename with unacknowledged directory sync can be
+     retried without allocating a third ID or erasing the old record. */
+  GameReplayIntent third = {source_id, make_id(9805),
+                            GAME_REPLAY_PREPARED};
+  store_test_fail_parent_sync_at(intent_path);
+  assert(game_library_replay_intent_write(root, &third) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(game_library_replay_intent_load(root, &loaded) == STORE_OK);
+  if (loaded.state == GAME_REPLAY_ABANDONED) {
+    assert(game_library_replay_intent_write(root, &third) == STORE_OK);
+  } else {
+    assert(loaded.state == GAME_REPLAY_PREPARED &&
+           game_attempt_id_equal(loaded.attempt_id, third.attempt_id));
+    assert(game_library_replay_intent_write(root, &third) == STORE_OK);
+  }
+  assert(game_library_load(root, first, &reread) == STORE_OK);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -1555,6 +1729,7 @@ int main(void) {
   test_daily_lookup_previous_copy_and_uncertainty();
   test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
+  test_replay_intent_survives_failed_cuts();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();
   cleanup();
