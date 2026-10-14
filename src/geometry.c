@@ -352,7 +352,7 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     int logo_height = hud_offset - logo_top - logo_gap;
     g->play_language = (GeoRect){sx, g->sidebar.y + 2, sw, 1};
     g->play_title = (GeoRect){
-        sx + (sw - logo_width) / 2, g->sidebar.y + logo_top,
+        sx + (sw - logo_width + 1) / 2, g->sidebar.y + logo_top,
         logo_width, logo_height};
     grid_gap((GeoRect){sx, g->sidebar.y + hud_offset, sw, hud_h},
              2, row_gap, g->hud, g->hud_count);
