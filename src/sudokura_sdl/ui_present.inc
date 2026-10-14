@@ -102,6 +102,15 @@ static void ui_draw_icon_label(Gfx *gfx, SDL_Rect face, const char *text,
     (void)draw_fitted_text(gfx,text,color,face,preferred_font,10);
     return;
   }
+  /* Narrow Home controls need their full label: place the icon above
+     rather than shrinking the translated text into a tiny right column. */
+  if (face.w < 148 && face.h >= 30) {
+    SDL_Rect icon = {face.x+(face.w-14)/2,face.y+1,14,14};
+    ui_draw_glyph(gfx->ren,icon,glyph,color);
+    SDL_Rect label = {face.x+3,face.y+14,face.w-6,face.h-15};
+    (void)draw_fitted_text(gfx,text,color,label,preferred_font,10);
+    return;
+  }
   int icon_size = face.h - 12;
   if (icon_size > 20) icon_size = 20;
   SDL_Rect icon = {face.x + 9,face.y + (face.h - icon_size)/2,

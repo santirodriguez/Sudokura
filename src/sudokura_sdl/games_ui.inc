@@ -20,15 +20,6 @@ typedef struct {
 
 static GamesBrowser games_browser;
 
-static void games_append_text(char *destination, size_t capacity,
-                              const char *suffix) {
-  if (!destination || !suffix || !capacity) return;
-  size_t used = strlen(destination);
-  size_t added = strlen(suffix);
-  if (used >= capacity || added >= capacity - used) return;
-  memcpy(destination + used, suffix, added + 1u);
-}
-
 typedef struct {
   SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
   int row_height, visible;
