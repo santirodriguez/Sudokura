@@ -1190,14 +1190,24 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     SDL_Rect surface={lay.title.x,lay.list.y,lay.title.w,
                        lay.back.y-lay.list.y-12};
     draw_round_rect(gfx->ren,surface,11,theme.palette_bg);
+    /* Short landscape windows need a side-by-side finished preview:
+       a tiny 9px Sudoku cell hides its number entirely. */
+    bool compact_landscape=surface.w>=520 && surface.h<300;
     int free_height=surface.h-128;
     int side=surface.w-40;
-    if (side>free_height)side=free_height;
+    if (compact_landscape) {
+      side=surface.h-34;
+      if (side>210)side=210;
+    } else if (side>free_height) side=free_height;
     int detail_max_side=gfx->width>=2200?560:
                          gfx->width>=1500?480:420;
     if (side>detail_max_side)side=detail_max_side;
     if (side<80)side=80;
-    SDL_Rect board={surface.x+(surface.w-side)/2,surface.y+12,side,side};
+    SDL_Rect board=compact_landscape
+        ? (SDL_Rect){surface.x+18,
+                     surface.y+(surface.h-side)/2,side,side}
+        : (SDL_Rect){surface.x+(surface.w-side)/2,
+                     surface.y+12,side,side};
     if(games_browser.preview_valid)
       games_browser_draw_saved_board(
           gfx,theme,&games_browser.preview.game,board);
@@ -1213,7 +1223,10 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                    tr(ui->language,mode_key(result->mode)),
                    difficulty_name(ui->language,result->difficulty),
                    seconds/60u,seconds%60u);
-    SDL_Rect info={surface.x+16,board.y+side+15,surface.w-32,26};
+    SDL_Rect info=compact_landscape
+        ? (SDL_Rect){board.x+side+18,surface.y+35,
+                     surface.x+surface.w-board.x-side-34,26}
+        : (SDL_Rect){surface.x+16,board.y+side+15,surface.w-32,26};
     (void)draw_fitted_text(gfx,heading_info,theme.btnfg,info,17,10);
     char detail[260];
     int revealed=0;

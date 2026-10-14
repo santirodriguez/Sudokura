@@ -505,14 +505,55 @@ uint64_t game_test_generation_count(void) {
 }
 #endif
 
+/* Canonical reconstruction is used repeatedly while opening one profile:
+   decode, profile validation, migration and revision reconciliation all
+   inspect the same immutable puzzle identity. Reuse only a fully generated
+   deterministic original, never edits, guesses, or an unverified save. */
+enum { GAME_CANONICAL_CACHE_CAPACITY = 4 };
+typedef struct {
+  bool valid;
+  uint64_t seed;
+  GameDifficulty difficulty;
+  uint32_t revision;
+  Game canonical;
+} GameCanonicalCacheEntry;
+
+static _Thread_local GameCanonicalCacheEntry
+    game_canonical_cache[GAME_CANONICAL_CACHE_CAPACITY];
+static _Thread_local unsigned game_canonical_cache_next;
+
 bool game_new_difficulty_revision(Game *game, uint64_t seed,
                                   GameDifficulty difficulty,
                                   uint32_t revision) {
 #ifdef SUDOKURA_GAME_TESTING
   ++game_generation_count;
 #endif
-  return game_generate_difficulty(game, seed, difficulty, revision, NULL) ==
-         GAME_GENERATION_OK;
+  if (!game || !valid_difficulty(difficulty) ||
+      !game_generator_revision_supported(revision))
+    return false;
+  for (unsigned i = 0; i < GAME_CANONICAL_CACHE_CAPACITY; ++i) {
+    const GameCanonicalCacheEntry *entry = &game_canonical_cache[i];
+    if (entry->valid && entry->seed == seed &&
+        entry->difficulty == difficulty && entry->revision == revision) {
+      *game = entry->canonical;
+      return true;
+    }
+  }
+  Game generated;
+  if (game_generate_difficulty(&generated, seed, difficulty, revision,
+                               NULL) != GAME_GENERATION_OK)
+    return false;
+  GameCanonicalCacheEntry *entry =
+      &game_canonical_cache[game_canonical_cache_next];
+  game_canonical_cache_next =
+      (game_canonical_cache_next + 1u) % GAME_CANONICAL_CACHE_CAPACITY;
+  entry->seed = seed;
+  entry->difficulty = difficulty;
+  entry->revision = revision;
+  entry->canonical = generated;
+  entry->valid = true;
+  *game = generated;
+  return true;
 }
 
 bool game_new_difficulty(Game *game, uint64_t seed,

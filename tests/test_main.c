@@ -92,6 +92,33 @@ static void test_generation(void) {
   }
 }
 
+static void test_canonical_reconstruction_cache_is_immutable(void) {
+  /* The same deterministic identity may be decoded repeatedly, but
+     user-entered moves must never contaminate the cached original. */
+  Game baseline, modified, restored, legacy;
+  assert(game_new_difficulty_revision(
+      &baseline, UINT64_C(8), DIFFICULTY_HARD,
+      SUDOKURA_GENERATOR_REVISION));
+  modified = baseline;
+  int cell = first_playable(&modified);
+  assert(cell >= 0);
+  modified.puzzle[cell] = modified.solution[cell];
+  modified.notes[cell] = 0;
+  assert(game_new_difficulty_revision(
+      &restored, UINT64_C(8), DIFFICULTY_HARD,
+      SUDOKURA_GENERATOR_REVISION));
+  assert(memcmp(&restored, &baseline, sizeof(restored)) == 0);
+  assert(restored.puzzle[cell] == 0 && restored.notes[cell] == 0);
+  assert(game_new_difficulty_revision(
+      &legacy, UINT64_C(8), DIFFICULTY_HARD,
+      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  assert(legacy.generator_revision != restored.generator_revision);
+  assert(game_new_difficulty_revision(
+      &restored, UINT64_C(8), DIFFICULTY_HARD,
+      SUDOKURA_GENERATOR_REVISION));
+  assert(memcmp(&restored, &baseline, sizeof(restored)) == 0);
+}
+
 static bool cancel_generation(void *userdata, unsigned attempt,
                               unsigned max_attempts) {
   (void)userdata;
@@ -403,7 +430,7 @@ static void test_i18n(void) {
 }
 
 int main(void) {
-  test_generation(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_recorded_compound_edits(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
+  test_generation(); test_canonical_reconstruction_cache_is_immutable(); test_generator_stress(); test_generator_golden(); test_daily(); test_actions(); test_player_input(); test_recorded_compound_edits(); test_mode_visibility_policy(); test_progress_restart(); test_bounds(); test_conflicts_and_end(); test_geometry(); test_window_size_normalization(); test_i18n();
   puts("all tests passed (generator v2 golden + bounded human-rated v3, Daily identity, restart/progress/hints, responsive XL geometry, API bounds)");
   return 0;
 }

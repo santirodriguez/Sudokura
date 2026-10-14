@@ -203,9 +203,14 @@ for r in rows:
         buttons_y=h-margin-action_space
         surface_height=buttons_y-content_y-12
         max_side=560 if w>=2200 else 480 if w>=1500 else 420
-        side=max(80,min(panel_width-40,surface_height-128,max_side))
-        board_x=panel_x+(panel_width-side)//2
-        board_y=content_y+12
+        if panel_width>=520 and surface_height<300:
+            side=max(80,min(surface_height-34,210,max_side))
+            board_x=panel_x+18
+            board_y=content_y+(surface_height-side)//2
+        else:
+            side=max(80,min(panel_width-40,surface_height-128,max_side))
+            board_x=panel_x+(panel_width-side)//2
+            board_y=content_y+12
         board=crop_colors(by_name[r["file"]],
                           board_x+side//3,board_y+side//3,
                           side//3,side//3)
