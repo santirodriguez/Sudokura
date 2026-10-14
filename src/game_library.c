@@ -473,6 +473,108 @@ StoreStatus game_library_save_runtime(const char *root,
                                        now > 0 ? (uint64_t)now : 0);
 }
 
+/* An unretained hot slot can have a newer retained record after the first
+   Save succeeded but the profile link or its acknowledgement failed. */
+static bool retention_same_attempt(const ProfileSlot *hot,
+                                   const GameLibraryRecord *record) {
+  if (!hot || !record || record->kind != GAME_RECORD_EXACT ||
+      !record->retained || record->practice ||
+      !game_attempt_id_equal(hot->attempt_id, record->id))
+    return false;
+  const SessionState *live = &hot->value.session;
+  const SessionState *saved = &record->exact.session;
+  if (live->game.seed != saved->game.seed ||
+      live->game.generator_revision != saved->game.generator_revision ||
+      live->game.difficulty != saved->game.difficulty ||
+      live->mode != saved->mode || live->is_daily != saved->is_daily ||
+      live->daily_year != saved->daily_year ||
+      live->daily_month != saved->daily_month ||
+      live->daily_day != saved->daily_day ||
+      live->elapsed_ms < saved->elapsed_ms ||
+      (record->exact.assisted && !hot->value.assisted) ||
+      (saved->status != SESSION_ACTIVE && saved->status != live->status))
+    return false;
+  for (size_t i = 0; i < 81u; ++i)
+    if (live->game.initial[i] != record->original[i] ||
+        live->game.solution[i] != record->solution[i])
+      return false;
+  return true;
+}
+
+static bool retention_same_snapshot(const ProfileSession *hot,
+                                    const ProfileSession *saved) {
+  unsigned char current[4096], previous[4096];
+  size_t current_size = 0, previous_size = 0;
+  return profile_session_encode_blob_runtime(
+             hot, current, sizeof(current), &current_size) &&
+         profile_session_encode_blob(
+             saved, previous, sizeof(previous), &previous_size) &&
+         current_size == previous_size &&
+         memcmp(current, previous, current_size) == 0;
+}
+
+StoreStatus game_library_retain_hot_slot_runtime(
+    const char *root, const ProfileSlot *hot, GameLibraryHotCache *cache,
+    bool retry_pending, ProfileSlot *out) {
+  if (!root || !hot || !cache || !out || !hot->present || hot->retained ||
+      !game_attempt_id_valid(hot->attempt_id) ||
+      hot->revision == 0 || hot->revision == UINT64_MAX)
+    return STORE_IO_ERROR;
+
+  uint64_t revision = hot->revision + 1u;
+  GameLibraryRecord previous;
+  StoreStatus status = game_library_load(root, hot->attempt_id, &previous);
+  if (status == STORE_OK) {
+    if (!retry_pending || !retention_same_attempt(hot, &previous) ||
+        previous.revision > revision)
+      return STORE_IO_ERROR;
+    bool same = retention_same_snapshot(&hot->value, &previous.exact);
+    if (previous.result.status != SESSION_ACTIVE && !same)
+      return STORE_IO_ERROR; /* A terminal record is immutable. */
+    if (previous.revision > hot->revision && !same)
+      return STORE_IO_ERROR; /* Live state cannot overwrite a newer record. */
+    if (same && previous.revision >= hot->revision) {
+      /* Replay exactly the durable commit without rotating its prior
+         backup: re-acknowledge a possibly failed parent-directory sync. */
+      char primary[SUDOKURA_STORE_PATH_CAPACITY];
+      unsigned char encoded[SUDOKURA_GAME_RECORD_MAX_BYTES];
+      size_t length = 0;
+      if (!game_path(primary, root, hot->attempt_id, ".dat") ||
+          !game_library_encode(&previous, encoded, &length))
+        return STORE_IO_ERROR;
+      status = store_atomic_write(primary, NULL, encoded, length);
+      if (status != STORE_OK) return status;
+      GameLibraryRecord verified;
+      status = game_library_load(root, hot->attempt_id, &verified);
+      if (status != STORE_OK || verified.revision != previous.revision ||
+          !retention_same_snapshot(&hot->value, &verified.exact))
+        return STORE_CORRUPT;
+      cache->valid = false;
+      ProfileSlot updated = *hot;
+      updated.retained = true;
+      updated.revision = previous.revision;
+      *out = updated;
+      return STORE_OK;
+    }
+    /* Progress made after the interrupted Save retains the same attempt ID.
+       The prior valid record stays available as the previous copy. */
+  } else if (status != STORE_NOT_FOUND) {
+    return status;
+  }
+
+  GameLibraryRecord record;
+  if (!game_library_make_exact_runtime(
+          &record, hot->attempt_id, revision, &hot->value, true))
+    return STORE_IO_ERROR;
+  status = game_library_save_runtime(root, &record, cache);
+  if (status != STORE_OK) return status;
+  ProfileSlot updated = *hot;
+  updated.retained = true;
+  updated.revision = revision;
+  *out = updated;
+  return STORE_OK;
+}
+
 /* Explicit previous-copy recovery must not destroy the existing primary,
    including incompatible/corrupt bytes that might matter to a future reader.
    Preserve it as opaque data before replacing it with validated backup bytes. */

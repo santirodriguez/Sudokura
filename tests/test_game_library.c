@@ -212,6 +212,171 @@ static void test_save_revision_and_previous_recovery(void) {
   cleanup();
 }
 
+static void test_first_save_record_cuts_and_terminal_retry(void) {
+  prepare();
+  ProfileSlot hot = {0}, retained = {0};
+  hot.present = true;
+  hot.attempt_id = make_id(9841);
+  hot.revision = 7;
+  hot.value = make_session(SESSION_ACTIVE);
+  GameLibraryHotCache cache = {0};
+  retained.revision = 99;
+
+  /* Before record replacement, no retained snapshot may be acknowledged. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &hot, &cache, false, &retained) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(retained.revision == 99 && !retained.present);
+  GameLibraryRecord disk;
+  assert(game_library_load(root, hot.attempt_id, &disk) == STORE_NOT_FOUND);
+
+  char hex[33], primary[160], backup[160];
+  game_attempt_id_hex(hot.attempt_id, hex);
+  int n = snprintf(primary, sizeof(primary), "%s/games/%s.dat", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(primary));
+  n = snprintf(backup, sizeof(backup), "%s/games/%s.dat.bak", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(backup));
+  store_test_fail_parent_sync_at(primary);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &hot, &cache, false, &retained) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(!retained.present && retained.revision == 99);
+  assert(game_library_load(root, hot.attempt_id, &disk) == STORE_OK);
+  assert(disk.retained && disk.revision == 8);
+  assert(!store_file_exists(backup));
+  assert(!hot.retained && hot.revision == 7);
+
+  /* Retry same ID/revision: re-acknowledge directory sync without
+     rotating a previous copy; no second game can be allocated. */
+  assert(game_library_retain_hot_slot_runtime(
+      root, &hot, &cache, false, &retained) == STORE_IO_ERROR);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &hot, &cache, true, &retained) == STORE_OK);
+  assert(retained.retained && retained.revision == 8);
+  assert(game_attempt_id_equal(retained.attempt_id, hot.attempt_id));
+  assert(!store_file_exists(backup));
+
+  /* Input staged while Save was pending may advance the same attempt. */
+  ProfileSlot progressed = hot;
+  progressed.revision = 8;
+  progressed.value.session.elapsed_ms += UINT64_C(3000);
+  progressed.value.session.selected_row = 2;
+  assert(game_library_retain_hot_slot_runtime(
+      root, &progressed, &cache, true, &retained) == STORE_OK);
+  assert(retained.revision == 9);
+  assert(game_library_load(root, hot.attempt_id, &disk) == STORE_OK);
+  assert(disk.revision == 9 &&
+         disk.exact.session.elapsed_ms == progressed.value.session.elapsed_ms);
+  assert(store_file_exists(backup));
+
+  /* The earlier valid record must survive a repeat acknowledgement. */
+  unsigned char before[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  unsigned char after[SUDOKURA_GAME_RECORD_MAX_BYTES];
+  size_t before_size = 0, after_size = 0;
+  assert(store_read_file(backup, before, sizeof(before),
+                         &before_size) == STORE_OK);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &progressed, &cache, true, &retained) == STORE_OK);
+  assert(retained.revision == 9);
+  assert(store_read_file(backup, after, sizeof(after),
+                         &after_size) == STORE_OK);
+  assert(before_size == after_size &&
+         memcmp(before, after, before_size) == 0);
+
+  ProfileSlot wrong = progressed;
+  wrong.value.session.game.seed ^= UINT64_C(1);
+  retained.revision = 99;
+  assert(game_library_retain_hot_slot_runtime(
+      root, &wrong, &cache, true, &retained) == STORE_IO_ERROR);
+  assert(retained.revision == 99);
+
+  /* A win after a pending first Save must supersede its active revision
+     without changing the attempt ID or reopening the terminal snapshot. */
+  ProfileSlot won = progressed;
+  won.revision = 9;
+  won.value = make_session(SESSION_WON);
+  won.value.session.elapsed_ms = UINT64_C(21000);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &won, &cache, true, &retained) == STORE_OK);
+  assert(retained.revision == 10 && retained.retained);
+  assert(game_library_load(root, hot.attempt_id, &disk) == STORE_OK);
+  assert(disk.revision == 10 && disk.result.status == SESSION_WON);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &won, &cache, true, &retained) == STORE_OK);
+  assert(retained.revision == 10);
+  won.revision = 10;
+  won.value.session.elapsed_ms += 1000;
+  assert(game_library_retain_hot_slot_runtime(
+      root, &won, &cache, true, &retained) == STORE_IO_ERROR);
+  assert(game_library_load(root, hot.attempt_id, &disk) == STORE_OK);
+  assert(disk.revision == 10 && disk.result.status == SESSION_WON);
+  cleanup();
+}
+
+static void test_first_save_profile_ack_preserves_previous_copy(void) {
+  prepare();
+  ProfileData original, candidate, reread, previous;
+  profile_defaults(&original);
+  original.normal.present = true;
+  original.normal.attempt_id = make_id(9842);
+  original.normal.revision = 6;
+  original.normal.value = make_session(SESSION_ACTIVE);
+  assert(profile_validate(&original));
+
+  char primary[160], backup[160];
+  int n = snprintf(primary, sizeof(primary),
+                   "%s/profile-retain-cut.dat", root);
+  assert(n > 0 && (size_t)n < sizeof(primary));
+  n = snprintf(backup, sizeof(backup),
+               "%s/profile-retain-cut.dat.bak", root);
+  assert(n > 0 && (size_t)n < sizeof(backup));
+  assert(profile_save_runtime_file(primary, backup, &original) == STORE_OK);
+  assert(!store_file_exists(backup));
+
+  ProfileSlot retained = {0};
+  GameLibraryHotCache cache = {0};
+  assert(game_library_retain_hot_slot_runtime(
+      root, &original.normal, &cache, false, &retained) == STORE_OK);
+  candidate = original;
+  candidate.normal = retained;
+  assert(profile_validate(&candidate));
+
+  /* The record is committed, but profile.dat returns an ambiguous
+     post-rename failure. Previous profile bytes must remain protected. */
+  store_test_fail_parent_sync_at(primary);
+  assert(profile_save_runtime_file(primary, backup, &candidate) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary, &reread) == STORE_OK);
+  assert(profile_encoded_equal(&reread, &candidate));
+  assert(profile_load_file(backup, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+
+  /* The in-memory hot slot remains unretained until the profile link
+     is acknowledged. Retry the record and profile without backup rotation. */
+  assert(!original.normal.retained && original.normal.revision == 6);
+  assert(game_library_retain_hot_slot_runtime(
+      root, &original.normal, &cache, true, &retained) == STORE_OK);
+  assert(retained.retained && retained.revision == 7);
+  assert(profile_save_runtime_file(primary, NULL, &candidate) == STORE_OK);
+  assert(profile_load_file(primary, &reread) == STORE_OK);
+  assert(profile_encoded_equal(&reread, &candidate));
+  assert(profile_load_file(backup, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+
+  char hex[33], record_backup[160];
+  game_attempt_id_hex(original.normal.attempt_id, hex);
+  n = snprintf(record_backup, sizeof(record_backup),
+               "%s/games/%s.dat.bak", root, hex);
+  assert(n > 0 && (size_t)n < sizeof(record_backup));
+  assert(!store_file_exists(record_backup));
+
+  assert(store_remove_file(primary));
+  assert(store_remove_file(backup));
+  cleanup();
+}
+
 typedef struct {
   unsigned count;
   bool saw_backup;
@@ -1907,6 +2072,8 @@ int main(void) {
   test_codec_and_atomic_decode();
   cleanup();
   test_save_revision_and_previous_recovery();
+  test_first_save_record_cuts_and_terminal_retry();
+  test_first_save_profile_ack_preserves_previous_copy();
   test_backup_only_scan_and_recovery();
   test_delete_receipt_prevents_resurrection();
   test_delete_receipt_fault_matrix();

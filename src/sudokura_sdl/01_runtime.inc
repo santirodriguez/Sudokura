@@ -175,8 +175,13 @@ typedef struct {
   GameAttemptId active_attempt_id;
   GameReplayOrigin active_replay;
   bool capture_failed;
+  /* An interrupted first Save still owes its retained record/profile link. */
+  unsigned keep_pending_mask;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
+
+/* Defined later in games_ui.inc; also used by the global Retry action. */
+static bool games_browser_save_hot(Persistence *p, bool daily);
 
 /* Home Daily scan runs incrementally. Rendering reads only this state. */
 static bool daily_lookup_scanning = false;
@@ -494,7 +499,7 @@ static void persistence_refresh_normal(Persistence*p){
 
 static StoreStatus persistence_write_profile_callback(void*context){
   Persistence*p=(Persistence*)context;
-  if(!p||!p->enabled||p->capture_failed)return STORE_IO_ERROR;
+  if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask)return STORE_IO_ERROR;
   p->profile.preferences=p->preferences;
   return profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
@@ -507,7 +512,7 @@ static bool persistence_write_profile(Persistence*p){
 }
 
 static bool persistence_flush(Persistence*p){
-  if(!p||!p->enabled)return false;
+  if(!p||!p->enabled||p->keep_pending_mask)return false;
   if(!save_policy_dirty(&p->save_policy))return true;
   return persistence_write_profile(p);
 }
@@ -843,8 +848,13 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   slot->attempt_id=id;
   p->active_attempt_id=id;
   slot->revision=next_revision;
-  slot->retained=retained||state.status==SESSION_WON||
-                 p->active_replay.practice;
+  unsigned dirty_bit=state.is_daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL;
+  bool keep_pending=(p->keep_pending_mask&dirty_bit)!=0;
+  /* A pending first Save must finish its own record transaction before
+     a terminal result can publish a new retained hot pointer. */
+  slot->retained=retained||
+      (state.status==SESSION_WON&&!keep_pending)||
+      p->active_replay.practice;
   slot->value.undo_count=ui->undo_count;
   slot->value.redo_count=ui->redo_count;
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
@@ -885,14 +895,23 @@ static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
 
 static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
   if(!p)return false;
-  if(p->capture_failed)
-    return game&&ui&&ui->session_open &&
-           checkpoint_current_session(p,game,ui);
+  if(p->capture_failed &&
+     (!game||!ui||!ui->session_open||
+      !stage_current_session(p,game,ui)))return false;
+  /* Retry the actual first-retention operation, not only profile.dat.
+     A plain flush would otherwise report success for an unretained slot. */
+  if((p->keep_pending_mask&SAVE_DIRTY_NORMAL)!=0 &&
+     !games_browser_save_hot(p,false))return false;
+  if((p->keep_pending_mask&SAVE_DIRTY_DAILY)!=0 &&
+     !games_browser_save_hot(p,true))return false;
   return persistence_flush(p);
 }
 
 static void persistence_begin_distinct_attempt(Persistence*p,bool daily){
   if(!p)return;
+  /* A separately confirmed replacement abandons only this pending keep.
+     A previously written orphan remains discoverable in Games. */
+  p->keep_pending_mask&=~(daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL);
   p->active_attempt_id=(GameAttemptId){0,0};
   persistence_set_replay_origin(p,NULL);
   ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;

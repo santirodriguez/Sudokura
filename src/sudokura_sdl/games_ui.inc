@@ -302,29 +302,53 @@ static bool games_browser_open_focused(Persistence *p, Game *game,
 }
 
 static bool games_browser_save_hot(Persistence *p, bool daily) {
+  if (!p || !p->enabled) return false;
+  unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
   ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   if (!slot->present || !game_attempt_id_valid(slot->attempt_id) ||
       slot->revision == UINT64_MAX) return false;
-  if (slot->retained) return true;
-  GameLibraryRecord record;
-  if (!game_library_make_exact_runtime(&record, slot->attempt_id,
-                               slot->revision + 1u, &slot->value, true))
+  if (slot->retained) return (p->keep_pending_mask & bit) == 0;
+  if (p->capture_failed || (p->keep_pending_mask & ~bit) != 0)
+    return false; /* A different pending record must not be acknowledged. */
+
+  bool retry_pending = (p->keep_pending_mask & bit) != 0;
+  p->keep_pending_mask |= bit;
+  uint64_t started = now_ms();
+  save_policy_mark(&p->save_policy, bit, started);
+  save_policy_record_result(&p->save_policy, STORE_IO_ERROR, started);
+
+  ProfileSlot retained;
+  if (game_library_retain_hot_slot_runtime(
+          p->profile_directory, slot, &p->game_cache[daily ? 1 : 0],
+          retry_pending, &retained) != STORE_OK)
     return false;
-  if (game_library_save_runtime(p->profile_directory, &record,
-                                &p->game_cache[daily ? 1 : 0]) != STORE_OK)
-    return false;
+
   ProfileData candidate = p->profile;
-  ProfileSlot *updated = daily ? &candidate.daily : &candidate.normal;
-  updated->retained = true;
-  updated->revision = record.revision;
+  *(daily ? &candidate.daily : &candidate.normal) = retained;
   candidate.preferences = p->preferences;
-  if (profile_save_runtime_file(p->profile_path, p->profile_backup_path,
-                                &candidate) != STORE_OK)
+  ProfileData disk;
+  StoreStatus status = profile_load_file(p->profile_path, &disk);
+  if (status != STORE_OK) return false; /* No reset over damaged storage. */
+
+  /* A previous profile write may have renamed successfully before its
+     directory-sync acknowledgement failed. Re-acknowledge the same bytes
+     without rotating the last known good profile backup. */
+  bool identical = profile_encoded_equal(&candidate, &disk);
+  status = profile_save_runtime_file(
+      p->profile_path, identical ? NULL : p->profile_backup_path,
+      &candidate);
+  if (status != STORE_OK ||
+      profile_load_file(p->profile_path, &disk) != STORE_OK ||
+      !profile_encoded_equal(&candidate, &disk))
     return false;
+
   p->profile = candidate;
+  p->keep_pending_mask &= ~bit;
   p->game_cache[daily ? 1 : 0].valid = false;
   persistence_refresh_normal(p);
-  /* Save policy is cleared by the caller's checkpoint; keep unrelated dirt. */
+  /* The complete profile also committed preferences and recent results.
+     Do not flush it a second time and rotate its backup on success. */
+  save_policy_record_result(&p->save_policy, STORE_OK, now_ms());
   return true;
 }
 
@@ -1265,7 +1289,7 @@ static bool games_browser_key(Persistence *p,Game *game,UI *ui,Gfx *gfx,
     games_browser.focus=4;
     (void)games_browser_activate_focus(p,game,ui,gfx);
   }else if(!repeat && key==SDLK_r && persistence_has_save_error(p)){
-    (void)persistence_flush(p);
+    (void)persistence_retry_current(p,game,ui);
   }else if(!repeat && input_activation_key(key)){
     (void)games_browser_activate_focus(p,game,ui,gfx);
   }

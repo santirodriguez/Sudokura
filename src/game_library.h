@@ -118,6 +118,12 @@ StoreStatus game_library_save_runtime_at(const char *root,
                                          const GameLibraryRecord *record,
                                          GameLibraryHotCache *cache,
                                          uint64_t utc_seconds);
+/* First Save/Keep of an unretained hot slot: record before hot pointer.
+   retry_pending allows only this writer's interrupted first retention.
+   The output slot is unchanged on any failure. */
+StoreStatus game_library_retain_hot_slot_runtime(
+    const char *root, const ProfileSlot *hot, GameLibraryHotCache *cache,
+    bool retry_pending, ProfileSlot *out);
 StoreStatus game_library_recover_previous(const char *root, GameAttemptId id,
                                           GameLibraryRecord *record);
 StoreStatus game_library_receipt_status(const char *root, GameAttemptId id);
