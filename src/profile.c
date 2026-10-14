@@ -993,6 +993,29 @@ StoreStatus profile_save_runtime_verified(const char *path,
   return profile_encoded_equal(&check, profile) ? STORE_OK : STORE_CORRUPT;
 }
 
+/* Back from an interrupted activation must not leave a newly selected
+   hot slot on disk. Restore only a recognized candidate; never overwrite
+   unknown, incompatible or independently modified profile data. */
+StoreStatus profile_restore_runtime_activation(
+    const char *path, const ProfileData *previous,
+    const ProfileData *candidate) {
+  if (!path || !previous || !candidate ||
+      !profile_validate_runtime(previous) ||
+      !profile_validate_runtime(candidate))
+    return STORE_IO_ERROR;
+  ProfileData disk;
+  StoreStatus status = profile_load_file(path, &disk);
+  if (status != STORE_OK) return status;
+  if (profile_encoded_equal(&disk, previous)) return STORE_OK;
+  if (!profile_encoded_equal(&disk, candidate)) return STORE_CORRUPT;
+  /* An acknowledged previous copy is never rotated for a cancel. */
+  status = profile_save_runtime_file(path, NULL, previous);
+  if (status != STORE_OK) return status;
+  status = profile_load_file(path, &disk);
+  if (status != STORE_OK) return status;
+  return profile_encoded_equal(&disk, previous) ? STORE_OK : STORE_CORRUPT;
+}
+
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
                                      ProfileData *profile) {

@@ -446,8 +446,7 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
       entry.revision=recovered.revision;
     }
     if (entry.result.status==SESSION_ACTIVE) {
-      if (!games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d))
-        home_daily_warning(game,ui,gfx,T_GAMES_ACTION_FAILED);
+      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d);
     } else {
       /* The original finished Daily remains read-only; no new attempt. */
       if (!games_browser_open_focused(p,game,ui,gfx,entry.id,true))
@@ -457,10 +456,8 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   }
   /* All older Daily attempts, including an empty autosave, remain
      durably recoverable before today's new original is generated. */
-  if (!games_browser_retain_daily_for_rollover(p)) {
-    home_daily_warning(game,ui,gfx,T_SAVE_FAILED);
+  if (!games_browser_retain_daily_with_retry(p,game,ui,gfx))
     return;
-  }
   victory_animation_reset();
   (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
 }
@@ -500,10 +497,10 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
       return;
     }
   }
-  if (!persistence_flush(p)) {
-    home_daily_warning(game,ui,g,T_SAVE_FAILED);
+  if (games_browser_checkpoint_gate(
+          p,game,ui,g,true,false,true,T_DAILY_SAVE_RETRY_PROMPT) !=
+      GAMES_CHECKPOINT_READY)
     return;
-  }
   memset(&home_daily_scan,0,sizeof(home_daily_scan));
   home_daily_scan.year=year;home_daily_scan.month=month;home_daily_scan.day=day;
   home_daily_scan.status=game_library_scan_begin(

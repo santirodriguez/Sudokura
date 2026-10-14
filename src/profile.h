@@ -122,6 +122,11 @@ StoreStatus profile_save_runtime_file(const char *path,
 StoreStatus profile_save_runtime_verified(const char *path,
                                           const char *backup_path,
                                           const ProfileData *profile);
+/* Cancel a failed activation only when disk still holds the old snapshot
+   or exactly the attempted candidate. Never rotate the previous backup. */
+StoreStatus profile_restore_runtime_activation(
+    const char *path, const ProfileData *previous,
+    const ProfileData *candidate);
 StoreStatus profile_load_file(const char *path, ProfileData *profile);
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,

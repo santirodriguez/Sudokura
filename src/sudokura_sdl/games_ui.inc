@@ -378,6 +378,21 @@ static bool games_browser_save_current(Persistence *p, Game *game, UI *ui,
   return false;
 }
 
+/* Daily's Home preflight also needs idempotent profile acknowledgement.
+   Do not rotate the prior good copy on a repeated post-rename write. */
+static bool games_browser_daily_flush_verified(Persistence *p) {
+  if (!p || !p->enabled || p->capture_failed || p->keep_pending_mask)
+    return false;
+  if (!save_policy_dirty(&p->save_policy)) return true;
+  ProfileData candidate = p->profile;
+  candidate.preferences = p->preferences;
+  StoreStatus status = profile_save_runtime_verified(
+      p->profile_path, p->profile_backup_path, &candidate);
+  save_policy_record_result(&p->save_policy, status, now_ms());
+  if (status == STORE_OK) p->profile.preferences = p->preferences;
+  return status == STORE_OK;
+}
+
 typedef enum {
   GAMES_CHECKPOINT_BACK = 0,
   GAMES_CHECKPOINT_READY,
@@ -386,10 +401,13 @@ typedef enum {
 
 static GamesCheckpointGate games_browser_checkpoint_gate(
     Persistence *p, Game *game, UI *ui, Gfx *gfx,
-    bool daily, bool allow_discard) {
+    bool daily, bool allow_discard, bool verified_daily,
+    TextKey retry_prompt) {
   if (!p || !p->enabled || !game || !ui || !gfx)
     return GAMES_CHECKPOINT_BACK;
-  if (persistence_flush(p) && !p->capture_failed &&
+  bool flushed = verified_daily
+      ? games_browser_daily_flush_verified(p) : persistence_flush(p);
+  if (flushed && !p->capture_failed &&
       p->keep_pending_mask == 0 && !save_policy_dirty(&p->save_policy))
     return GAMES_CHECKPOINT_READY;
   for (;;) {
@@ -409,7 +427,7 @@ static GamesCheckpointGate games_browser_checkpoint_gate(
                      tr(ui->language, T_DISCARD))
         : (confirm_box(gfx, game, ui,
                        tr(ui->language, T_UNSAVED_TITLE),
-                       tr(ui->language, T_GAMES_RETRY_SAVE_PROMPT),
+                       tr(ui->language, retry_prompt),
                        tr(ui->language, T_RETRY_SAVE),
                        tr(ui->language, T_BACK)) ? 1 : 0);
     if (choice == 0) return GAMES_CHECKPOINT_BACK;
@@ -420,8 +438,11 @@ static GamesCheckpointGate games_browser_checkpoint_gate(
         return GAMES_CHECKPOINT_DISCARD;
       return GAMES_CHECKPOINT_BACK;
     }
-    if (persistence_retry_current(p, game, ui) &&
-        !p->capture_failed && p->keep_pending_mask == 0 &&
+    bool retried = verified_daily && !p->capture_failed &&
+                   p->keep_pending_mask == 0
+        ? games_browser_daily_flush_verified(p)
+        : persistence_retry_current(p, game, ui);
+    if (retried && !p->capture_failed && p->keep_pending_mask == 0 &&
         !save_policy_dirty(&p->save_policy))
       return GAMES_CHECKPOINT_READY;
   }
@@ -429,7 +450,8 @@ static GamesCheckpointGate games_browser_checkpoint_gate(
 
 static bool games_browser_commit_profile(Persistence *p, Game *game,
                                          UI *ui, Gfx *gfx, bool daily,
-                                         const ProfileData *candidate) {
+                                         const ProfileData *candidate,
+                                         bool restore_on_back) {
   if (!p || !p->enabled || !candidate) return false;
   for (;;) {
     if (profile_save_runtime_verified(
@@ -444,15 +466,27 @@ static bool games_browser_commit_profile(Persistence *p, Game *game,
     if (!confirm_box(gfx, game, ui, tr(ui->language, T_STORAGE_ERROR),
                      tr(ui->language, T_GAMES_ACTIVATE_RETRY_PROMPT),
                      tr(ui->language, T_RETRY_SAVE),
-                     tr(ui->language, T_BACK)))
+                     tr(ui->language, T_BACK))) {
+      if (restore_on_back) {
+        StoreStatus restored = profile_restore_runtime_activation(
+            p->profile_path, &p->profile, candidate);
+        if (restored == STORE_OK)
+          save_policy_init(&p->save_policy);
+        else
+          (void)show_simple_message_box(
+              gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+              tr(ui->language, T_STORAGE_ERROR),
+              tr(ui->language, T_DAILY_BACK_UNCONFIRMED));
+      }
       return false;
+    }
   }
 }
 
 static bool games_browser_gate_replacement(Persistence *p, Game *game,
                                            UI *ui, Gfx *gfx, bool daily) {
   GamesCheckpointGate gate = games_browser_checkpoint_gate(
-      p, game, ui, gfx, daily, true);
+      p, game, ui, gfx, daily, true, false, T_GAMES_RETRY_SAVE_PROMPT);
   if (gate == GAMES_CHECKPOINT_BACK) return false;
   if (gate == GAMES_CHECKPOINT_DISCARD) return true;
   const ProfileSlot *departing = daily ? &p->profile.daily : &p->profile.normal;
@@ -500,6 +534,22 @@ static bool games_browser_retain_daily_for_rollover(Persistence *p) {
          saved.result.status == slot->value.session.status;
 }
 
+static bool games_browser_retain_daily_with_retry(
+    Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  if (games_browser_checkpoint_gate(p, game, ui, gfx, true, false, true,
+                                    T_DAILY_SAVE_RETRY_PROMPT) !=
+      GAMES_CHECKPOINT_READY) return false;
+  while (true) {
+    if (games_browser_retain_daily_for_rollover(p)) return true;
+    if (!confirm_box(gfx, game, ui,
+                     tr(ui->language, T_UNSAVED_TITLE),
+                     tr(ui->language, T_DAILY_SAVE_RETRY_PROMPT),
+                     tr(ui->language, T_RETRY_SAVE),
+                     tr(ui->language, T_BACK))) return false;
+    (void)persistence_retry_current(p, game, ui);
+  }
+}
+
 /* Canonical validation and durable hot-pointer commit happen before play. */
 static bool games_browser_resume_daily(Persistence *p, Game *game, UI *ui,
                                        Gfx *gfx, GameAttemptId id,
@@ -512,8 +562,12 @@ static bool games_browser_resume_daily(Persistence *p, Game *game, UI *ui,
       !target.original_daily ||
       target.exact.session.daily_year != year ||
       target.exact.session.daily_month != month ||
-      target.exact.session.daily_day != day)
+      target.exact.session.daily_day != day) {
+    (void)show_simple_message_box(
+        gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+        tr(ui->language, T_DAILY), tr(ui->language, T_DAILY_READ_ERROR));
     return false;
+  }
   ProfileSlot *old = &p->profile.daily;
   if (old->present && game_attempt_id_equal(old->attempt_id, id) &&
       old->revision >= target.revision) {
@@ -521,7 +575,8 @@ static bool games_browser_resume_daily(Persistence *p, Game *game, UI *ui,
     restore_saved_session(p, game, ui, true);
     return true;
   }
-  if (!games_browser_retain_daily_for_rollover(p)) return false;
+  if (!games_browser_retain_daily_with_retry(p, game, ui, gfx))
+    return false;
   ProfileData candidate = p->profile;
   ProfileSlot *replacement = &candidate.daily;
   memset(replacement, 0, sizeof(*replacement));
@@ -531,9 +586,14 @@ static bool games_browser_resume_daily(Persistence *p, Game *game, UI *ui,
   replacement->revision = target.revision;
   replacement->value = target.exact;
   candidate.preferences = p->preferences;
-  if (!profile_validate(&candidate) ||
-      profile_save_runtime_file(p->profile_path, p->profile_backup_path,
-                                &candidate) != STORE_OK)
+  if (!profile_validate(&candidate)) {
+    (void)show_simple_message_box(
+        gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+        tr(ui->language, T_DAILY), tr(ui->language, T_GAMES_ACTION_FAILED));
+    return false;
+  }
+  if (!games_browser_commit_profile(
+          p, game, ui, gfx, true, &candidate, true))
     return false;
   p->profile = candidate;
   p->game_cache[1].valid = false;
@@ -675,8 +735,9 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
   /* Reconcile newer disk state without ever offering Discard of this same
      attempt. After Retry, resolve again in case the live slot advanced. */
   if (same_attempt) {
-    if (games_browser_checkpoint_gate(p, game, ui, gfx, daily, false) !=
-        GAMES_CHECKPOINT_READY)
+    if (games_browser_checkpoint_gate(
+            p, game, ui, gfx, daily, false, false,
+            T_GAMES_RETRY_SAVE_PROMPT) != GAMES_CHECKPOINT_READY)
       return false;
     if (game_library_load(p->profile_directory, target.id, &target) != STORE_OK ||
         game_library_resolve_hot_record(
@@ -706,7 +767,8 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
   slot->value = target.exact;
   candidate.preferences = p->preferences;
   /* The old board remains visible until the new hot pointer is durable. */
-  if (!games_browser_commit_profile(p, game, ui, gfx, daily, &candidate))
+  if (!games_browser_commit_profile(
+          p, game, ui, gfx, daily, &candidate, false))
     return false;
   p->profile = candidate;
   p->game_cache[daily ? 1 : 0].valid = false;
@@ -901,7 +963,8 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
     games_browser_operation_error(gfx, game, ui);
     return false;
   }
-  if (!games_browser_commit_profile(p, game, ui, gfx, false, &candidate))
+  if (!games_browser_commit_profile(
+          p, game, ui, gfx, false, &candidate, false))
     return false; /* The Prepared intent and record remain available. */
 
   p->profile = candidate;
