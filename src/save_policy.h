@@ -33,6 +33,11 @@ bool save_policy_has_error(const SavePolicy *policy);
 bool save_policy_transition_ready(const SavePolicy *policy,
                                   bool checkpoint_succeeded);
 bool save_policy_slot_dirty(const SavePolicy *policy, bool daily);
+/* Discard in a replacement gate is allowed only for one isolated active
+   unretained slot, never for results, preferences or pending first Saves. */
+bool save_policy_replacement_discard_allowed(
+    const SavePolicy *policy, bool daily, bool unretained_active,
+    bool capture_failed, unsigned keep_pending_mask);
 bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms);
 typedef StoreStatus (*SavePolicyWriteFn)(void *context);
 

@@ -973,6 +973,26 @@ static StoreStatus preserve_profile_pre_recovery(const char *profile_path) {
   return STORE_IO_ERROR; /* No slot remains; keep the original profile. */
 }
 
+/* A repeated Load/Replay commit confirms its primary without replacing
+   the previous valid backup when the requested snapshot is already there. */
+StoreStatus profile_save_runtime_verified(const char *path,
+                                          const char *backup_path,
+                                          const ProfileData *profile) {
+  if (!path || !backup_path || !backup_path[0] || !profile ||
+      !profile_validate_runtime(profile))
+    return STORE_IO_ERROR;
+  ProfileData current;
+  StoreStatus result = profile_load_file(path, &current);
+  if (result != STORE_OK) return result;
+  bool same = profile_encoded_equal(&current, profile);
+  result = profile_save_runtime_file(path, same ? NULL : backup_path, profile);
+  if (result != STORE_OK) return result;
+  ProfileData check;
+  result = profile_load_file(path, &check);
+  if (result != STORE_OK) return result;
+  return profile_encoded_equal(&check, profile) ? STORE_OK : STORE_CORRUPT;
+}
+
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
                                      ProfileData *profile) {

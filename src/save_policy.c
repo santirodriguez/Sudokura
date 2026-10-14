@@ -34,6 +34,14 @@ bool save_policy_slot_dirty(const SavePolicy *policy, bool daily) {
   return (policy->dirty_mask & bit) != 0;
 }
 
+bool save_policy_replacement_discard_allowed(
+    const SavePolicy *policy, bool daily, bool unretained_active,
+    bool capture_failed, unsigned keep_pending_mask) {
+  unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
+  return policy && unretained_active && !capture_failed &&
+         keep_pending_mask == 0u && policy->dirty_mask == bit;
+}
+
 bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms) {
   if (!save_policy_dirty(policy)) return false;
   if (now_ms < policy->dirty_since_ms || now_ms < policy->last_change_ms)

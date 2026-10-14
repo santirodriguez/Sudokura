@@ -82,6 +82,76 @@ static void test_winning_checkpoint_is_durable_without_debounce(void) {
   cleanup();
 }
 
+static void test_verified_replacement_faults_and_backups(void) {
+  cleanup();
+  ProfileData original, candidate, disk, previous;
+  profile_defaults(&original);
+  SessionState original_game = make_session();
+  assert(profile_slot_set(&original.normal, &original_game, false));
+  assert(profile_save_runtime_file(active_path, backup_path, &original) == STORE_OK);
+  candidate = original;
+  candidate.preferences.music_volume = 42;
+  assert(!profile_encoded_equal(&original, &candidate));
+
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(active_path, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &original));
+
+  /* Both writes may have landed before the directory sync failed. */
+  store_test_fail_parent_sync_at(active_path);
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(active_path, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &candidate));
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+
+  /* A retry acknowledges the same candidate without rotating the backup. */
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_OK);
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_OK);
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+
+  /* Unsupported/corrupt primaries are not silently replaced with a copy. */
+  unsigned char altered[16384];
+  size_t bytes = 0;
+  assert(store_read_file(active_path, altered, sizeof(altered), &bytes) == STORE_OK);
+  assert(bytes > 20);
+  altered[bytes - 1] ^= 1u;
+  assert(store_atomic_write(active_path, NULL, altered, bytes) == STORE_OK);
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_CORRUPT);
+  unsigned char unchanged[16384];
+  size_t unchanged_bytes = 0;
+  assert(store_read_file(active_path, unchanged, sizeof(unchanged),
+                         &unchanged_bytes) == STORE_OK);
+  assert(unchanged_bytes == bytes && memcmp(unchanged, altered, bytes) == 0);
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+
+  assert(store_remove_file(active_path));
+  assert(profile_save_runtime_verified(active_path, backup_path, &candidate) ==
+         STORE_NOT_FOUND);
+  assert(!store_file_exists(active_path));
+  assert(profile_load_file(backup_path, &previous) == STORE_OK);
+  assert(profile_encoded_equal(&previous, &original));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
 
@@ -138,6 +208,7 @@ int main(void) {
 
   cleanup();
   test_winning_checkpoint_is_durable_without_debounce();
+  test_verified_replacement_faults_and_backups();
   puts("live profile remains authoritative across failed save and retry");
   return 0;
 }
