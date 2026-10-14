@@ -34,6 +34,10 @@ int main(void) {
       assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
       assert(GEOMETRY_TITLE_BUTTON_COUNT == 8);
       assert_rect(g.home_new_label,width,height);
+      assert(g.home_new_label.h >= 20);
+      assert(g.home_continue_label.h >= 20);
+      assert(g.home_mode_label.h >= 20);
+      assert(g.home_difficulty_label.h >= 20);
       assert_rect(g.home_continue_label,width,height);
       assert(g.home_new_label.y < g.home_mode_label.y);
       assert(g.home_mode[0].y < g.home_difficulty_label.y);

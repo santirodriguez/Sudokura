@@ -194,7 +194,7 @@ for r in rows:
         # occupies its own readable full-width row below the Continue cards.
         portrait=w<640
         short_desktop=w>=640 and h<600
-        group_h=12 if short_desktop else 14 if portrait else 16
+        group_h=20
         continuation_h=46 if portrait else 44 if short_desktop else (
             61 if w>=1600 and h>=900 else 55)
         between_new=5 if short_desktop else 9

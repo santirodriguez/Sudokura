@@ -66,14 +66,14 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   int home_w = portrait ? width - margin * 2
                         : min_i(width - margin * 2 - 36, xl ? 700 : 640);
   int home_x = (width - home_w) / 2;
-  int logo_h = portrait ? 62 : (short_desktop ? 54 : (xl ? 108 : 88));
+  int logo_h = portrait ? 62 : (short_desktop ? 46 : (xl ? 108 : 88));
   int y = g->screen_language.y + g->screen_language.h +
           (short_desktop ? 5 : 8);
   g->home_logo = (GeoRect){home_x, y, home_w, logo_h};
   y += logo_h + (short_desktop ? 4 : 8);
 
-  int group_label_h = short_desktop ? 12 : (portrait ? 14 : 16);
-  int label_h = short_desktop ? 12 : 16;
+  int group_label_h = 20;
+  int label_h = 20;
   int segment_h = portrait ? 34 : (short_desktop ? 30 : (xl ? 42 : 36));
   g->home_new_label = (GeoRect){home_x, y, home_w, group_label_h};
   y += group_label_h + (short_desktop ? 1 : 3);
