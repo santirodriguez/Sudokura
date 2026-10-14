@@ -232,6 +232,8 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   }
 
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
+  (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
+                         sdl_rect(geometry.home_new_label), fonts.help, 10);
   (void)draw_fitted_text(gfx, tr(ui->language, T_MODE), theme.dim,
                          sdl_rect(geometry.home_mode_label), fonts.help, 10);
 
@@ -269,8 +271,11 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
 
   bool normal_resumable = ui->normal_resume.can_continue;
   polish_home_button(gfx, theme, sdl_rect(geometry.home_primary[0]),
-                     tr(ui->language, T_NEW_GAME), !normal_resumable, false,
+                     tr(ui->language, T_START_NEW_GAME), true, false,
                      home_focus == HOME_FOCUS_NEW, fonts.control);
+  (void)draw_fitted_text(gfx, tr(ui->language, T_CONTINUE), theme.title,
+                         sdl_rect(geometry.home_continue_label),
+                         fonts.help, 10);
 
   char normal_detail[128] = "";
   if (ui->normal_resume.can_continue) {
@@ -321,24 +326,34 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
       false, false, home_focus == HOME_FOCUS_DAILY, fonts.control);
 
-  const TextKey secondary_keys[GEOMETRY_HOME_SECONDARY_COUNT] = {
-      T_GAMES, T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
-  for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
-    const char *text = tr(ui->language, secondary_keys[i]);
-    SDL_Rect rect = sdl_rect(geometry.home_secondary[i]);
-    if (i == 0) {
-      bool hovered = point_in(rect, mx, my);
-      SDL_Rect face = polish_button_face(
-          gfx,theme,rect,hovered ? theme.hover : theme.btn,
-          hovered && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
-      ui_draw_icon_label(gfx,face,text,UI_GLYPH_FOLDER,theme.btnfg,
-                         fonts.control);
-      if (home_focus == HOME_FOCUS_GAMES)
-        draw_focus_ring(gfx->ren,rect,theme.sel_outline);
-    } else {
-      polish_home_button(gfx, theme, rect, text,false,false,
-                         home_focus == HOME_FOCUS_HELP + i,fonts.control);
-    }
+  SDL_Rect library = sdl_rect(geometry.home_secondary[0]);
+  bool library_hover = point_in(library,mx,my);
+  SDL_Rect library_face = polish_button_face(
+      gfx,theme,library,library_hover ? theme.hover : theme.btn,
+      library_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+  SDL_Rect folder = {library_face.x + 14,
+                     library_face.y + (library_face.h-20)/2,20,20};
+  ui_draw_glyph(gfx->ren,folder,UI_GLYPH_FOLDER,theme.title);
+  int label_w = library_face.w - 105;
+  if (label_w > 250) label_w = 250;
+  if (label_w < 60) label_w = 60;
+  SDL_Rect label = {folder.x + 32,library_face.y,
+                    label_w,library_face.h};
+  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES),
+                         theme.btnfg,label,fonts.control,11);
+  int arrow_x = library_face.x+library_face.w-23;
+  int arrow_y = library_face.y+library_face.h/2;
+  draw_line(gfx->ren,arrow_x-5,arrow_y-5,arrow_x,arrow_y,theme.dim);
+  draw_line(gfx->ren,arrow_x,arrow_y,arrow_x-5,arrow_y+5,theme.dim);
+  if (home_focus == HOME_FOCUS_GAMES)
+    draw_focus_ring(gfx->ren,library,theme.sel_outline);
+
+  const TextKey footer_keys[] = {T_HELP,T_ABOUT,T_SETTINGS,T_QUIT};
+  for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
+    polish_home_button(
+        gfx,theme,sdl_rect(geometry.home_secondary[i]),
+        tr(ui->language,footer_keys[i-1]),false,false,
+        home_focus == HOME_FOCUS_GAMES+i,fonts.control);
   }
 }
 
@@ -351,8 +366,16 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
 
   SDL_Rect title = sdl_rect(layout.model.play_title);
-  draw_round_rect(gfx->ren, title, 8, theme.palette_bg);
-  polish_draw_icon(gfx, title);
+  draw_round_rect(gfx->ren,title,8,theme.palette_bg);
+  int brand_side = title.h - 8;
+  if (brand_side > 52) brand_side = 52;
+  SDL_Rect brand_icon = {title.x+12,title.y+(title.h-brand_side)/2,
+                         brand_side,brand_side};
+  polish_draw_icon(gfx,brand_icon);
+  SDL_Rect brand_text = {brand_icon.x+brand_side+10,title.y,
+                         title.w-brand_side-34,title.h};
+  (void)draw_fitted_text(gfx,"Sudokura",theme.btnfg,brand_text,
+                         fonts.control,10);
 
   if (ui->mode == MODE_CLASSIC && layout.model.hud_count > 3) {
     SDL_Rect hints = sdl_rect(layout.model.hud[3]);
@@ -367,16 +390,28 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
     (void)draw_fitted_text(gfx, label, theme.dim, hints, fonts.hud, 10);
   }
 
+  /* Subtle group dividers: information / session / board / tools /
+     utilities / numbers. Prefer breathing room over extra panel boxes. */
   SDL_Color separator = theme.dim;
   separator.a = 42;
-  if (controls.btn[0].y > title.y + title.h)
-    draw_line(gfx->ren, layout.side.x + 12, controls.btn[0].y - 7,
-              layout.side.x + layout.side.w - 13, controls.btn[0].y - 7,
-              separator);
-  if (controls.palette_label.y > controls.btn[PLAY_ACTION_HELP].y + controls.btn[PLAY_ACTION_HELP].h)
-    draw_line(gfx->ren, layout.side.x + 12, controls.palette_label.y - 6,
-              layout.side.x + layout.side.w - 13, controls.palette_label.y - 6,
-              separator);
+  SDL_Rect menu = controls.btn[PLAY_ACTION_MENU];
+  SDL_Rect board_actions = controls.btn[PLAY_ACTION_PAUSE];
+  SDL_Rect tools = controls.btn[PLAY_ACTION_HINT];
+  SDL_Rect utilities = controls.btn[PLAY_ACTION_AUDIO];
+  SDL_Rect numbers_label = controls.palette_label;
+  int divider_ys[] = {
+      menu.y - 5,
+      (menu.y+menu.h+board_actions.y)/2,
+      (controls.btn[PLAY_ACTION_RESTART].y+
+       controls.btn[PLAY_ACTION_RESTART].h+tools.y)/2,
+      (utilities.y+utilities.h+numbers_label.y)/2
+  };
+  for (unsigned i=0;i<sizeof(divider_ys)/sizeof(divider_ys[0]);++i) {
+    int y=divider_ys[i];
+    if (y > layout.side.y+5 && y < layout.side.y+layout.side.h-5)
+      draw_line(gfx->ren,layout.side.x+12,y,
+                layout.side.x+layout.side.w-13,y,separator);
+  }
 
   (void)draw_fitted_text(gfx, tr(ui->language, T_PALETTE), theme.dim,
                          controls.palette_label, fonts.help, 10);
@@ -1200,7 +1235,8 @@ static void undo_redo_rects(SDL_Rect combined, SDL_Rect *undo,
 
 static void restart_clear_rects(SDL_Rect combined, SDL_Rect *restart,
                                 SDL_Rect *clear) {
-  split_control_rects(combined, restart, clear);
+  /* Clear is the frequent edit; Restart stays secondary on the right. */
+  split_control_rects(combined, clear, restart);
 }
 
 static bool clear_selected_available(const Game *game, const UI *ui) {
@@ -1213,7 +1249,7 @@ static bool clear_selected_available(const Game *game, const UI *ui) {
 
 typedef enum{
   PLAY_FOCUS_MENU=0,PLAY_FOCUS_PAUSE,PLAY_FOCUS_SAVE,PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,
-  PLAY_FOCUS_RESTART,PLAY_FOCUS_CLEAR,PLAY_FOCUS_HINT,PLAY_FOCUS_NOTES,
+  PLAY_FOCUS_CLEAR,PLAY_FOCUS_RESTART,PLAY_FOCUS_HINT,PLAY_FOCUS_NOTES,
   PLAY_FOCUS_VERIFY,PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_STRICT,
   PLAY_FOCUS_SAVE_RETRY,PLAY_FOCUS_NUMBER_1,PLAY_FOCUS_NUMBER_2,PLAY_FOCUS_NUMBER_3,
   PLAY_FOCUS_NUMBER_4,PLAY_FOCUS_NUMBER_5,PLAY_FOCUS_NUMBER_6,
@@ -1384,12 +1420,6 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
     if(focus_rect.w>0&&focus_rect.h>0)draw_focus_ring(gfx->ren,focus_rect,theme.sel_outline);
   }
 
-  SDL_Color separator = theme.dim;
-  separator.a = 42;
-  if (controls.palette_label.y > controls.btn[PLAY_ACTION_HELP].y)
-    draw_line(gfx->ren, layout.side.x + 12, controls.palette_label.y - 4,
-              layout.side.x + layout.side.w - 13, controls.palette_label.y - 4,
-              separator);
 }
 
 static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {

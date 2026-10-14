@@ -52,6 +52,8 @@ typedef struct {
 
   GeoRect screen_language;
   GeoRect home_logo;
+  GeoRect home_new_label;
+  GeoRect home_continue_label;
   GeoRect home_mode_label;
   GeoRect home_mode[GEOMETRY_HOME_SEGMENT_COUNT];
   GeoRect home_difficulty_label;

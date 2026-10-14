@@ -51,6 +51,7 @@ int main(void) {
     assert(*tr((Language)language, T_GAMES_EMPTY));
     assert(*tr((Language)language, T_GAMES_LOADING));
     assert(*tr((Language)language, T_GAMES_LIBRARY_TITLE));
+    assert(*tr((Language)language, T_START_NEW_GAME));
     assert(*tr((Language)language, T_GAMES_HELP));
     assert(*tr((Language)language, T_GAMES_PREVIEW));
     assert(*tr((Language)language, T_STARTUP_LOADING));

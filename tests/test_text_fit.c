@@ -113,6 +113,13 @@ int main(void) {
                     g.home_mode_label.w, g.home_mode_label.h));
         assert(fits(font, tr((Language)language, T_DIFFICULTY), tier.help, 10,
                     g.home_difficulty_label.w, g.home_difficulty_label.h));
+        assert(fits(font, tr((Language)language, T_NEW_GAME), tier.help, 10,
+                    g.home_new_label.w, g.home_new_label.h));
+        assert(fits(font, tr((Language)language, T_CONTINUE), tier.help, 10,
+                    g.home_continue_label.w, g.home_continue_label.h));
+        assert(fits(font, tr((Language)language, T_START_NEW_GAME),
+                    tier.control, 10,
+                    g.home_primary[0].w, g.home_primary[0].h));
 
         for (int i = 0; i < 3; ++i) {
           assert(fits(font, tr((Language)language, modes[i]), tier.control, 10,

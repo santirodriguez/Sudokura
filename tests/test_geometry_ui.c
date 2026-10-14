@@ -33,15 +33,32 @@ int main(void) {
       assert(g.about_study.h >= 48);
       assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
       assert(GEOMETRY_TITLE_BUTTON_COUNT == 8);
+      assert_rect(g.home_new_label,width,height);
+      assert_rect(g.home_continue_label,width,height);
+      assert(g.home_new_label.y < g.home_mode_label.y);
+      assert(g.home_mode[0].y < g.home_difficulty_label.y);
+      assert(g.home_primary[0].w == g.home_logo.w);
+      assert(g.home_primary[0].y > g.home_difficulty[0].y);
+      assert(g.home_primary[1].y > g.home_continue_label.y);
+      if (portrait) {
+        assert(g.home_primary[2].y > g.home_primary[1].y);
+      } else {
+        assert(g.home_primary[1].y == g.home_primary[2].y);
+        assert(g.home_primary[1].w == g.home_primary[2].w);
+      }
       for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
-        assert_rect(g.home_secondary[i], width, height);
-        if (i > 0 && portrait) {
-          if ((i % 2) == 0)
-            assert(g.home_secondary[i].y > g.home_secondary[i - 1].y);
+        assert_rect(g.home_secondary[i],width,height);
+        if (i > 0) {
+          if (i == 1)
+            assert(g.home_secondary[i].y > g.home_secondary[0].y);
+          else if (portrait && i == 3)
+            assert(g.home_secondary[i].y > g.home_secondary[i-1].y);
           else
-            assert(g.home_secondary[i].y == g.home_secondary[i - 1].y);
+            assert(g.home_secondary[i].y == g.home_secondary[i-1].y);
         }
       }
+      assert(g.home_secondary[0].w == g.home_logo.w);
+      assert(g.home_secondary[0].y > g.home_primary[2].y);
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
       for (int action = 0; action < PLAY_ACTION_COUNT; ++action)
@@ -61,7 +78,7 @@ int main(void) {
       assert_rect(screen_audio.popup, width, height);
       assert_inside(screen_audio.popup, screen_audio.music);
       assert_inside(screen_audio.popup, screen_audio.fx);
-      assert_inside(g.actions[PLAY_ACTION_AUDIO], play_audio.button);
+      assert_inside(g.actions[PLAY_ACTION_AUDIO],play_audio.button);
       assert(play_audio.button.x - 4 >
              g.actions[PLAY_ACTION_AUDIO].x + 48);
       assert(screen_audio.button.x >=
@@ -71,7 +88,12 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
       assert(g.actions[PLAY_ACTION_ABOUT].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_ABOUT].w == g.sidebar.w);
-      assert(g.actions[PLAY_ACTION_PAUSE].y == g.actions[PLAY_ACTION_RESTART].y);
+      assert(g.actions[PLAY_ACTION_PAUSE].y <
+             g.actions[PLAY_ACTION_RESTART].y);
+      assert(g.actions[PLAY_ACTION_PAUSE].w == g.sidebar.w);
+      assert(g.actions[PLAY_ACTION_RESTART].w == g.sidebar.w);
+      assert(g.actions[PLAY_ACTION_RESTART].y <
+             g.actions[PLAY_ACTION_HINT].y);
       assert(g.actions[PLAY_ACTION_HINT].y == g.actions[PLAY_ACTION_NOTES].y);
       assert(g.actions[PLAY_ACTION_HINT].y == g.actions[PLAY_ACTION_VERIFY].y);
       assert(g.actions[PLAY_ACTION_AUDIO].y == g.actions[PLAY_ACTION_HELP].y);

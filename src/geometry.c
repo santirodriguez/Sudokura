@@ -61,45 +61,68 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->screen_language =
       (GeoRect){(width - language_w) / 2, margin, language_w, language_h};
 
+  /* Home is composed from semantic groups, not a five-button footer.
+     All pointer and focus rectangles are shared with the renderer. */
   int home_w = portrait ? width - margin * 2
-                        : min_i(width - margin * 2, xl ? 700 : 560);
+                        : min_i(width - margin * 2 - 36, xl ? 700 : 640);
   int home_x = (width - home_w) / 2;
-  int logo_h = portrait ? 64 : (height < 600 ? 68 : (xl ? 112 : 96));
-  int y = g->screen_language.y + g->screen_language.h + 8;
+  int logo_h = portrait ? 62 : (short_desktop ? 54 : (xl ? 108 : 88));
+  int y = g->screen_language.y + g->screen_language.h +
+          (short_desktop ? 5 : 8);
   g->home_logo = (GeoRect){home_x, y, home_w, logo_h};
-  y += logo_h + 8;
+  y += logo_h + (short_desktop ? 4 : 8);
 
-  int label_h = xl ? 18 : 16;
+  int group_label_h = short_desktop ? 12 : (portrait ? 14 : 16);
+  int label_h = short_desktop ? 12 : 16;
+  int segment_h = portrait ? 34 : (short_desktop ? 30 : (xl ? 42 : 36));
+  g->home_new_label = (GeoRect){home_x, y, home_w, group_label_h};
+  y += group_label_h + (short_desktop ? 1 : 3);
   g->home_mode_label = (GeoRect){home_x, y, home_w, label_h};
   y += label_h + 2;
-  int segment_h = portrait ? 36 : (xl ? 42 : 34);
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6, g->home_mode,
            GEOMETRY_HOME_SEGMENT_COUNT);
-  y += segment_h + 6;
+  y += segment_h + (short_desktop ? 4 : 7);
   g->home_difficulty_label = (GeoRect){home_x, y, home_w, label_h};
   y += label_h + 2;
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6,
            g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += segment_h + 12;
+  y += segment_h + (short_desktop ? 6 : 9);
 
+  int start_h = portrait ? 43 : (short_desktop ? 38 : (xl ? 54 : 47));
+  g->home_primary[0] = (GeoRect){home_x, y, home_w, start_h};
+  y += start_h + (short_desktop ? 5 : 9);
+
+  g->home_continue_label = (GeoRect){home_x, y, home_w, group_label_h};
+  y += group_label_h + (short_desktop ? 2 : 4);
+  int continue_h = portrait ? 46 : (short_desktop ? 44 : (xl ? 61 : 55));
+  int gap = portrait ? 5 : 8;
   if (portrait) {
-    int primary_h = 46 * GEOMETRY_HOME_PRIMARY_COUNT +
-                    8 * (GEOMETRY_HOME_PRIMARY_COUNT - 1);
-    grid_gap((GeoRect){home_x, y, home_w, primary_h}, 1, 8, g->home_primary,
-             GEOMETRY_HOME_PRIMARY_COUNT);
-    y += primary_h + 12;
-    int secondary_h = 40 * 3 + 8 * 2;
-    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 2, 8,
-             g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
+    g->home_primary[1] = (GeoRect){home_x, y, home_w, continue_h};
+    g->home_primary[2] = (GeoRect){home_x, y + continue_h + gap,
+                                   home_w, continue_h};
+    y += continue_h * 2 + gap;
   } else {
-    int primary_h = xl ? 54 : 48;
-    int secondary_h = xl ? 44 : 38;
-    grid_gap((GeoRect){home_x, y, home_w, primary_h}, 3, 8, g->home_primary,
-             GEOMETRY_HOME_PRIMARY_COUNT);
-    y += primary_h + 10;
-    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 5, 8,
-             g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
+    int left_w = (home_w - gap) / 2;
+    g->home_primary[1] = (GeoRect){home_x, y, left_w, continue_h};
+    g->home_primary[2] = (GeoRect){home_x + left_w + gap, y,
+                                   home_w - left_w - gap, continue_h};
+    y += continue_h;
   }
+
+  y += short_desktop ? 7 : 10;
+  int library_h = portrait ? 41 : (short_desktop ? 37 : (xl ? 49 : 44));
+  g->home_secondary[0] = (GeoRect){home_x, y, home_w, library_h};
+  y += library_h + (short_desktop ? 7 : 11);
+
+  int footer_h = portrait ? 33 : (short_desktop ? 31 : (xl ? 43 : 37));
+  int footer_gap = portrait ? 6 : 8;
+  int columns = portrait ? 2 : 4;
+  GeoRect footer[GEOMETRY_HOME_SECONDARY_COUNT - 1];
+  grid_gap((GeoRect){home_x,y,home_w,footer_h * (portrait ? 2 : 1) +
+                         footer_gap * (portrait ? 1 : 0)},
+           columns,footer_gap,footer,GEOMETRY_HOME_SECONDARY_COUNT - 1);
+  for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    g->home_secondary[i] = footer[i - 1];
 
   int info_margin = portrait ? 16 : (short_desktop ? 20 : 24);
   int info_top = g->screen_language.y + g->screen_language.h + 16;
@@ -288,7 +311,7 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     bool compact = g->sidebar.h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
     int language_h = compact ? 34 : (xl ? 48 : 40);
-    int title_h = compact ? 52 : (xl ? 120 : 76);
+    int title_h = compact ? 40 : (xl ? 82 : 60);
     int hud_item_h = compact ? 22 : (xl ? 34 : 26);
     int hud_rows = (g->hud_count + 1) / 2;
     int hud_gap = compact ? 4 : (xl ? 8 : 5);
@@ -418,6 +441,8 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
 
   if (!geometry_rect_in_bounds(g->screen_language, width, height) ||
       !geometry_rect_in_bounds(g->home_logo, width, height) ||
+      !geometry_rect_in_bounds(g->home_new_label, width, height) ||
+      !geometry_rect_in_bounds(g->home_continue_label, width, height) ||
       !geometry_rect_in_bounds(g->home_mode_label, width, height) ||
       !geometry_rect_in_bounds(g->home_difficulty_label, width, height) ||
       !geometry_rect_in_bounds(g->info_heading, width, height) ||
@@ -487,15 +512,26 @@ static void geometry_final_grid(GeoRect *items, int start, int count, int x, int
   }
 }
 
-static int geometry_final_place_action_rows(AppGeometry *geometry, int x, int y, int width,
-                                int menu_h, int row_h, int gap) {
+static int geometry_final_place_action_rows(AppGeometry *geometry, int x,
+                         int y, int width, int menu_h, int row_h,
+                         int group_gap, int row_gap) {
+  /* Five explicit functional rows. Each editable pair owns a full-width row
+     so neither label is sacrificed to a four-button strip. */
   geometry->actions[PLAY_ACTION_MENU] = (GeoRect){x, y, width, menu_h};
-  y += menu_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_PAUSE, 2, x, y, width, row_h, 2, gap);
-  y += row_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_HINT, 3, x, y, width, row_h, 3, gap);
-  y += row_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_AUDIO, 2, x, y, width, row_h, 2, gap);
+  y += menu_h + group_gap;
+  geometry->actions[PLAY_ACTION_PAUSE] = (GeoRect){x, y, width, row_h};
+  y += row_h + row_gap;
+  geometry->actions[PLAY_ACTION_RESTART] = (GeoRect){x, y, width, row_h};
+  y += row_h + group_gap;
+  geometry_final_grid(geometry->actions, PLAY_ACTION_HINT, 3, x, y,
+                      width, row_h, 3, row_gap);
+  y += row_h + row_gap;
+  int third = (width - 2 * row_gap) / 3;
+  geometry->actions[PLAY_ACTION_AUDIO] =
+      (GeoRect){x, y, third * 2 + row_gap, row_h};
+  geometry->actions[PLAY_ACTION_HELP] =
+      (GeoRect){x + (third + row_gap) * 2, y,
+                width - (third + row_gap) * 2, row_h};
   return y + row_h;
 }
 
@@ -529,7 +565,8 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   int palette_label_h = compact ? 14 : 16;
   int palette_h = compact ? 30 : 34;
   int progress_h = compact ? 18 : 22;
-  int actions_h = menu_h + action_h * 3 + action_gap * 3;
+  int actions_h = menu_h + action_h * 4 +
+                  section_gap * 2 + action_gap * 2;
 
   geometry->play_language = (GeoRect){margin, margin, shell_w, 38};
   geometry->play_title = (GeoRect){margin, margin + 42, shell_w, 24};
@@ -547,8 +584,9 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   geometry_final_grid(geometry->hud, 0, geometry->hud_count, margin, y, shell_w,
           hud_item_h, 3, hud_gap);
   y += hud_h + section_gap;
-  y = geometry_final_place_action_rows(geometry, margin, y, shell_w, menu_h, action_h,
-                           action_gap);
+  y = geometry_final_place_action_rows(
+      geometry, margin, y, shell_w, menu_h, action_h,
+      section_gap, action_gap);
   y += section_gap;
   geometry->palette_label = (GeoRect){margin, y, shell_w, palette_label_h};
   y += palette_label_h + 2;
@@ -584,8 +622,8 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   if (xl && remaining >= 540) {
     section_gap = 7;
     action_gap = 6;
-    menu_h = 50;
-    row_h = 48;
+    menu_h = 48;
+    row_h = 45;
     palette_label_h = 22;
     palette_item_h = 44;
     palette_gap = 6;
@@ -604,8 +642,8 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   } else {
     section_gap = 2;
     action_gap = 2;
-    menu_h = 30;
-    row_h = 28;
+    menu_h = 28;
+    row_h = 26;
     palette_label_h = 12;
     palette_item_h = 22;
     palette_gap = 2;
@@ -615,7 +653,10 @@ static bool geometry_final_layout_desktop_play(int width, int height,
 
   int x = geometry->sidebar.x;
   int w = geometry->sidebar.w;
-  int y = geometry_final_place_action_rows(geometry, x, top, w, menu_h, row_h, action_gap);
+  int action_group_gap = xl && remaining >= 540 ? 12 :
+                         remaining >= 390 ? 8 : 4;
+  int y = geometry_final_place_action_rows(
+      geometry, x, top, w, menu_h, row_h, action_group_gap, action_gap);
   y += section_gap;
   geometry->palette_label = (GeoRect){x, y, w, palette_label_h};
   y += palette_label_h + (section_gap > 2 ? 3 : 2);
@@ -690,6 +731,8 @@ bool geometry_compute(int width, int height, GeometryMode mode,
   if (delta <= 0) return geometry_play_valid(geometry, width, height);
 
   geometry_final_shift_rect_y(&geometry->home_logo, delta);
+  geometry_final_shift_rect_y(&geometry->home_new_label, delta);
+  geometry_final_shift_rect_y(&geometry->home_continue_label, delta);
   geometry_final_shift_rect_y(&geometry->home_mode_label, delta);
   geometry_final_shift_rect_y(&geometry->home_difficulty_label, delta);
   for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
