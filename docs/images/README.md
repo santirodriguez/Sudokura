@@ -1,8 +1,18 @@
 # Documentation images
 
+## Sudokura v1.3.7
+
+### Canonical gameplay screenshot
+
+[![Sudokura v1.3.7 gameplay](sudokura-v1.3.7.png)](sudokura-v1.3.7.png)
+
+- `sudokura-v1.3.7.png` — approved gameplay screenshot of the v1.3.7 desktop interface.
+
+## Historical screenshots
+
 ## Sudokura v1.3.0
 
-### Canonical screenshot
+### Earlier canonical screenshot
 
 <p align="center"><a href="sudokura-v1.3.0.png"><img src="sudokura-v1.3.0.png" alt="Sudokura v1.3.0" width="900"></a></p>
 
