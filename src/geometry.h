@@ -8,8 +8,8 @@
 #define GEOMETRY_HUD_COUNT 6
 #define GEOMETRY_HOME_SEGMENT_COUNT 3
 #define GEOMETRY_HOME_PRIMARY_COUNT 3
-#define GEOMETRY_HOME_SECONDARY_COUNT 4
-#define GEOMETRY_TITLE_BUTTON_COUNT 7
+#define GEOMETRY_HOME_SECONDARY_COUNT 5
+#define GEOMETRY_TITLE_BUTTON_COUNT 8
 #define GEOMETRY_END_BUTTON_COUNT 2
 #define GEOMETRY_PAUSE_BUTTON_COUNT 2
 #define GEOMETRY_ABOUT_LINK_COUNT 4
@@ -52,6 +52,8 @@ typedef struct {
 
   GeoRect screen_language;
   GeoRect home_logo;
+  GeoRect home_new_label;
+  GeoRect home_continue_label;
   GeoRect home_mode_label;
   GeoRect home_mode[GEOMETRY_HOME_SEGMENT_COUNT];
   GeoRect home_difficulty_label;
@@ -113,6 +115,9 @@ bool geometry_normalize_window_size(int requested_width, int requested_height,
 bool geometry_contains(GeoRect rect, int x, int y);
 bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
+/* Full artwork band and separate status headline, shared with render tests. */
+GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width);
+GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width);
 GeometryFonts geometry_font_sizes(const AppGeometry *geometry, int width, int height);
 GeometryStyle geometry_style(const AppGeometry *geometry, int width, int height);
 AudioControlGeometry geometry_audio_control(int width, int height,

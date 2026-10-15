@@ -49,10 +49,101 @@ static void test_independent_slot_dirty_bits(void) {
   assert((policy.dirty_mask & SAVE_DIRTY_RESULTS) != 0);
 }
 
+static void test_replacement_discard_is_isolated(void) {
+  SavePolicy policy;
+  save_policy_init(&policy);
+  assert(!save_policy_replacement_discard_allowed(NULL, false, true, false, 0));
+  assert(!save_policy_replacement_discard_allowed(&policy, false, true, false, 0));
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 100);
+  save_policy_record_result(&policy, STORE_IO_ERROR, 101);
+  assert(save_policy_replacement_discard_allowed(&policy, false, true, false, 0));
+  assert(!save_policy_replacement_discard_allowed(&policy, true, true, false, 0));
+  assert(!save_policy_replacement_discard_allowed(&policy, false, false, false, 0));
+  assert(!save_policy_replacement_discard_allowed(&policy, false, true, true, 0));
+  assert(!save_policy_replacement_discard_allowed(
+      &policy, false, true, false, SAVE_DIRTY_NORMAL));
+  assert(!save_policy_replacement_discard_allowed(
+      &policy, false, true, false, SAVE_DIRTY_DAILY));
+  save_policy_mark(&policy, SAVE_DIRTY_RESULTS, 102);
+  assert(!save_policy_replacement_discard_allowed(&policy, false, true, false, 0));
+  save_policy_init(&policy);
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL | SAVE_DIRTY_PREFERENCES, 110);
+  assert(!save_policy_replacement_discard_allowed(&policy, false, true, false, 0));
+  save_policy_init(&policy);
+  save_policy_mark(&policy, SAVE_DIRTY_DAILY, 120);
+  assert(save_policy_replacement_discard_allowed(&policy, true, true, false, 0));
+  assert(!save_policy_replacement_discard_allowed(&policy, false, true, false, 0));
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 130);
+  assert(!save_policy_replacement_discard_allowed(&policy, true, true, false, 0));
+}
+
+typedef struct {
+  StoreStatus status;
+  unsigned calls;
+} CheckpointProbe;
+
+static StoreStatus probe_write(void *context) {
+  CheckpointProbe *probe = (CheckpointProbe *)context;
+  ++probe->calls;
+  return probe->status;
+}
+
+static void test_terminal_checkpoint_is_synchronous_and_retryable(void) {
+  SavePolicy policy;
+  save_policy_init(&policy);
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL | SAVE_DIRTY_RESULTS, 100);
+  assert(!save_policy_checkpoint_due(&policy, 100));
+  CheckpointProbe probe = {STORE_OK, 0};
+  assert(save_policy_checkpoint_now(&policy, probe_write, &probe, 100));
+  assert(probe.calls == 1);
+  assert(!save_policy_dirty(&policy));
+
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 200);
+  probe.status = STORE_IO_ERROR;
+  assert(!save_policy_checkpoint_now(&policy, probe_write, &probe, 200));
+  assert(probe.calls == 2);
+  assert(save_policy_has_error(&policy));
+  assert(save_policy_slot_dirty(&policy, false));
+
+  probe.status = STORE_OK;
+  assert(save_policy_checkpoint_now(&policy, probe_write, &probe, 300));
+  assert(probe.calls == 3);
+  assert(!save_policy_dirty(&policy));
+}
+
+static void test_home_transition_requires_complete_acknowledgement(void) {
+  SavePolicy policy;
+  save_policy_init(&policy);
+  assert(save_policy_transition_ready(&policy, true));
+  assert(!save_policy_transition_ready(&policy, false));
+  assert(!save_policy_transition_ready(NULL, true));
+
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL | SAVE_DIRTY_RESULTS, 100);
+  assert(!save_policy_transition_ready(&policy, true));
+  save_policy_record_result(&policy, STORE_IO_ERROR, 101);
+  assert(!save_policy_transition_ready(&policy, true));
+
+  CheckpointProbe probe = {STORE_IO_ERROR, 0};
+  assert(!save_policy_checkpoint_now(&policy, probe_write, &probe, 102));
+  assert(!save_policy_transition_ready(&policy, false));
+  probe.status = STORE_OK;
+  assert(save_policy_checkpoint_now(&policy, probe_write, &probe, 103));
+  assert(probe.calls == 2);
+  assert(save_policy_transition_ready(&policy, true));
+
+  save_policy_mark(&policy, SAVE_DIRTY_PREFERENCES, 104);
+  assert(!save_policy_transition_ready(&policy, true));
+  save_policy_record_result(&policy, STORE_OK, 105);
+  assert(save_policy_transition_ready(&policy, true));
+}
+
 int main(void) {
   test_grouped_checkpoint_window();
   test_error_preserves_dirty_state();
   test_independent_slot_dirty_bits();
+  test_replacement_discard_is_isolated();
+  test_terminal_checkpoint_is_synchronous_and_retryable();
+  test_home_transition_requires_complete_acknowledgement();
   puts("save policy dirty-state, retry, and checkpoint-window tests passed");
   return 0;
 }

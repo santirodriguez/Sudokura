@@ -47,6 +47,65 @@ int main(void) {
     assert(*tr((Language)language, T_HELP_CONTROLS_TITLE));
     assert(*tr((Language)language, T_HELP_HINTS_TITLE));
     assert(*tr((Language)language, T_HELP_SHORTCUTS_TITLE));
+    assert(*tr((Language)language, T_GAMES));
+    assert(*tr((Language)language, T_GAMES_EMPTY));
+    assert(*tr((Language)language, T_GAMES_LOADING));
+    assert(*tr((Language)language, T_GAMES_LIBRARY_TITLE));
+    assert(*tr((Language)language, T_START_NEW_GAME));
+    assert(*tr((Language)language, T_GAMES_HELP));
+    assert(*tr((Language)language, T_GAMES_PREVIEW));
+    assert(*tr((Language)language, T_STARTUP_LOADING));
+    assert(strstr(tr((Language)language, T_GAMES_FILLED_FMT), "%d") != NULL);
+
+    assert(*tr((Language)language, T_GAMES_UNAVAILABLE));
+    assert(*tr((Language)language, T_GAMES_LOAD));
+    assert(*tr((Language)language, T_GAMES_REPLAY));
+    assert(*tr((Language)language, T_GAMES_REPLAY_PENDING_OTHER));
+    assert(*tr((Language)language, T_GAMES_REPLAY_PENDING_CONFLICT));
+    assert(*tr((Language)language, T_GAMES_REPLAY_FINALIZE_FAILED));
+    assert(*tr((Language)language, T_GAMES_DELETE));
+    assert(*tr((Language)language, T_GAMES_DELETE_PROMPT));
+    assert(*tr((Language)language, T_GAMES_DELETE_PENDING));
+    assert(*tr((Language)language, T_GAMES_ACTION_FAILED));
+    assert(*tr((Language)language, T_GAMES_PRACTICE));
+    assert(*tr((Language)language, T_GAMES_SOURCE_DAILY));
+    assert(*tr((Language)language, T_GAMES_FINISHED_AT));
+    assert(*tr((Language)language, T_GAMES_UNKNOWN_DATE));
+    assert(*tr((Language)language, T_GAMES_KEEP_PROMPT));
+    assert(*tr((Language)language, T_GAMES_RETRY_SAVE_PROMPT));
+    assert(*tr((Language)language, T_GAMES_SAFE_DISCARD_PROMPT));
+    assert(*tr((Language)language, T_GAMES_ACTIVATE_RETRY_PROMPT));
+    assert(*tr((Language)language, T_DAILY_SAVE_RETRY_PROMPT));
+    assert(*tr((Language)language, T_DAILY_BACK_UNCONFIRMED));
+    assert(strcmp(tr((Language)language, T_GAMES_RETRY_SAVE_PROMPT),
+                  tr((Language)language, T_GAMES_SAFE_DISCARD_PROMPT)) != 0);
+    assert(*tr((Language)language, T_GAMES_NEW_PROMPT));
+    assert(*tr((Language)language, T_GAMES_RECOVER_LABEL));
+    assert(*tr((Language)language, T_GAMES_RECOVER_HINT));
+    assert(*tr((Language)language, T_GAMES_RECOVER_PROMPT));
+    assert(*tr((Language)language, T_GAMES_RECOVERED));
+    assert(*tr((Language)language, T_UNSAVED_HOME));
+    assert(*tr((Language)language, T_PROFILE_RECOVER_IMPORT_PROMPT));
+    assert(*tr((Language)language, T_PROFILE_RECOVER_COLLECTION_PROMPT));
+
+    assert(*tr((Language)language, T_DAILY_CHECKING));
+    assert(*tr((Language)language, T_DAILY_CHECK_CANCEL));
+    assert(*tr((Language)language, T_DAILY_CHOOSE_TITLE));
+    assert(*tr((Language)language, T_DAILY_CHOOSE_PROMPT));
+    assert(*tr((Language)language, T_DAILY_READ_ERROR));
+    assert(*tr((Language)language, T_DAILY_DUPLICATE));
+    assert(*tr((Language)language, T_DAILY_DATE_CHANGED));
+    assert(*tr((Language)language, T_DAILY_RECOVER_PREVIOUS));
+    assert(strcmp(tr((Language)language, T_DAILY_OLDER),
+                  tr((Language)language, T_DAILY_TODAY)) != 0);
+    assert(strchr(tr((Language)language, T_DAILY_OLDER), '%') == NULL);
+    assert(strchr(tr((Language)language, T_DAILY_TODAY), '%') == NULL);
+    assert(*tr((Language)language, T_SAVE));
+    assert(*tr((Language)language, T_SAVED));
+    assert(strstr(tr((Language)language, T_HELP_SHORTCUTS_BODY),
+                  "Ctrl/Cmd+S") != NULL);
+    assert(strstr(tr((Language)language, T_HELP_SHORTCUTS_BODY),
+                  "Ctrl/Cmd+O") != NULL);
   }
   puts("EN/ES/CA semantic states, structured Help and UTF-8 validation passed");
   return 0;

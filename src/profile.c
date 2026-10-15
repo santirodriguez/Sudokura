@@ -189,15 +189,76 @@ static bool valid_result(const ProfileResult *result) {
   return true;
 }
 
+bool profile_result_is_valid(const ProfileResult *result) {
+  return valid_result(result);
+}
+
+static bool attempt_id_present(GameAttemptId id) {
+  return id.high != 0 || id.low != 0;
+}
+
+static bool slot_link_valid(const ProfileSlot *slot) {
+  if (!slot->present)
+    return !slot->retained && !slot->revision &&
+           !attempt_id_present(slot->attempt_id);
+  return attempt_id_present(slot->attempt_id) == (slot->revision != 0) &&
+         (!slot->retained || attempt_id_present(slot->attempt_id));
+}
+
+static bool profile_links_valid(const ProfileData *profile) {
+  if (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
+      profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
+    return false;
+  if (profile->codec_version == SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY) {
+    if (profile->migration_pending || profile->migration_source_length ||
+        profile->migration_source_crc || profile->migration_source_suffix ||
+        profile->normal.retained || profile->daily.retained ||
+        profile->normal.revision || profile->daily.revision ||
+        attempt_id_present(profile->normal.attempt_id) ||
+        attempt_id_present(profile->daily.attempt_id))
+      return false;
+    for (uint16_t i = 0; i < profile->result_count; ++i)
+      if (profile->results[i].practice ||
+          attempt_id_present(profile->results[i].attempt_id))
+        return false;
+  }
+  if (!slot_link_valid(&profile->normal) ||
+      !slot_link_valid(&profile->daily))
+    return false;
+  if (attempt_id_present(profile->normal.attempt_id) &&
+      profile->normal.attempt_id.high == profile->daily.attempt_id.high &&
+      profile->normal.attempt_id.low == profile->daily.attempt_id.low)
+    return false;
+  if (profile->migration_source_suffix > 15) return false;
+  if (profile->migration_pending &&
+      (profile->codec_version != SUDOKURA_PROFILE_CONTENT_VERSION ||
+       profile->migration_source_length == 0))
+    return false;
+  for (uint16_t i = 0; i < profile->result_count; ++i) {
+    const ProfileResult *result = &profile->results[i];
+    if (result->practice && !attempt_id_present(result->attempt_id))
+      return false;
+    for (uint16_t j = 0; j < i; ++j) {
+      if (attempt_id_present(result->attempt_id) &&
+          result->attempt_id.high == profile->results[j].attempt_id.high &&
+          result->attempt_id.low == profile->results[j].attempt_id.low)
+        return false;
+    }
+  }
+  return true;
+}
+
 void profile_defaults(ProfileData *profile) {
   if (!profile) return;
   memset(profile, 0, sizeof(*profile));
+  profile->codec_version = SUDOKURA_PROFILE_CONTENT_VERSION;
   preferences_defaults(&profile->preferences);
 }
 
 bool profile_validate(const ProfileData *profile) {
   if (!profile || !preferences_validate(&profile->preferences) ||
-      profile->result_count > SUDOKURA_RESULT_LIMIT)
+      profile->result_count > SUDOKURA_RESULT_LIMIT ||
+      !profile_links_valid(profile))
     return false;
   if (profile->normal.present &&
       !valid_profile_session(&profile->normal.value, false))
@@ -264,8 +325,20 @@ bool profile_record_result(ProfileData *profile, const ProfileResult *result,
   if (inserted) *inserted = false;
   if (!profile || !valid_result(result)) return false;
 
-  for (uint16_t i = 0; i < profile->result_count; ++i)
-    if (same_result_event(&profile->results[i], result)) return true;
+  for (uint16_t i = 0; i < profile->result_count; ++i) {
+    const ProfileResult *existing = &profile->results[i];
+    if (attempt_id_present(existing->attempt_id) &&
+        attempt_id_present(result->attempt_id) &&
+        existing->attempt_id.high == result->attempt_id.high &&
+        existing->attempt_id.low == result->attempt_id.low)
+      return same_result_event(existing, result) &&
+             existing->practice == result->practice;
+    if (!attempt_id_present(existing->attempt_id) &&
+        !attempt_id_present(result->attempt_id) &&
+        same_result_event(existing, result) &&
+        existing->practice == result->practice)
+      return true;
+  }
 
   if (profile->result_count == SUDOKURA_RESULT_LIMIT) {
     memmove(profile->results, profile->results + 1,
@@ -295,7 +368,8 @@ ProfileResultSummary profile_result_summary(const ProfileData *profile,
         result->difficulty == reference->difficulty &&
         result->generator_revision == reference->generator_revision &&
         result->is_daily == reference->is_daily &&
-        result->assisted == reference->assisted;
+        result->assisted == reference->assisted &&
+        !result->practice && !reference->practice;
     if (!comparable) continue;
     if (!summary.best_time_available ||
         result->elapsed_ms < summary.best_time_ms) {
@@ -529,6 +603,47 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   return STORE_OK;
 }
 
+static bool encode_profile_session_blob(const ProfileSession *session,
+                                        unsigned char *bytes, size_t capacity,
+                                        size_t *size_out, bool canonical) {
+  if (!session || !bytes || capacity == 0 || capacity > PROFILE_MAX_FILE_SIZE ||
+      !(canonical ? valid_profile_session(session, session->session.is_daily)
+                  : valid_profile_session_runtime(
+                        session, session->session.is_daily)))
+    return false;
+  ProfileWriter writer = {bytes, capacity, 0, true};
+  encode_session(&writer, session);
+  if (!writer.ok) return false;
+  if (size_out) *size_out = writer.position;
+  return true;
+}
+
+bool profile_session_encode_blob(const ProfileSession *session,
+                                 unsigned char *bytes, size_t capacity,
+                                 size_t *size_out) {
+  return encode_profile_session_blob(session, bytes, capacity, size_out, true);
+}
+
+bool profile_session_encode_blob_runtime(const ProfileSession *session,
+                                         unsigned char *bytes, size_t capacity,
+                                         size_t *size_out) {
+  return encode_profile_session_blob(session, bytes, capacity, size_out, false);
+}
+
+StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
+                                        bool expected_daily,
+                                        ProfileSession *session) {
+  if (!bytes || !session || size == 0 || size > PROFILE_MAX_FILE_SIZE)
+    return STORE_IO_ERROR;
+  ProfileReader reader = {bytes, size, 0, true};
+  ProfileSession decoded;
+  StoreStatus status = decode_session(&reader, &decoded, expected_daily);
+  if (status != STORE_OK) return status;
+  if (!reader.ok || reader.position != size) return STORE_CORRUPT;
+  *session = decoded;
+  return STORE_OK;
+}
+
 static void encode_result(ProfileWriter *writer, const ProfileResult *result) {
   writer_u64(writer, result->seed);
   writer_u32(writer, result->generator_revision);
@@ -576,7 +691,7 @@ static bool encode_profile_payload(unsigned char *payload, size_t capacity,
                                    size_t *size_out,
                                    const ProfileData *profile) {
   ProfileWriter writer = {payload, capacity, 0, true};
-  writer_u16(&writer, SUDOKURA_PROFILE_CONTENT_VERSION);
+  writer_u16(&writer, profile->codec_version);
 
   size_t preferences_length_position = writer.position;
   writer_u32(&writer, 0);
@@ -603,6 +718,25 @@ static bool encode_profile_payload(unsigned char *payload, size_t capacity,
   writer_u16(&writer, profile->result_count);
   for (uint16_t i = 0; i < profile->result_count; ++i)
     encode_result(&writer, &profile->results[i]);
+
+  if (profile->codec_version == SUDOKURA_PROFILE_CONTENT_VERSION) {
+    for (int index = 0; index < 2; ++index) {
+      const ProfileSlot *slot = slots[index];
+      writer_u64(&writer, slot->attempt_id.high);
+      writer_u64(&writer, slot->attempt_id.low);
+      writer_u64(&writer, slot->revision);
+      writer_u8(&writer, slot->retained ? 1u : 0u);
+    }
+    for (uint16_t i = 0; i < profile->result_count; ++i) {
+      writer_u64(&writer, profile->results[i].attempt_id.high);
+      writer_u64(&writer, profile->results[i].attempt_id.low);
+      writer_u8(&writer, profile->results[i].practice ? 1u : 0u);
+    }
+    writer_u8(&writer, profile->migration_pending ? 1u : 0u);
+    writer_u32(&writer, profile->migration_source_length);
+    writer_u32(&writer, profile->migration_source_crc);
+    writer_u8(&writer, profile->migration_source_suffix);
+  }
 
   if (!writer.ok) return false;
   if (size_out) *size_out = writer.position;
@@ -643,7 +777,8 @@ static StoreStatus decode_slot(ProfileReader *reader, ProfileSlot *slot,
 
 static bool profile_validate_runtime(const ProfileData *profile) {
   if (!profile || !preferences_validate(&profile->preferences) ||
-      profile->result_count > SUDOKURA_RESULT_LIMIT)
+      profile->result_count > SUDOKURA_RESULT_LIMIT ||
+      !profile_links_valid(profile))
     return false;
   if (profile->normal.present &&
       !valid_profile_session_runtime(&profile->normal.value, false))
@@ -698,6 +833,26 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   unsigned char data[PROFILE_MAX_FILE_SIZE];
   size_t size = 0;
   StoreStatus status = store_read_file(path, data, sizeof(data), &size);
+  if (status == STORE_CORRUPT) {
+    /* Oversized known formats are corrupt; a recognizable future header
+       remains incompatible even when its payload exceeds today's cap. */
+    unsigned char prefix[PROFILE_HEADER_SIZE + 2u];
+    size_t prefix_size = 0;
+    StoreStatus probe = store_read_prefix(path, prefix, sizeof(prefix),
+                                          &prefix_size);
+    if (probe != STORE_OK) return probe;
+    if (prefix_size >= 10u &&
+        memcmp(prefix, profile_magic, sizeof(profile_magic)) == 0) {
+      if (get_u16(prefix + 8) != SUDOKURA_PROFILE_CONTAINER_VERSION)
+        return STORE_INCOMPATIBLE;
+      if (prefix_size >= sizeof(prefix)) {
+        uint16_t content = get_u16(prefix + PROFILE_HEADER_SIZE);
+        if (content != SUDOKURA_PROFILE_CONTENT_VERSION &&
+            content != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
+          return STORE_INCOMPATIBLE;
+      }
+    }
+  }
   if (status != STORE_OK) return status;
   if (size < PROFILE_HEADER_SIZE ||
       memcmp(data, profile_magic, sizeof(profile_magic)) != 0)
@@ -718,11 +873,13 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   ProfileReader reader = {payload, payload_size, 0, true};
   uint16_t content_version = reader_u16(&reader);
   if (!reader.ok) return STORE_CORRUPT;
-  if (content_version != SUDOKURA_PROFILE_CONTENT_VERSION)
+  if (content_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
+      content_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
 
   ProfileData loaded;
   profile_defaults(&loaded);
+  loaded.codec_version = content_version;
   status = decode_sized_preferences(&reader, &loaded.preferences);
   if (status != STORE_OK) return status;
   status = decode_slot(&reader, &loaded.normal, false);
@@ -737,6 +894,30 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
     status = decode_result(&reader, &loaded.results[i]);
     if (status != STORE_OK) return status;
   }
+  if (content_version == SUDOKURA_PROFILE_CONTENT_VERSION) {
+    ProfileSlot *slots[2] = {&loaded.normal, &loaded.daily};
+    for (int index = 0; index < 2; ++index) {
+      slots[index]->attempt_id.high = reader_u64(&reader);
+      slots[index]->attempt_id.low = reader_u64(&reader);
+      slots[index]->revision = reader_u64(&reader);
+      uint8_t retained = reader_u8(&reader);
+      if (retained > 1) return STORE_CORRUPT;
+      slots[index]->retained = retained == 1;
+    }
+    for (uint16_t i = 0; i < loaded.result_count; ++i) {
+      loaded.results[i].attempt_id.high = reader_u64(&reader);
+      loaded.results[i].attempt_id.low = reader_u64(&reader);
+      uint8_t practice = reader_u8(&reader);
+      if (practice > 1) return STORE_CORRUPT;
+      loaded.results[i].practice = practice == 1;
+    }
+    uint8_t pending = reader_u8(&reader);
+    loaded.migration_source_length = reader_u32(&reader);
+    loaded.migration_source_crc = reader_u32(&reader);
+    loaded.migration_source_suffix = reader_u8(&reader);
+    if (pending > 1) return STORE_CORRUPT;
+    loaded.migration_pending = pending == 1;
+  }
 
   if (!reader.ok || reader.position != reader.size || !profile_validate(&loaded))
     return STORE_CORRUPT;
@@ -744,7 +925,96 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   return STORE_OK;
 }
 
-static bool profiles_equal(const ProfileData *a, const ProfileData *b);
+bool profile_encoded_equal(const ProfileData *a, const ProfileData *b);
+
+/* Explicit recovery must preserve the current primary, even if invalid,
+   before replacing it with a canonically validated earlier profile. */
+static StoreStatus preserve_profile_pre_recovery(const char *profile_path) {
+  unsigned char original[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+  size_t original_size = 0;
+  StoreStatus status = store_read_file(profile_path, original,
+                                       sizeof(original), &original_size);
+  if (status == STORE_NOT_FOUND) return STORE_OK;
+  if (status != STORE_OK) return status;
+
+  size_t path_size = strlen(profile_path);
+  for (unsigned index = 0; index < 16u; ++index) {
+    char suffix[32];
+    int count = index == 0
+        ? snprintf(suffix, sizeof(suffix), ".pre-recovery")
+        : snprintf(suffix, sizeof(suffix), ".pre-recovery.%u", index);
+    if (count <= 0 || (size_t)count >= sizeof(suffix) ||
+        (size_t)count >= SUDOKURA_STORE_PATH_CAPACITY ||
+        path_size > SUDOKURA_STORE_PATH_CAPACITY - (size_t)count - 1u)
+      return STORE_IO_ERROR;
+    char copy[SUDOKURA_STORE_PATH_CAPACITY];
+    memcpy(copy, profile_path, path_size);
+    memcpy(copy + path_size, suffix, (size_t)count + 1u);
+
+    unsigned char checked[SUDOKURA_STORE_IO_MAX_FILE_SIZE];
+    size_t checked_size = 0;
+    status = store_read_file(copy, checked, sizeof(checked), &checked_size);
+    if (status == STORE_OK) {
+      if (checked_size == original_size &&
+          memcmp(checked, original, original_size) == 0)
+        return STORE_OK; /* Reuse a matching prior interrupted copy. */
+      continue; /* Never replace unrelated recovery evidence. */
+    }
+    if (status != STORE_NOT_FOUND) return status;
+    status = store_copy_once_allow_empty(profile_path, copy);
+    if (status != STORE_OK) return status;
+    status = store_read_file(copy, checked, sizeof(checked), &checked_size);
+    if (status != STORE_OK) return status;
+    if (checked_size != original_size ||
+        memcmp(checked, original, original_size) != 0)
+      return STORE_CORRUPT;
+    return STORE_OK;
+  }
+  return STORE_IO_ERROR; /* No slot remains; keep the original profile. */
+}
+
+/* A repeated Load/Replay commit confirms its primary without replacing
+   the previous valid backup when the requested snapshot is already there. */
+StoreStatus profile_save_runtime_verified(const char *path,
+                                          const char *backup_path,
+                                          const ProfileData *profile) {
+  if (!path || !backup_path || !backup_path[0] || !profile ||
+      !profile_validate_runtime(profile))
+    return STORE_IO_ERROR;
+  ProfileData current;
+  StoreStatus result = profile_load_file(path, &current);
+  if (result != STORE_OK) return result;
+  bool same = profile_encoded_equal(&current, profile);
+  result = profile_save_runtime_file(path, same ? NULL : backup_path, profile);
+  if (result != STORE_OK) return result;
+  ProfileData check;
+  result = profile_load_file(path, &check);
+  if (result != STORE_OK) return result;
+  return profile_encoded_equal(&check, profile) ? STORE_OK : STORE_CORRUPT;
+}
+
+/* Back from an interrupted activation must not leave a newly selected
+   hot slot on disk. Restore only a recognized candidate; never overwrite
+   unknown, incompatible or independently modified profile data. */
+StoreStatus profile_restore_runtime_activation(
+    const char *path, const ProfileData *previous,
+    const ProfileData *candidate) {
+  if (!path || !previous || !candidate ||
+      !profile_validate_runtime(previous) ||
+      !profile_validate_runtime(candidate))
+    return STORE_IO_ERROR;
+  ProfileData disk;
+  StoreStatus status = profile_load_file(path, &disk);
+  if (status != STORE_OK) return status;
+  if (profile_encoded_equal(&disk, previous)) return STORE_OK;
+  if (!profile_encoded_equal(&disk, candidate)) return STORE_CORRUPT;
+  /* An acknowledged previous copy is never rotated for a cancel. */
+  status = profile_save_runtime_file(path, NULL, previous);
+  if (status != STORE_OK) return status;
+  status = profile_load_file(path, &disk);
+  if (status != STORE_OK) return status;
+  return profile_encoded_equal(&disk, previous) ? STORE_OK : STORE_CORRUPT;
+}
 
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,
@@ -753,12 +1023,24 @@ StoreStatus profile_recover_previous(const char *profile_path,
   ProfileData recovered;
   StoreStatus status = profile_load_file(profile_backup_path, &recovered);
   if (status != STORE_OK) return status;
+
+  ProfileData current;
+  status = profile_load_file(profile_path, &current);
+  if (status == STORE_OK && profile_encoded_equal(&current, &recovered)) {
+    *profile = current;
+    return STORE_OK; /* No new copies on an identical recovery retry. */
+  }
+  if (status != STORE_OK && status != STORE_NOT_FOUND &&
+      status != STORE_CORRUPT && status != STORE_INCOMPATIBLE)
+    return status;
+  status = preserve_profile_pre_recovery(profile_path);
+  if (status != STORE_OK) return status;
   status = profile_save_file(profile_path, NULL, &recovered);
   if (status != STORE_OK) return status;
   ProfileData verified;
   status = profile_load_file(profile_path, &verified);
   if (status != STORE_OK) return status;
-  if (!profiles_equal(&recovered, &verified)) return STORE_CORRUPT;
+  if (!profile_encoded_equal(&recovered, &verified)) return STORE_CORRUPT;
   *profile = verified;
   return STORE_OK;
 }
@@ -789,7 +1071,7 @@ static StoreStatus backup_legacy_file(const char *source, const char *backup) {
   return status == STORE_NOT_FOUND ? STORE_OK : status;
 }
 
-static bool profiles_equal(const ProfileData *a, const ProfileData *b) {
+bool profile_encoded_equal(const ProfileData *a, const ProfileData *b) {
   if (!a || !b) return false;
   unsigned char left[PROFILE_MAX_FILE_SIZE];
   unsigned char right[PROFILE_MAX_FILE_SIZE];
@@ -809,6 +1091,15 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
 
   StoreStatus status = profile_load_file(profile_path, profile);
   if (status != STORE_NOT_FOUND) return status;
+
+  /* A missing primary is not a first launch while a previous copy exists.
+     Leave recovery to the caller so it can ask before restoring older state.
+     Even an unreadable/incompatible previous copy must block fresh migration. */
+  if (profile_backup_path && store_file_exists(profile_backup_path)) {
+    ProfileData previous;
+    status = profile_load_file(profile_backup_path, &previous);
+    return status == STORE_OK ? STORE_NOT_FOUND : status;
+  }
 
   ProfileData candidate;
   profile_defaults(&candidate);
@@ -883,7 +1174,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   ProfileData verified;
   status = profile_load_file(profile_path, &verified);
   if (status != STORE_OK) return status;
-  if (!profiles_equal(&candidate, &verified)) return STORE_CORRUPT;
+  if (!profile_encoded_equal(&candidate, &verified)) return STORE_CORRUPT;
 
   *profile = verified;
   if (migrated) *migrated = imported_any;

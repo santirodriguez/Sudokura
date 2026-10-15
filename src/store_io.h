@@ -23,11 +23,37 @@ typedef struct {
 
 StoreStatus store_read_file(const char *path, unsigned char *data,
                             size_t capacity, size_t *size_out);
+/* Read at most capacity bytes without treating longer files as corruption.
+   For header inspection only; never a replacement for bounded full reads. */
+StoreStatus store_read_prefix(const char *path, unsigned char *data,
+                              size_t capacity, size_t *size_out);
 StoreStatus store_atomic_write(const char *path, const char *backup_path,
                                const unsigned char *data, size_t size);
 StoreStatus store_copy_once(const char *source, const char *destination);
+/* Only for lossless opaque pre-recovery evidence, including a zero-byte file.
+   Normal profile and migration copies deliberately reject empty inputs. */
+StoreStatus store_copy_once_allow_empty(const char *source,
+                                       const char *destination);
 bool store_file_exists(const char *path);
 bool store_remove_file(const char *path);
+
+/* Enumerate one directory without retaining an unbounded name collection. */
+typedef bool (*StoreDirectoryEntryFn)(const char *name, void *context);
+StoreStatus store_ensure_directory(const char *path);
+StoreStatus store_list_directory(const char *path,
+                                 StoreDirectoryEntryFn visitor,
+                                 void *context);
+
+/* Owns an open OS directory handle; zero-initialize before opening. The
+   caller may consume bounded batches without rescanning earlier names. */
+typedef struct {
+  void *state;
+} StoreDirectoryCursor;
+StoreStatus store_directory_open(const char *path, StoreDirectoryCursor *cursor);
+/* STORE_OK yields a name; STORE_NOT_FOUND means end of enumeration. */
+StoreStatus store_directory_next(StoreDirectoryCursor *cursor,
+                                 char name[SUDOKURA_STORE_PATH_CAPACITY]);
+void store_directory_close(StoreDirectoryCursor *cursor);
 
 StoreLockStatus store_writer_lock_acquire(const char *directory,
                                           StoreWriterLock *lock);
@@ -41,10 +67,13 @@ typedef enum {
   STORE_TEST_FAULT_NO_SPACE,
   STORE_TEST_FAULT_SYNC,
   STORE_TEST_FAULT_REPLACE,
-  STORE_TEST_FAULT_CRASH_AFTER_SYNC
+  STORE_TEST_FAULT_CRASH_AFTER_SYNC,
+  STORE_TEST_FAULT_PARENT_SYNC
 } StoreTestFault;
 
 void store_test_set_fault(StoreTestFault fault);
+/* Test-only single-path post-rename failure, after any backup is written. */
+void store_test_fail_parent_sync_at(const char *path);
 bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
                                const char *path,
                                unsigned long process_id,

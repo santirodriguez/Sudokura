@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.7]
+
+### Reliable Saved Games
+- Added explicit Save and a retained Saved Games browser with latest-progress Load, read-only finished-game View, exact-board practice Replay, and per-attempt Delete.
+- Preserved multiple normal attempts, independent Daily originals, previous good copies, and durable deletion receipts without pruning finished games to the 128-entry recent-results limit.
+- Added stable attempt IDs, bounded per-game records, checked readback, resumable pre-v1.3.7 migration, and recovery paths that distinguish unreadable, corrupt, and incompatible data.
+- Expanded codec, migration cut-point, failed-write, archive, replay, Daily, and deletion tests, including larger-library scan and cancellation coverage.
+
+### Desktop interface and accessibility
+- Simplified the Home presentation and refreshed gameplay controls with clearer grouping, Save prominence, responsive spacing, and pressed/hover/focus feedback.
+- Restored the complete canonical Home artwork in a dedicated gameplay sidebar header and kept compact and large layouts readable.
+- Added Saved Games copy, shortcuts, and feedback across English, Español, and Català without changing deterministic puzzle revisions or optional audio behavior.
+
+### Compatibility
+- Existing compatible v1.2 and v1.3 data is retained during upgrade, with immutable pre-v1.3.7 profile sources and checked migration/recovery.
+- Older summary-only results remain summaries when their exact puzzle state is unavailable; newly retained exact records can be reopened or replayed.
+- The four-platform packaging contract is unchanged. macOS arm64 remains experimental; rollback to older builds requires a backup of the complete data directory.
+
 ## [1.3.6]
 
 ### Correctness and robustness

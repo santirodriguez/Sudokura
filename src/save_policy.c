@@ -23,10 +23,23 @@ bool save_policy_has_error(const SavePolicy *policy) {
   return save_policy_dirty(policy) && policy->last_status != STORE_OK;
 }
 
+bool save_policy_transition_ready(const SavePolicy *policy,
+                                  bool checkpoint_succeeded) {
+  return checkpoint_succeeded && policy && !save_policy_dirty(policy);
+}
+
 bool save_policy_slot_dirty(const SavePolicy *policy, bool daily) {
   if (!policy) return false;
   unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
   return (policy->dirty_mask & bit) != 0;
+}
+
+bool save_policy_replacement_discard_allowed(
+    const SavePolicy *policy, bool daily, bool unretained_active,
+    bool capture_failed, unsigned keep_pending_mask) {
+  unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
+  return policy && unretained_active && !capture_failed &&
+         keep_pending_mask == 0u && policy->dirty_mask == bit;
 }
 
 bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms) {
@@ -37,6 +50,15 @@ bool save_policy_checkpoint_due(const SavePolicy *policy, uint64_t now_ms) {
     return now_ms - policy->last_change_ms >= SUDOKURA_AUTOSAVE_MAX_MS;
   return now_ms - policy->last_change_ms >= SUDOKURA_AUTOSAVE_QUIET_MS ||
          now_ms - policy->dirty_since_ms >= SUDOKURA_AUTOSAVE_MAX_MS;
+}
+
+bool save_policy_checkpoint_now(SavePolicy *policy, SavePolicyWriteFn write,
+                                void *context, uint64_t now_ms) {
+  if (!policy || !write) return false;
+  if (!save_policy_dirty(policy)) return true;
+  StoreStatus status = write(context);
+  save_policy_record_result(policy, status, now_ms);
+  return status == STORE_OK;
 }
 
 void save_policy_record_result(SavePolicy *policy, StoreStatus status,

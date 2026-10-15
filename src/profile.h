@@ -5,15 +5,22 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define SUDOKURA_PROFILE_CONTAINER_VERSION 2u
-#define SUDOKURA_PROFILE_CONTENT_VERSION 1u
+#define SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY 1u
+#define SUDOKURA_PROFILE_CONTENT_VERSION 2u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY 1u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_V2 2u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION 3u
 #define SUDOKURA_SESSION_CONTENT_VERSION_LEGACY 2u
 #define SUDOKURA_SESSION_CONTENT_VERSION 3u
 #define SUDOKURA_RESULT_LIMIT 128u
+
+typedef struct {
+  uint64_t high;
+  uint64_t low;
+} GameAttemptId;
 
 typedef GameEdit ProfileEdit;
 
@@ -28,6 +35,9 @@ typedef struct {
 
 typedef struct {
   bool present;
+  bool retained;
+  GameAttemptId attempt_id;
+  uint64_t revision;
   ProfileSession value;
 } ProfileSlot;
 
@@ -45,14 +55,21 @@ typedef struct {
   uint16_t daily_year;
   uint8_t daily_month;
   uint8_t daily_day;
+  GameAttemptId attempt_id;
+  bool practice;
 } ProfileResult;
 
 typedef struct {
+  uint16_t codec_version; /* Legacy source stays legacy until safe upgrade. */
   Preferences preferences;
   ProfileSlot normal;
   ProfileSlot daily;
   uint16_t result_count;
   ProfileResult results[SUDOKURA_RESULT_LIMIT];
+  bool migration_pending;
+  uint32_t migration_source_length;
+  uint32_t migration_source_crc;
+  uint8_t migration_source_suffix;
 } ProfileData;
 
 typedef struct {
@@ -72,6 +89,8 @@ typedef struct {
 
 void profile_defaults(ProfileData *profile);
 bool profile_validate(const ProfileData *profile);
+/* Compare encoded state, excluding C struct padding and transient fields. */
+bool profile_encoded_equal(const ProfileData *left, const ProfileData *right);
 bool profile_slot_set(ProfileSlot *slot, const SessionState *session,
                       bool assisted);
 bool profile_slot_set_runtime(ProfileSlot *slot, const SessionState *session,
@@ -82,11 +101,32 @@ bool profile_record_result(ProfileData *profile, const ProfileResult *result,
 ProfileResultSummary profile_result_summary(const ProfileData *profile,
                                             const ProfileResult *reference);
 
+bool profile_result_is_valid(const ProfileResult *result);
+/* Shared bounded codec for independent persistent game records. */
+bool profile_session_encode_blob(const ProfileSession *session,
+                                 unsigned char *bytes, size_t capacity,
+                                 size_t *size_out);
+/* Encode a trusted live session without reconstructing its puzzle. */
+bool profile_session_encode_blob_runtime(const ProfileSession *session,
+                                         unsigned char *bytes, size_t capacity,
+                                         size_t *size_out);
+StoreStatus profile_session_decode_blob(const unsigned char *bytes, size_t size,
+                                        bool expected_daily,
+                                        ProfileSession *session);
+
 StoreStatus profile_save_file(const char *path, const char *backup_path,
                               const ProfileData *profile);
 StoreStatus profile_save_runtime_file(const char *path,
                                       const char *backup_path,
                                       const ProfileData *profile);
+StoreStatus profile_save_runtime_verified(const char *path,
+                                          const char *backup_path,
+                                          const ProfileData *profile);
+/* Cancel a failed activation only when disk still holds the old snapshot
+   or exactly the attempted candidate. Never rotate the previous backup. */
+StoreStatus profile_restore_runtime_activation(
+    const char *path, const ProfileData *previous,
+    const ProfileData *candidate);
 StoreStatus profile_load_file(const char *path, ProfileData *profile);
 StoreStatus profile_recover_previous(const char *profile_path,
                                      const char *profile_backup_path,

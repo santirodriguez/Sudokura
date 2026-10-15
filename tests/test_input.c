@@ -1,5 +1,6 @@
 #define SDL_MAIN_HANDLED
 #include "input.h"
+#include "button_feedback.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -140,6 +141,15 @@ int main(void) {
   assert(input_play_shortcut(primary_undo_snapshot.key,
                              primary_undo_snapshot.modifiers) == INPUT_PLAY_UNDO);
 
+  assert(input_library_shortcut(SDLK_s, primary, false) == INPUT_LIBRARY_SAVE);
+  assert(input_library_shortcut(SDLK_o, primary, false) == INPUT_LIBRARY_OPEN);
+  assert(input_library_shortcut(SDLK_s, primary, true) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, other, false) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, KMOD_NONE, false) == INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_o, (SDL_Keymod)(primary | KMOD_SHIFT), false) ==
+         INPUT_LIBRARY_NONE);
+  assert(input_library_shortcut(SDLK_s, (SDL_Keymod)(primary | KMOD_ALT), false) ==
+         INPUT_LIBRARY_NONE);
   assert(input_play_shortcut(SDLK_z, primary) == INPUT_PLAY_UNDO);
   assert(input_play_shortcut(SDLK_z, (SDL_Keymod)(primary | KMOD_SHIFT)) ==
          INPUT_PLAY_REDO);
@@ -173,6 +183,32 @@ int main(void) {
   assert(input_audio_press_is_long(UINT64_C(500)));
   assert(input_audio_press_is_long(UINT64_C(1500)));
 
-  puts("keyboard, mouse, focus and deterministic audio gesture policies passed");
+  /* A fast pointer release must still leave a short visible press state. */
+  ButtonFeedback feedback = {0};
+  assert(!button_feedback_matches(&feedback, 1, 100, 10, 20, 80, 30));
+  button_feedback_pointer(&feedback, 1, 11, 21, UINT64_C(100));
+  assert(button_feedback_remaining_ms(&feedback, 1, 100) ==
+         BUTTON_FEEDBACK_HOLD_MS);
+  assert(button_feedback_matches(&feedback, 1, 100, 10, 20, 80, 30));
+  assert(button_feedback_matches(&feedback, 1, 229, 10, 20, 80, 30));
+  assert(!button_feedback_matches(&feedback, 1, 230, 10, 20, 80, 30));
+  assert(!button_feedback_matches(&feedback, 2, 101, 10, 20, 80, 30));
+  assert(!button_feedback_matches(&feedback, 1, 99, 10, 20, 80, 30));
+  assert(!button_feedback_matches(&feedback, 1, 101, 12, 20, 80, 30));
+  assert(!button_feedback_matches(&feedback, 1, 101, 10, 20, 0, 30));
+  button_feedback_pointer(&feedback, 1, 90, 21, UINT64_C(300));
+  assert(!button_feedback_matches(&feedback, 1, 301, 10, 20, 80, 30));
+
+  /* Keyboard feedback belongs to the exact focused control, not neighbors. */
+  button_feedback_keyboard(&feedback, 2, 50, 60, 90, 32, UINT64_C(500));
+  assert(button_feedback_matches(&feedback, 2, 501, 50, 60, 90, 32));
+  assert(!button_feedback_matches(&feedback, 2, 501, 51, 60, 90, 32));
+  assert(!button_feedback_matches(&feedback, 2, 501, 50, 60, 91, 32));
+  assert(!button_feedback_matches(&feedback, 1, 501, 50, 60, 90, 32));
+  assert(!button_feedback_matches(&feedback, 2, 630, 50, 60, 90, 32));
+  button_feedback_keyboard(&feedback, 2, 0, 0, 0, 0, UINT64_C(800));
+  assert(button_feedback_matches(&feedback, 2, 501, 50, 60, 90, 32));
+
+  puts("keyboard, mouse, focus, button feedback and deterministic audio gesture policies passed");
   return 0;
 }

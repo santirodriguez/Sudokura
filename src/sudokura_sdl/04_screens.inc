@@ -237,9 +237,29 @@ static int choice_box(Gfx*g,const Game*game,UI*ui,const char*title,
   return buttonid;
 }
 
+/* Cancellation remains the default for destructive actions. */
+static bool confirm_destructive_box(Gfx *gfx,const Game *game,UI *ui,
+                                    const char *title,const char *message,
+                                    const char *delete_label) {
+  if(!gfx||!gfx->win)return false;
+  native_dialog_prepare(gfx,game,ui);
+  const SDL_MessageBoxButtonData buttons[]={
+    {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT |
+     SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,
+     tr(ui->language,T_CANCEL)},
+    {0,1,delete_label}
+  };
+  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,gfx->win,
+      title,message,2,buttons,NULL};
+  int pressed=0;
+  int status=SDL_ShowMessageBox(&data,&pressed);
+  window_focus_guard_reset();
+  return status==0&&pressed==1;
+}
+
 static void app_render_base(Gfx*g,const Game*game,UI*ui){
   update_font_tiers(g,ui);
-  if(ui->screen==SCR_TITLE){
+  if(ui->screen==SCR_TITLE||ui->screen==APP_SCREEN_GAMES){
     Theme th=ui->dark_theme?theme_dark():theme_light();
     SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
     SDL_RenderClear(g->ren);
@@ -410,6 +430,12 @@ static bool app_init_base(Gfx*g,const char*font_cli){
     app_shutdown_base(g);return false;
   }
   SDL_SetWindowMinimumSize(g->win,360,480);
+  /* Surface immediately, before font discovery, texture generation and
+     profile migration. Keep a real visible window during slow first runs. */
+  char loading_title[160];
+  (void)snprintf(loading_title,sizeof(loading_title),"%s - %s",
+                 SUDOKURA_NAME_VERSION,tr(LANG_EN,T_STARTUP_LOADING));
+  SDL_SetWindowTitle(g->win,loading_title);
   g->ren=SDL_CreateRenderer(g->win,-1,
       SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
   if(!g->ren)g->ren=SDL_CreateRenderer(g->win,-1,SDL_RENDERER_SOFTWARE);
@@ -421,6 +447,9 @@ static bool app_init_base(Gfx*g,const char*font_cli){
   if(SDL_GetRendererInfo(g->ren,&info)==0)
     g->software_renderer=(info.flags&SDL_RENDERER_SOFTWARE)!=0;
   if(!gfx_refresh_metrics(g)){app_shutdown_base(g);return false;}
+  SDL_SetRenderDrawColor(g->ren,16,19,30,255);
+  SDL_RenderClear(g->ren);
+  SDL_RenderPresent(g->ren);
 
   SDL_Surface*icon=SDL_CreateRGBSurfaceWithFormatFrom(
       (void*)sudokura_icon_rgba,(int)sudokura_icon_width,

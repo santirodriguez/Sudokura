@@ -55,6 +55,43 @@ static void home_move_focus(const UI *ui, int direction) {
 
 static void ui_button_click(void) { audio_play_effect(AUDIO_EFFECT_CLICK); }
 
+static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
+                                        const UI *ui) {
+  if (!gfx || !ui || settings_open || audio_control_popup_open) return;
+  SDL_Rect rect = {0, 0, 0, 0};
+  if (ui->screen == SCR_TITLE) {
+    AppGeometry g;
+    if (!get_geometry(gfx, ui, &g)) return;
+    switch (home_focus) {
+      case HOME_FOCUS_MODE:
+        rect = sdl_rect(g.home_mode[ui->mode]);
+        break;
+      case HOME_FOCUS_DIFFICULTY:
+        rect = sdl_rect(g.home_difficulty[home_difficulty]);
+        break;
+      case HOME_FOCUS_NEW: rect = sdl_rect(g.home_primary[0]); break;
+      case HOME_FOCUS_CONTINUE:
+        if (ui->has_session) rect = sdl_rect(g.home_primary[1]);
+        break;
+      case HOME_FOCUS_DAILY: rect = sdl_rect(g.home_primary[2]); break;
+      case HOME_FOCUS_GAMES: rect = sdl_rect(g.home_secondary[0]); break;
+      case HOME_FOCUS_HELP: rect = sdl_rect(g.home_secondary[1]); break;
+      case HOME_FOCUS_ABOUT: rect = sdl_rect(g.home_secondary[2]); break;
+      case HOME_FOCUS_SETTINGS: rect = sdl_rect(g.home_secondary[3]); break;
+      case HOME_FOCUS_QUIT: rect = sdl_rect(g.home_secondary[4]); break;
+      default: break;
+    }
+  } else if (ui->screen == SCR_PLAY && game &&
+             app_play_interactions_allowed(ui) &&
+             !hint_panel_interactive(ui) &&
+             play_focus_enabled(game, ui, play_keyboard_focus)) {
+    rect = play_focus_rect(gfx, ui, play_keyboard_focus);
+  }
+  if (rect.w > 0 && rect.h > 0)
+    ui_feedback_keyboard_press(ui, rect);
+}
+
+
 typedef enum {
   SAVE_GATE_BACK = 0,
   SAVE_GATE_SAVED,
@@ -70,7 +107,7 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
   if (!p || !g || !ui ||
       (p->save_policy.dirty_mask & dirty_mask) == 0)
     return SAVE_GATE_SAVED;
-  if (persistence_flush(p)) return SAVE_GATE_SAVED;
+  if (persistence_retry_current(p, game, ui)) return SAVE_GATE_SAVED;
 
   bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
   for (;;) {
@@ -87,11 +124,40 @@ static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
       if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
       return SAVE_GATE_DISCARD;
     }
-    if (persistence_flush(p)) {
+    if (persistence_retry_current(p, game, ui)) {
       if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
       return SAVE_GATE_SAVED;
     }
   }
+}
+
+/* Keep the live session and terminal archive in memory until every
+   required persistence domain is acknowledged. Home has no discard path:
+   explicit discarding remains available through the Exit gate. */
+static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  bool checkpointed = ui->session_open
+      ? checkpoint_current_session(p, game, ui)
+      : persistence_flush(p);
+  if (!save_policy_transition_ready(&p->save_policy, checkpointed)) {
+    bool modal_owned = clock_pause(ui, PAUSE_MODAL);
+    bool retry = confirm_box(gfx, game, ui,
+                             tr(ui->language, T_UNSAVED_TITLE),
+                             tr(ui->language, T_UNSAVED_HOME),
+                             tr(ui->language, T_RETRY_SAVE),
+                             tr(ui->language, T_BACK));
+    bool saved = retry && persistence_retry_current(p, game, ui);
+    if (retry && !saved)
+      (void)show_simple_message_box(gfx, game, ui,
+                                    SDL_MESSAGEBOX_WARNING,
+                                    tr(ui->language, T_STORAGE_ERROR),
+                                    tr(ui->language, T_SAVE_FAILED));
+    if (modal_owned) (void)clock_resume(ui, PAUSE_MODAL);
+    if (!save_policy_transition_ready(&p->save_policy, saved))
+      return false;
+  }
+  go_home(p, game, ui);
+  return true;
 }
 
 static void home_set_language(Persistence *p, UI *ui, Language language) {
@@ -168,10 +234,24 @@ static bool replace_saved_session_confirmed(Persistence *p,
 
   const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   const SessionState *saved = profile_slot_session(slot);
-  return !saved || !session_has_meaningful_progress_runtime(saved) ||
-         confirm_box(g, game, ui, tr(ui->language, T_NEW_GAME),
-                     tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
-                     tr(ui->language, T_CANCEL));
+  if (!saved || !session_has_meaningful_progress_runtime(saved)) return true;
+  if (slot->retained)
+    return confirm_box(g, game, ui, tr(ui->language, T_NEW_GAME),
+                       tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
+                       tr(ui->language, T_CANCEL));
+  int choice = choice_box(g, game, ui, tr(ui->language, T_GAMES_KEEP_TITLE),
+                          tr(ui->language, T_GAMES_NEW_PROMPT),
+                          tr(ui->language, T_CANCEL),
+                          tr(ui->language, T_GAMES_SAVE_CONTINUE),
+                          tr(ui->language, T_DISCARD));
+  if (choice == 0) return false;
+  if (choice == 1 && !games_browser_save_hot(p, daily)) {
+    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
+                                  tr(ui->language, T_STORAGE_ERROR),
+                                  tr(ui->language, T_SAVE_FAILED));
+    return false;
+  }
+  return true;
 }
 
 static bool restart_current_session_confirmed(Persistence *p,
@@ -309,24 +389,163 @@ static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
   }
 }
 
-static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (!p || !game || !ui || !g) return;
+typedef struct {
+  GameLibraryScanCursor cursor;
+  GameDailyLookup lookup;
+  int year, month, day;
+  StoreStatus status;
+  bool active;
+} HomeDailyScan;
+static HomeDailyScan home_daily_scan;
+
+static void home_daily_cancel(void) {
+  game_library_scan_close(&home_daily_scan.cursor);
+  memset(&home_daily_scan, 0, sizeof(home_daily_scan));
+  daily_lookup_scanning = false;
+}
+static bool home_daily_visit(const GameLibraryEntry *entry, void *context) {
+  HomeDailyScan *scan = (HomeDailyScan *)context;
+  game_library_daily_lookup_consider(&scan->lookup, entry,
+                                     scan->year, scan->month, scan->day);
+  return true;
+}
+static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
+  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
+                                tr(ui->language, T_DAILY),
+                                tr(ui->language, key));
+}
+static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  const HomeDailyScan scan = home_daily_scan;
+  home_daily_cancel();
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) || y!=scan.year || m!=scan.month || d!=scan.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  const ProfileSlot *hot=&p->profile.daily;
+  const SessionState *saved=profile_slot_session(hot);
+  bool hot_today=saved && saved_daily_matches(p,y,m,d);
+  if (scan.status!=STORE_OK || scan.lookup.uncertain) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  if (scan.lookup.matching_attempts>1u ||
+      (hot_today && scan.lookup.matching_attempts &&
+       !game_attempt_id_equal(hot->attempt_id,scan.lookup.match.id))) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DUPLICATE);
+    return;
+  }
+  if (hot_today) {
+    StoreStatus receipt=game_library_receipt_status(p->profile_directory,
+                                                     hot->attempt_id);
+    if (receipt!=STORE_NOT_FOUND) {
+      home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+      return;
+    }
+    if (scan.lookup.matching_attempts &&
+        (scan.lookup.match.status!=STORE_OK ||
+         scan.lookup.match.revision>hot->revision)) {
+      /* A valid older copy is offered for explicit recovery below. */
+    } else {
+      if (saved->status==SESSION_ACTIVE)
+        restore_saved_session(p,game,ui,true);
+      else if (!games_browser_open_focused(p,game,ui,gfx,hot->attempt_id,true))
+        home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+      return;
+    }
+  }
+  if (scan.lookup.matching_attempts) {
+    GameLibraryEntry entry=scan.lookup.match;
+    if (entry.status!=STORE_OK) {
+      if (entry.previous_status!=STORE_OK) {
+        home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+        return;
+      }
+      /* Never roll back to a previous copy without an explicit decision. */
+      bool recover=confirm_box(gfx,game,ui,
+              tr(ui->language,T_DAILY),
+              tr(ui->language,T_DAILY_RECOVER_PREVIOUS),
+              tr(ui->language,T_RECOVER),tr(ui->language,T_CANCEL));
+      if(!recover)return;
+      GameLibraryRecord recovered;
+      if (game_library_recover_previous(p->profile_directory,entry.id,
+                                        &recovered)!=STORE_OK ||
+          !recovered.original_daily || recovered.practice ||
+          recovered.result.daily_year!=(uint16_t)y ||
+          recovered.result.daily_month!=(uint8_t)m ||
+          recovered.result.daily_day!=(uint8_t)d) {
+        home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+        return;
+      }
+      entry.status=STORE_OK;
+      entry.kind=recovered.kind;
+      entry.result=recovered.result;
+      entry.revision=recovered.revision;
+    }
+    if (entry.result.status==SESSION_ACTIVE) {
+      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d);
+    } else {
+      /* The original finished Daily remains read-only; no new attempt. */
+      if (!games_browser_open_focused(p,game,ui,gfx,entry.id,true))
+        home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+    }
+    return;
+  }
+  /* All older Daily attempts, including an empty autosave, remain
+     durably recoverable before today's new original is generated. */
+  if (!games_browser_retain_daily_with_retry(p,game,ui,gfx))
+    return;
   victory_animation_reset();
-
-  const SessionState *saved = profile_slot_session(&p->profile.daily);
-  if (saved && session_can_continue_runtime(saved)) {
-    restore_saved_session(p, game, ui, true);
+  (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
+}
+static void home_daily_scan_pump(Persistence *p, Game *game,
+                                 UI *ui, Gfx *gfx) {
+  if (!home_daily_scan.active) return;
+  bool finished=false;
+  home_daily_scan.status=game_library_scan_step(
+      &home_daily_scan.cursor,16u,home_daily_visit,&home_daily_scan,&finished);
+  if (finished || home_daily_scan.status!=STORE_OK)
+    home_daily_finish(p,game,ui,gfx);
+}
+static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
+  if (!p || !p->enabled || !game || !ui || !g || ui->screen!=SCR_TITLE) return;
+  if (home_daily_scan.active) { home_daily_cancel(); return; }
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day)) {
+    home_daily_warning(game,ui,g,T_DAILY_DATE_CHANGED);
     return;
   }
-
-  int year = 0, month = 0, day = 0;
-  if (!local_date(&year, &month, &day)) return;
-  if (saved_daily_matches(p, year, month, day)) {
-    restore_saved_session(p, game, ui, true);
-    return;
+  const SessionState *saved=profile_slot_session(&p->profile.daily);
+  if (saved && session_can_continue_runtime(saved) &&
+      !saved_daily_matches(p,year,month,day)) {
+    char date[64],message[384];
+    (void)snprintf(date,sizeof(date),"%04d-%02d-%02d",
+                   saved->daily_year,saved->daily_month,saved->daily_day);
+    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,250,
+                   tr(ui->language,T_DAILY_CHOOSE_PROMPT));
+    int choice=choice_box(g,game,ui,tr(ui->language,T_DAILY_CHOOSE_TITLE),
+                          message,tr(ui->language,T_CANCEL),
+                          tr(ui->language,T_DAILY_OLDER),
+                          tr(ui->language,T_DAILY_TODAY));
+    if(choice==0)return;
+    if(choice==1) {
+      victory_animation_reset();
+      restore_saved_session(p,game,ui,true);
+      return;
+    }
   }
-  if (replace_saved_session_confirmed(p, game, ui, g, true))
-    (void)start_daily_game_with_ui(p, game, ui, g, year, month, day);
+  if (games_browser_checkpoint_gate(
+          p,game,ui,g,true,false,true,T_DAILY_SAVE_RETRY_PROMPT) !=
+      GAMES_CHECKPOINT_READY)
+    return;
+  memset(&home_daily_scan,0,sizeof(home_daily_scan));
+  home_daily_scan.year=year;home_daily_scan.month=month;home_daily_scan.day=day;
+  home_daily_scan.status=game_library_scan_begin(
+      p->profile_directory,&home_daily_scan.cursor);
+  home_daily_scan.active=true;
+  daily_lookup_scanning=true;
+  if(home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
+    home_daily_finish(p,game,ui,g);
 }
 
 static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
@@ -353,6 +572,9 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
       break;
     case HOME_FOCUS_DAILY:
       home_daily_game(p, game, ui, g);
+      break;
+    case HOME_FOCUS_GAMES:
+      (void)games_browser_open(p, game, ui, g);
       break;
     case HOME_FOCUS_HELP:
       info_keyboard_focus=INFO_FOCUS_BACK;
@@ -410,14 +632,14 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   ui_button_click();victory_animation_reset();
-  if(result_keyboard_focus==1){go_home(p,game,ui);return;}
+  if(result_keyboard_focus==1){go_home_checked(p,game,ui,g);return;}
   if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,game,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
   else if(restart_current_session_confirmed(p,game,ui,g))restart_current_session(p,game,ui);
 }
-static void activate_pause_focus(Persistence*p,const Game*game,UI*ui){
+static void activate_pause_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   ui_button_click();
   if(pause_keyboard_focus==0){if(resume_user_pause(ui))(void)checkpoint_current_session(p,game,ui);}
-  else go_home(p,game,ui);
+  else go_home_checked(p,game,ui,g);
 }
 static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
   if(!hint_panel_interactive(ui))return false;
@@ -431,8 +653,9 @@ static bool activate_hint_focus(Persistence*p,Game*game,UI*ui){
 static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   if(!play_focus_enabled(game,ui,play_keyboard_focus))return false;
   switch(play_keyboard_focus){
-    case PLAY_FOCUS_MENU:ui_button_click();go_home(p,game,ui);return true;
+    case PLAY_FOCUS_MENU:ui_button_click();go_home_checked(p,game,ui,g);return true;
     case PLAY_FOCUS_PAUSE:ui_button_click();pause_keyboard_focus=0;clock_pause(ui,PAUSE_MANUAL);(void)checkpoint_current_session(p,game,ui);return true;
+    case PLAY_FOCUS_SAVE:ui_button_click();(void)games_browser_save_current(p,game,ui,g);return true;
     case PLAY_FOCUS_UNDO:
     case PLAY_FOCUS_REDO:{AppActionKind kind=play_keyboard_focus==PLAY_FOCUS_REDO?APP_ACTION_REDO:APP_ACTION_UNDO;ui_button_click();if(apply_history_action(game,ui,kind)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
     case PLAY_FOCUS_RESTART:ui_button_click();if(restart_current_session_confirmed(p,game,ui,g)){victory_animation_reset();restart_current_session(p,game,ui);}return true;
@@ -443,7 +666,7 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
     case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
-    case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_flush(p);return true;
+    case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_retry_current(p,game,ui);return true;
     default:
       if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
       return false;
@@ -471,9 +694,11 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   if (!ui || ui->screen != SCR_PLAY || ui->result != RES_NONE ||
       ui->pause_reasons != 0)
     return false;
-  AppActionOutcome outcome = app_check_terminal(game, ui, elapsed_time(ui));
+  uint64_t decision_ms = now_ms();
+  AppActionOutcome outcome =
+      app_check_terminal(game, ui, app_clock_elapsed_s(ui, decision_ms));
   if (!outcome.terminal) return false;
-  finish_terminal_action(ui);
+  finish_terminal_action(ui, decision_ms);
   result_keyboard_focus=0;
   (void)checkpoint_current_session(persistence, game, ui);
   return true;
@@ -772,7 +997,7 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
     save_policy_init(&latency_p.save_policy);
 
     double event_start=wall_clock_ms();
-    go_home_base(&latency_p,&action_game,&action_ui);
+    go_home_base(&latency_p,&action_game,&action_ui,false);
     double action_done=wall_clock_ms();
     app_frame(g,&action_game,&action_ui);
     double present_done=wall_clock_ms();
@@ -961,12 +1186,29 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
   return 0;
 }
 
+static void app_render_startup_splash(Gfx *gfx, Language language) {
+  if (!gfx || !gfx->ren) return;
+  SDL_SetRenderDrawColor(gfx->ren,16,19,30,255);
+  SDL_RenderClear(gfx->ren);
+  int width=gfx->width<640?gfx->width-36:520;
+  if(width<120)width=120;
+  SDL_Rect logo={(gfx->width-width)/2,gfx->height/2-103,width,90};
+  draw_wordmark(gfx,logo);
+  SDL_Rect message={(gfx->width-width)/2,gfx->height/2+18,width,52};
+  (void)draw_fitted_text(gfx,tr(language,T_STARTUP_LOADING),
+                         (SDL_Color){200,214,245,255},
+                         message,19,10);
+  SDL_RenderPresent(gfx->ren);
+  gfx->dirty=true;
+}
+
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
   const char *screenshot_dir = NULL;
   bool smoke_test = false;
   bool desktop_benchmark = false;
+  bool startup_timings = false;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--font") && i + 1 < argc)
       font_cli = argv[++i];
@@ -974,12 +1216,15 @@ int main(int argc, char **argv) {
       smoke_test = true;
     else if (!strcmp(argv[i], "--desktop-benchmark"))
       desktop_benchmark = true;
+    else if (!strcmp(argv[i], "--startup-timings"))
+      startup_timings = true;
     else if (!strcmp(argv[i], "--render-screenshots") && i + 1 < argc)
       screenshot_dir = argv[++i];
   }
 
   Gfx g;
   if (!app_init(&g, font_cli)) return 1;
+  double initialized_at_ms=wall_clock_ms();
   Game game;
   memset(&game, 0, sizeof(game));
   UI ui;
@@ -1125,13 +1370,20 @@ int main(int argc, char **argv) {
     if (screenshot_dir) {
       enum {
         REVIEW_HOME_EMPTY=0, REVIEW_HOME_SAVE, REVIEW_NOTES, REVIEW_CONFLICT,
-        REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
-        REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT, REVIEW_STATE_COUNT
+        REVIEW_HINT, REVIEW_SAVE_ERROR, REVIEW_RESULT_SAVE_ERROR, REVIEW_PAUSE, REVIEW_LOSS, REVIEW_WIN,
+        REVIEW_HELP, REVIEW_SETTINGS, REVIEW_ABOUT,
+        REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
+        REVIEW_GAMES_RECOVER, REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
+        REVIEW_HOME_DAILY_LOADING, REVIEW_HOME_DAILY_OLDER,
+        REVIEW_HOME_DAILY_FINISHED, REVIEW_STATE_COUNT
       };
       const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
-        "pause","loss","win","help","settings","about"
+        "result-save-error","pause","loss","win","help","settings","about",
+        "games-empty","games-active","games-unavailable",
+        "games-recover","games-finished","games-detail",
+        "home-daily-loading","home-daily-older","home-daily-finished"
       };
       if(!make_directory(screenshot_dir)){
         fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
@@ -1172,7 +1424,10 @@ int main(int argc, char **argv) {
           info_keyboard_focus=INFO_FOCUS_BACK;result_keyboard_focus=0;
           pause_keyboard_focus=0;hint_keyboard_focus=HINT_FOCUS_PRIMARY;
           play_keyboard_focus=-1;
+          free(games_browser.rows);
+          memset(&games_browser, 0, sizeof(games_browser));
           save_policy_init(&review_persistence.save_policy);
+          daily_lookup_scanning=false;
 
           const char*focus="none";SDL_Rect focus_rect={0,0,0,0};
           AppGeometry geometry;
@@ -1188,6 +1443,105 @@ int main(int argc, char **argv) {
               ui.normal_resume.difficulty=DIFFICULTY_MEDIUM;ui.normal_resume.elapsed_ms=754000;
               home_focus=HOME_FOCUS_CONTINUE;focus="continue";
               focus_rect=sdl_rect(geometry.home_primary[1]);break;
+            case REVIEW_HOME_DAILY_LOADING:
+            case REVIEW_HOME_DAILY_OLDER:
+            case REVIEW_HOME_DAILY_FINISHED:
+              ui.screen=SCR_TITLE;
+              home_focus=HOME_FOCUS_DAILY;
+              focus="daily";
+              focus_rect=sdl_rect(geometry.home_primary[2]);
+              if(state==REVIEW_HOME_DAILY_LOADING) {
+                daily_lookup_scanning=true;
+              }else{
+                ui.daily_resume.present=true;
+                ui.daily_resume.year=2026;
+                ui.daily_resume.month=10;
+                ui.daily_resume.day=state==REVIEW_HOME_DAILY_OLDER?12:13;
+                ui.daily_resume.difficulty=DIFFICULTY_MEDIUM;
+                ui.daily_resume.elapsed_ms=72000;
+                ui.daily_resume.can_continue=state==REVIEW_HOME_DAILY_OLDER;
+                ui.daily_resume.completed=state==REVIEW_HOME_DAILY_FINISHED;
+                ui.daily_resume.today=state==REVIEW_HOME_DAILY_FINISHED;
+              }
+              break;
+            case REVIEW_GAMES_EMPTY:{
+              ui.screen=APP_SCREEN_GAMES;
+              games_browser.focus=2;
+              GamesBrowserLayout lay=games_browser_layout(&g);
+              focus="games-back";focus_rect=lay.back;break;
+            }
+            case REVIEW_GAMES_ACTIVE:
+            case REVIEW_GAMES_UNAVAILABLE:
+            case REVIEW_GAMES_RECOVER:
+            case REVIEW_GAMES_FINISHED:
+            case REVIEW_GAMES_DETAIL:{
+              ui.screen=APP_SCREEN_GAMES;
+              games_browser.focus=0;
+              bool finished=state==REVIEW_GAMES_FINISHED||
+                            state==REVIEW_GAMES_DETAIL;
+              GameLibraryEntry entry;
+              memset(&entry,0,sizeof(entry));
+              entry.id=(GameAttemptId){1,2};
+              entry.kind=GAME_RECORD_EXACT;
+              entry.status=(state==REVIEW_GAMES_UNAVAILABLE ||
+                            state==REVIEW_GAMES_RECOVER)?STORE_CORRUPT:STORE_OK;
+              entry.previous_status=state==REVIEW_GAMES_RECOVER
+                  ? STORE_OK : STORE_NOT_FOUND;
+              entry.result.mode=MODE_CLASSIC;
+              entry.result.difficulty=DIFFICULTY_MEDIUM;
+              entry.result.status=finished?SESSION_WON:SESSION_ACTIVE;
+              entry.result.elapsed_ms=754000;
+              entry.result.practice=state==REVIEW_GAMES_DETAIL;
+              entry.result.assisted=finished;
+              entry.finished_utc=finished?UINT64_C(1791916200):0;
+              if(!games_browser_push(&entry,false)){
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE &&
+                  state!=REVIEW_GAMES_RECOVER;
+              games_browser.preview.game=game;
+              if(state==REVIEW_GAMES_ACTIVE){
+                /* Explicitly test the lowest and highest note digits in
+                   the saved-board preview; never show hidden answers. */
+                games_browser.preview.game.fixed[0]=0;
+                games_browser.preview.game.initial[0]=0;
+                games_browser.preview.game.puzzle[0]=0;
+                games_browser.preview.game.hinted[0]=0;
+                games_browser.preview.game.notes[0]=(1u<<1)|(1u<<9);
+              }
+              if(finished){
+                for(int cell=0;cell<81;++cell)
+                  if(!games_browser.preview.game.initial[cell])
+                    games_browser.preview.game.puzzle[cell]=
+                        games_browser.preview.game.solution[cell];
+                games_browser.detail_record_valid=true;
+                games_browser.detail_record.kind=GAME_RECORD_EXACT;
+                games_browser.detail_record.id=entry.id;
+                games_browser.detail_record.parent=(GameAttemptId){UINT64_C(0xabc1234500001234),11};
+                games_browser.detail_record.original_daily=
+                    state==REVIEW_GAMES_DETAIL;
+                games_browser.detail_record.original_daily_year=2026;
+                games_browser.detail_record.original_daily_month=10;
+                games_browser.detail_record.original_daily_day=13;
+              }
+              games_browser.detail_open=state==REVIEW_GAMES_DETAIL;
+              GamesBrowserLayout lay=games_browser_layout(&g);
+              if(games_browser.detail_open){
+                games_browser.focus=3;
+                focus="games-replay";focus_rect=lay.replay;
+              }else if(state==REVIEW_GAMES_RECOVER){
+                games_browser.focus=1;
+                focus="games-recover";
+                focus_rect=lay.primary;
+              }else{
+                focus=state==REVIEW_GAMES_ACTIVE?"games-active":
+                      state==REVIEW_GAMES_UNAVAILABLE?"games-unavailable":
+                      "games-finished";
+                focus_rect=(SDL_Rect){lay.list.x+7,lay.list.y+5,
+                                      lay.list.w-14,lay.row_height-7};
+              }
+              break;
+            }
             case REVIEW_NOTES:
               ui.screen=SCR_PLAY;ui.notes_mode=true;ui.sel_r=0;ui.sel_c=0;
               game.fixed[0]=0;game.puzzle[0]=0;game.notes[0]=(1u<<1)|(1u<<3)|(1u<<7);
@@ -1207,6 +1561,14 @@ int main(int argc, char **argv) {
               ui.screen=SCR_PLAY;
               save_policy_mark(&review_persistence.save_policy,SAVE_DIRTY_NORMAL,now_ms());
               save_policy_record_result(&review_persistence.save_policy,STORE_IO_ERROR,now_ms());
+              play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;focus="retry-save";
+              focus_rect=storage_banner_layout(&g,&ui).retry;break;
+            case REVIEW_RESULT_SAVE_ERROR:
+              ui.screen=SCR_END;ui.result=RES_WIN;ui.pause_reasons=PAUSE_END;
+              save_policy_mark(&review_persistence.save_policy,
+                               SAVE_DIRTY_RESULTS|SAVE_DIRTY_NORMAL,now_ms());
+              save_policy_record_result(&review_persistence.save_policy,
+                                        STORE_IO_ERROR,now_ms());
               play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;focus="retry-save";
               focus_rect=storage_banner_layout(&g,&ui).retry;break;
             case REVIEW_PAUSE:
@@ -1254,6 +1616,9 @@ int main(int argc, char **argv) {
         }
       }
 
+      daily_lookup_scanning=false;
+      free(games_browser.rows);
+      memset(&games_browser,0,sizeof(games_browser));
       const int help_audit_sizes[][2]={{360,640},{640,480},{1024,768}};
       for(unsigned n=0;n<sizeof(help_audit_sizes)/sizeof(help_audit_sizes[0]);++n)
         for(int language=0;language<LANG_COUNT;++language)
@@ -1369,16 +1734,20 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 120 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 170 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
   }
 
+  app_render_startup_splash(&g,LANG_EN);
+  double profile_start_ms=wall_clock_ms();
   Persistence persistence;
   persistence_init(&persistence);
+  double profile_end_ms=wall_clock_ms();
   ui.language = persistence.preferences.language;
-  if (persistence.profile_status == STORE_CORRUPT &&
+  if ((persistence.profile_status == STORE_CORRUPT ||
+       persistence.profile_status == STORE_NOT_FOUND) &&
       persistence_previous_available(&persistence)) {
     bool recover = confirm_box(&g, &game, &ui, tr(ui.language, T_STORAGE_ERROR),
                                tr(ui.language, T_PROFILE_RECOVER_PROMPT),
@@ -1389,6 +1758,33 @@ int main(int argc, char **argv) {
       return 1;
     }
     if (!persistence_recover_previous(&persistence)) {
+      (void)show_simple_message_box(
+          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
+          tr(ui.language, T_STORAGE_ERROR),
+          tr(ui.language, T_PROFILE_IO_ERROR));
+      app_shutdown(&g);
+      return 1;
+    }
+    ui.language = persistence.preferences.language;
+    audio_apply_preferences(&persistence);
+  }
+  GameMigrationRecoveryRoute missing_route = GAME_MIGRATION_RECOVERY_NONE;
+  if (persistence_missing_hot_recovery_available(&persistence,
+                                                  &missing_route)) {
+    /* Explicit user consent is required before publishing any recovered
+       hot profile. Native Cancel/Escape always quits without a write. */
+    TextKey prompt = missing_route == GAME_MIGRATION_RECOVERY_IMPORT
+        ? T_PROFILE_RECOVER_IMPORT_PROMPT
+        : T_PROFILE_RECOVER_COLLECTION_PROMPT;
+    if (!confirm_box(&g, &game, &ui,
+                     tr(ui.language, T_STORAGE_ERROR),
+                     tr(ui.language, prompt),
+                     tr(ui.language, T_RECOVER),
+                     tr(ui.language, T_QUIT))) {
+      app_shutdown(&g);
+      return 1;
+    }
+    if (!persistence_recover_missing_hot(&persistence, missing_route)) {
       (void)show_simple_message_box(
           &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
           tr(ui.language, T_STORAGE_ERROR),
@@ -1420,13 +1816,27 @@ int main(int argc, char **argv) {
   home_focus = ui.normal_resume.can_continue
                    ? HOME_FOCUS_CONTINUE
                    : HOME_FOCUS_NEW;
+  SDL_SetWindowTitle(g.win,SUDOKURA_NAME_VERSION);
+  if (startup_timings) {
+    double ready_ms=wall_clock_ms();
+    fprintf(stderr,
+        "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
+        initialized_at_ms-process_start_ms,
+        profile_end_ms-profile_start_ms,ready_ms-process_start_ms);
+  }
   window_focus_guard_reset();
 
   bool running = true;
   SDL_Event e;
   while (running) {
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
-    int wait_ms=g.dirty?0:desktop_wait_timeout_ms(&g,&ui);
+    int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
+                             games_browser.scanning) || home_daily_scan.active)
+                    ? 0 : desktop_wait_timeout_ms(&g,&ui);
+    int button_feedback_wait = ui_feedback_remaining(&ui);
+    if (button_feedback_wait > 0 &&
+        (wait_ms < 0 || wait_ms > button_feedback_wait))
+      wait_ms = button_feedback_wait;
     for(int have_event=ui_wait_event_timeout(&e,wait_ms);
         have_event;have_event=ui_poll_event(&e)){
       g.dirty=true;
@@ -1436,6 +1846,16 @@ int main(int argc, char **argv) {
       if (e.type == SDL_QUIT) {
         if (request_exit(&persistence, &game, &ui, &g))
           running = false;
+        continue;
+      }
+      if (home_daily_scan.active &&
+          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN ||
+           e.type == SDL_MOUSEWHEEL)) {
+        if ((e.type == SDL_KEYDOWN &&
+             e.key.keysym.sym == SDLK_ESCAPE) ||
+            (e.type == SDL_MOUSEBUTTONDOWN &&
+             e.button.button == SDL_BUTTON_LEFT))
+          home_daily_cancel();
         continue;
       }
       if (e.type == SDL_RENDER_DEVICE_RESET ||
@@ -1480,9 +1900,36 @@ int main(int argc, char **argv) {
         InputKeySnapshot key_event = input_key_snapshot(&e.key);
         SDL_Keycode k = key_event.key;
         SDL_Keymod mod = key_event.modifiers;
+        if (!key_event.repeat && input_activation_key(k) &&
+            (mod & (KMOD_CTRL | KMOD_ALT | KMOD_GUI)) == 0)
+          ui_keyboard_button_feedback(&g, &game, &ui);
+        if (ui.screen == APP_SCREEN_GAMES) {
+          (void)games_browser_key(&persistence, &game, &ui, &g,
+                                  k, mod, key_event.repeat);
+          continue;
+        }
+        InputLibraryShortcut library_shortcut =
+            input_library_shortcut(k, mod, key_event.repeat);
+        if (library_shortcut == INPUT_LIBRARY_SAVE) {
+          if (app_play_interactions_allowed(&ui)) {
+            ui_button_click();
+            (void)games_browser_save_current(&persistence, &game, &ui, &g);
+          }
+          continue;
+        }
+        if (library_shortcut == INPUT_LIBRARY_OPEN) {
+          if (ui.screen == SCR_TITLE ||
+              (ui.screen == SCR_PLAY && ui.session_open &&
+               ui.result == RES_NONE &&
+               (ui.pause_reasons & (PAUSE_FOCUS | PAUSE_END | PAUSE_HOME)) == 0)) {
+            ui_button_click();
+            (void)games_browser_open(&persistence, &game, &ui, &g);
+          }
+          continue;
+        }
         if (persistence_has_save_error(&persistence) && k == SDLK_r) {
           ui_button_click();
-          (void)persistence_flush(&persistence);
+          (void)persistence_retry_current(&persistence, &game, &ui);
           continue;
         }
         if (open_global_info_key(&persistence, &game, &ui, k))
@@ -1582,7 +2029,7 @@ int main(int argc, char **argv) {
         }
         if (ui.screen == SCR_END) {
           if (k == SDLK_ESCAPE) {
-            ui_button_click();victory_animation_reset();go_home(&persistence,&game,&ui);
+            ui_button_click();victory_animation_reset();go_home_checked(&persistence,&game,&ui,&g);
           } else if (k == SDLK_TAB || k == SDLK_LEFT || k == SDLK_RIGHT ||
                      k == SDLK_UP || k == SDLK_DOWN) {
             int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
@@ -1599,11 +2046,11 @@ int main(int argc, char **argv) {
             int direction=(k==SDLK_LEFT||k==SDLK_UP||(k==SDLK_TAB&&(mod&KMOD_SHIFT)))?-1:1;
             pause_keyboard_focus=input_focus_step(pause_keyboard_focus,2,direction);
           } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && input_activation_key(k)) {
-            activate_pause_focus(&persistence,&game,&ui);
+            activate_pause_focus(&persistence,&game,&ui,&g);
           } else if ((ui.pause_reasons & PAUSE_USER_VISIBLE) && k == SDLK_p) {
-            pause_keyboard_focus=0;activate_pause_focus(&persistence,&game,&ui);
+            pause_keyboard_focus=0;activate_pause_focus(&persistence,&game,&ui,&g);
           } else if (k == SDLK_ESCAPE) {
-            ui_button_click();go_home(&persistence,&game,&ui);
+            ui_button_click();go_home_checked(&persistence,&game,&ui,&g);
           }
           continue;
         }
@@ -1666,7 +2113,7 @@ int main(int argc, char **argv) {
         }
         if (k == SDLK_ESCAPE) {
           ui_button_click();
-          go_home(&persistence, &game, &ui);
+          go_home_checked(&persistence, &game, &ui, &g);
         } else if (k == SDLK_UP || k == SDLK_w) {
           play_keyboard_focus=-1;ui.sel_r = (ui.sel_r + 8) % 9;
         } else if (k == SDLK_DOWN || k == SDLK_s) {
@@ -1726,6 +2173,13 @@ int main(int argc, char **argv) {
         continue;
       }
 
+      if (e.type == SDL_MOUSEWHEEL && ui.screen == APP_SCREEN_GAMES) {
+        int direction = e.wheel.y;
+        if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+          direction = -direction;
+        games_browser_wheel(&persistence, &g, direction);
+        continue;
+      }
       if (e.type == SDL_MOUSEWHEEL && ui.screen == SCR_HELP) {
         int wheel=e.wheel.y;
         if(e.wheel.direction==SDL_MOUSEWHEEL_FLIPPED)wheel=-wheel;
@@ -1738,10 +2192,19 @@ int main(int argc, char **argv) {
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
         if (!left && !right) continue;
+        if (left && (ui.screen == SCR_TITLE || ui.screen == SCR_PLAY) &&
+            !settings_open && !audio_control_popup_open &&
+            !hint_panel_interactive(&ui))
+          ui_feedback_pointer_press(&ui, x, y);
+        if (ui.screen == APP_SCREEN_GAMES) {
+          if (left)
+            (void)games_browser_click(&persistence, &game, &ui, &g, x, y);
+          continue;
+        }
         if (left && storage_retry_hit(&g, &ui, x, y)) {
           play_keyboard_focus=PLAY_FOCUS_SAVE_RETRY;
           ui_button_click();
-          (void)persistence_flush(&persistence);
+          (void)persistence_retry_current(&persistence, &game, &ui);
           continue;
         }
         if (left && hint_panel_interactive(&ui)) {
@@ -1825,19 +2288,23 @@ int main(int argc, char **argv) {
             home_daily_game(&persistence, &game, &ui, &g);
           } else if (point_in(sdl_rect(a.home_secondary[0]), x, y)) {
             ui_button_click();
+            home_focus = HOME_FOCUS_GAMES;
+            (void)games_browser_open(&persistence, &game, &ui, &g);
+          } else if (point_in(sdl_rect(a.home_secondary[1]), x, y)) {
+            ui_button_click();
             home_focus = HOME_FOCUS_HELP;
             info_focus_reset();
             (void)app_open_aux(&ui, SCR_HELP);
-          } else if (point_in(sdl_rect(a.home_secondary[1]), x, y)) {
+          } else if (point_in(sdl_rect(a.home_secondary[2]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_ABOUT;
             info_focus_reset();
             (void)app_open_aux(&ui, SCR_ABOUT);
-          } else if (point_in(sdl_rect(a.home_secondary[2]), x, y)) {
+          } else if (point_in(sdl_rect(a.home_secondary[3]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_SETTINGS;
             ui_settings_open(&persistence, &game, &ui);
-          } else if (point_in(sdl_rect(a.home_secondary[3]), x, y)) {
+          } else if (point_in(sdl_rect(a.home_secondary[4]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_QUIT;
             if (request_exit(&persistence, &game, &ui, &g))
@@ -1864,7 +2331,7 @@ int main(int argc, char **argv) {
             result_keyboard_focus=1;
             ui_button_click();
             victory_animation_reset();
-            go_home(&persistence, &game, &ui);
+            go_home_checked(&persistence, &game, &ui, &g);
           }
           continue;
         }
@@ -1903,7 +2370,7 @@ int main(int argc, char **argv) {
               } else if (point_in(sdl_rect(a.pause_buttons[1]), x, y)) {
                 pause_keyboard_focus=1;
                 ui_button_click();
-                go_home(&persistence, &game, &ui);
+                go_home_checked(&persistence, &game, &ui, &g);
               }
             }
           }
@@ -1950,20 +2417,23 @@ int main(int argc, char **argv) {
             (void)save_preferences(&persistence, &ui);
             (void)stage_current_session(&persistence, &game, &ui);
           } else if (point_in(controls.btn[PLAY_ACTION_MENU], x, y)) {
-            SDL_Rect menu_rect, pause_rect;
-            menu_pause_rects(controls.btn[PLAY_ACTION_MENU],
-                             &menu_rect, &pause_rect);
-            if (point_in(menu_rect, x, y))
-              play_keyboard_focus=PLAY_FOCUS_MENU;
-            else if (point_in(pause_rect, x, y))
-              play_keyboard_focus=PLAY_FOCUS_PAUSE;
-            ui_button_click();
+            SDL_Rect menu_rect, pause_rect, save_rect;
+            menu_pause_save_rects(controls.btn[PLAY_ACTION_MENU],
+                                  &menu_rect, &pause_rect, &save_rect);
             if (point_in(menu_rect, x, y)) {
-              go_home(&persistence, &game, &ui);
+              play_keyboard_focus=PLAY_FOCUS_MENU;
+              ui_button_click();
+              go_home_checked(&persistence, &game, &ui, &g);
             } else if (point_in(pause_rect, x, y)) {
+              play_keyboard_focus=PLAY_FOCUS_PAUSE;
+              ui_button_click();
               pause_keyboard_focus=0;
               clock_pause(&ui, PAUSE_MANUAL);
               (void)checkpoint_current_session(&persistence, &game, &ui);
+            } else if (point_in(save_rect, x, y)) {
+              play_keyboard_focus=PLAY_FOCUS_SAVE;
+              ui_button_click();
+              (void)games_browser_save_current(&persistence, &game, &ui, &g);
             }
           } else if (point_in(controls.btn[PLAY_ACTION_PAUSE], x, y)) {
             SDL_Rect undo_rect, redo_rect;
@@ -2052,6 +2522,12 @@ int main(int argc, char **argv) {
       }
     }
 
+    if (ui.screen == APP_SCREEN_GAMES &&
+        games_browser_scan_pump(&persistence, &g)) g.dirty = true;
+    if (home_daily_scan.active) {
+      home_daily_scan_pump(&persistence,&game,&ui,&g);
+      g.dirty=true;
+    }
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     uint64_t checkpoint_now = now_ms();
     if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
@@ -2065,10 +2541,14 @@ int main(int argc, char **argv) {
       g.dirty=true;
     }
     if(desktop_dynamic_frame_due(&ui))g.dirty=true;
+    if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);
     else app_tick(&g,&game,&ui);
   }
 
+  home_daily_cancel();
+  game_library_scan_close(&games_browser.scanner);
+  free(games_browser.rows);
   app_shutdown(&g);
   return 0;
 }

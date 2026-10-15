@@ -61,45 +61,68 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->screen_language =
       (GeoRect){(width - language_w) / 2, margin, language_w, language_h};
 
+  /* Home is composed from semantic groups, not a five-button footer.
+     All pointer and focus rectangles are shared with the renderer. */
   int home_w = portrait ? width - margin * 2
-                        : min_i(width - margin * 2, xl ? 700 : 560);
+                        : min_i(width - margin * 2 - 36, xl ? 700 : 640);
   int home_x = (width - home_w) / 2;
-  int logo_h = portrait ? 64 : (height < 600 ? 68 : (xl ? 112 : 96));
-  int y = g->screen_language.y + g->screen_language.h + 8;
+  int logo_h = portrait ? 62 : (short_desktop ? 46 : (xl ? 108 : 88));
+  int y = g->screen_language.y + g->screen_language.h +
+          (short_desktop ? 5 : 8);
   g->home_logo = (GeoRect){home_x, y, home_w, logo_h};
-  y += logo_h + 8;
+  y += logo_h + (short_desktop ? 4 : 8);
 
-  int label_h = xl ? 18 : 16;
+  int group_label_h = 20;
+  int label_h = 20;
+  int segment_h = portrait ? 34 : (short_desktop ? 30 : (xl ? 42 : 36));
+  g->home_new_label = (GeoRect){home_x, y, home_w, group_label_h};
+  y += group_label_h + (short_desktop ? 1 : 3);
   g->home_mode_label = (GeoRect){home_x, y, home_w, label_h};
   y += label_h + 2;
-  int segment_h = portrait ? 36 : (xl ? 42 : 34);
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6, g->home_mode,
            GEOMETRY_HOME_SEGMENT_COUNT);
-  y += segment_h + 6;
+  y += segment_h + (short_desktop ? 4 : 7);
   g->home_difficulty_label = (GeoRect){home_x, y, home_w, label_h};
   y += label_h + 2;
   grid_gap((GeoRect){home_x, y, home_w, segment_h}, 3, 6,
            g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += segment_h + 12;
+  y += segment_h + (short_desktop ? 6 : 9);
 
+  int start_h = portrait ? 43 : (short_desktop ? 38 : (xl ? 54 : 47));
+  g->home_primary[0] = (GeoRect){home_x, y, home_w, start_h};
+  y += start_h + (short_desktop ? 5 : 9);
+
+  g->home_continue_label = (GeoRect){home_x, y, home_w, group_label_h};
+  y += group_label_h + (short_desktop ? 2 : 4);
+  int continue_h = portrait ? 46 : (short_desktop ? 44 : (xl ? 61 : 55));
+  int gap = portrait ? 5 : 8;
   if (portrait) {
-    int primary_h = 46 * GEOMETRY_HOME_PRIMARY_COUNT +
-                    8 * (GEOMETRY_HOME_PRIMARY_COUNT - 1);
-    grid_gap((GeoRect){home_x, y, home_w, primary_h}, 1, 8, g->home_primary,
-             GEOMETRY_HOME_PRIMARY_COUNT);
-    y += primary_h + 12;
-    int secondary_h = 40 * 2 + 8;
-    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 2, 8,
-             g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
+    g->home_primary[1] = (GeoRect){home_x, y, home_w, continue_h};
+    g->home_primary[2] = (GeoRect){home_x, y + continue_h + gap,
+                                   home_w, continue_h};
+    y += continue_h * 2 + gap;
   } else {
-    int primary_h = xl ? 54 : 48;
-    int secondary_h = xl ? 44 : 38;
-    grid_gap((GeoRect){home_x, y, home_w, primary_h}, 3, 8, g->home_primary,
-             GEOMETRY_HOME_PRIMARY_COUNT);
-    y += primary_h + 10;
-    grid_gap((GeoRect){home_x, y, home_w, secondary_h}, 4, 8,
-             g->home_secondary, GEOMETRY_HOME_SECONDARY_COUNT);
+    int left_w = (home_w - gap) / 2;
+    g->home_primary[1] = (GeoRect){home_x, y, left_w, continue_h};
+    g->home_primary[2] = (GeoRect){home_x + left_w + gap, y,
+                                   home_w - left_w - gap, continue_h};
+    y += continue_h;
   }
+
+  y += short_desktop ? 7 : 10;
+  int library_h = portrait ? 41 : (short_desktop ? 37 : (xl ? 49 : 44));
+  g->home_secondary[0] = (GeoRect){home_x, y, home_w, library_h};
+  y += library_h + (short_desktop ? 7 : 11);
+
+  int footer_h = portrait ? 33 : (short_desktop ? 31 : (xl ? 43 : 37));
+  int footer_gap = portrait ? 6 : 8;
+  int columns = portrait ? 2 : 4;
+  GeoRect footer[GEOMETRY_HOME_SECONDARY_COUNT - 1];
+  grid_gap((GeoRect){home_x,y,home_w,footer_h * (portrait ? 2 : 1) +
+                         footer_gap * (portrait ? 1 : 0)},
+           columns,footer_gap,footer,GEOMETRY_HOME_SECONDARY_COUNT - 1);
+  for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    g->home_secondary[i] = footer[i - 1];
 
   int info_margin = portrait ? 16 : (short_desktop ? 20 : 24);
   int info_top = g->screen_language.y + g->screen_language.h + 16;
@@ -285,54 +308,54 @@ static bool geometry_compute_base(int width, int height, GeometryMode mode, AppG
     g->sidebar = xl ? (GeoRect){x + board + gap, board_y, sidebar_w, board}
                     : (GeoRect){x + board + gap, shell_y, sidebar_w, shell_h};
 
-    bool compact = g->sidebar.h < 600;
+    /* An unboxed, centered full wordmark has its own band above the HUD.
+       Preserve the controls' current size tier as vertical room varies. */
+    int side_h = g->sidebar.h;
+    bool compact = side_h < 600;
     int sx = g->sidebar.x, sw = g->sidebar.w;
-    int language_h = compact ? 34 : (xl ? 48 : 40);
-    int title_h = compact ? 52 : (xl ? 120 : 76);
-    int hud_item_h = compact ? 22 : (xl ? 34 : 26);
-    int hud_rows = (g->hud_count + 1) / 2;
-    int hud_gap = compact ? 4 : (xl ? 8 : 5);
-    int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
-    int action_item_h = compact ? 40 : (xl ? 56 : 44);
-    int action_gap = compact ? 4 : (xl ? 8 : 6);
-    int actions_h = action_item_h * 3 + action_gap * 2;
-    int palette_item_h = compact ? 30 : (xl ? 48 : 38);
-    int palette_gap = compact ? 4 : (xl ? 8 : 6);
-    int palette_h = palette_item_h * 3 + palette_gap * 2;
-    int palette_label_h = compact ? 16 : (xl ? 24 : 20);
-    int progress_h = compact ? 22 : (xl ? 34 : 26);
-
-    int fixed_h = language_h + title_h + hud_h + actions_h + palette_label_h +
-                  palette_h + progress_h;
-    int available_gap = g->sidebar.h - fixed_h;
-    int gap_count = 6;
-    int preferred_gap = compact ? 4 : (xl ? 24 : 20);
-    int vertical_gap = available_gap > 0 ? available_gap / gap_count : 0;
-    if (vertical_gap > preferred_gap) vertical_gap = preferred_gap;
-    if (vertical_gap < (compact ? 3 : 5)) vertical_gap = compact ? 3 : 5;
-    int used_h = fixed_h + vertical_gap * gap_count;
-    int edge_space = g->sidebar.h - used_h;
-    if (edge_space < 0) edge_space = 0;
-    int top_pad = edge_space / 2;
-    if (top_pad > (xl ? 36 : 24)) top_pad = xl ? 36 : 24;
-    int sy = g->sidebar.y + top_pad;
-
-    g->play_language = (GeoRect){sx, sy, sw, language_h};
-    sy += language_h + vertical_gap;
-    g->play_title = (GeoRect){sx, sy, sw, title_h};
-    sy += title_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, hud_h}, 2, hud_gap, g->hud,
-             g->hud_count);
-    sy += hud_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, actions_h}, 3, action_gap, g->actions,
-             GEOMETRY_ACTION_COUNT);
-    sy += actions_h + vertical_gap;
-    g->palette_label = (GeoRect){sx, sy, sw, palette_label_h};
-    sy += palette_label_h + vertical_gap;
-    grid_gap((GeoRect){sx, sy, sw, palette_h}, 3, palette_gap, g->palette,
-             GEOMETRY_PALETTE_COUNT);
-    sy += palette_h + vertical_gap;
-    g->progress = (GeoRect){sx, sy, sw, progress_h};
+    int item_h = compact ? 24 : (xl ? 34 : 30);
+    int row_gap = compact ? 5 : (xl ? 9 : 8);
+    int rows = (g->hud_count + 1) / 2;
+    int hud_h = rows * item_h + (rows - 1) * row_gap;
+    int original_offset = compact ? 12 : (xl ? 28 : 22);
+    int desired_offset = side_h < 480 ? 58 :
+                         side_h < 600 ? 68 :
+                         side_h < 700 ? 76 :
+                         side_h < 900 ? 100 : 126;
+    int original_remaining = side_h - (original_offset + hud_h +
+                                       (side_h >= 600 ? 18 : 8));
+    int tier_floor = xl && original_remaining >= 540 ? 540 :
+                     original_remaining >= 495 ? 495 :
+                     original_remaining >= 390 ? 390 : 0;
+    int available_shift = original_remaining - tier_floor;
+    if (available_shift < 0) available_shift = 0;
+    int shift = desired_offset - original_offset;
+    if (shift > available_shift) shift = available_shift;
+    if (shift < 0) shift = 0;
+    int hud_offset = original_offset + shift;
+    int logo_top = side_h < 480 ? 4 :
+                   side_h < 600 ? 6 :
+                   side_h < 700 ? 8 :
+                   side_h < 900 ? 12 : 18;
+    int logo_gap = side_h < 600 ? 8 : 12;
+    /* At size-tier boundaries, retaining a taller button tier could
+       otherwise reduce the wordmark band to only a handful of pixels.
+       Prefer a readable brand and then validate action bounds below. */
+    int min_logo_height = side_h < 600 ? 38 : 48;
+    if (hud_offset - logo_top - logo_gap < min_logo_height)
+      hud_offset = desired_offset;
+    int logo_width = side_h < 480 ? 176 :
+                     side_h < 600 ? 195 :
+                     side_h < 700 ? 210 :
+                     side_h < 900 ? 240 : 280;
+    if (logo_width > sw - 24) logo_width = sw - 24;
+    int logo_height = hud_offset - logo_top - logo_gap;
+    g->play_language = (GeoRect){sx, g->sidebar.y + 2, sw, 1};
+    g->play_title = (GeoRect){
+        sx + (sw - logo_width + 1) / 2, g->sidebar.y + logo_top,
+        logo_width, logo_height};
+    grid_gap((GeoRect){sx, g->sidebar.y + hud_offset, sw, hud_h},
+             2, row_gap, g->hud, g->hud_count);
   }
 
   common_screens(width, height, portrait, g);
@@ -418,6 +441,8 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
 
   if (!geometry_rect_in_bounds(g->screen_language, width, height) ||
       !geometry_rect_in_bounds(g->home_logo, width, height) ||
+      !geometry_rect_in_bounds(g->home_new_label, width, height) ||
+      !geometry_rect_in_bounds(g->home_continue_label, width, height) ||
       !geometry_rect_in_bounds(g->home_mode_label, width, height) ||
       !geometry_rect_in_bounds(g->home_difficulty_label, width, height) ||
       !geometry_rect_in_bounds(g->info_heading, width, height) ||
@@ -487,15 +512,26 @@ static void geometry_final_grid(GeoRect *items, int start, int count, int x, int
   }
 }
 
-static int geometry_final_place_action_rows(AppGeometry *geometry, int x, int y, int width,
-                                int menu_h, int row_h, int gap) {
+static int geometry_final_place_action_rows(AppGeometry *geometry, int x,
+                         int y, int width, int menu_h, int row_h,
+                         int group_gap, int row_gap) {
+  /* Five explicit functional rows. Each editable pair owns a full-width row
+     so neither label is sacrificed to a four-button strip. */
   geometry->actions[PLAY_ACTION_MENU] = (GeoRect){x, y, width, menu_h};
-  y += menu_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_PAUSE, 2, x, y, width, row_h, 2, gap);
-  y += row_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_HINT, 3, x, y, width, row_h, 3, gap);
-  y += row_h + gap;
-  geometry_final_grid(geometry->actions, PLAY_ACTION_AUDIO, 2, x, y, width, row_h, 2, gap);
+  y += menu_h + group_gap;
+  geometry->actions[PLAY_ACTION_PAUSE] = (GeoRect){x, y, width, row_h};
+  y += row_h + row_gap;
+  geometry->actions[PLAY_ACTION_RESTART] = (GeoRect){x, y, width, row_h};
+  y += row_h + group_gap;
+  geometry_final_grid(geometry->actions, PLAY_ACTION_HINT, 3, x, y,
+                      width, row_h, 3, row_gap);
+  y += row_h + row_gap;
+  int third = (width - 2 * row_gap) / 3;
+  geometry->actions[PLAY_ACTION_AUDIO] =
+      (GeoRect){x, y, third * 2 + row_gap, row_h};
+  geometry->actions[PLAY_ACTION_HELP] =
+      (GeoRect){x + (third + row_gap) * 2, y,
+                width - (third + row_gap) * 2, row_h};
   return y + row_h;
 }
 
@@ -529,9 +565,12 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   int palette_label_h = compact ? 14 : 16;
   int palette_h = compact ? 30 : 34;
   int progress_h = compact ? 18 : 22;
-  int actions_h = menu_h + action_h * 3 + action_gap * 3;
+  int actions_h = menu_h + action_h * 4 +
+                  section_gap * 2 + action_gap * 2;
 
-  geometry->play_language = (GeoRect){margin, margin, shell_w, 38};
+  /* The full wordmark occupies the existing header space in portrait.
+     Language switching remains available on Home and in Settings. */
+  geometry->play_language = (GeoRect){margin, margin, 1, 1};
   geometry->play_title = (GeoRect){margin, margin + 42, shell_w, 24};
   int board_y = geometry_final_rect_bottom(geometry->play_title) + 4;
   int reserve = section_gap + hud_h + section_gap + actions_h + section_gap +
@@ -547,8 +586,9 @@ static bool geometry_final_layout_portrait_play(int width, int height,
   geometry_final_grid(geometry->hud, 0, geometry->hud_count, margin, y, shell_w,
           hud_item_h, 3, hud_gap);
   y += hud_h + section_gap;
-  y = geometry_final_place_action_rows(geometry, margin, y, shell_w, menu_h, action_h,
-                           action_gap);
+  y = geometry_final_place_action_rows(
+      geometry, margin, y, shell_w, menu_h, action_h,
+      section_gap, action_gap);
   y += section_gap;
   geometry->palette_label = (GeoRect){margin, y, shell_w, palette_label_h};
   y += palette_label_h + 2;
@@ -574,7 +614,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
     if (geometry_final_rect_bottom(geometry->hud[i]) > hud_bottom)
       hud_bottom = geometry_final_rect_bottom(geometry->hud[i]);
 
-  int top = hud_bottom + 4;
+  int top = hud_bottom + (geometry->sidebar.h >= 600 ? 18 : 8);
   int bottom = geometry_final_rect_bottom(geometry->sidebar);
   int remaining = bottom - top;
   bool xl = width >= 1600 && height >= 900;
@@ -584,13 +624,23 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   if (xl && remaining >= 540) {
     section_gap = 7;
     action_gap = 6;
-    menu_h = 50;
-    row_h = 48;
+    menu_h = 48;
+    row_h = 45;
     palette_label_h = 22;
     palette_item_h = 44;
     palette_gap = 6;
     progress_h = 30;
     status_h = 42;
+  } else if (remaining >= 495) {
+    section_gap = 10;
+    action_gap = 7;
+    menu_h = 42;
+    row_h = 40;
+    palette_label_h = 18;
+    palette_item_h = 36;
+    palette_gap = 7;
+    progress_h = 26;
+    status_h = 34;
   } else if (remaining >= 390) {
     section_gap = 5;
     action_gap = 4;
@@ -604,7 +654,7 @@ static bool geometry_final_layout_desktop_play(int width, int height,
   } else {
     section_gap = 2;
     action_gap = 2;
-    menu_h = 30;
+    menu_h = 28;
     row_h = 28;
     palette_label_h = 12;
     palette_item_h = 22;
@@ -615,7 +665,11 @@ static bool geometry_final_layout_desktop_play(int width, int height,
 
   int x = geometry->sidebar.x;
   int w = geometry->sidebar.w;
-  int y = geometry_final_place_action_rows(geometry, x, top, w, menu_h, row_h, action_gap);
+  int action_group_gap = xl && remaining >= 540 ? 12 :
+                         remaining >= 495 ? 16 :
+                         remaining >= 390 ? 8 : 2;
+  int y = geometry_final_place_action_rows(
+      geometry, x, top, w, menu_h, row_h, action_group_gap, action_gap);
   y += section_gap;
   geometry->palette_label = (GeoRect){x, y, w, palette_label_h};
   y += palette_label_h + (section_gap > 2 ? 3 : 2);
@@ -655,8 +709,24 @@ bool geometry_compute(int width, int height, GeometryMode mode,
 
   if (width < 640) {
     if (!geometry_final_layout_portrait_play(width, height, geometry)) return false;
-  } else if (!geometry_final_layout_desktop_play(width, height, geometry)) {
-    return false;
+  } else {
+    int min_hud_offset = geometry->sidebar.h < 600 ? 12 :
+                         width >= 1600 && height >= 900 ? 28 : 22;
+    int min_hud_y = geometry->sidebar.y + min_hud_offset;
+    bool fitted = false;
+    /* The narrowest heights may require a smaller branding band. Keep
+       every control's existing minimum dimensions and usable hit areas. */
+    for (;;) {
+      if (geometry_final_layout_desktop_play(width, height, geometry)) {
+        fitted = true;
+        break;
+      }
+      if (geometry->hud[0].y <= min_hud_y) break;
+      for (int i = 0; i < geometry->hud_count; ++i)
+        --geometry->hud[i].y;
+      if (geometry->play_title.h > 1) --geometry->play_title.h;
+    }
+    if (!fitted) return false;
   }
 
   geometry_final_reserve_audio(&geometry->screen_language, width);
@@ -690,6 +760,8 @@ bool geometry_compute(int width, int height, GeometryMode mode,
   if (delta <= 0) return geometry_play_valid(geometry, width, height);
 
   geometry_final_shift_rect_y(&geometry->home_logo, delta);
+  geometry_final_shift_rect_y(&geometry->home_new_label, delta);
+  geometry_final_shift_rect_y(&geometry->home_continue_label, delta);
   geometry_final_shift_rect_y(&geometry->home_mode_label, delta);
   geometry_final_shift_rect_y(&geometry->home_difficulty_label, delta);
   for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
@@ -705,6 +777,35 @@ bool geometry_compute(int width, int height, GeometryMode mode,
 }
 
 
+
+/* The complete canonical Home artwork is reused during gameplay.
+   Desktop geometry provides a separate band; portrait reuses the existing
+   unused space above the board without shrinking Sudoku cells. */
+GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
+  GeoRect empty = {0, 0, 0, 0};
+  if (!geometry || width <= 0) return empty;
+  if (width >= 640) return geometry->play_title;
+
+  int logo_width = geometry->play_title.w / 2;
+  if (logo_width > 188) logo_width = 188;
+  int top = geometry->play_title.y - 36;
+  int bottom = geometry->board.y - 8;
+  int logo_height = bottom - top;
+  if (logo_width <= 0 || logo_height <= 0) return empty;
+  return (GeoRect){geometry->play_title.x + geometry->play_title.w -
+                       logo_width - 8,
+                   top, logo_width, logo_height};
+}
+
+GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width) {
+  GeoRect empty = {0, 0, 0, 0};
+  if (!geometry || width < 640) return empty;
+  int left = geometry->hud[0].x + 6;
+  int right = geometry->hud[1].x + geometry->hud[1].w - 6;
+  if (right <= left) return empty;
+  return (GeoRect){left, geometry->hud[0].y,
+                   right - left, geometry->hud[0].h};
+}
 
 AudioControlGeometry geometry_audio_control(int width, int height,
                                             const AppGeometry *app,

@@ -104,12 +104,63 @@ static void test_restore_and_reset(void) {
   assert(state.running_since_ms == UINT64_C(9000));
 }
 
+static void test_terminal_clock_uses_action_timestamp(void) {
+  Game game;
+  assert(game_new_difficulty_revision(&game, UINT64_C(123456),
+                                      DIFFICULTY_EASY,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  int last = -1;
+  for (int i = 0; i < 81; ++i) {
+    if (game.fixed[i]) continue;
+    game.puzzle[i] = game.solution[i];
+    last = i;
+  }
+  assert(last >= 0);
+  game.puzzle[last] = 0;
+  Game before = game;
+  AppState state = playing_state(UINT64_C(1000));
+  state.mode = MODE_TIME;
+  state.time_limit_s = 600.0;
+  app_clock_restore(&state, UINT64_C(599999), UINT64_C(1000));
+
+  AppAction last_move = {
+      .kind = APP_ACTION_PLACE,
+      .row = last / 9,
+      .column = last % 9,
+      .value = game.solution[last],
+  };
+  uint64_t decision_ms = UINT64_C(1000);
+  AppActionOutcome outcome = app_apply_action(
+      &game, &state, last_move, app_clock_elapsed_s(&state, decision_ms));
+  assert(outcome.terminal && outcome.result == APP_RESULT_WIN);
+  assert(app_clock_freeze_terminal(&state, decision_ms));
+  assert(state.screen == APP_SCREEN_RESULT);
+  assert(app_clock_elapsed_ms(&state, UINT64_C(10000)) == UINT64_C(599999));
+  assert(!game_mode_lost(state.mode, state.strikes, state.strikes_max,
+                         app_clock_elapsed_s(&state, UINT64_C(10000)),
+                         state.time_limit_s));
+  assert(app_clock_freeze_terminal(&state, UINT64_C(10000)));
+  assert(app_clock_elapsed_ms(&state, UINT64_C(20000)) == UINT64_C(599999));
+
+  state = playing_state(UINT64_C(1000));
+  state.mode = MODE_TIME;
+  state.time_limit_s = 600.0;
+  app_clock_restore(&state, UINT64_C(600000), UINT64_C(1000));
+  outcome = app_apply_action(&before, &state, last_move,
+                             app_clock_elapsed_s(&state, decision_ms));
+  assert(outcome.terminal && outcome.result == APP_RESULT_LOSE);
+  assert(before.puzzle[last] == 0);
+  assert(app_clock_freeze_terminal(&state, decision_ms));
+  assert(app_clock_elapsed_ms(&state, UINT64_C(20000)) == UINT64_C(600000));
+}
+
 int main(void) {
   test_monotonic_64_bit_elapsed();
   test_pause_resume_is_idempotent();
   test_nested_modal_preserves_manual_pause();
   test_failed_save_prompt_dwell_does_not_charge_time_attack();
   test_restore_and_reset();
+  test_terminal_clock_uses_action_timestamp();
   puts("64-bit application clock and idempotent pause tests passed");
   return 0;
 }

@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <dirent.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -28,9 +29,20 @@ static unsigned long store_temp_counter = 0;
 
 #ifdef SUDOKURA_STORE_TESTING
 static StoreTestFault store_test_fault = STORE_TEST_FAULT_NONE;
+static char store_fault_parent_path[SUDOKURA_STORE_PATH_CAPACITY];
 
 void store_test_set_fault(StoreTestFault fault) {
   store_test_fault = fault;
+  store_fault_parent_path[0] = '\0';
+}
+
+void store_test_fail_parent_sync_at(const char *path) {
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  if (!path || !path[0]) return;
+  size_t length = strlen(path);
+  if (length >= sizeof(store_fault_parent_path)) return;
+  memcpy(store_fault_parent_path, path, length + 1u);
+  store_test_fault = STORE_TEST_FAULT_PARENT_SYNC;
 }
 
 static bool store_fault_is(StoreTestFault fault) {
@@ -61,6 +73,201 @@ static FILE *store_fopen(const char *path, const char *mode) {
   return fopen(path, mode);
 }
 #endif
+
+static bool build_child_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
+                             const char *directory, const char *leaf);
+
+StoreStatus store_ensure_directory(const char *path) {
+  if (!path || !path[0]) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(path, wide, sizeof(wide) / sizeof(wide[0])))
+    return STORE_IO_ERROR;
+  DWORD attributes = GetFileAttributesW(wide);
+  if (attributes != INVALID_FILE_ATTRIBUTES)
+    return (attributes & FILE_ATTRIBUTE_DIRECTORY) ? STORE_OK : STORE_IO_ERROR;
+  if (CreateDirectoryW(wide, NULL)) return STORE_OK;
+  attributes = GetFileAttributesW(wide);
+  return attributes != INVALID_FILE_ATTRIBUTES &&
+                 (attributes & FILE_ATTRIBUTE_DIRECTORY)
+             ? STORE_OK : STORE_IO_ERROR;
+#else
+  struct stat info;
+  if (stat(path, &info) == 0)
+    return S_ISDIR(info.st_mode) ? STORE_OK : STORE_IO_ERROR;
+  if (errno != ENOENT) return STORE_IO_ERROR;
+  if (mkdir(path, 0700) == 0) return STORE_OK;
+  return errno == EEXIST && stat(path, &info) == 0 &&
+                 S_ISDIR(info.st_mode)
+             ? STORE_OK : STORE_IO_ERROR;
+#endif
+}
+
+StoreStatus store_list_directory(const char *path,
+                                 StoreDirectoryEntryFn visitor,
+                                 void *context) {
+  if (!path || !path[0] || !visitor) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  char search[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!build_child_path(search, path, "*")) return STORE_IO_ERROR;
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(search, wide, sizeof(wide) / sizeof(wide[0])))
+    return STORE_IO_ERROR;
+  WIN32_FIND_DATAW entry;
+  HANDLE handle = FindFirstFileW(wide, &entry);
+  if (handle == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
+    return error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  StoreStatus status = STORE_OK;
+  do {
+    if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+    int count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                   entry.cFileName, -1, NULL, 0, NULL, NULL);
+    if (count <= 0 || count > (int)SUDOKURA_STORE_PATH_CAPACITY) {
+      status = STORE_IO_ERROR;
+      break;
+    }
+    char name[SUDOKURA_STORE_PATH_CAPACITY];
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, entry.cFileName,
+                            -1, name, count, NULL, NULL) != count) {
+      status = STORE_IO_ERROR;
+      break;
+    }
+    if (!visitor(name, context)) {
+      status = STORE_CANCELLED;
+      break;
+    }
+  } while (FindNextFileW(handle, &entry));
+  DWORD error = GetLastError();
+  FindClose(handle);
+  if (status == STORE_OK && error != ERROR_NO_MORE_FILES)
+    status = STORE_IO_ERROR;
+  return status;
+#else
+  DIR *dir = opendir(path);
+  if (!dir) return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  StoreStatus status = STORE_OK;
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(dir);
+    if (!entry) {
+      if (errno != 0) status = STORE_IO_ERROR;
+      break;
+    }
+    if (entry->d_name[0] == '.' &&
+        (entry->d_name[1] == '\0' ||
+         (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+      continue;
+    if (!visitor(entry->d_name, context)) {
+      status = STORE_CANCELLED;
+      break;
+    }
+  }
+  if (closedir(dir) != 0 && status == STORE_OK) status = STORE_IO_ERROR;
+  return status;
+#endif
+}
+
+/* A streaming directory cursor keeps expensive catalogue work out of one
+   UI frame. It never owns user data and must be closed on every exit path. */
+typedef struct {
+#if defined(_WIN32)
+  HANDLE handle;
+  WIN32_FIND_DATAW entry;
+  bool first;
+#else
+  DIR *dir;
+#endif
+} StoreDirectoryState;
+
+StoreStatus store_directory_open(const char *path, StoreDirectoryCursor *cursor) {
+  if (!path || !path[0] || !cursor || cursor->state)
+    return STORE_IO_ERROR;
+  StoreDirectoryState *state = (StoreDirectoryState *)calloc(1, sizeof(*state));
+  if (!state) return STORE_IO_ERROR;
+#if defined(_WIN32)
+  char search[SUDOKURA_STORE_PATH_CAPACITY];
+  wchar_t wide[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!build_child_path(search, path, "*") ||
+      !utf8_to_wide(search, wide, sizeof(wide) / sizeof(wide[0]))) {
+    free(state);
+    return STORE_IO_ERROR;
+  }
+  state->handle = FindFirstFileW(wide, &state->entry);
+  if (state->handle == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
+    free(state);
+    return error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  state->first = true;
+#else
+  state->dir = opendir(path);
+  if (!state->dir) {
+    int error = errno;
+    free(state);
+    return error == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+#endif
+  cursor->state = state;
+  return STORE_OK;
+}
+
+StoreStatus store_directory_next(StoreDirectoryCursor *cursor,
+                                 char name[SUDOKURA_STORE_PATH_CAPACITY]) {
+  if (!cursor || !cursor->state || !name) return STORE_IO_ERROR;
+  StoreDirectoryState *state = (StoreDirectoryState *)cursor->state;
+#if defined(_WIN32)
+  for (;;) {
+    if (state->first) {
+      state->first = false;
+    } else if (!FindNextFileW(state->handle, &state->entry)) {
+      return GetLastError() == ERROR_NO_MORE_FILES
+                 ? STORE_NOT_FOUND : STORE_IO_ERROR;
+    }
+    if (state->entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+    int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                    state->entry.cFileName, -1, NULL, 0,
+                                    NULL, NULL);
+    if (length <= 0 || length > (int)SUDOKURA_STORE_PATH_CAPACITY)
+      return STORE_IO_ERROR;
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                            state->entry.cFileName, -1, name, length,
+                            NULL, NULL) != length)
+      return STORE_IO_ERROR;
+    return STORE_OK;
+  }
+#else
+  for (;;) {
+    errno = 0;
+    struct dirent *entry = readdir(state->dir);
+    if (!entry)
+      return errno == 0 ? STORE_NOT_FOUND : STORE_IO_ERROR;
+    if (entry->d_name[0] == '.' &&
+        (entry->d_name[1] == '\0' ||
+         (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
+      continue;
+    size_t length = strlen(entry->d_name);
+    if (length >= SUDOKURA_STORE_PATH_CAPACITY) return STORE_IO_ERROR;
+    memcpy(name, entry->d_name, length + 1u);
+    return STORE_OK;
+  }
+#endif
+}
+
+void store_directory_close(StoreDirectoryCursor *cursor) {
+  if (!cursor || !cursor->state) return;
+  StoreDirectoryState *state = (StoreDirectoryState *)cursor->state;
+#if defined(_WIN32)
+  FindClose(state->handle);
+#else
+  (void)closedir(state->dir);
+#endif
+  free(state);
+  cursor->state = NULL;
+}
 
 static bool sync_file(FILE *file) {
   if (!file || fflush(file) != 0) return false;
@@ -117,6 +324,17 @@ bool store_test_temporary_path(char out[SUDOKURA_STORE_PATH_CAPACITY],
 #endif
 
 static bool sync_parent_directory(const char *path) {
+#ifdef SUDOKURA_STORE_TESTING
+  /* The rename may have succeeded even when its directory sync fails. */
+  if (store_fault_is(STORE_TEST_FAULT_PARENT_SYNC) &&
+      (!store_fault_parent_path[0] ||
+       strcmp(store_fault_parent_path, path) == 0)) {
+    /* A one-shot fault after the selected rename, not during backup write. */
+    store_test_fault = STORE_TEST_FAULT_NONE;
+    store_fault_parent_path[0] = '\0';
+    return false;
+  }
+#endif
 #if defined(_WIN32)
   (void)path;
   return true;
@@ -235,6 +453,40 @@ StoreStatus store_read_file(const char *path, unsigned char *data,
   return STORE_OK;
 }
 
+StoreStatus store_read_prefix(const char *path, unsigned char *data,
+                              size_t capacity, size_t *size_out) {
+  if (!path || !path[0] || !data || capacity == 0)
+    return STORE_IO_ERROR;
+  errno = 0;
+#if defined(_WIN32)
+  wchar_t wide_path[SUDOKURA_STORE_PATH_CAPACITY];
+  if (!utf8_to_wide(path, wide_path,
+                    sizeof(wide_path) / sizeof(wide_path[0])))
+    return STORE_IO_ERROR;
+  DWORD attributes = GetFileAttributesW(wide_path);
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND
+               ? STORE_NOT_FOUND : STORE_IO_ERROR;
+  }
+  FILE *file = store_fopen(path, L"rb");
+#else
+  FILE *file = store_fopen(path, "rb");
+#endif
+  if (!file) {
+#if defined(_WIN32)
+    return STORE_IO_ERROR;
+#else
+    return errno == ENOENT ? STORE_NOT_FOUND : STORE_IO_ERROR;
+#endif
+  }
+  size_t count = fread(data, 1, capacity, file);
+  bool failed = ferror(file) != 0;
+  if (fclose(file) != 0 || failed) return STORE_IO_ERROR;
+  if (size_out) *size_out = count;
+  return STORE_OK;
+}
+
 static bool write_temporary(const char *temporary,
                             const unsigned char *data, size_t size) {
 #ifdef SUDOKURA_STORE_TESTING
@@ -283,8 +535,9 @@ static bool write_temporary(const char *temporary,
 
 static StoreStatus write_atomic_internal(const char *path,
                                          const unsigned char *data,
-                                         size_t size) {
-  if (!path || !path[0] || !data || size == 0 ||
+                                         size_t size, bool allow_empty) {
+  if (!path || !path[0] || !data ||
+      (size == 0 && !allow_empty) ||
       size > SUDOKURA_STORE_IO_MAX_FILE_SIZE)
     return STORE_IO_ERROR;
 
@@ -314,7 +567,9 @@ static StoreStatus write_atomic_internal(const char *path,
   return sync_parent_directory(path) ? STORE_OK : STORE_IO_ERROR;
 }
 
-StoreStatus store_copy_once(const char *source, const char *destination) {
+static StoreStatus copy_once_internal(const char *source,
+                                      const char *destination,
+                                      bool allow_empty) {
   if (!source || !destination) return STORE_IO_ERROR;
   if (store_file_exists(destination)) return STORE_OK;
 
@@ -322,8 +577,17 @@ StoreStatus store_copy_once(const char *source, const char *destination) {
   size_t size = 0;
   StoreStatus status = store_read_file(source, data, sizeof(data), &size);
   if (status != STORE_OK) return status;
-  if (size == 0) return STORE_CORRUPT;
-  return write_atomic_internal(destination, data, size);
+  if (size == 0 && !allow_empty) return STORE_CORRUPT;
+  return write_atomic_internal(destination, data, size, allow_empty);
+}
+
+StoreStatus store_copy_once(const char *source, const char *destination) {
+  return copy_once_internal(source, destination, false);
+}
+
+StoreStatus store_copy_once_allow_empty(const char *source,
+                                       const char *destination) {
+  return copy_once_internal(source, destination, true);
 }
 
 StoreStatus store_atomic_write(const char *path, const char *backup_path,
@@ -336,10 +600,11 @@ StoreStatus store_atomic_write(const char *path, const char *backup_path,
     StoreStatus status =
         store_read_file(path, previous, sizeof(previous), &previous_size);
     if (status != STORE_OK || previous_size == 0) return STORE_IO_ERROR;
-    status = write_atomic_internal(backup_path, previous, previous_size);
+    status = write_atomic_internal(backup_path, previous, previous_size,
+                                   false);
     if (status != STORE_OK) return status;
   }
-  return write_atomic_internal(path, data, size);
+  return write_atomic_internal(path, data, size, false);
 }
 
 StoreLockStatus store_writer_lock_acquire(const char *directory,

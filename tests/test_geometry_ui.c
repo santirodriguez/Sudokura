@@ -31,8 +31,63 @@ int main(void) {
       assert_inside(g.about_study, g.about_study_link);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
+      assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
+      assert(GEOMETRY_TITLE_BUTTON_COUNT == 8);
+      assert_rect(g.home_new_label,width,height);
+      assert(g.home_new_label.h >= 20);
+      assert(g.home_continue_label.h >= 20);
+      assert(g.home_mode_label.h >= 20);
+      assert(g.home_difficulty_label.h >= 20);
+      assert_rect(g.home_continue_label,width,height);
+      assert(g.home_new_label.y < g.home_mode_label.y);
+      assert(g.home_mode[0].y < g.home_difficulty_label.y);
+      assert(g.home_primary[0].w == g.home_logo.w);
+      assert(g.home_primary[0].y > g.home_difficulty[0].y);
+      assert(g.home_primary[1].y > g.home_continue_label.y);
+      if (portrait) {
+        assert(g.home_primary[2].y > g.home_primary[1].y);
+      } else {
+        assert(g.home_primary[1].y == g.home_primary[2].y);
+        assert(g.home_primary[1].w <= g.home_primary[2].w);
+        assert(g.home_primary[2].w - g.home_primary[1].w <= 1);
+      }
+      for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
+        assert_rect(g.home_secondary[i],width,height);
+        if (i > 0) {
+          if (i == 1)
+            assert(g.home_secondary[i].y > g.home_secondary[0].y);
+          else if (portrait && i == 3)
+            assert(g.home_secondary[i].y > g.home_secondary[i-1].y);
+          else
+            assert(g.home_secondary[i].y == g.home_secondary[i-1].y);
+        }
+      }
+      assert(g.home_secondary[0].w == g.home_logo.w);
+      assert(g.home_secondary[0].y > g.home_primary[2].y);
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
+
+      /* Full canonical wordmark has a reserved, noninteractive band. */
+      GeoRect brand = geometry_play_wordmark_rect(&g, width);
+      assert_rect(brand, width, height);
+      assert(brand.w >= 150 && brand.w <= 280);
+      if (portrait) {
+        assert(g.play_language.w == 1 && g.play_language.h == 1);
+        assert(brand.y > g.play_language.y + g.play_language.h);
+        assert(brand.y + brand.h + 4 <= g.board.y);
+        assert(brand.x + brand.w <= g.play_title.x + g.play_title.w);
+      } else {
+        assert_inside(g.sidebar, brand);
+        assert(brand.x + brand.w / 2 ==
+               g.sidebar.x + g.sidebar.w / 2);
+        assert(brand.y + brand.h + 8 <= g.hud[0].y);
+        GeoRect heading = geometry_play_heading_rect(&g, width);
+        assert_rect(heading, width, height);
+        assert(heading.w >= 180);
+        assert(heading.y == g.hud[0].y);
+        assert(heading.x >= g.sidebar.x);
+        assert(heading.x + heading.w <= g.sidebar.x + g.sidebar.w);
+      }
       for (int action = 0; action < PLAY_ACTION_COUNT; ++action)
         assert_rect(g.actions[action], width, height);
       for (int number = 0; number < GEOMETRY_PALETTE_COUNT; ++number)
@@ -50,7 +105,7 @@ int main(void) {
       assert_rect(screen_audio.popup, width, height);
       assert_inside(screen_audio.popup, screen_audio.music);
       assert_inside(screen_audio.popup, screen_audio.fx);
-      assert_inside(g.actions[PLAY_ACTION_AUDIO], play_audio.button);
+      assert_inside(g.actions[PLAY_ACTION_AUDIO],play_audio.button);
       assert(play_audio.button.x - 4 >
              g.actions[PLAY_ACTION_AUDIO].x + 48);
       assert(screen_audio.button.x >=
@@ -60,7 +115,12 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
       assert(g.actions[PLAY_ACTION_ABOUT].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_ABOUT].w == g.sidebar.w);
-      assert(g.actions[PLAY_ACTION_PAUSE].y == g.actions[PLAY_ACTION_RESTART].y);
+      assert(g.actions[PLAY_ACTION_PAUSE].y <
+             g.actions[PLAY_ACTION_RESTART].y);
+      assert(g.actions[PLAY_ACTION_PAUSE].w == g.sidebar.w);
+      assert(g.actions[PLAY_ACTION_RESTART].w == g.sidebar.w);
+      assert(g.actions[PLAY_ACTION_RESTART].y <
+             g.actions[PLAY_ACTION_HINT].y);
       assert(g.actions[PLAY_ACTION_HINT].y == g.actions[PLAY_ACTION_NOTES].y);
       assert(g.actions[PLAY_ACTION_HINT].y == g.actions[PLAY_ACTION_VERIFY].y);
       assert(g.actions[PLAY_ACTION_AUDIO].y == g.actions[PLAY_ACTION_HELP].y);
@@ -84,7 +144,16 @@ int main(void) {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[2].y > g.about_links[0].y);
-        assert(g.play_title.h >= 52);
+        /* Wordmark, title and controls use separate vertical regions. */
+        assert(g.play_language.h == 1);
+        assert(g.play_title.h >= 32);
+        assert(g.hud[0].y >= g.sidebar.y + 50);
+        assert(g.hud[0].y <= g.sidebar.y + 126);
+        assert(g.actions[PLAY_ACTION_MENU].y >=
+               g.hud[g.hud_count - 1].y +
+               g.hud[g.hud_count - 1].h + 8);
+        assert(g.actions[PLAY_ACTION_PAUSE].h >= 28);
+        assert(g.actions[PLAY_ACTION_RESTART].h >= 28);
         assert(g.play_language.y - g.sidebar.y <= 36);
       }
     }

@@ -150,6 +150,42 @@ static void test_faults_preserve_active(void) {
   store_test_set_fault(STORE_TEST_FAULT_NONE);
 }
 
+static void test_parent_sync_failure_after_replace(void) {
+  cleanup();
+  const unsigned char previous[] = "durable-previous";
+  const unsigned char updated[] = "unacknowledged-update";
+  assert(store_atomic_write(active_path, NULL, previous,
+                            sizeof(previous) - 1u) == STORE_OK);
+  assert(store_copy_once(active_path, backup_path) == STORE_OK);
+
+  /* The rename has happened, but the caller must still receive failure.
+     The previous copy survives and a repeat write remains possible. */
+  store_test_set_fault(STORE_TEST_FAULT_PARENT_SYNC);
+  assert(store_atomic_write(active_path, NULL, updated,
+                            sizeof(updated) - 1u) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert_contents(active_path, "unacknowledged-update");
+  assert_contents(backup_path, "durable-previous");
+  assert(store_atomic_write(active_path, NULL, updated,
+                            sizeof(updated) - 1u) == STORE_OK);
+  assert_contents(active_path, "unacknowledged-update");
+  assert_contents(backup_path, "durable-previous");
+}
+
+static void test_targeted_parent_sync_after_backup_rotation(void) {
+  cleanup();
+  const unsigned char before[] = "durable";
+  const unsigned char after[] = "new-commit";
+  assert(store_atomic_write(active_path, NULL, before,
+                            sizeof(before) - 1u) == STORE_OK);
+  store_test_fail_parent_sync_at(active_path);
+  assert(store_atomic_write(active_path, backup_path, after,
+                            sizeof(after) - 1u) == STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert_contents(active_path, "new-commit");
+  assert_contents(backup_path, "durable");
+}
+
 static void test_utf8_path(void) {
   const unsigned char value[] = "utf8-path";
   assert(executable_unicode_path[0]);
@@ -165,6 +201,26 @@ static void test_utf8_path(void) {
   assert(store_atomic_write(profile_unicode_path, NULL, value,
                             sizeof(value) - 1) == STORE_OK);
   assert_contents(profile_unicode_path, "utf8-path");
+}
+
+static void test_directory_cursor(void) {
+  StoreDirectoryCursor cursor = {0};
+  assert(store_directory_open(profile_directory, &cursor) == STORE_OK);
+  char name[SUDOKURA_STORE_PATH_CAPACITY];
+  bool saw_unicode = false;
+  for (;;) {
+    StoreStatus status = store_directory_next(&cursor, name);
+    if (status == STORE_NOT_FOUND) break;
+    assert(status == STORE_OK);
+    if (strcmp(name, "profile-\xc3\xb1.dat") == 0)
+      saw_unicode = true;
+  }
+  assert(saw_unicode);
+  store_directory_close(&cursor);
+  store_directory_close(&cursor);
+  assert(store_directory_open(".sudokura-no-such-directory", &cursor) ==
+         STORE_NOT_FOUND);
+  assert(cursor.state == NULL);
 }
 
 #if !defined(_WIN32)
@@ -260,7 +316,10 @@ int main(int argc, char **argv) {
   cleanup();
   test_atomic_backup();
   test_faults_preserve_active();
+  test_parent_sync_failure_after_replace();
+  test_targeted_parent_sync_after_backup_rotation();
   test_utf8_path();
+  test_directory_cursor();
 #if !defined(_WIN32)
   test_permission_failure();
 #endif

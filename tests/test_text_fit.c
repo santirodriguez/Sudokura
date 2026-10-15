@@ -103,16 +103,32 @@ int main(void) {
         assert_rect(g.about_links[i], width, height);
 
       for (int language = 0; language < LANG_COUNT; ++language) {
-        int play_segment = g.play_language.w / 3 - 40;
         int screen_segment = g.screen_language.w / 3 - 40;
-        assert(fits(font, language_name((Language)language), tier.help, 10,
-                    play_segment, g.play_language.h));
+        if (width >= 640) {
+          char heading[128];
+          snprintf(heading, sizeof heading, "%s · %s",
+                   tr((Language)language, T_TIME_ATTACK),
+                   tr((Language)language, T_HARD));
+          GeoRect heading_rect = geometry_play_heading_rect(&g, width);
+          GeoRect brand = geometry_play_wordmark_rect(&g, width);
+          assert(heading_rect.w > 0);
+          assert(brand.y + brand.h + 8 <= heading_rect.y);
+          assert(fits(font, heading, tier.control + 2, 12,
+                      heading_rect.w, heading_rect.h));
+        }
         assert(fits(font, language_name((Language)language), tier.help, 10,
                     screen_segment, g.screen_language.h));
         assert(fits(font, tr((Language)language, T_MODE), tier.help, 10,
                     g.home_mode_label.w, g.home_mode_label.h));
         assert(fits(font, tr((Language)language, T_DIFFICULTY), tier.help, 10,
                     g.home_difficulty_label.w, g.home_difficulty_label.h));
+        assert(fits(font, tr((Language)language, T_NEW_GAME), tier.help, 10,
+                    g.home_new_label.w, g.home_new_label.h));
+        assert(fits(font, tr((Language)language, T_CONTINUE), tier.help, 10,
+                    g.home_continue_label.w, g.home_continue_label.h));
+        assert(fits(font, tr((Language)language, T_START_NEW_GAME),
+                    tier.control, 10,
+                    g.home_primary[0].w, g.home_primary[0].h));
 
         for (int i = 0; i < 3; ++i) {
           assert(fits(font, tr((Language)language, modes[i]), tier.control, 10,
@@ -134,11 +150,14 @@ int main(void) {
                     settings_width, g.actions[PLAY_ACTION_AUDIO].h));
 
         int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
-        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap) / 2;
+        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap * 2) / 3;
         assert(fits(font, tr((Language)language, T_MENU), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_MENU].h));
         assert(fits(font, tr((Language)language, T_PAUSE), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_MENU].h));
+        assert(fits(font, tr((Language)language, T_SAVE), tier.control, 9,
+                    split_w, g.actions[PLAY_ACTION_MENU].h));
+        split_w = (g.actions[PLAY_ACTION_PAUSE].w - split_gap) / 2;
         assert(fits(font, tr((Language)language, T_UNDO), tier.control, 9,
                     split_w, g.actions[PLAY_ACTION_PAUSE].h));
         assert(fits(font, tr((Language)language, T_REDO), tier.control, 9,
@@ -161,6 +180,12 @@ int main(void) {
         assert(fits(font, tr((Language)language, T_RETRY_SAVE), 14, 9,
                     save_retry_w, save_retry_h - 2));
 
+        const TextKey home_secondary[] = {
+            T_GAMES, T_HELP, T_ABOUT, T_SETTINGS, T_QUIT};
+        for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+          assert(fits(font, tr((Language)language, home_secondary[i]),
+                      tier.control, 10,
+                      g.home_secondary[i].w, g.home_secondary[i].h));
         int home_main_h = g.home_primary[1].h * 3 / 5;
         int home_sub_h = g.home_primary[1].h - home_main_h + 1;
         assert(fits(font, tr((Language)language, T_CONTINUE_NORMAL),

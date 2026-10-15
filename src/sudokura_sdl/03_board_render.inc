@@ -174,7 +174,7 @@ static bool draw_fitted_text(Gfx*g,const char*text,SDL_Color color,SDL_Rect r,in
 enum{
   HOME_FOCUS_LANGUAGE=0,HOME_FOCUS_MODE,HOME_FOCUS_DIFFICULTY,
   HOME_FOCUS_NEW,HOME_FOCUS_CONTINUE,HOME_FOCUS_DAILY,
-  HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_SETTINGS,HOME_FOCUS_QUIT,
+  HOME_FOCUS_GAMES,HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_SETTINGS,HOME_FOCUS_QUIT,
   HOME_FOCUS_COUNT
 };
 static int home_focus=HOME_FOCUS_NEW;
@@ -407,15 +407,76 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   }
 
   SidebarRects R;compute_sidebar_rects(&L,&R);
-  char hud[GEOMETRY_HUD_COUNT][80]={{0}};double el=elapsed_time(ui);const char*mode_name=tr(ui->language,mode_key(ui->mode));
-  if(ui->is_daily)snprintf(hud[0],sizeof hud[0],"%s",tr(ui->language,T_DAILY_SHORT));else snprintf(hud[0],sizeof hud[0],"%s: %s",tr(ui->language,T_MODE),mode_name);
-  snprintf(hud[1],sizeof hud[1],"%s: %s",tr(ui->language,T_DIFFICULTY),difficulty_name(ui->language,game->difficulty));
-  snprintf(hud[2],sizeof hud[2],"%s: %02d:%02d",tr(ui->language,T_TIME),(int)(el/60),(int)fmod(el,60));
-  snprintf(hud[3],sizeof hud[3],"%s: %d",tr(ui->language,T_ERRORS),ui->mistakes);
-  snprintf(hud[4],sizeof hud[4],"%s",tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));
-  if(ui->mode==MODE_TIME){int rem=(int)(ui->time_limit_s-el);if(rem<0)rem=0;snprintf(hud[5],sizeof hud[5],"%s: %02d:%02d",tr(ui->language,T_TARGET),rem/60,rem%60);}else if(ui->mode==MODE_STRIKES){int left=ui->strikes_max-ui->strikes;if(left<0)left=0;snprintf(hud[5],sizeof hud[5],"%s: %d/%d",tr(ui->language,T_STRIKES_LEFT),left,ui->strikes_max);}
-  SDL_GetMouseState(&mx,&my);
-  for(int i=0;i<L.model.hud_count;i++){SDL_Rect hr=sdl_rect(L.model.hud[i]);bool strict_chip=i==4,hover=strict_chip&&point_in(hr,mx,my);SDL_Color bg=strict_chip&&ui->strict_mode?th.title:(hover?th.hover:th.palette_bg);SDL_Color fg=strict_chip&&ui->strict_mode?th.bg:th.dim;draw_round_rect(g->ren,hr,hr.h/2,bg);(void)draw_fitted_text(g,hud[i],fg,hr,fonts.hud,10);}
+  char hud[GEOMETRY_HUD_COUNT][80] = {{0}};
+  double el = elapsed_time(ui);
+  const char *mode_name = tr(ui->language, mode_key(ui->mode));
+  bool desktop_hud = g->width >= 640;
+  if (desktop_hud) {
+    snprintf(hud[0], sizeof hud[0], "%s · %s",
+             ui->is_daily ? tr(ui->language, T_DAILY_SHORT) : mode_name,
+             difficulty_name(ui->language, game->difficulty));
+  } else if (ui->is_daily) {
+    snprintf(hud[0], sizeof hud[0], "%s", tr(ui->language, T_DAILY_SHORT));
+  } else {
+    snprintf(hud[0], sizeof hud[0], "%s: %s", tr(ui->language, T_MODE),
+             mode_name);
+  }
+  if (!desktop_hud)
+    snprintf(hud[1], sizeof hud[1], "%s: %s",
+             tr(ui->language, T_DIFFICULTY),
+             difficulty_name(ui->language, game->difficulty));
+  snprintf(hud[2], sizeof hud[2], "%s: %02d:%02d",
+           tr(ui->language, T_TIME), (int)(el / 60), (int)fmod(el, 60));
+  if (ui->mode == MODE_CLASSIC) {
+    if (ui->assisted)
+      snprintf(hud[3], sizeof hud[3], "%s: %d · %s",
+               tr(ui->language, T_HINTS), game_hint_count(game),
+               tr(ui->language, T_ASSISTED));
+    else
+      snprintf(hud[3], sizeof hud[3], "%s: %d",
+               tr(ui->language, T_HINTS), game_hint_count(game));
+  } else {
+    snprintf(hud[3], sizeof hud[3], "%s: %d",
+             tr(ui->language, T_ERRORS), ui->mistakes);
+  }
+  snprintf(hud[4], sizeof hud[4], "%s",
+           tr(ui->language, ui->strict_mode ? T_STRICT : T_FREE));
+  if (ui->mode == MODE_TIME) {
+    int rem = (int)(ui->time_limit_s - el);
+    if (rem < 0) rem = 0;
+    snprintf(hud[5], sizeof hud[5], "%s: %02d:%02d",
+             tr(ui->language, T_TARGET), rem / 60, rem % 60);
+  } else if (ui->mode == MODE_STRIKES) {
+    int left = ui->strikes_max - ui->strikes;
+    if (left < 0) left = 0;
+    snprintf(hud[5], sizeof hud[5], "%s: %d/%d",
+             tr(ui->language, T_STRIKES_LEFT), left, ui->strikes_max);
+  }
+  SDL_GetMouseState(&mx, &my);
+  for (int i = 0; i < L.model.hud_count; ++i) {
+    SDL_Rect hr = sdl_rect(L.model.hud[i]);
+    bool strict_chip = i == 4;
+    bool hover = strict_chip && point_in(hr, mx, my);
+    if (desktop_hud && i == 1) continue;
+    if (desktop_hud && i == 0) {
+      SDL_Rect heading = sdl_rect(
+          geometry_play_heading_rect(&L.model, g->width));
+      (void)draw_fitted_text(g, hud[0], th.btnfg, heading,
+                             fonts.control + 2, 12);
+      continue;
+    }
+    if (desktop_hud && !strict_chip) {
+      SDL_Rect field = {hr.x + 4, hr.y, hr.w - 8, hr.h};
+      (void)draw_fitted_text(g, hud[i], i == 2 ? th.btnfg : th.dim,
+                             field, fonts.hud + 1, 10);
+      continue;
+    }
+    SDL_Color bg = strict_chip && ui->strict_mode ? th.title :
+                   (hover ? th.hover : th.palette_bg);
+    SDL_Color fg = strict_chip && ui->strict_mode ? th.bg : th.dim;
+    draw_round_rect(g->ren, hr, hr.h / 2, bg);
+    (void)draw_fitted_text(g, hud[i], fg, hr, fonts.hud, 10);
+  }
 
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);
   draw_round_rect(g->ren,R.progress,R.progress.h/2,th.palette_bg);

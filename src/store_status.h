@@ -6,7 +6,8 @@ typedef enum {
   STORE_NOT_FOUND,
   STORE_CORRUPT,
   STORE_INCOMPATIBLE,
-  STORE_IO_ERROR
+  STORE_IO_ERROR,
+  STORE_CANCELLED
 } StoreStatus;
 
 #endif

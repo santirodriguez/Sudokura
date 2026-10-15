@@ -16,7 +16,7 @@
 <p align="center">
   <a href="#download-sudokura">Download</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.6.md">What's new in 1.3.6</a>
+  <a href="docs/RELEASE_NOTES_1.3.7.md">What's new in 1.3.7</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
@@ -93,7 +93,7 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 - **Dark and light themes**, reduced motion, responsive layouts, and full mouse/keyboard navigation.
 - **English, Español, and Català.**
 - **Optional music and effects** with master, Music, and FX controls.
-- Independent normal and Daily saves, automatic recovery safeguards, and local result history.
+- Independent normal and Daily saves, a retained Saved Games library with Load/View/Replay/Delete, automatic recovery safeguards, and local result history.
 
 ## Quick controls
 
@@ -104,6 +104,7 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 | Clear | 0, Backspace, or Delete |
 | Notes | N · Shift+1–9 · right-click · Shift+N toggles automatic peer-note cleanup |
 | Undo / Redo | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y · Cmd equivalents on macOS |
+| Save / Saved Games | Ctrl+S / Ctrl+O · Cmd equivalents on macOS |
 | Hint | H |
 | Verify | Ctrl+Enter · Cmd+Enter on macOS |
 | Pause | P |
@@ -116,7 +117,9 @@ Most actions are also available directly from the interface.
 
 ## Your progress stays yours
 
-Sudokura stores data in the operating system's normal per-user application-data directory. Compatible v1.2 data is preserved during migration, with recovery copies so an upgrade does not silently replace the previous valid state.
+Sudokura stores data in the operating system's normal per-user application-data directory. **Save** keeps the latest state of the same attempt; **Saved Games** lets you load retained progress, view finished results, start a fresh practice replay when an exact finished board is available, or explicitly delete an entry. Completed games remain in the local library beyond the shorter recent-results list.
+
+Existing v1.2 and v1.3 data is preserved through checked migration steps with recovery copies. Do not remove old profile files or the `games/` folder when upgrading or switching packages. Older summary-only results may not include a replayable original board.
 
 For save locations, migration details, rollback guidance, and useful bug-report information, see [Reporting Sudokura issues](docs/REPORTING_ISSUES.md).
 
@@ -174,6 +177,7 @@ make test-ui
 
 ## Project documentation
 
+- [v1.3.7 release notes](docs/RELEASE_NOTES_1.3.7.md)
 - [v1.3.6 release notes](docs/RELEASE_NOTES_1.3.6.md)
 - [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)
 - [Changelog](CHANGELOG.md)
