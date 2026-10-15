@@ -24,8 +24,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.3.0.png">
-    <img src="docs/images/sudokura-v1.3.0.png" alt="Sudokura desktop gameplay" width="900">
+  <a href="docs/images/sudokura-v1.3.7.png">
+    <img src="docs/images/sudokura-v1.3.7.png" alt="Sudokura v1.3.7 gameplay with full logo and Save button" width="900">
   </a>
 </p>
 
@@ -125,7 +125,7 @@ For save locations, migration details, rollback guidance, and useful bug-report 
 
 ## More screenshots
 
-The curated gallery includes Home / Continue, Settings, audio controls, compact Notes, and Help.
+The gallery features v1.3.7 gameplay and preserves earlier Home / Continue, Settings, audio controls, compact Notes, and Help captures from v1.3.0.
 
 [Browse the screenshot gallery →](docs/images/README.md)
 
