@@ -8,7 +8,7 @@ These instructions apply to the entire repository.
 - Do not rewrite it in another language, toolkit, engine, or web framework.
 - Preserve the established visual identity, game modes, keyboard/mouse interaction, offline behavior, and optional-audio model unless an explicitly approved change requires otherwise.
 - Keep runtime dependencies and packaged size low. Do not add SDL_image only to load icons or flags, and do not add media dependencies for UI effects that can be generated safely at runtime.
-- Target Sudokura v1.3.6. The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings.
+- Target Sudokura v1.3.7. The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings.
 
 ## Engineering requirements
 
@@ -29,6 +29,8 @@ These instructions apply to the entire repository.
 - Restart and loss Retry must preserve the exact puzzle identity.
 - Autosave and Continue must fail closed on invalid or corrupt session data. A save from an incompatible generator revision is incompatible, not corrupt.
 - Persistence formats are versioned and validated. Do not serialize raw C structs as an interchange format.
+- Saved Games uses a bounded v1.3.7 profile (16 KiB maximum), separate exact or legacy-summary game records (8 KiB maximum each), stable attempt IDs, and durable latest-progress Save. A repeat Save updates the same attempt; New and Replay create distinct identities. The 128-entry limit applies to recent-result summaries, not the permanent finished-game library.
+- Migration to v1.3.7 preserves the immutable pre-upgrade profile and resumable intent; do not overwrite recoverable copies, silently downgrade an unknown format to corrupt, or import the same history twice. A deleted game's durable receipt must prevent reappearance from backups, old profiles, or migration sources.
 - Timer accounting must remain monotonic and respect independent manual, focus, modal, Home, and result pause reasons.
 
 ## Audio
@@ -51,8 +53,8 @@ These instructions apply to the entire repository.
 ## Branding
 
 - Exactly two source branding masters are canonical for v1.2: `assets/branding/source/sudokura-head.png` and `assets/branding/source/sudokura-512.png`.
-- `sudokura-head.png` is the full project identity for Home, About, Pause, result, and public documentation.
-- `sudokura-512.png` is the compact/application master for gameplay chrome, generated PNG sizes, Windows ICO, macOS ICNS, Linux packaging, and the SDL window icon.
+- `sudokura-head.png` is the full project identity for Home, the gameplay sidebar header, About, Pause, result, and public documentation.
+- `sudokura-512.png` is the compact/application icon master for generated PNG sizes, Windows ICO, macOS ICNS, Linux packaging, and the SDL window icon. Gameplay's sidebar header uses the proportional full head artwork, not an extra typeset name or a squeezed square icon.
 - Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
