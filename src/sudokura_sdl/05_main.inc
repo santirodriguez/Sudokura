@@ -667,12 +667,63 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_VERIFY:ui_button_click();verify_current_entries(p,game,ui);return true;
     case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
     case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
+    case PLAY_FOCUS_MORE:ui_button_click();ui_more_open_panel(ui);return true;
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
     case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_retry_current(p,game,ui);return true;
     default:
       if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
       return false;
   }
+}
+
+static bool ui_more_activate_action(Persistence *p, Game *game, UI *ui,
+                                    Gfx *gfx, int action) {
+  if (!ui || !ui_more_open || action < 0 || action >= GEOMETRY_MORE_COUNT)
+    return false;
+  ui_more_close(ui);
+  if (action == MORE_ABOUT) {
+    ui_button_click();
+    info_focus_reset();
+    open_info_from_play(p,game,ui,SCR_ABOUT);
+    return true;
+  }
+  const int focuses[GEOMETRY_MORE_COUNT] = {
+    PLAY_FOCUS_RESTART,PLAY_FOCUS_HINT,PLAY_FOCUS_VERIFY,
+    PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_MORE
+  };
+  int focus=focuses[action];
+  /* The compact More panel intentionally exposes otherwise hidden actions. */
+  play_keyboard_focus=focus;
+  switch (action) {
+    case MORE_RESTART:
+      ui_button_click();
+      if (restart_current_session_confirmed(p,game,ui,gfx)) {
+        victory_animation_reset();
+        restart_current_session(p,game,ui);
+      }
+      break;
+    case MORE_HINT:
+      ui_button_click();
+      (void)prepare_hint_preview(game,ui);
+      if (ui->hint_preview_active) hint_focus_reset(ui);
+      break;
+    case MORE_VERIFY:
+      ui_button_click();
+      verify_current_entries(p,game,ui);
+      break;
+    case MORE_SETTINGS:
+      ui_button_click();
+      ui_settings_open(p,game,ui);
+      break;
+    case MORE_HELP:
+      ui_button_click();
+      info_focus_reset();
+      open_info_from_play(p,game,ui,SCR_HELP);
+      break;
+    default: return false;
+  }
+  play_keyboard_focus=PLAY_FOCUS_MORE;
+  return true;
 }
 
 static bool open_global_info_key(Persistence *persistence, const Game *game,
@@ -2557,6 +2608,32 @@ int main(int argc, char **argv) {
           }
         } else {
           if (!left) continue;
+          if (layout.model.play_compact) {
+            const int focus[] = {
+              PLAY_FOCUS_MENU,PLAY_FOCUS_PAUSE,PLAY_FOCUS_SAVE,PLAY_FOCUS_MORE,
+              PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,PLAY_FOCUS_CLEAR,PLAY_FOCUS_NOTES,
+              PLAY_FOCUS_STRICT
+            };
+            for (size_t index=0;index<sizeof(focus)/sizeof(focus[0]);++index) {
+              if (play_focus_enabled(&game,&ui,focus[index]) &&
+                  point_in(play_focus_rect(&g,&ui,focus[index]),x,y)) {
+                play_keyboard_focus=focus[index];
+                (void)activate_play_focus(&persistence,&game,&ui,&g);
+                break;
+              }
+            }
+            /* The palette is still an immediate primary click target after
+               the semantic compact toolbar and editor controls. */
+            for (int number=1;number<=9;++number) {
+              SDL_Rect rect=sdl_rect(layout.model.palette[number-1]);
+              if (!point_in(rect,x,y)) continue;
+              play_keyboard_focus=PLAY_FOCUS_NUMBER_1+number-1;
+              if (play_focus_enabled(&game,&ui,play_keyboard_focus))
+                (void)activate_play_focus(&persistence,&game,&ui,&g);
+              break;
+            }
+            continue;
+          }
           SidebarRects controls;
           compute_sidebar_rects(&layout, &controls);
           if (layout.model.hud_count > 4 &&

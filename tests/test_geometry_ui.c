@@ -106,11 +106,13 @@ int main(void) {
       assert_inside(screen_audio.popup, screen_audio.music);
       assert_inside(screen_audio.popup, screen_audio.fx);
       assert_inside(g.actions[PLAY_ACTION_AUDIO],play_audio.button);
-      assert(play_audio.button.x - 4 >
-             g.actions[PLAY_ACTION_AUDIO].x + 48);
+      if (!portrait)
+        assert(play_audio.button.x - 4 >
+               g.actions[PLAY_ACTION_AUDIO].x + 48);
       assert(screen_audio.button.x >=
              g.screen_language.x + g.screen_language.w);
 
+      if (!portrait) {
       assert(g.actions[PLAY_ACTION_MENU].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
       assert(g.actions[PLAY_ACTION_ABOUT].x == g.sidebar.x);
@@ -136,8 +138,28 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_ABOUT].w == g.status.w);
       assert(g.actions[PLAY_ACTION_ABOUT].h == g.status.h);
 
+      }
       if (portrait) {
-        assert(g.board.w >= 225);
+        assert(g.play_compact);
+        assert(g.board.w >= 288);
+        if (width == 390) assert(g.board.w >= 369);
+        if (width == 412) assert(g.board.w >= 396);
+        assert(g.play_controls[PLAY_CONTROL_MENU].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_SAVE].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_CLEAR].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_NOTES].h >= 36);
+        assert(g.palette[0].h >= 40);
+        assert(g.play_controls[PLAY_CONTROL_MORE].w >= 60);
+        for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)
+          assert_inside(g.more_panel,g.more_items[i]);
+        for (int i = 0; i < PLAY_CONTROL_COUNT; ++i)
+          assert_rect(g.play_controls[i],width,height);
+        assert(g.play_controls[PLAY_CONTROL_UNDO].y >=
+               g.board.y + g.board.h);
+        assert(g.play_controls[PLAY_CONTROL_SAVE].y <
+               g.board.y);
+        assert(g.play_controls[PLAY_CONTROL_MORE].y ==
+               g.play_controls[PLAY_CONTROL_SAVE].y);
         for (int i = 1; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
           assert(g.about_links[i].y > g.about_links[i - 1].y);
       } else {

@@ -325,7 +325,7 @@ static bool ui_handle_global_audio_event(SDL_Event *event) {
    no queued event is rewritten or replayed as a press on a new screen. */
 static uint64_t ui_pointer_generation;
 static bool ui_pointer_busy(void);
-static uint64_t ui_pointer_context[14];
+static uint64_t ui_pointer_context[15];
 static bool ui_pointer_mouse_captured;
 static int ui_pointer_origin_x, ui_pointer_origin_y;
 static PointerTarget ui_pointer_resolve(int x, int y);
@@ -338,13 +338,17 @@ static void ui_pointer_cancel(void) {
 
 static void ui_pointer_reconcile(void) {
   if (!audio_ui || !audio_gfx) { ui_pointer_cancel(); return; }
+  if (ui_more_open && (audio_ui->screen != SCR_PLAY ||
+                       audio_ui->result != RES_NONE ||
+                       audio_gfx->width >= 640))
+    ui_more_close(audio_ui);
   uint64_t context[] = {
       audio_ui->screen, audio_ui->pause_reasons, audio_ui->result,
       settings_open, audio_control_popup_open, audio_ui->hint_preview_active,
       audio_ui->generating, (uint64_t)audio_gfx->width,
       (uint64_t)audio_gfx->height, audio_ui->language,
       games_browser.scanning, games_browser.detail_open, games_browser.count,
-      ui_pointer_busy()};
+      ui_pointer_busy(), ui_more_open};
   if (memcmp(context, ui_pointer_context, sizeof(context)) != 0) {
     ui_pointer_cancel();
     settings_slider_drag = SETTINGS_DRAG_NONE;
@@ -376,6 +380,15 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
 } while (0)
   if (ui_pointer_busy())
     return ui_pointer_target(4, (SDL_Rect){0, 0, gfx->width, gfx->height});
+  if (ui_more_open) {
+    AppGeometry geometry;
+    if (get_geometry(gfx,ui,&geometry)) {
+      for (int i=0;i<GEOMETRY_MORE_COUNT;++i)
+        TARGET(160+i,sdl_rect(geometry.more_items[i]),true);
+    }
+    /* Outside press/release dismisses without reaching underlying UI. */
+    return ui_pointer_target(166,(SDL_Rect){0,0,gfx->width,gfx->height});
+  }
   if (audio_control_popup_open) {
     AudioControlGeometry a = ui_audio_control_geometry(gfx, ui);
     TARGET(1, sdl_rect(a.music), true);
@@ -394,6 +407,17 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
     GamesBrowserLayout a = games_browser_layout(gfx);
     TARGET(30, a.back, true);
     if (games_browser.scanning) return (PointerTarget){0};
+    if (!games_browser.detail_open) {
+      SDL_Rect pages[] = {a.page_previous,a.page_next};
+      for (int i=0;i<2;++i) {
+        if (games_browser_focus_enabled(5+i) && point_in(pages[i],x,y)) {
+          PointerTarget target=ui_pointer_target(34+i,pages[i]);
+          GameAttemptId id=games_browser.rows[games_browser.selected].entry.id;
+          target.key_hi=id.high;target.key_lo=id.low;
+          return target;
+        }
+      }
+    }
     SDL_Rect controls[] = {a.primary, a.replay, a.remove};
     const int focus[] = {1, 3, 4};
     for (int i = 0; i < 3; ++i) {
@@ -465,7 +489,10 @@ static bool ui_pointer_prepare(SDL_Event *event) {
       event->type == SDL_RENDER_DEVICE_RESET || event->type == SDL_RENDER_TARGETS_RESET ||
       event->type == SDL_KEYDOWN || event->type == SDL_MOUSEWHEEL) {
     ui_pointer_cancel();
-    if (event->type == SDL_WINDOWEVENT) settings_slider_drag = SETTINGS_DRAG_NONE;
+    if (event->type == SDL_WINDOWEVENT) {
+      settings_slider_drag = SETTINGS_DRAG_NONE;
+      ui_more_close(audio_ui);
+    }
   }
   if (event->type == SDL_MOUSEMOTION) {
     if (!(event->motion.state & SDL_BUTTON_LMASK)) ui_pointer_cancel();
@@ -479,7 +506,7 @@ static bool ui_pointer_prepare(SDL_Event *event) {
   if (event->type == SDL_MOUSEBUTTONDOWN) {
     ui_pointer_cancel();
     /* The speaker owns its existing short/long-press gesture. */
-    if (ui_audio_control_available(audio_ui) &&
+    if (!ui_more_open && ui_audio_control_available(audio_ui) &&
         point_in(sdl_rect(ui_audio_control_geometry(audio_gfx, audio_ui).button), x, y))
       return true;
     if (settings_open) {
@@ -511,10 +538,53 @@ static bool ui_pointer_prepare(SDL_Event *event) {
   return execute;
 }
 
+
+/* More is a modal interaction surface, not an underlying gameplay screen. */
+static bool ui_handle_more_panel_event(SDL_Event *event) {
+  if (!ui_more_open || !audio_ui || !audio_gfx || !event) return false;
+  if (event->type == SDL_KEYDOWN) {
+    if (event->key.repeat) return true;
+    SDL_Keycode key=event->key.keysym.sym;
+    if (key==SDLK_ESCAPE) {
+      ui_more_close(audio_ui);
+    } else if (key==SDLK_TAB || key==SDLK_UP || key==SDLK_DOWN) {
+      int direction=key==SDLK_UP ||
+          (key==SDLK_TAB && (event->key.keysym.mod & KMOD_SHIFT)) ? -1:1;
+      ui_more_focus=(ui_more_focus+direction+GEOMETRY_MORE_COUNT)%
+                     GEOMETRY_MORE_COUNT;
+    } else if (input_activation_key(key)) {
+      (void)ui_more_activate_action(audio_persistence,audio_game,audio_ui,
+                                    audio_gfx,ui_more_focus);
+    }
+    return true;
+  }
+  if (event->type == SDL_MOUSEBUTTONUP &&
+      event->button.button == SDL_BUTTON_LEFT) {
+    AppGeometry geometry;
+    if (get_geometry(audio_gfx,audio_ui,&geometry)) {
+      for (int i=0;i<GEOMETRY_MORE_COUNT;++i) {
+        if (point_in(sdl_rect(geometry.more_items[i]),
+                     event->button.x,event->button.y)) {
+          ui_more_focus=i;
+          (void)ui_more_activate_action(audio_persistence,audio_game,audio_ui,
+                                         audio_gfx,i);
+          return true;
+        }
+      }
+    }
+    ui_more_close(audio_ui);
+    return true;
+  }
+  return event->type == SDL_MOUSEBUTTONDOWN ||
+         event->type == SDL_MOUSEWHEEL ||
+         event->type == SDL_MOUSEMOTION;
+}
+
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
   if(audio_gfx)audio_gfx->dirty=true;
   if (!ui_pointer_prepare(event)) return false;
+  if (ui_handle_more_panel_event(event)) return false;
   if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();
 
   if (event->type == SDL_AUDIODEVICEREMOVED && !event->adevice.iscapture) {

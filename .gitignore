@@ -50,3 +50,4 @@
 /codesign-macos-*.txt
 /dmg-verify-macos-*.txt
 /size-comparison-macos-*.txt
+tests/test_library_paging

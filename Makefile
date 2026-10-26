@@ -25,7 +25,7 @@ GENERATED_UI = assets/generated/window_icon.c assets/generated/window_icon.h \
 	assets/generated/flag_ca.c assets/generated/flag_ca.h
 .PHONY: all test test-ui quality clean assets
 all: sudokura
-sudokura: src/sudokura_sdl.c src/app.c src/app.h src/app_clock.c src/app_clock.h src/desktop.c src/desktop.h src/url_launcher.c src/url_launcher.h src/profile.c src/profile.h src/game_library.c src/game_library_codec.c src/game_migration.c src/game_library.h src/game_migration.h src/save_policy.c src/save_policy.h src/store_io.c src/store_io.h src/store_status.h src/storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_present.inc src/sudokura_sdl/games_ui.inc src/button_feedback.h src/pointer_capture.h src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) src/audio.c src/audio.h src/input.c src/input.h src/progress.c src/progress.h src/version.h src/game.h src/human.h src/geometry.h src/i18n.h src/session.h src/session.c src/seed.h src/seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
+sudokura: src/sudokura_sdl.c src/app.c src/app.h src/app_clock.c src/app_clock.h src/desktop.c src/desktop.h src/url_launcher.c src/url_launcher.h src/profile.c src/profile.h src/game_library.c src/game_library_codec.c src/game_migration.c src/game_library.h src/game_migration.h src/save_policy.c src/save_policy.h src/store_io.c src/store_io.h src/store_status.h src/storage.h src/sudokura_sdl/01_runtime.inc src/sudokura_sdl/02_font_discovery.inc src/sudokura_sdl/03_board_render.inc src/sudokura_sdl/04_screens.inc src/sudokura_sdl/05_main.inc src/sudokura_sdl/ui_present.inc src/sudokura_sdl/games_ui.inc src/button_feedback.h src/pointer_capture.h src/library_paging.h src/sudokura_sdl/audio_ui.inc src/sudokura_sdl/input_ui.inc $(CORE) src/audio.c src/audio.h src/input.c src/input.h src/progress.c src/progress.h src/version.h src/game.h src/human.h src/geometry.h src/i18n.h src/session.h src/session.c src/seed.h src/seed.c $(GENERATED_UI) $(AUDIO_ASSETS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_CFLAGS) src/sudokura_sdl.c src/app.c src/app_clock.c src/desktop.c src/url_launcher.c src/audio.c src/profile.c $(LIBRARY) src/save_policy.c src/store_io.c src/session.c src/seed.c src/progress.c src/input.c $(CORE) assets/generated/window_icon.c assets/generated/wordmark.c assets/generated/flag_us.c assets/generated/flag_ar.c assets/generated/flag_ca.c -o $@ $(SDL_LIBS) $(PLATFORM_LIBS) -lm
 tests/test_main: tests/test_main.c $(CORE) src/version.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_main.c $(CORE) -o $@
@@ -82,10 +82,15 @@ test-ui: tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n t
 quality: tests/test_generator_quality tests/test_human_calibration
 	./tests/test_human_calibration
 	./tests/test_generator_quality
+
+tests/test_library_paging: tests/test_library_paging.c src/library_paging.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_library_paging.c -o $@
+
 tests/test_pointer_capture: tests/test_pointer_capture.c src/pointer_capture.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_pointer_capture.c -o $@
 
-test: tests/test_pointer_capture tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
+test: tests/test_library_paging tests/test_pointer_capture tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
+	./tests/test_library_paging
 	./tests/test_pointer_capture
 	./tests/test_main
 	./tests/test_app
@@ -109,4 +114,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_pointer_capture tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction
+	rm -f sudokura tests/test_library_paging tests/test_pointer_capture tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction

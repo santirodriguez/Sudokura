@@ -13,6 +13,7 @@
 #define GEOMETRY_END_BUTTON_COUNT 2
 #define GEOMETRY_PAUSE_BUTTON_COUNT 2
 #define GEOMETRY_ABOUT_LINK_COUNT 4
+#define GEOMETRY_MORE_COUNT 6
 
 typedef struct {
   int x, y, w, h;
@@ -37,6 +38,19 @@ typedef enum {
   PLAY_ACTION_COUNT
 } PlayAction;
 
+typedef enum {
+  PLAY_CONTROL_MENU, PLAY_CONTROL_PAUSE, PLAY_CONTROL_SAVE,
+  PLAY_CONTROL_MORE, PLAY_CONTROL_UNDO, PLAY_CONTROL_REDO,
+  PLAY_CONTROL_CLEAR, PLAY_CONTROL_NOTES, PLAY_CONTROL_RESTART,
+  PLAY_CONTROL_HINT, PLAY_CONTROL_VERIFY, PLAY_CONTROL_SETTINGS,
+  PLAY_CONTROL_HELP, PLAY_CONTROL_ABOUT, PLAY_CONTROL_COUNT
+} PlayControl;
+
+typedef enum {
+  MORE_RESTART, MORE_HINT, MORE_VERIFY, MORE_SETTINGS,
+  MORE_HELP, MORE_ABOUT
+} MoreControl;
+
 typedef struct {
   GeoRect board;
   GeoRect sidebar;
@@ -44,6 +58,11 @@ typedef struct {
   GeoRect hud[GEOMETRY_HUD_COUNT];
   int hud_count;
   GeoRect actions[GEOMETRY_ACTION_COUNT];
+  /* One semantic hit-box map for painting, focus, and pointer capture. */
+  GeoRect play_controls[PLAY_CONTROL_COUNT];
+  bool play_compact;
+  GeoRect more_panel;
+  GeoRect more_items[GEOMETRY_MORE_COUNT];
   GeoRect palette_label;
   GeoRect palette[GEOMETRY_PALETTE_COUNT];
   GeoRect progress;

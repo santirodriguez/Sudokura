@@ -443,11 +443,11 @@ static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
                            controls.palette_label, fonts.help, 10);
 
   int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
+  (void)SDL_GetMouseState(&mx, &my);
   for (int number = 1; number <= 9; ++number) {
     SDL_Rect rect = controls.pal[number - 1];
     bool hover = point_in(rect, mx, my);
-    bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+    bool pressed = ui_pointer_pressed(rect);
     bool complete = palette_number_complete(game, ui->mode, number);
     bool selected = game->puzzle[IDX(ui->sel_r, ui->sel_c)] == number;
     SDL_Color background = complete
@@ -1276,7 +1276,7 @@ static bool clear_selected_available(const Game *game, const UI *ui) {
 typedef enum{
   PLAY_FOCUS_MENU=0,PLAY_FOCUS_PAUSE,PLAY_FOCUS_SAVE,PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,
   PLAY_FOCUS_CLEAR,PLAY_FOCUS_RESTART,PLAY_FOCUS_HINT,PLAY_FOCUS_NOTES,
-  PLAY_FOCUS_VERIFY,PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_STRICT,
+  PLAY_FOCUS_VERIFY,PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_MORE,PLAY_FOCUS_STRICT,
   PLAY_FOCUS_SAVE_RETRY,PLAY_FOCUS_NUMBER_1,PLAY_FOCUS_NUMBER_2,PLAY_FOCUS_NUMBER_3,
   PLAY_FOCUS_NUMBER_4,PLAY_FOCUS_NUMBER_5,PLAY_FOCUS_NUMBER_6,
   PLAY_FOCUS_NUMBER_7,PLAY_FOCUS_NUMBER_8,PLAY_FOCUS_NUMBER_9,
@@ -1285,6 +1285,12 @@ typedef enum{
 static int play_keyboard_focus=-1;
 static bool play_focus_enabled(const Game*game,const UI*ui,int focus){
   if(!game||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return false;
+  bool compact = audio_gfx && audio_gfx->width < 640;
+  if (compact && (focus == PLAY_FOCUS_RESTART ||
+                  focus == PLAY_FOCUS_HINT || focus == PLAY_FOCUS_VERIFY ||
+                  focus == PLAY_FOCUS_SETTINGS || focus == PLAY_FOCUS_HELP))
+    return false;
+  if (!compact && focus == PLAY_FOCUS_MORE) return false;
   if(focus==PLAY_FOCUS_SAVE)return app_play_interactions_allowed(ui);
   if(focus==PLAY_FOCUS_UNDO)return ui->undo_count>0;
   if(focus==PLAY_FOCUS_REDO)return ui->redo_count>0;
@@ -1305,28 +1311,65 @@ static void play_move_focus(const Game*game,const UI*ui,int direction){
   }
   play_keyboard_focus=-1;
 }
-static SDL_Rect play_focus_rect(const Gfx*gfx,const UI*ui,int focus){
-  if(!gfx||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return(SDL_Rect){0,0,0,0};
-  Layout layout=compute_layout(gfx->width,gfx->height,ui->mode);SidebarRects controls;compute_sidebar_rects(&layout,&controls);SDL_Rect left,right;
-  if(focus==PLAY_FOCUS_MENU||focus==PLAY_FOCUS_PAUSE||focus==PLAY_FOCUS_SAVE){SDL_Rect save;menu_pause_save_rects(controls.btn[PLAY_ACTION_MENU],&left,&right,&save);return focus==PLAY_FOCUS_MENU?left:(focus==PLAY_FOCUS_PAUSE?right:save);}
-  if(focus==PLAY_FOCUS_UNDO||focus==PLAY_FOCUS_REDO){undo_redo_rects(controls.btn[PLAY_ACTION_PAUSE],&left,&right);return focus==PLAY_FOCUS_UNDO?left:right;}
-  if(focus==PLAY_FOCUS_RESTART||focus==PLAY_FOCUS_CLEAR){restart_clear_rects(controls.btn[PLAY_ACTION_RESTART],&left,&right);return focus==PLAY_FOCUS_RESTART?left:right;}
-  if(focus==PLAY_FOCUS_HINT)return controls.btn[PLAY_ACTION_HINT];
-  if(focus==PLAY_FOCUS_NOTES)return controls.btn[PLAY_ACTION_NOTES];
-  if(focus==PLAY_FOCUS_VERIFY)return controls.btn[PLAY_ACTION_VERIFY];
-  if(focus==PLAY_FOCUS_SETTINGS){
-    SDL_Rect settings=controls.btn[PLAY_ACTION_AUDIO];
-    AudioControlGeometry audio=
-        geometry_audio_control(gfx->width,gfx->height,&layout.model,true);
-    settings.w=audio.button.x-4-settings.x;
-    return settings;
+static SDL_Rect play_focus_rect(const Gfx *gfx, const UI *ui, int focus) {
+  SDL_Rect empty = {0,0,0,0};
+  if (!gfx || !ui || focus < 0 || focus >= PLAY_FOCUS_COUNT) return empty;
+  AppGeometry geo;
+  if (!get_geometry(gfx, ui, &geo)) return empty;
+  if (focus == PLAY_FOCUS_SAVE_RETRY)
+    return storage_banner_layout(gfx,ui).retry;
+  if (focus == PLAY_FOCUS_STRICT)
+    return geo.hud_count > 4 ? sdl_rect(geo.hud[4]) : empty;
+  if (focus >= PLAY_FOCUS_NUMBER_1)
+    return sdl_rect(geo.palette[focus - PLAY_FOCUS_NUMBER_1]);
+  int control = -1;
+  switch(focus) {
+    case PLAY_FOCUS_MENU: control=PLAY_CONTROL_MENU; break;
+    case PLAY_FOCUS_PAUSE: control=PLAY_CONTROL_PAUSE; break;
+    case PLAY_FOCUS_SAVE: control=PLAY_CONTROL_SAVE; break;
+    case PLAY_FOCUS_MORE: control=PLAY_CONTROL_MORE; break;
+    case PLAY_FOCUS_UNDO: control=PLAY_CONTROL_UNDO; break;
+    case PLAY_FOCUS_REDO: control=PLAY_CONTROL_REDO; break;
+    case PLAY_FOCUS_CLEAR: control=PLAY_CONTROL_CLEAR; break;
+    case PLAY_FOCUS_NOTES: control=PLAY_CONTROL_NOTES; break;
+    case PLAY_FOCUS_RESTART: control=PLAY_CONTROL_RESTART; break;
+    case PLAY_FOCUS_HINT: control=PLAY_CONTROL_HINT; break;
+    case PLAY_FOCUS_VERIFY: control=PLAY_CONTROL_VERIFY; break;
+    case PLAY_FOCUS_SETTINGS: control=PLAY_CONTROL_SETTINGS; break;
+    case PLAY_FOCUS_HELP: control=PLAY_CONTROL_HELP; break;
+    default: return empty;
   }
-  if(focus==PLAY_FOCUS_HELP)return controls.btn[PLAY_ACTION_HELP];
-  if(focus==PLAY_FOCUS_STRICT&&layout.model.hud_count>4)return sdl_rect(layout.model.hud[4]);
-  if(focus==PLAY_FOCUS_SAVE_RETRY)return storage_banner_layout(gfx,ui).retry;
-  if(focus>=PLAY_FOCUS_NUMBER_1)return controls.pal[focus-PLAY_FOCUS_NUMBER_1];
-  return(SDL_Rect){0,0,0,0};
+  return sdl_rect(geo.play_controls[control]);
 }
+
+/* This transient overlay never owns a pre-existing modal pause. */
+static bool ui_more_open;
+static bool ui_more_modal_owned;
+static int ui_more_focus;
+
+static void ui_more_close(UI *ui) {
+  if (!ui_more_open) return;
+  ui_more_open = false;
+  bool resume = ui_more_modal_owned;
+  ui_more_modal_owned = false;
+  ui_more_focus = 0;
+  play_keyboard_focus = PLAY_FOCUS_MORE;
+  if (resume) (void)clock_resume(ui, PAUSE_MODAL);
+}
+
+static void ui_more_open_panel(UI *ui) {
+  if (!ui || ui_more_open || ui->screen != SCR_PLAY ||
+      !ui->session_open || ui->result != RES_NONE ||
+      !audio_gfx || audio_gfx->width >= 640) return;
+  ui_more_modal_owned = clock_pause(ui, PAUSE_MODAL);
+  ui_more_open = true;
+  ui_more_focus = 0;
+  play_keyboard_focus = PLAY_FOCUS_MORE;
+}
+
+/* Implemented alongside the other checked action dispatchers in main. */
+static bool ui_more_activate_action(Persistence *p, Game *game, UI *ui,
+                                    Gfx *gfx, int action);
 
 static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   bool play_surface = ui && ui->screen == SCR_PLAY;
@@ -1337,6 +1380,45 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   SidebarRects controls;
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
+  if (layout.model.play_compact) {
+    static const int focus_keys[] = {
+      PLAY_FOCUS_MENU, PLAY_FOCUS_PAUSE, PLAY_FOCUS_SAVE, PLAY_FOCUS_MORE,
+      PLAY_FOCUS_UNDO, PLAY_FOCUS_REDO, PLAY_FOCUS_CLEAR, PLAY_FOCUS_NOTES
+    };
+    static const TextKey labels[] = {
+      T_MENU, T_PAUSE, T_SAVE, T_MORE,
+      T_UNDO, T_REDO, T_CLEAR, T_NOTES
+    };
+    static const PlayControl controls_map[] = {
+      PLAY_CONTROL_MENU, PLAY_CONTROL_PAUSE, PLAY_CONTROL_SAVE,
+      PLAY_CONTROL_MORE, PLAY_CONTROL_UNDO, PLAY_CONTROL_REDO,
+      PLAY_CONTROL_CLEAR, PLAY_CONTROL_NOTES
+    };
+    int mx = 0, my = 0;
+    (void)SDL_GetMouseState(&mx,&my);
+    for (size_t i = 0; i < sizeof(focus_keys)/sizeof(focus_keys[0]); ++i) {
+      SDL_Rect rect = sdl_rect(layout.model.play_controls[controls_map[i]]);
+      bool enabled = play_focus_enabled(game,ui,focus_keys[i]);
+      bool hovered = enabled && point_in(rect,mx,my);
+      bool pressed = enabled && ui_pointer_pressed(rect);
+      bool active = focus_keys[i] == PLAY_FOCUS_NOTES && ui->notes_mode;
+      SDL_Color background = active || focus_keys[i] == PLAY_FOCUS_SAVE
+          ? theme.title : hovered ? theme.hover : theme.palette_bg;
+      SDL_Color foreground = active || focus_keys[i] == PLAY_FOCUS_SAVE
+          ? theme.bg : enabled ? theme.btnfg : theme.dim;
+      SDL_Rect face = polish_quiet_face(gfx, theme, rect, background,
+                                         pressed, !enabled);
+      (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
+                             foreground,face,fonts.control,10);
+      if (enabled && play_keyboard_focus == focus_keys[i])
+        draw_focus_ring(gfx->ren,rect,theme.sel_outline);
+    }
+    if (play_focus_enabled(game,ui,PLAY_FOCUS_STRICT) &&
+        play_keyboard_focus == PLAY_FOCUS_STRICT)
+      draw_focus_ring(gfx->ren,play_focus_rect(gfx,ui,PLAY_FOCUS_STRICT),
+                      theme.sel_outline);
+    return;
+  }
   const TextKey keys[PLAY_ACTION_COUNT] = {
       [PLAY_ACTION_MENU] = T_MENU,
       [PLAY_ACTION_PAUSE] = T_PAUSE,
@@ -1442,6 +1524,37 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
     if(focus_rect.w>0&&focus_rect.h>0)draw_focus_ring(gfx->ren,focus_rect,theme.sel_outline);
   }
 
+}
+
+
+static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
+  if (!gfx || !ui || !ui_more_open || ui->screen != SCR_PLAY) return;
+  AppGeometry geo;
+  if (!get_geometry(gfx,ui,&geo) || !geo.play_compact) return;
+  Theme theme = ui->dark_theme ? theme_dark() : theme_light();
+  /* A modal pause must never expose the running Time Attack solution. */
+  draw_rect(gfx->ren,0,0,gfx->width,gfx->height,theme.bg);
+  SDL_Rect panel=sdl_rect(geo.more_panel);
+  draw_round_rect(gfx->ren,panel,12,theme.btn);
+  SDL_Rect heading={panel.x+12,panel.y+15,panel.w-24,34};
+  (void)draw_fitted_text(gfx,tr(ui->language,T_MORE),theme.btnfg,
+                         heading,24,13);
+  const TextKey labels[GEOMETRY_MORE_COUNT] = {
+      T_RESTART,T_HINT,T_VERIFY,T_SETTINGS,T_HELP,T_ABOUT
+  };
+  int mx = 0, my = 0;
+  (void)SDL_GetMouseState(&mx,&my);
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i) {
+    SDL_Rect rect=sdl_rect(geo.more_items[i]);
+    bool hover=point_in(rect,mx,my);
+    SDL_Rect face=polish_quiet_face(gfx,theme,rect,
+                       hover?theme.hover:theme.palette_bg,
+                       ui_pointer_pressed(rect),false);
+    (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
+                           theme.btnfg,face,17,10);
+    if (ui_more_focus==i)
+      draw_focus_ring(gfx->ren,rect,theme.sel_outline);
+  }
 }
 
 static void rc2_render_storage_banner(Gfx *gfx, UI *ui) {
@@ -1602,6 +1715,7 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   rc2_render_storage_banner(gfx, ui);
   rc2_render_generation_overlay(gfx, ui);
   rc2_render_audio_control(gfx, ui);
+  rc2_render_more_panel(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {

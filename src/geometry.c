@@ -439,6 +439,24 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       return false;
   }
 
+  for (int i = 0; i < PLAY_CONTROL_COUNT; ++i) {
+    if (!g->play_compact && (i == PLAY_CONTROL_MORE ||
+                              i == PLAY_CONTROL_ABOUT)) continue;
+    if (!geometry_rect_in_bounds(g->play_controls[i], width, height))
+      return false;
+  }
+  if (g->play_compact) {
+    if (!geometry_rect_in_bounds(g->more_panel, width, height)) return false;
+    for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i) {
+      if (!geometry_rect_in_bounds(g->more_items[i], width, height))
+        return false;
+      GeoRect r = g->more_items[i], panel = g->more_panel;
+      if (r.x < panel.x || r.y < panel.y ||
+          r.x + r.w > panel.x + panel.w ||
+          r.y + r.h > panel.y + panel.h) return false;
+    }
+  }
+
   if (!geometry_rect_in_bounds(g->screen_language, width, height) ||
       !geometry_rect_in_bounds(g->home_logo, width, height) ||
       !geometry_rect_in_bounds(g->home_new_label, width, height) ||
@@ -548,63 +566,137 @@ static bool geometry_final_play_rects_in_bounds(const AppGeometry *geometry, int
          geometry_rect_in_bounds(geometry->progress, width, height);
 }
 
-static bool geometry_final_layout_portrait_play(int width, int height,
-                                    AppGeometry *geometry) {
-  int margin = 8;
-  int shell_w = width - margin * 2;
-  bool compact = height < 760;
-  int section_gap = compact ? 4 : 6;
-  int action_gap = compact ? 2 : 3;
-  int action_h = compact ? 28 : 32;
-  int menu_h = compact ? 28 : 34;
-  int status_h = compact ? 28 : 32;
-  int hud_item_h = compact ? 20 : 22;
-  int hud_rows = (geometry->hud_count + 2) / 3;
-  int hud_gap = 3;
-  int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
-  int palette_label_h = compact ? 14 : 16;
-  int palette_h = compact ? 30 : 34;
-  int progress_h = compact ? 18 : 22;
-  int actions_h = menu_h + action_h * 4 +
-                  section_gap * 2 + action_gap * 2;
+static void geometry_final_split(GeoRect whole, int count, int gap,
+                                 GeoRect *out) {
+  int cell_w = (whole.w - (count - 1) * gap) / count;
+  for (int i = 0; i < count; ++i)
+    out[i] = (GeoRect){whole.x + i * (cell_w + gap), whole.y,
+                       i == count - 1 ? whole.w - i * (cell_w + gap)
+                                      : cell_w, whole.h};
+}
 
-  /* The full wordmark occupies the existing header space in portrait.
-     Language switching remains available on Home and in Settings. */
-  geometry->play_language = (GeoRect){margin, margin, 1, 1};
-  geometry->play_title = (GeoRect){margin, margin + 42, shell_w, 24};
-  int board_y = geometry_final_rect_bottom(geometry->play_title) + 4;
-  int reserve = section_gap + hud_h + section_gap + actions_h + section_gap +
-                palette_label_h + 2 + palette_h + section_gap + progress_h +
-                section_gap + status_h + margin;
-  int board = height - board_y - reserve;
+static bool geometry_final_layout_portrait_play(int width, int height,
+                                               AppGeometry *geometry) {
+  const int margin = 8, gap = 4;
+  int shell_w = width - margin * 2;
+  int hud_item_h = 19, hud_gap = 3;
+  int hud_rows = (geometry->hud_count + 2) / 3;
+  int hud_h = hud_rows * hud_item_h + (hud_rows - 1) * hud_gap;
+  int toolbar_y = margin + 43, toolbar_h = 36;
+  int hud_y = toolbar_y + toolbar_h + gap;
+  int board_y = hud_y + hud_h + 5;
+  int reserve_below = 4 + 36 + 4 + 40 + 4 + 18 + 4 + 28 + margin;
+  int board = height - board_y - reserve_below;
   if (board > shell_w) board = shell_w;
   board -= board % 9;
-  if (board < 225) return false;
+  if (board < 288) return false;
+
+  geometry->play_compact = true;
+  geometry->play_language = (GeoRect){margin, margin, 1, 1};
+  geometry->play_title = (GeoRect){margin, margin + 3, shell_w, 38};
+  GeoRect toolbar = {margin, toolbar_y, shell_w, toolbar_h};
+  GeoRect top[4], edit[4];
+  geometry_final_split(toolbar, 4, gap, top);
+  geometry->play_controls[PLAY_CONTROL_MENU] = top[0];
+  geometry->play_controls[PLAY_CONTROL_PAUSE] = top[1];
+  geometry->play_controls[PLAY_CONTROL_SAVE] = top[2];
+  geometry->play_controls[PLAY_CONTROL_MORE] = top[3];
+
+  geometry_final_grid(geometry->hud, 0, geometry->hud_count, margin,
+                      hud_y, shell_w, hud_item_h, 3, hud_gap);
   geometry->board = (GeoRect){(width - board) / 2, board_y, board, board};
 
-  int y = geometry_final_rect_bottom(geometry->board) + section_gap;
-  geometry_final_grid(geometry->hud, 0, geometry->hud_count, margin, y, shell_w,
-          hud_item_h, 3, hud_gap);
-  y += hud_h + section_gap;
-  y = geometry_final_place_action_rows(
-      geometry, margin, y, shell_w, menu_h, action_h,
-      section_gap, action_gap);
-  y += section_gap;
-  geometry->palette_label = (GeoRect){margin, y, shell_w, palette_label_h};
-  y += palette_label_h + 2;
-  geometry_final_grid(geometry->palette, 0, GEOMETRY_PALETTE_COUNT, margin, y, shell_w,
-          palette_h, GEOMETRY_PALETTE_COUNT, 2);
-  y += palette_h + section_gap;
-  geometry->progress = (GeoRect){margin, y, shell_w, progress_h};
-  int status_y = height - margin - status_h;
-  if (geometry_final_rect_bottom(geometry->progress) + section_gap > status_y)
-    return false;
-  geometry->status = (GeoRect){margin, status_y, shell_w, status_h};
+  int edit_y = board_y + board + 4;
+  GeoRect edit_row = {margin, edit_y, shell_w, 36};
+  geometry_final_split(edit_row, 4, gap, edit);
+  geometry->play_controls[PLAY_CONTROL_UNDO] = edit[0];
+  geometry->play_controls[PLAY_CONTROL_REDO] = edit[1];
+  geometry->play_controls[PLAY_CONTROL_CLEAR] = edit[2];
+  geometry->play_controls[PLAY_CONTROL_NOTES] = edit[3];
+
+  int palette_y = edit_y + 36 + gap;
+  geometry->palette_label = (GeoRect){margin, palette_y - 2, shell_w, 1};
+  geometry_final_grid(geometry->palette, 0, GEOMETRY_PALETTE_COUNT,
+                      margin, palette_y, shell_w, 40,
+                      GEOMETRY_PALETTE_COUNT, 2);
+  geometry->progress = (GeoRect){margin, palette_y + 44, shell_w, 18};
+  geometry->status = (GeoRect){margin, height - margin - 28, shell_w, 28};
+  if (geometry_final_rect_bottom(geometry->progress) + 4 >
+      geometry->status.y) return false;
+
+  /* The panel geometry is calculated even when hidden, but never shares a
+     hit target with gameplay until the transient panel is open. */
+  int panel_w = shell_w - 20;
+  int panel_h = 252;
+  int panel_x = (width - panel_w) / 2;
+  int panel_y = (height - panel_h) / 2;
+  geometry->more_panel = (GeoRect){panel_x, panel_y, panel_w, panel_h};
+  int item_w = (panel_w - 24 - gap) / 2;
+  for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i) {
+    geometry->more_items[i] =
+        (GeoRect){panel_x + 12 + (i % 2) * (item_w + gap),
+                  panel_y + 64 + (i / 2) * 57,
+                  item_w, 46};
+  }
+  geometry->play_controls[PLAY_CONTROL_RESTART] =
+      geometry->more_items[MORE_RESTART];
+  geometry->play_controls[PLAY_CONTROL_HINT] =
+      geometry->more_items[MORE_HINT];
+  geometry->play_controls[PLAY_CONTROL_VERIFY] =
+      geometry->more_items[MORE_VERIFY];
+  geometry->play_controls[PLAY_CONTROL_SETTINGS] =
+      geometry->more_items[MORE_SETTINGS];
+  geometry->play_controls[PLAY_CONTROL_HELP] =
+      geometry->more_items[MORE_HELP];
+  geometry->play_controls[PLAY_CONTROL_ABOUT] =
+      geometry->more_items[MORE_ABOUT];
+
+  /* Legacy action slots stay valid for geometry consumers, but compact
+     interaction uses play_controls and never these overlapping aliases. */
+  geometry->actions[PLAY_ACTION_MENU] = toolbar;
+  geometry->actions[PLAY_ACTION_PAUSE] = edit_row;
+  geometry->actions[PLAY_ACTION_RESTART] = edit_row;
+  geometry->actions[PLAY_ACTION_HINT] = geometry->more_items[MORE_HINT];
+  geometry->actions[PLAY_ACTION_NOTES] = edit[3];
+  geometry->actions[PLAY_ACTION_VERIFY] = geometry->more_items[MORE_VERIFY];
+  geometry->actions[PLAY_ACTION_AUDIO] = (GeoRect){margin, margin + 5, 76, 34};
+  geometry->actions[PLAY_ACTION_HELP] = geometry->more_items[MORE_HELP];
   geometry->actions[PLAY_ACTION_ABOUT] = geometry->status;
-  int sidebar_y = geometry_final_rect_bottom(geometry->board) + 2;
+  int sidebar_y = board_y + board + 2;
   geometry->sidebar = (GeoRect){margin, sidebar_y, shell_w,
-                                height - margin - sidebar_y};
+                               height - margin - sidebar_y};
   return geometry_final_play_rects_in_bounds(geometry, width, height);
+}
+
+static void geometry_final_play_controls_regular(AppGeometry *geometry,
+                                                 int width, int height) {
+  (void)height;
+  const int gap = geometry->actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
+  GeoRect buttons[3];
+  geometry_final_split(geometry->actions[PLAY_ACTION_MENU], 3, gap, buttons);
+  geometry->play_controls[PLAY_CONTROL_MENU] = buttons[0];
+  geometry->play_controls[PLAY_CONTROL_PAUSE] = buttons[1];
+  geometry->play_controls[PLAY_CONTROL_SAVE] = buttons[2];
+  geometry_final_split(geometry->actions[PLAY_ACTION_PAUSE], 2, gap, buttons);
+  geometry->play_controls[PLAY_CONTROL_UNDO] = buttons[0];
+  geometry->play_controls[PLAY_CONTROL_REDO] = buttons[1];
+  geometry_final_split(geometry->actions[PLAY_ACTION_RESTART], 2, gap, buttons);
+  geometry->play_controls[PLAY_CONTROL_CLEAR] = buttons[0];
+  geometry->play_controls[PLAY_CONTROL_RESTART] = buttons[1];
+  geometry->play_controls[PLAY_CONTROL_NOTES] =
+      geometry->actions[PLAY_ACTION_NOTES];
+  geometry->play_controls[PLAY_CONTROL_HINT] =
+      geometry->actions[PLAY_ACTION_HINT];
+  geometry->play_controls[PLAY_CONTROL_VERIFY] =
+      geometry->actions[PLAY_ACTION_VERIFY];
+  int speaker_w = width < 640 ? 28 :
+      geometry->actions[PLAY_ACTION_AUDIO].h > 40 ? 40 :
+      geometry->actions[PLAY_ACTION_AUDIO].h;
+  GeoRect settings = geometry->actions[PLAY_ACTION_AUDIO];
+  settings.w -= speaker_w + 4;
+  geometry->play_controls[PLAY_CONTROL_SETTINGS] = settings;
+  geometry->play_controls[PLAY_CONTROL_HELP] =
+      geometry->actions[PLAY_ACTION_HELP];
 }
 
 static bool geometry_final_layout_desktop_play(int width, int height,
@@ -727,6 +819,7 @@ bool geometry_compute(int width, int height, GeometryMode mode,
       if (geometry->play_title.h > 1) --geometry->play_title.h;
     }
     if (!fitted) return false;
+    geometry_final_play_controls_regular(geometry, width, height);
   }
 
   geometry_final_reserve_audio(&geometry->screen_language, width);
@@ -786,15 +879,13 @@ GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
   if (!geometry || width <= 0) return empty;
   if (width >= 640) return geometry->play_title;
 
-  int logo_width = geometry->play_title.w / 2;
-  if (logo_width > 188) logo_width = 188;
-  int top = geometry->play_title.y - 36;
-  int bottom = geometry->board.y - 8;
-  int logo_height = bottom - top;
-  if (logo_width <= 0 || logo_height <= 0) return empty;
+  int logo_width = geometry->play_title.w - 100;
+  if (logo_width > 200) logo_width = 200;
+  if (logo_width < 150) logo_width = 150;
   return (GeoRect){geometry->play_title.x + geometry->play_title.w -
                        logo_width - 8,
-                   top, logo_width, logo_height};
+                   geometry->play_title.y, logo_width,
+                   geometry->play_title.h};
 }
 
 GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width) {
