@@ -2099,7 +2099,9 @@ int main(int argc, char **argv) {
               }
               focus_rect=layout.page_next;
             }
-            app_render_ui(&g,&game,&ui);
+            /* Mirror normal gameplay's render-and-present path instead of
+               inspecting an unpresented transient frame on some SDL backends. */
+            app_frame(&g,&game,&ui);
             char filename[192],path[PATH_MAX];
             snprintf(filename,sizeof(filename),
                      "audit-%dx%d-%s-%s-%s.bmp",g.width,g.height,
