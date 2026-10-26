@@ -276,7 +276,7 @@ static bool restart_current_session_confirmed(Persistence *p,
 
 typedef struct {
   Gfx *gfx;
-  const Game *game;
+  Game *game;
   UI *ui;
   unsigned rendered_attempt;
 } GenerationUiContext;

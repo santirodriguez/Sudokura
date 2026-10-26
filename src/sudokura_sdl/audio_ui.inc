@@ -153,14 +153,14 @@ static void app_shutdown(Gfx *gfx) {
   app_shutdown_base(gfx);
 }
 
-static void app_tick(Gfx *gfx, const Game *game, UI *ui) {
+static void app_tick(Gfx *gfx, Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_game = game;
   audio_ui = ui;
   audio_sync_ui(game, ui);
 }
 
-static void app_frame(Gfx *gfx, const Game *game, UI *ui) {
+static void app_frame(Gfx *gfx, Game *game, UI *ui) {
   app_tick(gfx,game,ui);
   app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);
