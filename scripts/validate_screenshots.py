@@ -103,6 +103,12 @@ for r in audit:
             assert int(r["scroll_max"])>0,(r["file"],"compact Help must exercise overflow")
 for r in rows:
     assert r["file"] in by_name,r["file"]
+    # Bind every pixel check to this manifest row; stale focus coordinates
+    # from the preceding frame can inspect the background instead of a label.
+    w,h=(int(r[k]) for k in ("width","height"))
+    fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
+    assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
+    assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     audio_visible=int(r["audio_visible"])
     audio_popup=int(r["audio_popup"])
     audio_pressed=int(r["audio_pressed"])
@@ -148,10 +154,6 @@ for r in rows:
     if r["state"]=="dialog-prep":
         assert audio_popup==0,(r["file"],"native dialog preparation retained audio popup")
         assert audio_pressed==0,(r["file"],"native dialog preparation retained audio press")
-    w,h=int(r["width"]),int(r["height"])
-    fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
-    assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
-    assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     assert r["focus"]!="none",r["file"]
     if r["state"] in {"games-active","games-unavailable","games-finished"}:
         # Exclude the focus outline; ensure selected-row text actually rendered.

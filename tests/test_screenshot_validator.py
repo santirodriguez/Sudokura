@@ -43,6 +43,20 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
 
     check(original, True, "real matrix")
 
+    # Every frame must validate against its own focus rectangle, regardless
+    # of manifest ordering (including More and Saved Games paging).
+    check(list(reversed(original)), True, "manifest row order independence")
+
+    rows = [dict(row) for row in original]
+    more = next(row for row in rows if row["state"] == "more")
+    more["fx"],more["fy"],more["fw"],more["fh"]="0","0","80","36"
+    check(rows, False, "reject More focus outside the rendered panel")
+
+    rows = [dict(row) for row in original]
+    pager = next(row for row in rows if row["state"] == "games-paging")
+    pager["fx"],pager["fy"],pager["fw"],pager["fh"]="0","0","80","36"
+    check(rows, False, "reject paging focus outside the rendered controls")
+
     rows = [dict(row) for row in original if row["state"] != "more"]
     check(rows, False, "reject missing compact More audit")
 
