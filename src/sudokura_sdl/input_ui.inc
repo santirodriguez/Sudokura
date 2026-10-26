@@ -491,7 +491,12 @@ static bool ui_pointer_prepare(SDL_Event *event) {
     ui_pointer_cancel();
     if (event->type == SDL_WINDOWEVENT) {
       settings_slider_drag = SETTINGS_DRAG_NONE;
-      ui_more_close(audio_ui);
+      if (event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+          event->window.event == SDL_WINDOWEVENT_RESIZED ||
+          event->window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+          event->window.event == SDL_WINDOWEVENT_HIDDEN ||
+          event->window.event == SDL_WINDOWEVENT_MINIMIZED)
+        ui_more_close(audio_ui);
     }
   }
   if (event->type == SDL_MOUSEMOTION) {
@@ -576,6 +581,7 @@ static bool ui_handle_more_panel_event(SDL_Event *event) {
     return true;
   }
   return event->type == SDL_MOUSEBUTTONDOWN ||
+         event->type == SDL_MOUSEBUTTONUP ||
          event->type == SDL_MOUSEWHEEL ||
          event->type == SDL_MOUSEMOTION;
 }

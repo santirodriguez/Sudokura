@@ -1259,7 +1259,10 @@ static void app_render_startup_splash(Gfx *gfx, Language language) {
 static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   UI saved_ui = *ui;
   GamesBrowser saved_browser = games_browser;
+  const Gfx *saved_browser_window = games_browser_window;
   bool saved_settings = settings_open, saved_popup = audio_control_popup_open;
+  bool saved_more = ui_more_open, saved_more_owner = ui_more_modal_owned;
+  int saved_more_focus = ui_more_focus;
   bool passed = false;
   SDL_Event event = {0};
   settings_open = false;
@@ -1378,6 +1381,84 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   PRESS_AT(row);
   games_browser.scanning = true;
   RELEASE_OK(false);
+
+  /* Page controls must bind the current selected attempt, not a reused row. */
+  GamesBrowserLayout pages = games_browser_layout(gfx);
+  if (pages.visible <= 0 || pages.visible >= 63) goto done;
+  GamesRow page_rows[64] = {0};
+  games_browser = (GamesBrowser){0};
+  games_browser.rows = page_rows;
+  games_browser.count = (size_t)pages.visible + 1u;
+  games_browser_window = gfx;
+  for (size_t i = 0; i < games_browser.count; ++i)
+    page_rows[i].entry.id = (GameAttemptId){1u, (uint64_t)i + 100u};
+  PRESS_AT(pages.page_next);
+  RELEASE_OK(true);
+  PRESS_AT(pages.page_next);
+  page_rows[0].entry.id.low += 10000u;
+  RELEASE_OK(false);
+  PRESS_AT(pages.page_next);
+  games_browser.detail_open = true;
+  RELEASE_OK(false);
+  games_browser.detail_open = false;
+  games_browser.scanning = true;
+  if (games_browser_focus_enabled(6)) goto done;
+  games_browser.scanning = false;
+
+  /* Exercise More through the real routing gate without invoking dialogs. */
+  if (gfx->width < 640) {
+    ui->screen = SCR_PLAY;
+    ui->result = RES_NONE;
+    ui->pause_reasons = 0;
+    ui_more_open_panel(ui);
+    if (!ui_more_open || !ui_more_modal_owned ||
+        (ui->pause_reasons & PAUSE_MODAL) == 0) goto done;
+    if (!get_geometry(gfx,ui,&geo)) goto done;
+    SDL_Rect restart = sdl_rect(geo.more_items[MORE_RESTART]);
+    SDL_Rect hint = sdl_rect(geo.more_items[MORE_HINT]);
+    PRESS_AT(restart);
+    event.button.x = hint.x + hint.w / 2;
+    event.button.y = hint.y + hint.h / 2;
+    RELEASE_OK(false);
+    if (!ui_more_open) goto done;
+    PRESS_AT(restart);
+    RELEASE_OK(true);
+    SDL_Event key = {0};
+    key.type = SDL_KEYDOWN;
+    key.key.keysym.sym = SDLK_TAB;
+    if (ui_prepare_event(&key) || ui_more_focus != 1) goto done;
+    key.key.keysym.mod = KMOD_SHIFT;
+    if (ui_prepare_event(&key) || ui_more_focus != 0) goto done;
+    key.key.keysym.sym = SDLK_ESCAPE;
+    key.key.keysym.mod = KMOD_NONE;
+    if (ui_prepare_event(&key) || ui_more_open ||
+        (ui->pause_reasons & PAUSE_MODAL)) goto done;
+    if (play_keyboard_focus != PLAY_FOCUS_MORE) goto done;
+
+    ui->pause_reasons = PAUSE_MANUAL | PAUSE_MODAL;
+    ui_more_open_panel(ui);
+    if (!ui_more_open || ui_more_modal_owned) goto done;
+    ui_more_close(ui);
+    if (ui->pause_reasons != (PAUSE_MANUAL | PAUSE_MODAL)) goto done;
+    ui->pause_reasons = PAUSE_FOCUS;
+    ui_more_open_panel(ui);
+    if (!ui_more_modal_owned ||
+        ui->pause_reasons != (PAUSE_FOCUS | PAUSE_MODAL)) goto done;
+    ui_more_close(ui);
+    if (ui->pause_reasons != PAUSE_FOCUS) goto done;
+
+    ui->pause_reasons = 0;
+    ui_more_open_panel(ui);
+    if (!ui_more_open) goto done;
+    PRESS_AT(restart);
+    SDL_Event window = {0};
+    window.type = SDL_WINDOWEVENT;
+    window.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+    (void)ui_prepare_event(&window);
+    if (ui_more_open || (ui->pause_reasons & PAUSE_MODAL)) goto done;
+    RELEASE_OK(false);
+  }
+
   passed = true;
 done:
   ui_pointer_cancel();
@@ -1385,8 +1466,12 @@ done:
   audio_control_pressed = false;
   *ui = saved_ui;
   games_browser = saved_browser;
+  games_browser_window = saved_browser_window;
   settings_open = saved_settings;
   audio_control_popup_open = saved_popup;
+  ui_more_open = saved_more;
+  ui_more_modal_owned = saved_more_owner;
+  ui_more_focus = saved_more_focus;
   ui_pointer_reconcile();
 #undef PRESS_AT
 #undef RELEASE_OK

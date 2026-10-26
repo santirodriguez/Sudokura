@@ -136,36 +136,66 @@ int main(void) {
           assert(fits(font, tr((Language)language, difficulties[i]), tier.control,
                       10, g.home_difficulty[i].w, g.home_difficulty[i].h));
         }
-        for (int i = 0; i < PLAY_ACTION_COUNT; ++i) {
-          if (i == PLAY_ACTION_ABOUT) continue;
-          if (i == PLAY_ACTION_AUDIO) continue;
-          assert(fits(font, tr((Language)language, actions[i]), tier.control, 10,
-                      g.actions[i].w, g.actions[i].h));
+        if (g.play_compact) {
+          const PlayControl controls[] = {
+              PLAY_CONTROL_MENU, PLAY_CONTROL_PAUSE, PLAY_CONTROL_SAVE,
+              PLAY_CONTROL_MORE, PLAY_CONTROL_UNDO, PLAY_CONTROL_REDO,
+              PLAY_CONTROL_CLEAR, PLAY_CONTROL_NOTES,
+          };
+          const TextKey labels[] = {
+              T_MENU, T_PAUSE, T_SAVE, T_MORE, T_UNDO, T_REDO,
+              T_CLEAR, T_NOTES,
+          };
+          for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); ++i) {
+            GeoRect rect = g.play_controls[controls[i]];
+            assert_rect(rect, width, height);
+            assert(fits(font, tr((Language)language, labels[i]),
+                        tier.control, 10, rect.w, rect.h));
+          }
+          const TextKey more_labels[GEOMETRY_MORE_COUNT] = {
+              T_RESTART, T_HINT, T_VERIFY, T_SETTINGS, T_HELP, T_ABOUT,
+          };
+          assert_rect(g.more_panel, width, height);
+          assert(fits(font, tr((Language)language, T_MORE), 24, 13,
+                      g.more_panel.w - 24, 34));
+          for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i) {
+            GeoRect rect = g.more_items[i];
+            assert_rect(rect, width, height);
+            assert(fits(font, tr((Language)language, more_labels[i]),
+                        17, 10, rect.w, rect.h));
+          }
+        } else {
+          for (int i = 0; i < PLAY_ACTION_COUNT; ++i) {
+            if (i == PLAY_ACTION_ABOUT || i == PLAY_ACTION_AUDIO) continue;
+            assert(fits(font, tr((Language)language, actions[i]),
+                        tier.control, 10,
+                        g.actions[i].w, g.actions[i].h));
+          }
+          AudioControlGeometry play_audio =
+              geometry_audio_control(width, height, &g, true);
+          int settings_width =
+              play_audio.button.x - 4 - g.actions[PLAY_ACTION_AUDIO].x;
+          assert(fits(font, tr((Language)language, T_SETTINGS),
+                      tier.control, 10,
+                      settings_width, g.actions[PLAY_ACTION_AUDIO].h));
+          int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
+          int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap * 2) / 3;
+          assert(fits(font, tr((Language)language, T_MENU), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_MENU].h));
+          assert(fits(font, tr((Language)language, T_PAUSE), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_MENU].h));
+          assert(fits(font, tr((Language)language, T_SAVE), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_MENU].h));
+          split_w = (g.actions[PLAY_ACTION_PAUSE].w - split_gap) / 2;
+          assert(fits(font, tr((Language)language, T_UNDO), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_PAUSE].h));
+          assert(fits(font, tr((Language)language, T_REDO), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_PAUSE].h));
+          assert(fits(font, tr((Language)language, T_RESTART), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_RESTART].h));
+          assert(fits(font, tr((Language)language, T_CLEAR), tier.control, 9,
+                      split_w, g.actions[PLAY_ACTION_RESTART].h));
         }
-        AudioControlGeometry play_audio =
-            geometry_audio_control(width, height, &g, true);
-        int settings_width =
-            play_audio.button.x - 4 - g.actions[PLAY_ACTION_AUDIO].x;
-        assert(fits(font, tr((Language)language, T_SETTINGS), tier.control, 10,
-                    settings_width, g.actions[PLAY_ACTION_AUDIO].h));
-
-        int split_gap = g.actions[PLAY_ACTION_MENU].w >= 180 ? 6 : 4;
-        int split_w = (g.actions[PLAY_ACTION_MENU].w - split_gap * 2) / 3;
-        assert(fits(font, tr((Language)language, T_MENU), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_MENU].h));
-        assert(fits(font, tr((Language)language, T_PAUSE), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_MENU].h));
-        assert(fits(font, tr((Language)language, T_SAVE), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_MENU].h));
-        split_w = (g.actions[PLAY_ACTION_PAUSE].w - split_gap) / 2;
-        assert(fits(font, tr((Language)language, T_UNDO), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_PAUSE].h));
-        assert(fits(font, tr((Language)language, T_REDO), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_PAUSE].h));
-        assert(fits(font, tr((Language)language, T_RESTART), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_RESTART].h));
-        assert(fits(font, tr((Language)language, T_CLEAR), tier.control, 9,
-                    split_w, g.actions[PLAY_ACTION_RESTART].h));
 
         /* A save failure replaces the status row. Keep both the warning and
            its recovery action renderable at every supported viewport. */
