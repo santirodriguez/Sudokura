@@ -3,7 +3,7 @@ static SDL_Rect pressed_paint_rect(SDL_Rect r,bool pressed){if(pressed&&r.h>4){r
 static void render_pause_overlay(Gfx*g,const UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();draw_rect(g->ren,0,0,g->width,g->height,th.bg);AppGeometry a;if(!get_geometry(g,ui,&a))return;GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
   draw_wordmark(g,sdl_rect(a.pause_logo));(void)draw_fitted_text(g,tr(ui->language,T_PAUSED),th.title,sdl_rect(a.pause_heading),fonts.heading,16);
-  int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=point_in(resume,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),menu_pressed=point_in(menu,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
+  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=ui_pointer_pressed(resume),menu_pressed=ui_pointer_pressed(menu);SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
 }
 
 static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
@@ -173,11 +173,9 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
     (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,9);
   }
 
-  int mx=0,my=0;
-  Uint32 mouse=SDL_GetMouseState(&mx,&my);
   SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
-  bool p1=point_in(b1,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));
-  bool p2=point_in(b2,mx,my)&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));
+  bool p1=ui_pointer_pressed(b1);
+  bool p2=ui_pointer_pressed(b2);
   SDL_Rect b1p=pressed_paint_rect(b1,p1),b2p=pressed_paint_rect(b2,p2);
   draw_round_rect(g->ren,b1p,7,p1?th.sel:th.title);
   TextKey primary=ui->result==RES_WIN

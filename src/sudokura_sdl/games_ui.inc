@@ -86,6 +86,11 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
   return layout;
 }
 
+static SDL_Rect games_browser_row_rect(GamesBrowserLayout layout, int row) {
+  return (SDL_Rect){layout.list.x, layout.list.y + row * layout.row_height,
+                     layout.list.w, layout.row_height};
+}
+
 static bool games_browser_push(const GameLibraryEntry *entry, bool hot) {
   if (games_browser.count == games_browser.capacity) {
     if (games_browser.capacity > SIZE_MAX / (2u * sizeof(GamesRow)))
@@ -1295,12 +1300,12 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   for(size_t index=games_browser.scroll;index<last;++index) {
     const GamesRow *row=&games_browser.rows[index];
     const GameLibraryEntry *entry=&row->entry;
-    SDL_Rect rect={lay.list.x+7,
-                   lay.list.y+(int)(index-games_browser.scroll)*lay.row_height+5,
-                   lay.list.w-14,lay.row_height-7};
+    SDL_Rect hit = games_browser_row_rect(lay, (int)(index-games_browser.scroll));
+    SDL_Rect rect={hit.x+7,hit.y+5,hit.w-14,hit.h-7};
     bool selected=index==games_browser.selected;
+    bool pressed=ui_pointer_pressed(hit);
     draw_round_rect(gfx->ren,rect,8,
-                    selected?theme.hover:theme.palette_bg);
+                    pressed?theme.sel:selected?theme.hover:theme.palette_bg);
     if(selected)
       draw_round_rect(gfx->ren,(SDL_Rect){rect.x,rect.y,4,rect.h},
                       2,theme.title);

@@ -398,6 +398,8 @@ typedef struct {
 } HomeDailyScan;
 static HomeDailyScan home_daily_scan;
 
+static bool ui_pointer_busy(void) { return home_daily_scan.active; }
+
 static void home_daily_cancel(void) {
   game_library_scan_close(&home_daily_scan.cursor);
   memset(&home_daily_scan, 0, sizeof(home_daily_scan));
@@ -1202,6 +1204,144 @@ static void app_render_startup_splash(Gfx *gfx, Language language) {
   gfx->dirty=true;
 }
 
+/* Exercise the actual SDL routing gate, including headless capture failure. */
+static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
+  UI saved_ui = *ui;
+  GamesBrowser saved_browser = games_browser;
+  bool saved_settings = settings_open, saved_popup = audio_control_popup_open;
+  bool passed = false;
+  SDL_Event event = {0};
+  settings_open = false;
+  audio_control_popup_open = false;
+  ui->screen = SCR_TITLE;
+  ui->pause_reasons = 0;
+  ui->generating = false;
+  ui->hint_preview_active = false;
+  ui->has_session = true;
+  AppGeometry geo;
+  if (!get_geometry(gfx, ui, &geo)) goto done;
+  SDL_Rect first = sdl_rect(geo.home_primary[0]);
+  SDL_Rect second = sdl_rect(geo.home_primary[1]);
+#define PRESS_AT(rect) do { \
+  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN; \
+  event.button.button = SDL_BUTTON_LEFT; \
+  event.button.x = (rect).x + (rect).w / 2; \
+  event.button.y = (rect).y + (rect).h / 2; \
+  if (ui_pointer_prepare(&event) || !ui_pointer_capture.active) goto done; \
+} while (0)
+#define RELEASE_OK(expected) do { \
+  event.type = SDL_MOUSEBUTTONUP; \
+  if (ui_pointer_prepare(&event) != (expected) || ui_pointer_capture.active) goto done; \
+} while (0)
+  PRESS_AT(first);
+  RELEASE_OK(true);
+  RELEASE_OK(false);
+  PRESS_AT(first);
+  event.button.x = second.x + second.w / 2;
+  event.button.y = second.y + second.h / 2;
+  RELEASE_OK(false);
+  PRESS_AT(first);
+  SDL_Event motion = {0};
+  motion.type = SDL_MOUSEMOTION;
+  motion.motion.state = SDL_BUTTON_LMASK;
+  motion.motion.x = -10; motion.motion.y = -10;
+  (void)ui_pointer_prepare(&motion);
+  if (ui_pointer_capture.inside) goto done;
+  motion.motion.x = event.button.x; motion.motion.y = event.button.y;
+  (void)ui_pointer_prepare(&motion);
+  if (!ui_pointer_capture.inside) goto done;
+  RELEASE_OK(true);
+  const Uint8 cancellations[] = {SDL_WINDOWEVENT_FOCUS_LOST,
+      SDL_WINDOWEVENT_HIDDEN, SDL_WINDOWEVENT_MINIMIZED,
+      SDL_WINDOWEVENT_SIZE_CHANGED, SDL_WINDOWEVENT_LEAVE};
+  for (size_t i = 0; i < sizeof(cancellations); ++i) {
+    PRESS_AT(first);
+    SDL_Event window = {0};
+    window.type = SDL_WINDOWEVENT; window.window.event = cancellations[i];
+    (void)ui_pointer_prepare(&window);
+    RELEASE_OK(false);
+  }
+  PRESS_AT(first);
+  ui->screen = SCR_HELP;
+  RELEASE_OK(false);
+  ui->screen = SCR_TITLE;
+  PRESS_AT(first);
+  settings_open = true;
+  RELEASE_OK(false);
+  settings_open = false;
+  ui->screen = SCR_PLAY;
+  ui->session_open = true;
+  ui->result = RES_NONE;
+  ui->undo_count = 1;
+  SDL_Rect undo = play_focus_rect(gfx, ui, PLAY_FOCUS_UNDO);
+  PRESS_AT(undo);
+  ui->undo_count = 0;
+  ui_pointer_reconcile();
+  ui->undo_count = 1;
+  RELEASE_OK(false);
+  PRESS_AT(undo);
+  ui->result = RES_WIN;
+  RELEASE_OK(false);
+  ui->result = RES_NONE;
+  Layout board_layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.button = SDL_BUTTON_LEFT;
+  event.button.x = board_layout.board.x + board_layout.board.w / 2;
+  event.button.y = board_layout.board.y + board_layout.board.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  RELEASE_OK(false);
+  settings_open = true;
+  SettingsPanelLayout settings = ui_settings_panel_layout(gfx);
+  event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.x = settings.music_track.x + settings.music_track.w / 2;
+  event.button.y = settings.music_track.y + settings.music_track.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  settings_slider_drag = SETTINGS_DRAG_MUSIC;
+  event.type = SDL_MOUSEBUTTONUP;
+  if (!ui_pointer_prepare(&event)) goto done;
+  settings_slider_drag = SETTINGS_DRAG_NONE;
+  settings_open = false;
+  ui_pointer_reconcile();
+  AudioControlGeometry speaker = ui_audio_control_geometry(gfx, ui);
+  event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.x = speaker.button.x + speaker.button.w / 2;
+  event.button.y = speaker.button.y + speaker.button.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  audio_control_pressed = true;
+  event.type = SDL_MOUSEBUTTONUP;
+  if (!ui_pointer_prepare(&event)) goto done;
+  audio_control_pressed = false;
+  /* Same rectangle, different durable record identity must not select it. */
+  GamesRow rows[2] = {0};
+  rows[0].entry.id = (GameAttemptId){1, 11};
+  rows[1].entry.id = (GameAttemptId){1, 12};
+  games_browser = (GamesBrowser){0};
+  games_browser.rows = rows;
+  games_browser.count = 2;
+  ui->screen = APP_SCREEN_GAMES;
+  GamesBrowserLayout layout = games_browser_layout(gfx);
+  SDL_Rect row = {layout.list.x, layout.list.y, layout.list.w, layout.row_height};
+  PRESS_AT(row);
+  GamesRow swap = rows[0]; rows[0] = rows[1]; rows[1] = swap;
+  RELEASE_OK(false);
+  PRESS_AT(row);
+  games_browser.scanning = true;
+  RELEASE_OK(false);
+  passed = true;
+done:
+  ui_pointer_cancel();
+  settings_slider_drag = SETTINGS_DRAG_NONE;
+  audio_control_pressed = false;
+  *ui = saved_ui;
+  games_browser = saved_browser;
+  settings_open = saved_settings;
+  audio_control_popup_open = saved_popup;
+  ui_pointer_reconcile();
+#undef PRESS_AT
+#undef RELEASE_OK
+  return passed;
+}
+
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
@@ -1263,6 +1403,11 @@ int main(int argc, char **argv) {
       audio_gfx = &g;
       audio_game = &game;
       audio_ui = &ui;
+      if (!ui_pointer_smoke_check(&g, &ui)) {
+        fprintf(stderr, "pointer routing/cancellation regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
       ui.screen = APP_SCREEN_SETTINGS;
       ui.prev_screen = SCR_PLAY;
       ui.pause_reasons = PAUSE_MODAL;
@@ -1347,6 +1492,13 @@ int main(int argc, char **argv) {
           settings_layout.auto_notes.x + settings_layout.auto_notes.w / 2;
       settings_event.button.y =
           settings_layout.auto_notes.y + settings_layout.auto_notes.h / 2;
+      if (ui_prepare_event(&settings_event) || !ui.auto_remove_peer_notes) {
+        fprintf(stderr, "settings must not activate on pointer down\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      settings_event.type = SDL_MOUSEBUTTONUP;
+      settings_event.button.type = SDL_MOUSEBUTTONUP;
       if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
           settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
         fprintf(stderr, "settings auto-note pointer regression\n");
@@ -1830,6 +1982,7 @@ int main(int argc, char **argv) {
   SDL_Event e;
   while (running) {
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
+    ui_pointer_reconcile();
     int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
                              games_browser.scanning) || home_daily_scan.active)
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
@@ -1841,19 +1994,21 @@ int main(int argc, char **argv) {
         have_event;have_event=ui_poll_event(&e)){
       g.dirty=true;
       if (e.type != SDL_QUIT &&
-          settle_terminal(&persistence, &game, &ui))
+          settle_terminal(&persistence, &game, &ui)) {
+        ui_pointer_cancel();
         continue;
+      }
       if (e.type == SDL_QUIT) {
         if (request_exit(&persistence, &game, &ui, &g))
           running = false;
         continue;
       }
       if (home_daily_scan.active &&
-          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN ||
+          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONUP ||
            e.type == SDL_MOUSEWHEEL)) {
         if ((e.type == SDL_KEYDOWN &&
              e.key.keysym.sym == SDLK_ESCAPE) ||
-            (e.type == SDL_MOUSEBUTTONDOWN &&
+            (e.type == SDL_MOUSEBUTTONUP &&
              e.button.button == SDL_BUTTON_LEFT))
           home_daily_cancel();
         continue;
@@ -2187,15 +2342,11 @@ int main(int argc, char **argv) {
         continue;
       }
 
-      if (e.type == SDL_MOUSEBUTTONDOWN) {
+      if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
         int x = e.button.x, y = e.button.y;
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
-        if (!left && !right) continue;
-        if (left && (ui.screen == SCR_TITLE || ui.screen == SCR_PLAY) &&
-            !settings_open && !audio_control_popup_open &&
-            !hint_panel_interactive(&ui))
-          ui_feedback_pointer_press(&ui, x, y);
+        if ((!left && !right) || (e.type == SDL_MOUSEBUTTONUP && !left)) continue;
         if (ui.screen == APP_SCREEN_GAMES) {
           if (left)
             (void)games_browser_click(&persistence, &game, &ui, &g, x, y);
@@ -2382,6 +2533,7 @@ int main(int argc, char **argv) {
         int cell = side / 9;
         if (side <= 0 || cell <= 0) continue;
         if (x >= gx && x < gx + side && y >= gy && y < gy + side) {
+          if (e.type != SDL_MOUSEBUTTONDOWN) continue;
           play_keyboard_focus=-1;
           int c = (x - gx) / cell, r = (y - gy) / cell;
           ui.sel_r = r;

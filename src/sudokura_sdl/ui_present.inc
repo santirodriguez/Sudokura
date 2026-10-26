@@ -3,6 +3,16 @@
    explicit render route; the former polish/rc2 layers are no longer composed. */
 /* Presentation helpers used by the single explicit SDL render pipeline. */
 #include "button_feedback.h"
+#include "pointer_capture.h"
+
+static PointerCapture ui_pointer_capture;
+
+static bool ui_pointer_pressed(SDL_Rect rect) {
+  PointerTarget held = ui_pointer_capture.target;
+  return ui_pointer_capture.active && ui_pointer_capture.inside &&
+         held.x == rect.x && held.y == rect.y &&
+         held.w == rect.w && held.h == rect.h;
+}
 
 static SDL_Texture *app_icon_texture = NULL;
 static ButtonFeedback ui_button_feedback = {0};
@@ -37,6 +47,7 @@ static bool ui_feedback_finish(const UI *ui) {
 static SDL_Rect polish_button_face(Gfx *gfx, Theme theme, SDL_Rect rect,
                                    SDL_Color background, bool pressed,
                                    bool disabled) {
+  pressed = ui_pointer_pressed(rect);
   SDL_Rect face = rect;
   if (!disabled && !pressed && rect.h > 5) {
     SDL_Rect shadow = rect;
@@ -73,6 +84,7 @@ static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
   bool latched = button_feedback_matches(
       &ui_button_feedback, ui_feedback_render_screen, SDL_GetTicks64(),
       rect.x, rect.y, rect.w, rect.h);
+  pressed = ui_pointer_pressed(rect);
   bool down = pressed || latched;
 
   /* A light rim defines the hit target without bringing back heavy shadows.
