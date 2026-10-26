@@ -2348,7 +2348,9 @@ int main(int argc, char **argv) {
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
         int r = ui.sel_r, c = ui.sel_c;
-        InputPlayShortcut play_shortcut = input_play_shortcut(k, mod);
+        InputPlayShortcut play_shortcut = g.width < 640 &&
+                hint_panel_interactive(&ui) ? INPUT_PLAY_NONE :
+                input_play_shortcut(k, mod);
         if (play_shortcut == INPUT_PLAY_UNDO ||
             play_shortcut == INPUT_PLAY_REDO) {
           AppActionKind kind = play_shortcut == INPUT_PLAY_REDO
@@ -2395,6 +2397,7 @@ int main(int argc, char **argv) {
             continue;
           }
         }
+        if (g.width < 640 && hint_panel_interactive(&ui)) continue;
         if (k == SDLK_TAB) {
           play_move_focus(&game, &ui, shifted ? -1 : 1);
           continue;
@@ -2522,6 +2525,9 @@ int main(int argc, char **argv) {
           if (hint_panel_blocks_point(&g, &ui, x, y))
             continue;
         }
+        /* In compact mode the hint card covers the board. Neither primary
+           nor right-click may edit an obscured cell behind that card. */
+        if (hint_panel_blocks_point(&g, &ui, x, y)) continue;
         if (point_in(language_rect(&g, &ui), x, y)) {
           if (!left) continue;
           for (int language = 0; language < LANG_COUNT; ++language) {

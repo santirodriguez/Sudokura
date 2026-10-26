@@ -945,3 +945,46 @@ AudioControlGeometry geometry_audio_control(int width, int height,
                      popup_w - inset * 2, row_h};
   return out;
 }
+
+
+/* A narrow screen cannot fit the hint's text/actions into the bottom sidebar.
+   Reuse the same full-screen overlay geometry for drawing and hit-testing. */
+bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
+                         GeometryHintPanel *out) {
+  if (!geometry || !out || width <= 0 || height <= 0) return false;
+  memset(out, 0, sizeof(*out));
+  GeoRect card;
+  if (geometry->play_compact) {
+    int card_h = height - 80;
+    if (card_h > 430) card_h = 430;
+    card = (GeoRect){16, (height - card_h) / 2, width - 32, card_h};
+  } else {
+    GeoRect side = geometry->sidebar;
+    int margin = side.w < 240 ? 7 : 10;
+    card = (GeoRect){side.x + margin, side.y + margin,
+                     side.w - margin * 2, side.h - margin * 2};
+  }
+  if (!geometry_rect_in_bounds(card, width, height)) return false;
+  out->card = card;
+  int x = card.x + 10, item_w = card.w - 20, y = card.y + 10;
+  out->title = (GeoRect){x, y, item_w, 32};
+  int button_h = card.h < 430 ? 31 : 36, gap = 6;
+  out->cancel = (GeoRect){x, card.y + card.h - button_h - 10,
+                           item_w, button_h};
+  out->reveal = (GeoRect){x, out->cancel.y - button_h - gap,
+                           item_w, button_h};
+  out->verify = (GeoRect){x, out->reveal.y - button_h - gap,
+                           item_w, button_h};
+  out->primary = (GeoRect){x, out->verify.y - button_h - gap,
+                            item_w, button_h};
+  out->body = (GeoRect){x, out->title.y + out->title.h + 4,
+                         item_w,
+                         out->primary.y - (out->title.y + out->title.h + 8)};
+  return out->body.h > 8 && out->body.w > 8 &&
+         geometry_rect_in_bounds(out->title, width, height) &&
+         geometry_rect_in_bounds(out->body, width, height) &&
+         geometry_rect_in_bounds(out->primary, width, height) &&
+         geometry_rect_in_bounds(out->verify, width, height) &&
+         geometry_rect_in_bounds(out->reveal, width, height) &&
+         geometry_rect_in_bounds(out->cancel, width, height);
+}

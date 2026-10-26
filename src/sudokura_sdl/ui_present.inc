@@ -1065,27 +1065,16 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
   memset(&panel, 0, sizeof(panel));
   if (!gfx || !ui) return panel;
   Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
-  SDL_Rect side = layout.side;
-  int margin = side.w < 240 ? 7 : 10;
-  panel.card = (SDL_Rect){side.x + margin, side.y + margin,
-                          side.w - margin * 2, side.h - margin * 2};
-  int x = panel.card.x + 10;
-  int width = panel.card.w - 20;
-  int y = panel.card.y + 10;
-  panel.title = (SDL_Rect){x, y, width, 32};
-  int button_h = panel.card.h < 430 ? 31 : 36;
-  int gap = 6;
-  panel.cancel = (SDL_Rect){x, panel.card.y + panel.card.h - button_h - 10,
-                            width, button_h};
-  panel.reveal = (SDL_Rect){x, panel.cancel.y - button_h - gap,
-                            width, button_h};
-  panel.verify = (SDL_Rect){x, panel.reveal.y - button_h - gap,
-                            width, button_h};
-  panel.primary = (SDL_Rect){x, panel.verify.y - button_h - gap,
-                             width, button_h};
-  panel.body = (SDL_Rect){x, panel.title.y + panel.title.h + 4, width,
-                          panel.primary.y -
-                              (panel.title.y + panel.title.h + 8)};
+  GeometryHintPanel geo;
+  if (!geometry_hint_panel(&layout.model, gfx->width, gfx->height, &geo))
+    return panel;
+  panel.card = sdl_rect(geo.card);
+  panel.title = sdl_rect(geo.title);
+  panel.body = sdl_rect(geo.body);
+  panel.primary = sdl_rect(geo.primary);
+  panel.verify = sdl_rect(geo.verify);
+  panel.reveal = sdl_rect(geo.reveal);
+  panel.cancel = sdl_rect(geo.cancel);
   return panel;
 }
 
@@ -1125,8 +1114,11 @@ static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
 }
 
 static bool hint_panel_blocks_point(const Gfx *gfx, const UI *ui, int x, int y) {
+  if (!hint_panel_interactive(ui) || !gfx) return false;
+  if (gfx->width < 640)
+    return x >= 0 && y >= 0 && x < gfx->width && y < gfx->height;
   HintPanelLayout panel = hint_panel_layout(gfx, ui);
-  return hint_panel_interactive(ui) && point_in(panel.card, x, y);
+  return point_in(panel.card, x, y);
 }
 
 static bool hint_apply_hit(const Gfx *gfx, const UI *ui, int x, int y) {

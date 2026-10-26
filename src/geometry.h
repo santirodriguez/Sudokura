@@ -117,6 +117,10 @@ typedef struct {
 } AudioControlGeometry;
 
 typedef struct {
+  GeoRect card, title, body, primary, verify, reveal, cancel;
+} GeometryHintPanel;
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 
@@ -134,6 +138,8 @@ bool geometry_normalize_window_size(int requested_width, int requested_height,
 bool geometry_contains(GeoRect rect, int x, int y);
 bool geometry_rect_in_bounds(GeoRect rect, int width, int height);
 bool geometry_play_valid(const AppGeometry *geometry, int width, int height);
+bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
+                         GeometryHintPanel *out);
 /* Full artwork band and separate status headline, shared with render tests. */
 GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width);
 GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width);

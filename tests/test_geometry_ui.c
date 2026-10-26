@@ -66,6 +66,19 @@ int main(void) {
       assert(g.home_secondary[0].y > g.home_primary[2].y);
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
+      GeometryHintPanel hint;
+      assert(geometry_hint_panel(&g,width,height,&hint));
+      assert_rect(hint.card,width,height);
+      assert_rect(hint.body,width,height);
+      assert(hint.body.h>=32 && hint.body.w>90);
+      assert_rect(hint.primary,width,height);
+      assert_rect(hint.verify,width,height);
+      assert_rect(hint.reveal,width,height);
+      assert_rect(hint.cancel,width,height);
+      if(portrait) {
+        assert(hint.card.y < g.board.y + g.board.h);
+        assert(hint.card.y + hint.card.h > g.board.y);
+      }
 
       /* Full canonical wordmark has a reserved, noninteractive band. */
       GeoRect brand = geometry_play_wordmark_rect(&g, width);

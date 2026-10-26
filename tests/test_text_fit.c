@@ -331,11 +331,17 @@ int main(void) {
                       g.about_links[i].h - 3));
         }
 
-        int hint_margin = g.sidebar.w < 240 ? 7 : 10;
-        int hint_card_h = g.sidebar.h - hint_margin * 2;
-        int hint_button_h = hint_card_h < 430 ? 31 : 36;
-        int hint_body_w = g.sidebar.w - hint_margin * 2 - 20;
-        int hint_body_h = hint_card_h - hint_button_h * 4 - 78;
+        GeometryHintPanel hint;
+        assert(geometry_hint_panel(&g, width, height, &hint));
+        assert_rect(hint.card, width, height);
+        assert_rect(hint.body, width, height);
+        assert_rect(hint.primary, width, height);
+        assert_rect(hint.verify, width, height);
+        assert_rect(hint.reveal, width, height);
+        assert_rect(hint.cancel, width, height);
+        int hint_button_h = hint.primary.h;
+        int hint_body_w = hint.body.w;
+        int hint_body_h = hint.body.h;
         assert(hint_body_w > 8 && hint_body_h > 8);
         assert(fits(font, tr((Language)language, T_HINT_PREVIEW), 20, 10,
                     hint_body_w, 32));
