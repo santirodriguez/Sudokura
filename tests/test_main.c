@@ -394,7 +394,7 @@ static void test_geometry(void) {
       for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i)
         assert(g.palette[i].w >= (portrait ? 32 : 70) && g.palette[i].h >= 22);
       if (portrait) for (int i = 1; i < GEOMETRY_PALETTE_COUNT; ++i) assert(g.palette[i].y == g.palette[0].y);
-      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && g.palette_label.h >= 12);
+      assert(geometry_rect_in_bounds(g.progress, width, height) && g.progress.h >= 18 && (portrait ? g.play_compact && g.palette[0].h >= 40 : g.palette_label.h >= 12));
       assert(geometry_rect_in_bounds(g.status, width, height) &&
              g.status.h >= style.min_control_h);
       assert_screen_geometry(&g, width, height);
