@@ -1544,6 +1544,29 @@ int main(int argc, char **argv) {
         app_shutdown(&g);
         return 1;
       }
+      /* The compact More path is unavailable at the default desktop size.
+         Exercise its real pause, focus and pointer routing at 360x640 too. */
+      int original_w = g.width, original_h = g.height;
+      int min_w = 0, min_h = 0;
+      SDL_GetWindowMinimumSize(g.win, &min_w, &min_h);
+      SDL_SetWindowMinimumSize(g.win, 1, 1);
+      SDL_SetWindowSize(g.win, 360, 640);
+      SDL_PumpEvents();
+      if (!gfx_refresh_metrics(&g) || g.width != 360 || g.height != 640 ||
+          !ui_pointer_smoke_check(&g, &ui)) {
+        fprintf(stderr, "compact More/paging pointer routing regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      SDL_SetWindowSize(g.win, original_w, original_h);
+      SDL_SetWindowMinimumSize(g.win, min_w, min_h);
+      SDL_PumpEvents();
+      if (!gfx_refresh_metrics(&g) || g.width != original_w ||
+          g.height != original_h) {
+        fprintf(stderr, "smoke window restore regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
       ui.screen = APP_SCREEN_SETTINGS;
       ui.prev_screen = SCR_PLAY;
       ui.pause_reasons = PAUSE_MODAL;

@@ -110,8 +110,11 @@ for r in rows:
     if r["state"]=="more":
         assert audio_popup==0 and audio_pressed==0 and audio_visible==0
         assert fw>=60 and fh>=36,(r["file"],"More focused action too small")
-        assert len(crop_colors(by_name[r["file"]],fx+10,fy+8,
-                               fw-20,fh-16))>=4,(r["file"],"More label missing")
+        label_pixels=crop_colors(by_name[r["file"]],fx+10,fy+8,
+                                 fw-20,fh-16)
+        assert len(label_pixels)>=4,(r["file"],"More label missing",
+                                     len(label_pixels),
+                                     sorted(label_pixels)[:8])
         # An open More modal on Time Attack must conceal the board even
         # outside the floating panel, not merely stop the clock.
         base=crop_colors(by_name[r["file"]],22,150,4,4)
