@@ -177,6 +177,7 @@ make test-ui
 
 ## Project documentation
 
+- [v1.3.8 release notes (candidate, not yet published)](docs/RELEASE_NOTES_1.3.8.md)
 - [v1.3.7 release notes](docs/RELEASE_NOTES_1.3.7.md)
 - [v1.3.6 release notes](docs/RELEASE_NOTES_1.3.6.md)
 - [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)

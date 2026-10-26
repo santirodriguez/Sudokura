@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.8]
+
+### Compact desktop play
+- Enlarged the playable board and reorganized narrow-window controls while retaining the regular and XL desktop layouts.
+- Added a keyboard- and pointer-accessible More panel for Restart, Hint, Verify, Settings, Help, and About. The panel respects independent manual, focus, and modal pause reasons and conceals the active Time Attack board.
+- Kept Menu, Pause, Save, Undo, Redo, Clear, Notes, number entry, and save-error recovery directly accessible in compact gameplay.
+
+### Pointer and Saved Games navigation
+- Ordinary primary-button actions now activate on a matching release, so dragging off a button or releasing over another action cancels the press. Keyboard shortcuts, immediate board selection, right-click notes, sliders, and speaker press gestures retain their distinct behavior.
+- Added visible Previous/Next page controls and a localized visible-range indicator to Saved Games, while preserving keyboard/wheel navigation, stable attempt identities, and read-only browsing of finished records.
+
+### Compatibility and validation
+- Preserved existing profile/library formats, save and migration recovery, puzzle generation revisions, Daily identity, all modes, localization, optional audio, and offline behavior.
+- Corrected incremental rebuilding when the Saved Games presentation fragment changes and tightened generated-test cleanup/ignore rules.
+- Extended compact-control geometry, pointer cancellation, text-fit, paging-boundary, SDL smoke, and diagnostic screenshot coverage.
+- The supported desktop package formats remain the Windows installer/portable EXE, Linux AppImage, and experimental Apple Silicon macOS DMG. No Android build is included.
+
 ## [1.3.7]
 
 ### Reliable Saved Games

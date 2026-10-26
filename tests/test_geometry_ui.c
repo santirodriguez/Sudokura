@@ -18,6 +18,7 @@ int main(void) {
   const int sizes[][2] = {
       {640, 480}, {800, 600}, {1024, 720}, {1366, 768}, {1920, 1080},
       {2560, 1440}, {3440, 1440}, {360, 640}, {390, 844}, {412, 915},
+      {600, 640}, {639, 640}, {640, 640},
   };
 
   assert(GEOMETRY_ABOUT_LINK_COUNT == 4);
@@ -165,6 +166,19 @@ int main(void) {
         assert(g.play_controls[PLAY_CONTROL_MORE].w >= 60);
         for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)
           assert_inside(g.more_panel,g.more_items[i]);
+        const PlayControl visible[] = {
+          PLAY_CONTROL_MENU, PLAY_CONTROL_PAUSE, PLAY_CONTROL_SAVE,
+          PLAY_CONTROL_MORE, PLAY_CONTROL_UNDO, PLAY_CONTROL_REDO,
+          PLAY_CONTROL_CLEAR, PLAY_CONTROL_NOTES,
+        };
+        for (size_t a = 0; a < sizeof(visible)/sizeof(visible[0]); ++a) {
+          GeoRect x = g.play_controls[visible[a]];
+          for (size_t b = a + 1; b < sizeof(visible)/sizeof(visible[0]); ++b) {
+            GeoRect y = g.play_controls[visible[b]];
+            assert(x.x + x.w <= y.x || y.x + y.w <= x.x ||
+                   x.y + x.h <= y.y || y.y + y.h <= x.y);
+          }
+        }
         for (int i = 0; i < PLAY_CONTROL_COUNT; ++i)
           assert_rect(g.play_controls[i],width,height);
         assert(g.play_controls[PLAY_CONTROL_UNDO].y >=
