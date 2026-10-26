@@ -7,6 +7,7 @@
 #include <string.h>
 
 static const char *profile_path = ".sudokura-profile-test.dat";
+static const char *profile_recovery_path = ".sudokura-profile-test.dat.pre-recovery";
 static const char *profile_backup_path = ".sudokura-profile-test.dat.bak";
 static const char *legacy_session_path = ".sudokura-profile-session-v12.dat";
 static const char *legacy_preferences_path = ".sudokura-profile-preferences-v12.dat";
@@ -44,7 +45,7 @@ static void put_u32_test(unsigned char *data, uint32_t value) {
 
 static void cleanup(void) {
   const char *paths[] = {
-      profile_path, profile_backup_path, legacy_session_path,
+      profile_path, profile_backup_path, profile_recovery_path, legacy_session_path,
       legacy_preferences_path, legacy_audio_path, legacy_session_backup,
       legacy_preferences_backup, legacy_audio_backup};
   for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i)
@@ -386,6 +387,9 @@ static void test_previous_copy_recovery(void) {
   assert(profile_load_file(profile_backup_path, &backup) == STORE_OK);
   assert(active.preferences.language == LANG_ES);
   assert(backup.preferences.language == LANG_ES);
+  assert(store_file_exists(profile_recovery_path));
+  cleanup();
+  assert(!store_file_exists(profile_recovery_path));
 }
 
 static void test_missing_primary_preserves_valid_previous(void) {
