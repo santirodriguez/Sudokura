@@ -16,7 +16,7 @@
 <p align="center">
   <a href="#download-sudokura">Download</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.7.md">What's new in 1.3.7</a>
+  <a href="docs/RELEASE_NOTES_1.3.8.md">What's new in 1.3.8</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
@@ -24,8 +24,8 @@
 </p>
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.3.7.png">
-    <img src="docs/images/sudokura-v1.3.7.png" alt="Sudokura v1.3.7 gameplay with full logo and Save button" width="900">
+  <a href="docs/images/sudokura-v1.3.8.png">
+    <img src="docs/images/sudokura-v1.3.8.png" alt="Sudokura desktop gameplay with full logo and Save button" width="900">
   </a>
 </p>
 
@@ -93,7 +93,8 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 - **Dark and light themes**, reduced motion, responsive layouts, and full mouse/keyboard navigation.
 - **English, Español, and Català.**
 - **Optional music and effects** with master, Music, and FX controls.
-- Independent normal and Daily saves, a retained Saved Games library with Load/View/Replay/Delete, automatic recovery safeguards, and local result history.
+- Independent normal and Daily saves, a retained Saved Games library with visible Previous/Next paging and Load/View/Replay/Delete, automatic recovery safeguards, and local result history.
+- Larger boards and a More panel for less frequent actions in narrow windows; the regular desktop layout stays familiar.
 
 ## Quick controls
 
@@ -125,7 +126,7 @@ For save locations, migration details, rollback guidance, and useful bug-report 
 
 ## More screenshots
 
-The gallery features v1.3.7 gameplay and preserves earlier Home / Continue, Settings, audio controls, compact Notes, and Help captures from v1.3.0.
+The v1.3.8 main gameplay image carries forward the approved v1.3.7 capture of the regular desktop layout. It does not show the new compact More panel or Saved Games paging. The gallery preserves earlier screenshots as history.
 
 [Browse the screenshot gallery →](docs/images/README.md)
 
@@ -177,7 +178,7 @@ make test-ui
 
 ## Project documentation
 
-- [v1.3.8 release notes (candidate, not yet published)](docs/RELEASE_NOTES_1.3.8.md)
+- [v1.3.8 release notes](docs/RELEASE_NOTES_1.3.8.md)
 - [v1.3.7 release notes](docs/RELEASE_NOTES_1.3.7.md)
 - [v1.3.6 release notes](docs/RELEASE_NOTES_1.3.6.md)
 - [v1.3.5 release notes](docs/RELEASE_NOTES_1.3.5.md)
