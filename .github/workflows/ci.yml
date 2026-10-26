@@ -93,6 +93,10 @@ jobs:
           ./tests/test_url_launcher_san
           rm -f tests/test_main_san tests/test_app_san tests/test_clock_san tests/test_game_library_san tests/test_game_migration_san tests/test_save_policy_san tests/test_human_san tests/test_session_san tests/test_profile_san tests/test_live_save_san tests/test_desktop_san tests/test_url_launcher_san
       - run: make WERROR=-Werror
+      - name: Check incremental Saved Games rebuild
+        run: |
+          make -q sudokura
+          make -n -W src/sudokura_sdl/games_ui.inc sudokura | grep -F 'src/sudokura_sdl.c'
       - name: Smoke without audio on the software renderer
         env:
           SDL_VIDEODRIVER: dummy

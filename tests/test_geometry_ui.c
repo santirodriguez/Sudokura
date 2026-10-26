@@ -18,6 +18,7 @@ int main(void) {
   const int sizes[][2] = {
       {640, 480}, {800, 600}, {1024, 720}, {1366, 768}, {1920, 1080},
       {2560, 1440}, {3440, 1440}, {360, 640}, {390, 844}, {412, 915},
+      {600, 640}, {639, 640}, {640, 640},
   };
 
   assert(GEOMETRY_ABOUT_LINK_COUNT == 4);
@@ -66,6 +67,19 @@ int main(void) {
       assert(g.home_secondary[0].y > g.home_primary[2].y);
       assert_rect(g.board, width, height);
       assert_rect(g.sidebar, width, height);
+      GeometryHintPanel hint;
+      assert(geometry_hint_panel(&g,width,height,&hint));
+      assert_rect(hint.card,width,height);
+      assert_rect(hint.body,width,height);
+      assert(hint.body.h>=32 && hint.body.w>90);
+      assert_rect(hint.primary,width,height);
+      assert_rect(hint.verify,width,height);
+      assert_rect(hint.reveal,width,height);
+      assert_rect(hint.cancel,width,height);
+      if(portrait) {
+        assert(hint.card.y < g.board.y + g.board.h);
+        assert(hint.card.y + hint.card.h > g.board.y);
+      }
 
       /* Full canonical wordmark has a reserved, noninteractive band. */
       GeoRect brand = geometry_play_wordmark_rect(&g, width);
@@ -106,11 +120,13 @@ int main(void) {
       assert_inside(screen_audio.popup, screen_audio.music);
       assert_inside(screen_audio.popup, screen_audio.fx);
       assert_inside(g.actions[PLAY_ACTION_AUDIO],play_audio.button);
-      assert(play_audio.button.x - 4 >
-             g.actions[PLAY_ACTION_AUDIO].x + 48);
+      if (!portrait)
+        assert(play_audio.button.x - 4 >
+               g.actions[PLAY_ACTION_AUDIO].x + 48);
       assert(screen_audio.button.x >=
              g.screen_language.x + g.screen_language.w);
 
+      if (!portrait) {
       assert(g.actions[PLAY_ACTION_MENU].x == g.sidebar.x);
       assert(g.actions[PLAY_ACTION_MENU].w == g.sidebar.w);
       assert(g.actions[PLAY_ACTION_ABOUT].x == g.sidebar.x);
@@ -136,8 +152,41 @@ int main(void) {
       assert(g.actions[PLAY_ACTION_ABOUT].w == g.status.w);
       assert(g.actions[PLAY_ACTION_ABOUT].h == g.status.h);
 
+      }
       if (portrait) {
-        assert(g.board.w >= 225);
+        assert(g.play_compact);
+        assert(g.board.w >= 288);
+        if (width == 390) assert(g.board.w >= 369);
+        if (width == 412) assert(g.board.w >= 396);
+        assert(g.play_controls[PLAY_CONTROL_MENU].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_SAVE].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_CLEAR].h >= 36);
+        assert(g.play_controls[PLAY_CONTROL_NOTES].h >= 36);
+        assert(g.palette[0].h >= 40);
+        assert(g.play_controls[PLAY_CONTROL_MORE].w >= 60);
+        for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)
+          assert_inside(g.more_panel,g.more_items[i]);
+        const PlayControl visible[] = {
+          PLAY_CONTROL_MENU, PLAY_CONTROL_PAUSE, PLAY_CONTROL_SAVE,
+          PLAY_CONTROL_MORE, PLAY_CONTROL_UNDO, PLAY_CONTROL_REDO,
+          PLAY_CONTROL_CLEAR, PLAY_CONTROL_NOTES,
+        };
+        for (size_t a = 0; a < sizeof(visible)/sizeof(visible[0]); ++a) {
+          GeoRect x = g.play_controls[visible[a]];
+          for (size_t b = a + 1; b < sizeof(visible)/sizeof(visible[0]); ++b) {
+            GeoRect y = g.play_controls[visible[b]];
+            assert(x.x + x.w <= y.x || y.x + y.w <= x.x ||
+                   x.y + x.h <= y.y || y.y + y.h <= x.y);
+          }
+        }
+        for (int i = 0; i < PLAY_CONTROL_COUNT; ++i)
+          assert_rect(g.play_controls[i],width,height);
+        assert(g.play_controls[PLAY_CONTROL_UNDO].y >=
+               g.board.y + g.board.h);
+        assert(g.play_controls[PLAY_CONTROL_SAVE].y <
+               g.board.y);
+        assert(g.play_controls[PLAY_CONTROL_MORE].y ==
+               g.play_controls[PLAY_CONTROL_SAVE].y);
         for (int i = 1; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
           assert(g.about_links[i].y > g.about_links[i - 1].y);
       } else {

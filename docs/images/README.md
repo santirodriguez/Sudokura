@@ -1,16 +1,22 @@
 # Documentation images
 
-## Sudokura v1.3.7
+## Sudokura v1.3.8
 
-### Canonical gameplay screenshot
+### Main desktop gameplay image
+
+[![Sudokura regular desktop gameplay](sudokura-v1.3.8.png)](sudokura-v1.3.8.png)
+
+- `sudokura-v1.3.8.png` — an exact copy of the maintainer-approved v1.3.7 gameplay screenshot, reused for the familiar regular desktop layout. The v1.3.8 compact More panel and Saved Games paging are not pictured.
+
+## Sudokura v1.3.7 (historical)
+
+### Original approved gameplay screenshot
 
 [![Sudokura v1.3.7 gameplay](sudokura-v1.3.7.png)](sudokura-v1.3.7.png)
 
-- `sudokura-v1.3.7.png` — approved gameplay screenshot of the v1.3.7 desktop interface.
+- `sudokura-v1.3.7.png` — the original approved screenshot of the v1.3.7 desktop interface.
 
-## Historical screenshots
-
-## Sudokura v1.3.0
+## Sudokura v1.3.0 (historical)
 
 ### Earlier canonical screenshot
 

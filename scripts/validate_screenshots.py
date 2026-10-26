@@ -34,16 +34,16 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==170,f"expected 170 manifest rows, found {len(rows)}"
+assert len(rows)==182,f"expected 182 manifest rows, found {len(rows)}"
 files=sorted(args.directory.glob("*.bmp"))
-assert len(files)==170,f"expected 170 BMPs, found {len(files)}"
+assert len(files)==182,f"expected 182 BMPs, found {len(files)}"
 by_name={p.name:p for p in files}
-assert len(by_name)==170
+assert len(by_name)==182
 assert len({r["file"] for r in rows})==len(rows),"duplicate manifest filename"
 assert {r["file"] for r in rows}==set(by_name),"manifest/BMP mismatch"
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==110 and len(audit)==60,(len(matrix),len(audit))
+assert len(matrix)==110 and len(audit)==72,(len(matrix),len(audit))
 matrix_keys=[(int(r["width"]),int(r["height"]),r["state"]) for r in matrix]
 assert len(set(matrix_keys))==len(matrix_keys),"duplicate matrix scene"
 assert set(matrix_keys)=={(w,h,state) for w,h in SIZES for state in STATES}, "matrix coverage mismatch"
@@ -84,6 +84,15 @@ for state in ("settings","audio-popup","dialog-prep","about"):
     assert {(r["language"],r["theme"]) for r in subset}=={
         (language,theme) for language in LANGS for theme in THEMES
     }
+for state in ("more","games-paging"):
+    subset=[r for r in audit if r["state"]==state]
+    assert len(subset)==6,(state,len(subset))
+    assert {(int(r["width"]),int(r["height"])) for r in subset}=={(360,640)}
+    assert {(r["language"],r["theme"]) for r in subset}=={
+        (language,theme) for language in LANGS for theme in THEMES
+    }
+    assert {r["focus"] for r in subset}==({
+        "more-hint"} if state=="more" else {"games-next-page"})
 for r in audit:
     size=(int(r["width"]),int(r["height"]))
     if r["state"]=="help-top":
@@ -94,10 +103,34 @@ for r in audit:
             assert int(r["scroll_max"])>0,(r["file"],"compact Help must exercise overflow")
 for r in rows:
     assert r["file"] in by_name,r["file"]
+    # Bind every pixel check to this manifest row; stale focus coordinates
+    # from the preceding frame can inspect the background instead of a label.
+    w,h=(int(r[k]) for k in ("width","height"))
+    fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
+    assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
+    assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     audio_visible=int(r["audio_visible"])
     audio_popup=int(r["audio_popup"])
     audio_pressed=int(r["audio_pressed"])
     assert audio_visible in (0,1) and audio_popup in (0,1) and audio_pressed in (0,1),r["file"]
+    if r["state"]=="more":
+        assert audio_popup==0 and audio_pressed==0 and audio_visible==0
+        assert fw>=60 and fh>=36,(r["file"],"More focused action too small")
+        label_pixels=crop_colors(by_name[r["file"]],fx+10,fy+8,
+                                 fw-20,fh-16)
+        assert len(label_pixels)>=4,(r["file"],"More label missing",
+                                     len(label_pixels),
+                                     sorted(label_pixels)[:8])
+        # An open More modal on Time Attack must conceal the board even
+        # outside the floating panel, not merely stop the clock.
+        base=crop_colors(by_name[r["file"]],22,150,4,4)
+        board=crop_colors(by_name[r["file"]],180,165,4,4)
+        assert len(base)==1 and base==board,(r["file"],"More exposes board")
+    if r["state"]=="games-paging":
+        assert audio_popup==0 and audio_pressed==0 and audio_visible==0
+        assert fw>=55 and fh>=30,(r["file"],"paging button too small")
+        assert len(crop_colors(by_name[r["file"]],fx+10,fy+7,
+                               fw-20,fh-14))>=4,(r["file"],"Next page text missing")
     if r["state"] in {"games-empty","games-active","games-unavailable",
         "games-finished","games-detail","games-recover"}:
         expected_focus={
@@ -121,10 +154,6 @@ for r in rows:
     if r["state"]=="dialog-prep":
         assert audio_popup==0,(r["file"],"native dialog preparation retained audio popup")
         assert audio_pressed==0,(r["file"],"native dialog preparation retained audio press")
-    w,h=int(r["width"]),int(r["height"])
-    fx,fy,fw,fh=(int(r[k]) for k in ("fx","fy","fw","fh"))
-    assert fw>0 and fh>0,(r["file"],"missing focus rectangle")
-    assert 0<=fx<w and 0<=fy<h and fx+fw<=w and fy+fh<=h,(r["file"],fx,fy,fw,fh)
     assert r["focus"]!="none",r["file"]
     if r["state"] in {"games-active","games-unavailable","games-finished"}:
         # Exclude the focus outline; ensure selected-row text actually rendered.
@@ -285,4 +314,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,crop_y,
                            crop_right-crop_left,crop_height)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 170 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 182 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")

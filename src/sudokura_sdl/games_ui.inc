@@ -1,3 +1,5 @@
+#include "library_paging.h"
+
 /* Retained Games browser. The library, not this view, owns durable records. */
 typedef struct {
   GameLibraryEntry entry;
@@ -19,9 +21,11 @@ typedef struct {
 } GamesBrowser;
 
 static GamesBrowser games_browser;
+static const Gfx *games_browser_window;
 
 typedef struct {
   SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
+  SDL_Rect page_previous, page_next, page_label;
   int row_height, visible;
   bool side_by_side;
 } GamesBrowserLayout;
@@ -61,6 +65,19 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
     layout.list = (SDL_Rect){x,content_y,width,list_h};
     layout.detail = (SDL_Rect){x,content_y+list_h+10,width,detail_h};
   }
+  /* Paging uses spare list height; the existing preview bounds stay intact. */
+  layout.list.h -= 42;
+  int pager_w = layout.list.w;
+  int label_w = pager_w > 500 ? 132 : 98;
+  int pager_gap = 6;
+  int button_w = (pager_w - label_w - pager_gap * 2) / 2;
+  int pager_y = layout.list.y + layout.list.h + 5;
+  layout.page_previous = (SDL_Rect){layout.list.x, pager_y, button_w, 32};
+  layout.page_label = (SDL_Rect){layout.list.x + button_w + pager_gap,
+                                 pager_y, label_w, 32};
+  layout.page_next = (SDL_Rect){layout.page_label.x + label_w + pager_gap,
+                                pager_y, pager_w - button_w - label_w -
+                                pager_gap * 2, 32};
   layout.row_height = gfx->height < 550 ? 51 : 64;
   layout.visible = layout.list.h / layout.row_height;
   if (layout.visible < 1) layout.visible = 1;
@@ -84,6 +101,11 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
                                 width-(bw+gap)*3,button_height};
   }
   return layout;
+}
+
+static SDL_Rect games_browser_row_rect(GamesBrowserLayout layout, int row) {
+  return (SDL_Rect){layout.list.x, layout.list.y + row * layout.row_height,
+                     layout.list.w, layout.row_height};
 }
 
 static bool games_browser_push(const GameLibraryEntry *entry, bool hot) {
@@ -209,6 +231,24 @@ static bool games_browser_focus_attempt(const Persistence *p, Gfx *gfx,
   return false;
 }
 
+static void games_browser_select(Persistence *p, Gfx *gfx, size_t index);
+
+static bool games_browser_page_enabled(const Gfx *gfx, int direction) {
+  if (!gfx || games_browser.scanning || games_browser.detail_open) return false;
+  GamesBrowserLayout layout = games_browser_layout(gfx);
+  return library_page_enabled(games_browser.count, games_browser.selected,
+                              (size_t)layout.visible, direction);
+}
+
+static void games_browser_page(Persistence *p, Gfx *gfx, int direction) {
+  if (!games_browser_page_enabled(gfx, direction)) return;
+  GamesBrowserLayout layout = games_browser_layout(gfx);
+  size_t next = library_page_target(games_browser.count, games_browser.selected,
+                                    (size_t)layout.visible, direction);
+  games_browser_select(p, gfx, next);
+  games_browser.focus = direction < 0 ? 5 : 6;
+}
+
 static void games_browser_ensure_visible(const Gfx *gfx) {
   GamesBrowserLayout layout = games_browser_layout(gfx);
   size_t visible = (size_t)layout.visible;
@@ -224,6 +264,7 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
                 ui->prev_screen == SCR_PLAY;
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
+  games_browser_window = NULL;
   (void)app_return_aux(ui);
   if (resume) {
     (void)clock_resume(ui, PAUSE_MODAL);
@@ -280,6 +321,7 @@ static bool games_browser_open(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
   games_browser.modal_owned = modal_owned;
+  games_browser_window = gfx;
   clear_hint_preview(ui);
   games_browser.scan_status = game_library_scan_begin(
       p->profile_directory, &games_browser.scanner);
@@ -1295,12 +1337,12 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   for(size_t index=games_browser.scroll;index<last;++index) {
     const GamesRow *row=&games_browser.rows[index];
     const GameLibraryEntry *entry=&row->entry;
-    SDL_Rect rect={lay.list.x+7,
-                   lay.list.y+(int)(index-games_browser.scroll)*lay.row_height+5,
-                   lay.list.w-14,lay.row_height-7};
+    SDL_Rect hit = games_browser_row_rect(lay, (int)(index-games_browser.scroll));
+    SDL_Rect rect={hit.x+7,hit.y+5,hit.w-14,hit.h-7};
     bool selected=index==games_browser.selected;
+    bool pressed=ui_pointer_pressed(hit);
     draw_round_rect(gfx->ren,rect,8,
-                    selected?theme.hover:theme.palette_bg);
+                    pressed?theme.sel:selected?theme.hover:theme.palette_bg);
     if(selected)
       draw_round_rect(gfx->ren,(SDL_Rect){rect.x,rect.y,4,rect.h},
                       2,theme.title);
@@ -1340,6 +1382,22 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
         tr(ui->language,games_browser.scanning
             ?T_GAMES_LOADING:T_GAMES_EMPTY),theme.dim,empty,17,10,true);
   }
+
+  /* Current list range remains visible for pointer-only and keyboard users. */
+  size_t last_visible = games_browser.scroll + (size_t)lay.visible;
+  if (last_visible > games_browser.count) last_visible = games_browser.count;
+  char page_range[100];
+  (void)snprintf(page_range,sizeof(page_range),
+                 tr(ui->language,T_GAMES_PAGE_RANGE_FMT),
+                 games_browser.count ? games_browser.scroll + 1u : 0u,
+                 last_visible,games_browser.count);
+  (void)draw_fitted_text(gfx,page_range,theme.dim,lay.page_label,13,10);
+  games_browser_draw_button(gfx,theme,lay.page_previous,
+      tr(ui->language,T_GAMES_PREVIOUS_PAGE),games_browser.focus==5,
+      games_browser_page_enabled(gfx,-1),theme.btnfg,UI_GLYPH_BACK,false);
+  games_browser_draw_button(gfx,theme,lay.page_next,
+      tr(ui->language,T_GAMES_NEXT_PAGE),games_browser.focus==6,
+      games_browser_page_enabled(gfx,1),theme.btnfg,UI_GLYPH_PLAY,false);
 
   SDL_Rect detail_header={lay.detail.x+12,lay.detail.y+8,
                           lay.detail.w-24,27};
@@ -1468,6 +1526,9 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
 
 static bool games_browser_focus_enabled(int focus) {
   if(focus==2)return true;
+  if(focus==5 || focus==6)
+    return games_browser_window && games_browser_page_enabled(games_browser_window,
+                                                   focus==5?-1:1);
   if(games_browser.scanning||games_browser.selected>=games_browser.count)
     return false;
   const GamesRow *row=&games_browser.rows[games_browser.selected];
@@ -1497,6 +1558,11 @@ static bool games_browser_activate_focus(Persistence *p,Game *game,
       if(!games_browser.detail_open)
         return games_browser_activate(p,game,ui,gfx);
       return false;
+    case 5:
+    case 6:
+      if (!games_browser_focus_enabled(games_browser.focus)) return false;
+      games_browser_page(p,gfx,games_browser.focus==5?-1:1);
+      return true;
     case 3:
       return games_browser_focus_enabled(3) &&
              games_browser_replay_selected(p,game,ui,gfx);
@@ -1523,8 +1589,8 @@ static bool games_browser_key(Persistence *p,Game *game,UI *ui,Gfx *gfx,
   }
   if(key==SDLK_TAB && !repeat){
     int delta=(mod & KMOD_SHIFT)?-1:1;
-    for(int attempts=0;attempts<5;++attempts){
-      games_browser.focus=(games_browser.focus+delta+5)%5;
+    for(int attempts=0;attempts<7;++attempts){
+      games_browser.focus=(games_browser.focus+delta+7)%7;
       if(games_browser_focus_enabled(games_browser.focus))break;
     }
   }else if(!games_browser.detail_open &&
@@ -1560,6 +1626,16 @@ static bool games_browser_click(Persistence *p,Game *game,UI *ui,
     return true;
   }
   if(games_browser.scanning)return true;
+  if (!games_browser.detail_open && point_in(lay.page_previous,x,y)) {
+    games_browser.focus=5;
+    if (games_browser_focus_enabled(5)) games_browser_page(p,gfx,-1);
+    return true;
+  }
+  if (!games_browser.detail_open && point_in(lay.page_next,x,y)) {
+    games_browser.focus=6;
+    if (games_browser_focus_enabled(6)) games_browser_page(p,gfx,1);
+    return true;
+  }
   if(point_in(lay.replay,x,y)){
     games_browser.focus=3;
     (void)games_browser_activate_focus(p,game,ui,gfx);

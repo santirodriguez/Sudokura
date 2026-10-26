@@ -276,7 +276,7 @@ static bool restart_current_session_confirmed(Persistence *p,
 
 typedef struct {
   Gfx *gfx;
-  const Game *game;
+  Game *game;
   UI *ui;
   unsigned rendered_attempt;
 } GenerationUiContext;
@@ -397,6 +397,8 @@ typedef struct {
   bool active;
 } HomeDailyScan;
 static HomeDailyScan home_daily_scan;
+
+static bool ui_pointer_busy(void) { return home_daily_scan.active; }
 
 static void home_daily_cancel(void) {
   game_library_scan_close(&home_daily_scan.cursor);
@@ -665,12 +667,63 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_VERIFY:ui_button_click();verify_current_entries(p,game,ui);return true;
     case PLAY_FOCUS_SETTINGS:ui_button_click();ui_settings_open(p,game,ui);return true;
     case PLAY_FOCUS_HELP:ui_button_click();info_focus_reset();open_info_from_play(p,game,ui,SCR_HELP);return true;
+    case PLAY_FOCUS_MORE:ui_button_click();ui_more_open_panel(ui);return true;
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
     case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_retry_current(p,game,ui);return true;
     default:
       if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
       return false;
   }
+}
+
+static bool ui_more_activate_action(Persistence *p, Game *game, UI *ui,
+                                    Gfx *gfx, int action) {
+  if (!ui || !ui_more_open || action < 0 || action >= GEOMETRY_MORE_COUNT)
+    return false;
+  ui_more_close(ui);
+  if (action == MORE_ABOUT) {
+    ui_button_click();
+    info_focus_reset();
+    open_info_from_play(p,game,ui,SCR_ABOUT);
+    return true;
+  }
+  const int focuses[GEOMETRY_MORE_COUNT] = {
+    PLAY_FOCUS_RESTART,PLAY_FOCUS_HINT,PLAY_FOCUS_VERIFY,
+    PLAY_FOCUS_SETTINGS,PLAY_FOCUS_HELP,PLAY_FOCUS_MORE
+  };
+  int focus=focuses[action];
+  /* The compact More panel intentionally exposes otherwise hidden actions. */
+  play_keyboard_focus=focus;
+  switch (action) {
+    case MORE_RESTART:
+      ui_button_click();
+      if (restart_current_session_confirmed(p,game,ui,gfx)) {
+        victory_animation_reset();
+        restart_current_session(p,game,ui);
+      }
+      break;
+    case MORE_HINT:
+      ui_button_click();
+      (void)prepare_hint_preview(game,ui);
+      if (ui->hint_preview_active) hint_focus_reset(ui);
+      break;
+    case MORE_VERIFY:
+      ui_button_click();
+      verify_current_entries(p,game,ui);
+      break;
+    case MORE_SETTINGS:
+      ui_button_click();
+      ui_settings_open(p,game,ui);
+      break;
+    case MORE_HELP:
+      ui_button_click();
+      info_focus_reset();
+      open_info_from_play(p,game,ui,SCR_HELP);
+      break;
+    default: return false;
+  }
+  play_keyboard_focus=PLAY_FOCUS_MORE;
+  return true;
 }
 
 static bool open_global_info_key(Persistence *persistence, const Game *game,
@@ -1202,6 +1255,229 @@ static void app_render_startup_splash(Gfx *gfx, Language language) {
   gfx->dirty=true;
 }
 
+/* Exercise the actual SDL routing gate, including headless capture failure. */
+static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
+  UI saved_ui = *ui;
+  GamesBrowser saved_browser = games_browser;
+  const Gfx *saved_browser_window = games_browser_window;
+  bool saved_settings = settings_open, saved_popup = audio_control_popup_open;
+  bool saved_more = ui_more_open, saved_more_owner = ui_more_modal_owned;
+  int saved_more_focus = ui_more_focus;
+  bool passed = false;
+  SDL_Event event = {0};
+  settings_open = false;
+  audio_control_popup_open = false;
+  ui->screen = SCR_TITLE;
+  ui->pause_reasons = 0;
+  ui->generating = false;
+  ui->hint_preview_active = false;
+  ui->has_session = true;
+  AppGeometry geo;
+  if (!get_geometry(gfx, ui, &geo)) goto done;
+  SDL_Rect first = sdl_rect(geo.home_primary[0]);
+  SDL_Rect second = sdl_rect(geo.home_primary[1]);
+#define PRESS_AT(rect) do { \
+  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN; \
+  event.button.button = SDL_BUTTON_LEFT; \
+  event.button.x = (rect).x + (rect).w / 2; \
+  event.button.y = (rect).y + (rect).h / 2; \
+  if (ui_pointer_prepare(&event) || !ui_pointer_capture.active) goto done; \
+} while (0)
+#define RELEASE_OK(expected) do { \
+  event.type = SDL_MOUSEBUTTONUP; \
+  if (ui_pointer_prepare(&event) != (expected) || ui_pointer_capture.active) goto done; \
+} while (0)
+  PRESS_AT(first);
+  RELEASE_OK(true);
+  RELEASE_OK(false);
+  PRESS_AT(first);
+  event.button.x = second.x + second.w / 2;
+  event.button.y = second.y + second.h / 2;
+  RELEASE_OK(false);
+  PRESS_AT(first);
+  SDL_Event motion = {0};
+  motion.type = SDL_MOUSEMOTION;
+  motion.motion.state = SDL_BUTTON_LMASK;
+  motion.motion.x = -10; motion.motion.y = -10;
+  (void)ui_pointer_prepare(&motion);
+  if (ui_pointer_capture.inside) goto done;
+  motion.motion.x = event.button.x; motion.motion.y = event.button.y;
+  (void)ui_pointer_prepare(&motion);
+  if (!ui_pointer_capture.inside) goto done;
+  RELEASE_OK(true);
+  const Uint8 cancellations[] = {SDL_WINDOWEVENT_FOCUS_LOST,
+      SDL_WINDOWEVENT_HIDDEN, SDL_WINDOWEVENT_MINIMIZED,
+      SDL_WINDOWEVENT_SIZE_CHANGED, SDL_WINDOWEVENT_LEAVE};
+  for (size_t i = 0; i < sizeof(cancellations); ++i) {
+    PRESS_AT(first);
+    SDL_Event window = {0};
+    window.type = SDL_WINDOWEVENT; window.window.event = cancellations[i];
+    (void)ui_pointer_prepare(&window);
+    RELEASE_OK(false);
+  }
+  PRESS_AT(first);
+  ui->screen = SCR_HELP;
+  RELEASE_OK(false);
+  ui->screen = SCR_TITLE;
+  PRESS_AT(first);
+  settings_open = true;
+  RELEASE_OK(false);
+  settings_open = false;
+  ui->screen = SCR_PLAY;
+  ui->session_open = true;
+  ui->result = RES_NONE;
+  ui->undo_count = 1;
+  SDL_Rect undo = play_focus_rect(gfx, ui, PLAY_FOCUS_UNDO);
+  PRESS_AT(undo);
+  ui->undo_count = 0;
+  ui_pointer_reconcile();
+  ui->undo_count = 1;
+  RELEASE_OK(false);
+  PRESS_AT(undo);
+  ui->result = RES_WIN;
+  RELEASE_OK(false);
+  ui->result = RES_NONE;
+  Layout board_layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.button = SDL_BUTTON_LEFT;
+  event.button.x = board_layout.board.x + board_layout.board.w / 2;
+  event.button.y = board_layout.board.y + board_layout.board.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  RELEASE_OK(false);
+  settings_open = true;
+  SettingsPanelLayout settings = ui_settings_panel_layout(gfx);
+  event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.x = settings.music_track.x + settings.music_track.w / 2;
+  event.button.y = settings.music_track.y + settings.music_track.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  settings_slider_drag = SETTINGS_DRAG_MUSIC;
+  event.type = SDL_MOUSEBUTTONUP;
+  if (!ui_pointer_prepare(&event)) goto done;
+  settings_slider_drag = SETTINGS_DRAG_NONE;
+  settings_open = false;
+  ui_pointer_reconcile();
+  AudioControlGeometry speaker = ui_audio_control_geometry(gfx, ui);
+  event.type = SDL_MOUSEBUTTONDOWN;
+  event.button.x = speaker.button.x + speaker.button.w / 2;
+  event.button.y = speaker.button.y + speaker.button.h / 2;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  audio_control_pressed = true;
+  event.type = SDL_MOUSEBUTTONUP;
+  if (!ui_pointer_prepare(&event)) goto done;
+  audio_control_pressed = false;
+  /* Same rectangle, different durable record identity must not select it. */
+  GamesRow rows[2] = {0};
+  rows[0].entry.id = (GameAttemptId){1, 11};
+  rows[1].entry.id = (GameAttemptId){1, 12};
+  games_browser = (GamesBrowser){0};
+  games_browser.rows = rows;
+  games_browser.count = 2;
+  ui->screen = APP_SCREEN_GAMES;
+  GamesBrowserLayout layout = games_browser_layout(gfx);
+  SDL_Rect row = {layout.list.x, layout.list.y, layout.list.w, layout.row_height};
+  PRESS_AT(row);
+  GamesRow swap = rows[0]; rows[0] = rows[1]; rows[1] = swap;
+  RELEASE_OK(false);
+  PRESS_AT(row);
+  games_browser.scanning = true;
+  RELEASE_OK(false);
+
+  /* Page controls must bind the current selected attempt, not a reused row. */
+  GamesBrowserLayout pages = games_browser_layout(gfx);
+  if (pages.visible <= 0 || pages.visible >= 63) goto done;
+  GamesRow page_rows[64] = {0};
+  games_browser = (GamesBrowser){0};
+  games_browser.rows = page_rows;
+  games_browser.count = (size_t)pages.visible + 1u;
+  games_browser_window = gfx;
+  for (size_t i = 0; i < games_browser.count; ++i)
+    page_rows[i].entry.id = (GameAttemptId){1u, (uint64_t)i + 100u};
+  PRESS_AT(pages.page_next);
+  RELEASE_OK(true);
+  PRESS_AT(pages.page_next);
+  page_rows[0].entry.id.low += 10000u;
+  RELEASE_OK(false);
+  PRESS_AT(pages.page_next);
+  games_browser.detail_open = true;
+  RELEASE_OK(false);
+  games_browser.detail_open = false;
+  games_browser.scanning = true;
+  if (games_browser_focus_enabled(6)) goto done;
+  games_browser.scanning = false;
+
+  /* Exercise More through the real routing gate without invoking dialogs. */
+  if (gfx->width < 640) {
+    ui->screen = SCR_PLAY;
+    ui->result = RES_NONE;
+    ui->pause_reasons = 0;
+    ui_more_open_panel(ui);
+    if (!ui_more_open || !ui_more_modal_owned ||
+        (ui->pause_reasons & PAUSE_MODAL) == 0) goto done;
+    if (!get_geometry(gfx,ui,&geo)) goto done;
+    SDL_Rect restart = sdl_rect(geo.more_items[MORE_RESTART]);
+    SDL_Rect hint = sdl_rect(geo.more_items[MORE_HINT]);
+    PRESS_AT(restart);
+    event.button.x = hint.x + hint.w / 2;
+    event.button.y = hint.y + hint.h / 2;
+    RELEASE_OK(false);
+    if (!ui_more_open) goto done;
+    PRESS_AT(restart);
+    RELEASE_OK(true);
+    SDL_Event key = {0};
+    key.type = SDL_KEYDOWN;
+    key.key.keysym.sym = SDLK_TAB;
+    if (ui_prepare_event(&key) || ui_more_focus != 1) goto done;
+    key.key.keysym.mod = KMOD_SHIFT;
+    if (ui_prepare_event(&key) || ui_more_focus != 0) goto done;
+    key.key.keysym.sym = SDLK_ESCAPE;
+    key.key.keysym.mod = KMOD_NONE;
+    if (ui_prepare_event(&key) || ui_more_open ||
+        (ui->pause_reasons & PAUSE_MODAL)) goto done;
+    if (play_keyboard_focus != PLAY_FOCUS_MORE) goto done;
+
+    ui->pause_reasons = PAUSE_MANUAL | PAUSE_MODAL;
+    ui_more_open_panel(ui);
+    if (!ui_more_open || ui_more_modal_owned) goto done;
+    ui_more_close(ui);
+    if (ui->pause_reasons != (PAUSE_MANUAL | PAUSE_MODAL)) goto done;
+    ui->pause_reasons = PAUSE_FOCUS;
+    ui_more_open_panel(ui);
+    if (!ui_more_modal_owned ||
+        ui->pause_reasons != (PAUSE_FOCUS | PAUSE_MODAL)) goto done;
+    ui_more_close(ui);
+    if (ui->pause_reasons != PAUSE_FOCUS) goto done;
+
+    ui->pause_reasons = 0;
+    ui_more_open_panel(ui);
+    if (!ui_more_open) goto done;
+    PRESS_AT(restart);
+    SDL_Event window = {0};
+    window.type = SDL_WINDOWEVENT;
+    window.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+    (void)ui_prepare_event(&window);
+    if (ui_more_open || (ui->pause_reasons & PAUSE_MODAL)) goto done;
+    RELEASE_OK(false);
+  }
+
+  passed = true;
+done:
+  ui_pointer_cancel();
+  settings_slider_drag = SETTINGS_DRAG_NONE;
+  audio_control_pressed = false;
+  *ui = saved_ui;
+  games_browser = saved_browser;
+  games_browser_window = saved_browser_window;
+  settings_open = saved_settings;
+  audio_control_popup_open = saved_popup;
+  ui_more_open = saved_more;
+  ui_more_modal_owned = saved_more_owner;
+  ui_more_focus = saved_more_focus;
+  ui_pointer_reconcile();
+#undef PRESS_AT
+#undef RELEASE_OK
+  return passed;
+}
+
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
@@ -1263,6 +1539,34 @@ int main(int argc, char **argv) {
       audio_gfx = &g;
       audio_game = &game;
       audio_ui = &ui;
+      if (!ui_pointer_smoke_check(&g, &ui)) {
+        fprintf(stderr, "pointer routing/cancellation regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      /* The compact More path is unavailable at the default desktop size.
+         Exercise its real pause, focus and pointer routing at 360x640 too. */
+      int original_w = g.width, original_h = g.height;
+      int min_w = 0, min_h = 0;
+      SDL_GetWindowMinimumSize(g.win, &min_w, &min_h);
+      SDL_SetWindowMinimumSize(g.win, 1, 1);
+      SDL_SetWindowSize(g.win, 360, 640);
+      SDL_PumpEvents();
+      if (!gfx_refresh_metrics(&g) || g.width != 360 || g.height != 640 ||
+          !ui_pointer_smoke_check(&g, &ui)) {
+        fprintf(stderr, "compact More/paging pointer routing regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      SDL_SetWindowSize(g.win, original_w, original_h);
+      SDL_SetWindowMinimumSize(g.win, min_w, min_h);
+      SDL_PumpEvents();
+      if (!gfx_refresh_metrics(&g) || g.width != original_w ||
+          g.height != original_h) {
+        fprintf(stderr, "smoke window restore regression\n");
+        app_shutdown(&g);
+        return 1;
+      }
       ui.screen = APP_SCREEN_SETTINGS;
       ui.prev_screen = SCR_PLAY;
       ui.pause_reasons = PAUSE_MODAL;
@@ -1347,6 +1651,13 @@ int main(int argc, char **argv) {
           settings_layout.auto_notes.x + settings_layout.auto_notes.w / 2;
       settings_event.button.y =
           settings_layout.auto_notes.y + settings_layout.auto_notes.h / 2;
+      if (ui_prepare_event(&settings_event) || !ui.auto_remove_peer_notes) {
+        fprintf(stderr, "settings must not activate on pointer down\n");
+        app_shutdown(&g);
+        return 1;
+      }
+      settings_event.type = SDL_MOUSEBUTTONUP;
+      settings_event.button.type = SDL_MOUSEBUTTONUP;
       if (ui_prepare_event(&settings_event) || ui.auto_remove_peer_notes ||
           settings_keyboard_focus != SETTINGS_FOCUS_AUTO_NOTES) {
         fprintf(stderr, "settings auto-note pointer regression\n");
@@ -1720,6 +2031,97 @@ int main(int argc, char **argv) {
                     ui_audio_control_available(&ui)?1:0,
                     audio_control_popup_open?1:0,audio_control_pressed?1:0);
           }
+
+      /* Keep unit-3 transient controls in the actual screenshot acceptance
+         matrix; these frames do not enter canonical public artwork. */
+      for (int language=0;language<LANG_COUNT;++language)
+        for (int dark=0;dark<2;++dark)
+          for (int case_index=0;case_index<2;++case_index) {
+            SDL_SetWindowMinimumSize(g.win,1,1);
+            SDL_SetWindowSize(g.win,360,640);
+            SDL_PumpEvents();
+            if (!gfx_refresh_metrics(&g)) {
+              fclose(manifest);app_shutdown(&g);return 1;
+            }
+            game=review_base;
+            app_state_init(&ui);
+            set_mode_params(&ui);
+            ui.screen=SCR_PLAY;
+            ui.session_open=true;
+            ui.has_session=true;
+            ui.mode=MODE_TIME;
+            set_mode_params(&ui);
+            ui.language=(Language)language;
+            ui.dark_theme=dark!=0;
+            ui.reduced_motion=true;
+            settings_open=false;
+            ui_audio_control_cancel_interaction();
+            ui_more_open=false;
+            ui_more_modal_owned=false;
+            free(games_browser.rows);
+            memset(&games_browser,0,sizeof(games_browser));
+            games_browser_window=&g;
+            const char *state=case_index==0?"more":"games-paging";
+            const char *focus=case_index==0?"more-hint":"games-next-page";
+            SDL_Rect focus_rect={0,0,0,0};
+
+            if (case_index==0) {
+              AppGeometry geometry;
+              if (!get_geometry(&g,&ui,&geometry)) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              ui_more_open_panel(&ui);
+              if (!ui_more_open || (ui.pause_reasons&PAUSE_MODAL)==0) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              ui_more_focus=MORE_HINT;
+              focus_rect=sdl_rect(geometry.more_items[MORE_HINT]);
+            } else {
+              ui.screen=APP_SCREEN_GAMES;
+              GamesBrowserLayout layout=games_browser_layout(&g);
+              for (int i=0;i<layout.visible+1;++i) {
+                GameLibraryEntry entry={0};
+                entry.id=(GameAttemptId){1,(uint64_t)i+100};
+                entry.status=STORE_OK;
+                entry.kind=GAME_RECORD_EXACT;
+                entry.result.status=SESSION_ACTIVE;
+                entry.result.mode=MODE_CLASSIC;
+                entry.result.difficulty=DIFFICULTY_MEDIUM;
+                if (!games_browser_push(&entry,false)) {
+                  fclose(manifest);app_shutdown(&g);return 1;
+                }
+              }
+              games_browser.selected=0;
+              games_browser.focus=6;
+              if (!games_browser_page_enabled(&g,1) ||
+                  games_browser_page_enabled(&g,-1)) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              focus_rect=layout.page_next;
+            }
+            /* Mirror normal gameplay's render-and-present path instead of
+               inspecting an unpresented transient frame on some SDL backends. */
+            app_frame(&g,&game,&ui);
+            char filename[192],path[PATH_MAX];
+            snprintf(filename,sizeof(filename),
+                     "audit-%dx%d-%s-%s-%s.bmp",g.width,g.height,
+                     state,language_name(ui.language),
+                     ui.dark_theme?"dark":"light");
+            if (!path_join(path,sizeof(path),screenshot_dir,filename,'/') ||
+                !save_frame(&g,path)) {
+              fclose(manifest);app_shutdown(&g);return 1;
+            }
+            fprintf(manifest,
+                    "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                    filename,g.width,g.height,state,
+                    language_name(ui.language),ui.dark_theme?"dark":"light",
+                    focus,focus_rect.x,focus_rect.y,focus_rect.w,focus_rect.h,
+                    help_scroll_px,help_scroll_max_px,0,0,0);
+            ui_more_close(&ui);
+          }
+      free(games_browser.rows);
+      memset(&games_browser,0,sizeof(games_browser));
+      games_browser_window=NULL;
       UI audio_policy_probe;
       app_state_init(&audio_policy_probe);
       audio_policy_probe.screen=SCR_TITLE;
@@ -1734,7 +2136,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 170 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 182 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
@@ -1830,6 +2232,7 @@ int main(int argc, char **argv) {
   SDL_Event e;
   while (running) {
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
+    ui_pointer_reconcile();
     int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
                              games_browser.scanning) || home_daily_scan.active)
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
@@ -1841,19 +2244,21 @@ int main(int argc, char **argv) {
         have_event;have_event=ui_poll_event(&e)){
       g.dirty=true;
       if (e.type != SDL_QUIT &&
-          settle_terminal(&persistence, &game, &ui))
+          settle_terminal(&persistence, &game, &ui)) {
+        ui_pointer_cancel();
         continue;
+      }
       if (e.type == SDL_QUIT) {
         if (request_exit(&persistence, &game, &ui, &g))
           running = false;
         continue;
       }
       if (home_daily_scan.active &&
-          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN ||
+          (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONUP ||
            e.type == SDL_MOUSEWHEEL)) {
         if ((e.type == SDL_KEYDOWN &&
              e.key.keysym.sym == SDLK_ESCAPE) ||
-            (e.type == SDL_MOUSEBUTTONDOWN &&
+            (e.type == SDL_MOUSEBUTTONUP &&
              e.button.button == SDL_BUTTON_LEFT))
           home_daily_cancel();
         continue;
@@ -2057,7 +2462,9 @@ int main(int argc, char **argv) {
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
         int r = ui.sel_r, c = ui.sel_c;
-        InputPlayShortcut play_shortcut = input_play_shortcut(k, mod);
+        InputPlayShortcut play_shortcut = g.width < 640 &&
+                hint_panel_interactive(&ui) ? INPUT_PLAY_NONE :
+                input_play_shortcut(k, mod);
         if (play_shortcut == INPUT_PLAY_UNDO ||
             play_shortcut == INPUT_PLAY_REDO) {
           AppActionKind kind = play_shortcut == INPUT_PLAY_REDO
@@ -2104,6 +2511,7 @@ int main(int argc, char **argv) {
             continue;
           }
         }
+        if (g.width < 640 && hint_panel_interactive(&ui)) continue;
         if (k == SDLK_TAB) {
           play_move_focus(&game, &ui, shifted ? -1 : 1);
           continue;
@@ -2187,15 +2595,11 @@ int main(int argc, char **argv) {
         continue;
       }
 
-      if (e.type == SDL_MOUSEBUTTONDOWN) {
+      if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
         int x = e.button.x, y = e.button.y;
         bool left = input_mouse_button_is_primary(e.button.button);
         bool right = e.button.button == SDL_BUTTON_RIGHT;
-        if (!left && !right) continue;
-        if (left && (ui.screen == SCR_TITLE || ui.screen == SCR_PLAY) &&
-            !settings_open && !audio_control_popup_open &&
-            !hint_panel_interactive(&ui))
-          ui_feedback_pointer_press(&ui, x, y);
+        if ((!left && !right) || (e.type == SDL_MOUSEBUTTONUP && !left)) continue;
         if (ui.screen == APP_SCREEN_GAMES) {
           if (left)
             (void)games_browser_click(&persistence, &game, &ui, &g, x, y);
@@ -2235,6 +2639,9 @@ int main(int argc, char **argv) {
           if (hint_panel_blocks_point(&g, &ui, x, y))
             continue;
         }
+        /* In compact mode the hint card covers the board. Neither primary
+           nor right-click may edit an obscured cell behind that card. */
+        if (hint_panel_blocks_point(&g, &ui, x, y)) continue;
         if (point_in(language_rect(&g, &ui), x, y)) {
           if (!left) continue;
           for (int language = 0; language < LANG_COUNT; ++language) {
@@ -2382,6 +2789,7 @@ int main(int argc, char **argv) {
         int cell = side / 9;
         if (side <= 0 || cell <= 0) continue;
         if (x >= gx && x < gx + side && y >= gy && y < gy + side) {
+          if (e.type != SDL_MOUSEBUTTONDOWN) continue;
           play_keyboard_focus=-1;
           int c = (x - gx) / cell, r = (y - gy) / cell;
           ui.sel_r = r;
@@ -2405,6 +2813,32 @@ int main(int argc, char **argv) {
           }
         } else {
           if (!left) continue;
+          if (layout.model.play_compact) {
+            const int focus[] = {
+              PLAY_FOCUS_MENU,PLAY_FOCUS_PAUSE,PLAY_FOCUS_SAVE,PLAY_FOCUS_MORE,
+              PLAY_FOCUS_UNDO,PLAY_FOCUS_REDO,PLAY_FOCUS_CLEAR,PLAY_FOCUS_NOTES,
+              PLAY_FOCUS_STRICT
+            };
+            for (size_t index=0;index<sizeof(focus)/sizeof(focus[0]);++index) {
+              if (play_focus_enabled(&game,&ui,focus[index]) &&
+                  point_in(play_focus_rect(&g,&ui,focus[index]),x,y)) {
+                play_keyboard_focus=focus[index];
+                (void)activate_play_focus(&persistence,&game,&ui,&g);
+                break;
+              }
+            }
+            /* The palette is still an immediate primary click target after
+               the semantic compact toolbar and editor controls. */
+            for (int number=1;number<=9;++number) {
+              SDL_Rect rect=sdl_rect(layout.model.palette[number-1]);
+              if (!point_in(rect,x,y)) continue;
+              play_keyboard_focus=PLAY_FOCUS_NUMBER_1+number-1;
+              if (play_focus_enabled(&game,&ui,play_keyboard_focus))
+                (void)activate_play_focus(&persistence,&game,&ui,&g);
+              break;
+            }
+            continue;
+          }
           SidebarRects controls;
           compute_sidebar_rects(&layout, &controls);
           if (layout.model.hud_count > 4 &&
