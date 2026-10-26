@@ -58,7 +58,7 @@ These instructions apply to the entire repository.
 - Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
-- The canonical v1.3.7 screenshot is the maintainer-supplied and approved `docs/images/sudokura-v1.3.7.png`, showing the final gameplay interface. Previous screenshots, including v1.3.0, remain historical. Automated diagnostic renders are never canonical artwork; do not replace the approved screenshot without explicit approval.
+- The canonical v1.3.8 desktop documentation image is `docs/images/sudokura-v1.3.8.png`, an exact copy of the maintainer-approved v1.3.7 regular-layout gameplay screenshot. It does not show the new compact More panel or Saved Games paging. Preserve `docs/images/sudokura-v1.3.7.png` and earlier screenshots as historical; diagnostic UI renders are never canonical artwork, and the accepted image must not be replaced without explicit approval.
 
 ## Packaging
 
