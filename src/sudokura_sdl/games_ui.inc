@@ -21,6 +21,7 @@ typedef struct {
 } GamesBrowser;
 
 static GamesBrowser games_browser;
+static const Gfx *games_browser_window;
 
 typedef struct {
   SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
@@ -263,6 +264,7 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
                 ui->prev_screen == SCR_PLAY;
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
+  games_browser_window = NULL;
   (void)app_return_aux(ui);
   if (resume) {
     (void)clock_resume(ui, PAUSE_MODAL);
@@ -319,6 +321,7 @@ static bool games_browser_open(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
   games_browser.modal_owned = modal_owned;
+  games_browser_window = gfx;
   clear_hint_preview(ui);
   games_browser.scan_status = game_library_scan_begin(
       p->profile_directory, &games_browser.scanner);
@@ -1524,7 +1527,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
 static bool games_browser_focus_enabled(int focus) {
   if(focus==2)return true;
   if(focus==5 || focus==6)
-    return audio_gfx && games_browser_page_enabled(audio_gfx,
+    return games_browser_window && games_browser_page_enabled(games_browser_window,
                                                    focus==5?-1:1);
   if(games_browser.scanning||games_browser.selected>=games_browser.count)
     return false;
