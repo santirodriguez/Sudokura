@@ -43,6 +43,23 @@ with tempfile.TemporaryDirectory(prefix="sudokura-validator-") as temporary:
 
     check(original, True, "real matrix")
 
+    rows = [dict(row) for row in original if row["state"] != "more"]
+    check(rows, False, "reject missing compact More audit")
+
+    rows = [dict(row) for row in original if row["state"] != "games-paging"]
+    check(rows, False, "reject missing visible library paging audit")
+
+    rows = [dict(row) for row in original]
+    more = next(row for row in rows if row["state"]=="more")
+    more["focus"] = "games-next-page"
+    check(rows, False, "reject incorrect More keyboard focus")
+
+    rows = [dict(row) for row in original]
+    pager = next(row for row in rows if row["state"]=="games-paging")
+    pager["focus"] = "games-back"
+    check(rows, False, "reject missing page button focus")
+
+
     rows = [dict(row) for row in original]
     compact = next(row for row in rows
                    if row["state"] == "save-error"

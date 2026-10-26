@@ -2008,6 +2008,95 @@ int main(int argc, char **argv) {
                     ui_audio_control_available(&ui)?1:0,
                     audio_control_popup_open?1:0,audio_control_pressed?1:0);
           }
+
+      /* Keep unit-3 transient controls in the actual screenshot acceptance
+         matrix; these frames do not enter canonical public artwork. */
+      for (int language=0;language<LANG_COUNT;++language)
+        for (int dark=0;dark<2;++dark)
+          for (int case_index=0;case_index<2;++case_index) {
+            SDL_SetWindowMinimumSize(g.win,1,1);
+            SDL_SetWindowSize(g.win,360,640);
+            SDL_PumpEvents();
+            if (!gfx_refresh_metrics(&g)) {
+              fclose(manifest);app_shutdown(&g);return 1;
+            }
+            game=review_base;
+            app_state_init(&ui);
+            set_mode_params(&ui);
+            ui.screen=SCR_PLAY;
+            ui.session_open=true;
+            ui.has_session=true;
+            ui.mode=MODE_TIME;
+            set_mode_params(&ui);
+            ui.language=(Language)language;
+            ui.dark_theme=dark!=0;
+            ui.reduced_motion=true;
+            settings_open=false;
+            ui_audio_control_cancel_interaction();
+            ui_more_open=false;
+            ui_more_modal_owned=false;
+            free(games_browser.rows);
+            memset(&games_browser,0,sizeof(games_browser));
+            games_browser_window=&g;
+            const char *state=case_index==0?"more":"games-paging";
+            const char *focus=case_index==0?"more-hint":"games-next-page";
+            SDL_Rect focus_rect={0,0,0,0};
+
+            if (case_index==0) {
+              AppGeometry geometry;
+              if (!get_geometry(&g,&ui,&geometry)) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              ui_more_open_panel(&ui);
+              if (!ui_more_open || (ui.pause_reasons&PAUSE_MODAL)==0) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              ui_more_focus=MORE_HINT;
+              focus_rect=sdl_rect(geometry.more_items[MORE_HINT]);
+            } else {
+              ui.screen=APP_SCREEN_GAMES;
+              GamesBrowserLayout layout=games_browser_layout(&g);
+              for (int i=0;i<layout.visible+1;++i) {
+                GameLibraryEntry entry={0};
+                entry.id=(GameAttemptId){1,(uint64_t)i+100};
+                entry.status=STORE_OK;
+                entry.kind=GAME_RECORD_EXACT;
+                entry.result.status=SESSION_ACTIVE;
+                entry.result.mode=MODE_CLASSIC;
+                entry.result.difficulty=DIFFICULTY_MEDIUM;
+                if (!games_browser_push(&entry,false)) {
+                  fclose(manifest);app_shutdown(&g);return 1;
+                }
+              }
+              games_browser.selected=0;
+              games_browser.focus=6;
+              if (!games_browser_page_enabled(&g,1) ||
+                  games_browser_page_enabled(&g,-1)) {
+                fclose(manifest);app_shutdown(&g);return 1;
+              }
+              focus_rect=layout.page_next;
+            }
+            app_render_ui(&g,&game,&ui);
+            char filename[192],path[PATH_MAX];
+            snprintf(filename,sizeof(filename),
+                     "audit-%dx%d-%s-%s-%s.bmp",g.width,g.height,
+                     state,language_name(ui.language),
+                     ui.dark_theme?"dark":"light");
+            if (!path_join(path,sizeof(path),screenshot_dir,filename,'/') ||
+                !save_frame(&g,path)) {
+              fclose(manifest);app_shutdown(&g);return 1;
+            }
+            fprintf(manifest,
+                    "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+                    filename,g.width,g.height,state,
+                    language_name(ui.language),ui.dark_theme?"dark":"light",
+                    focus,focus_rect.x,focus_rect.y,focus_rect.w,focus_rect.h,
+                    help_scroll_px,help_scroll_max_px,0,0,0);
+            ui_more_close(&ui);
+          }
+      free(games_browser.rows);
+      memset(&games_browser,0,sizeof(games_browser));
+      games_browser_window=NULL;
       UI audio_policy_probe;
       app_state_init(&audio_policy_probe);
       audio_policy_probe.screen=SCR_TITLE;
@@ -2022,7 +2111,7 @@ int main(int argc, char **argv) {
       audio_control_popup_open=false;audio_set_music_muted(false);
       audio_set_fx_muted(false);
       fclose(manifest);settings_open=false;audio_persistence=NULL;
-      printf("rendered 170 diagnostic UI review screenshots to %s\n",screenshot_dir);
+      printf("rendered 182 diagnostic UI review screenshots to %s\n",screenshot_dir);
     }
     app_shutdown(&g);
     return 0;
