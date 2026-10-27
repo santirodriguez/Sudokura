@@ -1256,6 +1256,11 @@ static void app_render_startup_splash(Gfx *gfx, Language language) {
 }
 
 /* Exercise the actual SDL routing gate, including headless capture failure. */
+/* Keep platform-specific smoke failures actionable even in packaged GUI builds. */
+#define UI_SMOKE_FAIL() do { \
+  fprintf(stderr,"pointer smoke failed at %s:%d\\n",__FILE__,__LINE__); \
+  goto done; \
+} while (0)
 static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   UI saved_ui = *ui;
   GamesBrowser saved_browser = games_browser;
@@ -1273,7 +1278,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->hint_preview_active = false;
   ui->has_session = true;
   AppGeometry geo;
-  if (!get_geometry(gfx, ui, &geo)) goto done;
+  if (!get_geometry(gfx, ui, &geo)) UI_SMOKE_FAIL();
   SDL_Rect first = sdl_rect(geo.home_primary[0]);
   SDL_Rect second = sdl_rect(geo.home_primary[1]);
 #define PRESS_AT(rect) do { \
@@ -1281,11 +1286,11 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   event.button.button = SDL_BUTTON_LEFT; \
   event.button.x = (rect).x + (rect).w / 2; \
   event.button.y = (rect).y + (rect).h / 2; \
-  if (ui_pointer_prepare(&event) || !ui_pointer_capture.active) goto done; \
+  if (ui_pointer_prepare(&event) || !ui_pointer_capture.active) UI_SMOKE_FAIL(); \
 } while (0)
 #define RELEASE_OK(expected) do { \
   event.type = SDL_MOUSEBUTTONUP; \
-  if (ui_pointer_prepare(&event) != (expected) || ui_pointer_capture.active) goto done; \
+  if (ui_pointer_prepare(&event) != (expected) || ui_pointer_capture.active) UI_SMOKE_FAIL(); \
 } while (0)
   PRESS_AT(first);
   RELEASE_OK(true);
@@ -1300,10 +1305,10 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   motion.motion.state = SDL_BUTTON_LMASK;
   motion.motion.x = -10; motion.motion.y = -10;
   (void)ui_pointer_prepare(&motion);
-  if (ui_pointer_capture.inside) goto done;
+  if (ui_pointer_capture.inside) UI_SMOKE_FAIL();
   motion.motion.x = event.button.x; motion.motion.y = event.button.y;
   (void)ui_pointer_prepare(&motion);
-  if (!ui_pointer_capture.inside) goto done;
+  if (!ui_pointer_capture.inside) UI_SMOKE_FAIL();
   RELEASE_OK(true);
   const Uint8 cancellations[] = {SDL_WINDOWEVENT_FOCUS_LOST,
       SDL_WINDOWEVENT_HIDDEN, SDL_WINDOWEVENT_MINIMIZED,
@@ -1342,17 +1347,17 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   event.button.button = SDL_BUTTON_LEFT;
   event.button.x = board_layout.board.x + board_layout.board.w / 2;
   event.button.y = board_layout.board.y + board_layout.board.h / 2;
-  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) UI_SMOKE_FAIL();
   RELEASE_OK(false);
   settings_open = true;
   SettingsPanelLayout settings = ui_settings_panel_layout(gfx);
   event.type = SDL_MOUSEBUTTONDOWN;
   event.button.x = settings.music_track.x + settings.music_track.w / 2;
   event.button.y = settings.music_track.y + settings.music_track.h / 2;
-  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) UI_SMOKE_FAIL();
   settings_slider_drag = SETTINGS_DRAG_MUSIC;
   event.type = SDL_MOUSEBUTTONUP;
-  if (!ui_pointer_prepare(&event)) goto done;
+  if (!ui_pointer_prepare(&event)) UI_SMOKE_FAIL();
   settings_slider_drag = SETTINGS_DRAG_NONE;
   settings_open = false;
   ui_pointer_reconcile();
@@ -1360,10 +1365,10 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   event.type = SDL_MOUSEBUTTONDOWN;
   event.button.x = speaker.button.x + speaker.button.w / 2;
   event.button.y = speaker.button.y + speaker.button.h / 2;
-  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) goto done;
+  if (!ui_pointer_prepare(&event) || ui_pointer_capture.active) UI_SMOKE_FAIL();
   audio_control_pressed = true;
   event.type = SDL_MOUSEBUTTONUP;
-  if (!ui_pointer_prepare(&event)) goto done;
+  if (!ui_pointer_prepare(&event)) UI_SMOKE_FAIL();
   audio_control_pressed = false;
   /* Same rectangle, different durable record identity must not select it. */
   GamesRow rows[2] = {0};
@@ -1384,7 +1389,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
 
   /* Page controls must bind the current selected attempt, not a reused row. */
   GamesBrowserLayout pages = games_browser_layout(gfx);
-  if (pages.visible <= 0 || pages.visible >= 63) goto done;
+  if (pages.visible <= 0 || pages.visible >= 63) UI_SMOKE_FAIL();
   GamesRow page_rows[64] = {0};
   games_browser = (GamesBrowser){0};
   games_browser.rows = page_rows;
@@ -1402,7 +1407,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   RELEASE_OK(false);
   games_browser.detail_open = false;
   games_browser.scanning = true;
-  if (games_browser_focus_enabled(6)) goto done;
+  if (games_browser_focus_enabled(6)) UI_SMOKE_FAIL();
   games_browser.scanning = false;
 
   /* Exercise More through the real routing gate without invoking dialogs. */
@@ -1412,50 +1417,50 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     ui->pause_reasons = 0;
     ui_more_open_panel(ui);
     if (!ui_more_open || !ui_more_modal_owned ||
-        (ui->pause_reasons & PAUSE_MODAL) == 0) goto done;
-    if (!get_geometry(gfx,ui,&geo)) goto done;
+        (ui->pause_reasons & PAUSE_MODAL) == 0) UI_SMOKE_FAIL();
+    if (!get_geometry(gfx,ui,&geo)) UI_SMOKE_FAIL();
     SDL_Rect restart = sdl_rect(geo.more_items[MORE_RESTART]);
     SDL_Rect hint = sdl_rect(geo.more_items[MORE_HINT]);
     PRESS_AT(restart);
     event.button.x = hint.x + hint.w / 2;
     event.button.y = hint.y + hint.h / 2;
     RELEASE_OK(false);
-    if (!ui_more_open) goto done;
+    if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
     RELEASE_OK(true);
     SDL_Event key = {0};
     key.type = SDL_KEYDOWN;
     key.key.keysym.sym = SDLK_TAB;
-    if (ui_prepare_event(&key) || ui_more_focus != 1) goto done;
+    if (ui_prepare_event(&key) || ui_more_focus != 1) UI_SMOKE_FAIL();
     key.key.keysym.mod = KMOD_SHIFT;
-    if (ui_prepare_event(&key) || ui_more_focus != 0) goto done;
+    if (ui_prepare_event(&key) || ui_more_focus != 0) UI_SMOKE_FAIL();
     key.key.keysym.sym = SDLK_ESCAPE;
     key.key.keysym.mod = KMOD_NONE;
     if (ui_prepare_event(&key) || ui_more_open ||
-        (ui->pause_reasons & PAUSE_MODAL)) goto done;
-    if (play_keyboard_focus != PLAY_FOCUS_MORE) goto done;
+        (ui->pause_reasons & PAUSE_MODAL)) UI_SMOKE_FAIL();
+    if (play_keyboard_focus != PLAY_FOCUS_MORE) UI_SMOKE_FAIL();
 
     ui->pause_reasons = PAUSE_MANUAL | PAUSE_MODAL;
     ui_more_open_panel(ui);
-    if (!ui_more_open || ui_more_modal_owned) goto done;
+    if (!ui_more_open || ui_more_modal_owned) UI_SMOKE_FAIL();
     ui_more_close(ui);
-    if (ui->pause_reasons != (PAUSE_MANUAL | PAUSE_MODAL)) goto done;
+    if (ui->pause_reasons != (PAUSE_MANUAL | PAUSE_MODAL)) UI_SMOKE_FAIL();
     ui->pause_reasons = PAUSE_FOCUS;
     ui_more_open_panel(ui);
     if (!ui_more_modal_owned ||
-        ui->pause_reasons != (PAUSE_FOCUS | PAUSE_MODAL)) goto done;
+        ui->pause_reasons != (PAUSE_FOCUS | PAUSE_MODAL)) UI_SMOKE_FAIL();
     ui_more_close(ui);
-    if (ui->pause_reasons != PAUSE_FOCUS) goto done;
+    if (ui->pause_reasons != PAUSE_FOCUS) UI_SMOKE_FAIL();
 
     ui->pause_reasons = 0;
     ui_more_open_panel(ui);
-    if (!ui_more_open) goto done;
+    if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
     SDL_Event window = {0};
     window.type = SDL_WINDOWEVENT;
     window.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
     (void)ui_prepare_event(&window);
-    if (ui_more_open || (ui->pause_reasons & PAUSE_MODAL)) goto done;
+    if (ui_more_open || (ui->pause_reasons & PAUSE_MODAL)) UI_SMOKE_FAIL();
     RELEASE_OK(false);
   }
 
@@ -1466,7 +1471,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->has_session = true;
   ui_pointer_reconcile();
   uint32_t touch_window = SDL_GetWindowID(gfx->win);
-  if (!touch_window) goto done;
+  if (!touch_window) UI_SMOKE_FAIL();
   float touch_x = (first.x + first.w / 2.0f) / gfx->width;
   float touch_y = (first.y + first.h / 2.0f) / gfx->height;
   SDL_Event finger = {0};
@@ -1475,20 +1480,20 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
-      ui_pointer_prepare(&finger) || !ui_pointer_capture.active) goto done;
+      ui_pointer_prepare(&finger) || !ui_pointer_capture.active) UI_SMOKE_FAIL();
   finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONUP ||
-      !ui_pointer_prepare(&finger) || ui_pointer_capture.active) goto done;
+      !ui_pointer_prepare(&finger) || ui_pointer_capture.active) UI_SMOKE_FAIL();
   finger = (SDL_Event){0}; finger.type = SDL_MOUSEBUTTONUP;
   finger.button.which = SDL_TOUCH_MOUSEID;
-  if (ui_touch_prepare(&finger)) goto done;
+  if (ui_touch_prepare(&finger)) UI_SMOKE_FAIL();
 
   ui->screen = SCR_HELP;
   ui_pointer_reconcile();
-  if (!get_geometry(gfx, ui, &geo)) goto done;
+  if (!get_geometry(gfx, ui, &geo)) UI_SMOKE_FAIL();
   SDL_Rect body = sdl_rect(geo.info_body);
   int sx = body.x + body.w / 2, sy = body.y + body.h / 2;
   finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
@@ -1497,21 +1502,21 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)sy / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
-      ui_scroll_kind != UI_SCROLL_HELP) goto done;
+      ui_scroll_kind != UI_SCROLL_HELP) UI_SMOKE_FAIL();
   finger = (SDL_Event){0}; finger.type = SDL_FINGERMOTION;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)(sy - 20) / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
-      !ui_scroll_gesture.dragging) goto done;
+      !ui_scroll_gesture.dragging) UI_SMOKE_FAIL();
   finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)(sy - 20) / gfx->height;
   if (ui_touch_prepare(&finger) || ui_scroll_kind != UI_SCROLL_NONE)
-    goto done;
+    UI_SMOKE_FAIL();
 
   /* Board selection is deferred to a valid same-cell finger release. */
   ui->screen = SCR_PLAY; ui->session_open = true;
@@ -1525,7 +1530,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
   finger.tfinger.x = (float)bx / gfx->width;
   finger.tfinger.y = (float)by / gfx->height;
-  if (ui_touch_prepare(&finger) || !ui_touch_board_pending) goto done;
+  if (ui_touch_prepare(&finger) || !ui_touch_board_pending) UI_SMOKE_FAIL();
   finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
@@ -1533,7 +1538,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   finger.tfinger.y = (float)by / gfx->height;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
       !ui_touch_board_tap || !ui_pointer_prepare(&finger) ||
-      ui_pointer_capture.active) goto done;
+      ui_pointer_capture.active) UI_SMOKE_FAIL();
 
   passed = true;
 done:
@@ -1554,6 +1559,7 @@ done:
 #undef RELEASE_OK
   return passed;
 }
+#undef UI_SMOKE_FAIL
 
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
