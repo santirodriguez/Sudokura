@@ -2881,7 +2881,7 @@ int main(int argc, char **argv) {
             if (column > 2) column = 2;
             if (row > 2) row = 2;
             int value = row * 3 + column + 1;
-            if ((right || ui.notes_mode) &&
+            if (!ui_touch_board_tap && (right || ui.notes_mode) &&
                 apply_player_input(&game, &ui, r, c, value, true)) {
               clear_hint_preview(&ui);
               (void)stage_current_session(&persistence, &game, &ui);
