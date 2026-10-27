@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Fail-closed structural audit of an Android debug APK (not device acceptance)."""
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import zipfile
+
+if len(sys.argv) != 3:
+    raise SystemExit("usage: audit_apk.py <aapt-path> <debug-apk>")
+aapt, apk = sys.argv[1], Path(sys.argv[2])
+if not apk.is_file():
+    raise SystemExit(f"Missing APK: {apk}")
+
+
+def aapt_dump(mode):
+    process = subprocess.run(
+        [aapt, "dump", mode, str(apk)], check=True,
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return process.stdout
+
+
+badging = aapt_dump("badging")
+manifest = subprocess.run(
+    [aapt, "dump", "xmltree", str(apk), "AndroidManifest.xml"],
+    check=True, text=True, stdout=subprocess.PIPE).stdout
+for expected in (
+    "name='org.sudokura.prototype.debug'",
+    "versionCode='10309'",
+    "versionName='1.3.9-prototype'",
+    "sdkVersion:'28'",
+    "targetSdkVersion:'36'",
+    "native-code: 'arm64-v8a'",
+):
+    if expected not in badging:
+        raise SystemExit(f"APK mismatch: {expected}")
+if re.search(r"uses-permission", badging, flags=re.IGNORECASE):
+    raise SystemExit("Unexpected prototype manifest permission")
+if not re.search(
+    r"android:allowBackup\(0x01010280\)=\(type 0x12\)0x0\b", manifest
+):
+    raise SystemExit("Manifest does not explicitly disable backup")
+expected_native = {
+    "libSDL2.so",
+    "libSDL2_ttf.so",
+    "libSDL2_mixer.so",
+    "libmain.so",
+}
+with zipfile.ZipFile(apk) as archive:
+    paths = set(archive.namelist())
+    native_paths = {p for p in paths if p.startswith("lib/") and p.endswith(".so")}
+    if any(not p.startswith("lib/arm64-v8a/") for p in native_paths):
+        raise SystemExit("Unexpected native ABI")
+    actual_native = {Path(p).name for p in native_paths}
+    if not expected_native.issubset(actual_native):
+        raise SystemExit(f"Missing native libraries: {sorted(expected_native - actual_native)}")
+    expected_assets = {
+        "assets/DejaVuSans.ttf",
+        "assets/audio/music-main.ogg",
+        "assets/audio/music-fail.ogg",
+        "assets/audio/jingle-win.ogg",
+        "assets/audio/jingle-fail.ogg",
+        "assets/licenses/Sudokura-GPLv3.txt",
+        "assets/licenses/DejaVuSans-copyright.txt",
+        "assets/licenses/SDL2-2.32.10-license.txt",
+        "assets/licenses/SDL2_ttf-2.24.0-license.txt",
+        "assets/licenses/SDL2_mixer-2.8.1-license.txt",
+    }
+    if not expected_assets.issubset(paths):
+        raise SystemExit(f"Missing assets/notices: {sorted(expected_assets - paths)}")
+    for path in expected_assets:
+        if archive.getinfo(path).file_size == 0:
+            raise SystemExit(f"Empty asset: {path}")
+print(json.dumps({
+    "apk": str(apk),
+    "bytes": apk.stat().st_size,
+    "native": sorted(native_paths),
+    "permissions": [],
+    "application_id": "org.sudokura.prototype.debug",
+    "android_backup": False,
+    "asset_count": len(expected_assets),
+    "device_test": "NOT_RUN",
+}, indent=2))
