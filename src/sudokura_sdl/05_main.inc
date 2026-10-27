@@ -1459,8 +1459,84 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     RELEASE_OK(false);
   }
 
+  /* Exercise native finger dispatch without requiring a physical digitizer. */
+  settings_open = false; audio_control_popup_open = false; ui_more_open = false;
+  ui->screen = SCR_TITLE; ui->pause_reasons = 0;
+  ui->generating = false; ui->hint_preview_active = false;
+  ui->has_session = true;
+  ui_pointer_reconcile();
+  uint32_t touch_window = SDL_GetWindowID(gfx->win);
+  if (!touch_window) goto done;
+  float touch_x = (first.x + first.w / 2.0f) / gfx->width;
+  float touch_y = (first.y + first.h / 2.0f) / gfx->height;
+  SDL_Event finger = {0};
+  finger.type = SDL_FINGERDOWN;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
+  finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
+  if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
+      ui_pointer_prepare(&finger) || !ui_pointer_capture.active) goto done;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
+  finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
+  if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONUP ||
+      !ui_pointer_prepare(&finger) || ui_pointer_capture.active) goto done;
+  finger = (SDL_Event){0}; finger.type = SDL_MOUSEBUTTONUP;
+  finger.button.which = SDL_TOUCH_MOUSEID;
+  if (ui_touch_prepare(&finger)) goto done;
+
+  ui->screen = SCR_HELP;
+  ui_pointer_reconcile();
+  if (!get_geometry(gfx, ui, &geo)) goto done;
+  SDL_Rect body = sdl_rect(geo.info_body);
+  int sx = body.x + body.w / 2, sy = body.y + body.h / 2;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
+  finger.tfinger.x = (float)sx / gfx->width;
+  finger.tfinger.y = (float)sy / gfx->height;
+  if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
+      ui_scroll_kind != UI_SCROLL_HELP) goto done;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERMOTION;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
+  finger.tfinger.x = (float)sx / gfx->width;
+  finger.tfinger.y = (float)(sy - 20) / gfx->height;
+  if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
+      !ui_scroll_gesture.dragging) goto done;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
+  finger.tfinger.x = (float)sx / gfx->width;
+  finger.tfinger.y = (float)(sy - 20) / gfx->height;
+  if (ui_touch_prepare(&finger) || ui_scroll_kind != UI_SCROLL_NONE)
+    goto done;
+
+  /* Board selection is deferred to a valid same-cell finger release. */
+  ui->screen = SCR_PLAY; ui->session_open = true;
+  ui->result = RES_NONE; ui->pause_reasons = 0;
+  ui_pointer_reconcile();
+  Layout touch_board = compute_layout(gfx->width, gfx->height, ui->mode);
+  int bx = touch_board.board.x + touch_board.board.w / 2;
+  int by = touch_board.board.y + touch_board.board.h / 2;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
+  finger.tfinger.x = (float)bx / gfx->width;
+  finger.tfinger.y = (float)by / gfx->height;
+  if (ui_touch_prepare(&finger) || !ui_touch_board_pending) goto done;
+  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  finger.tfinger.windowID = touch_window;
+  finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
+  finger.tfinger.x = (float)bx / gfx->width;
+  finger.tfinger.y = (float)by / gfx->height;
+  if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
+      !ui_pointer_prepare(&finger) || ui_pointer_capture.active) goto done;
+
   passed = true;
 done:
+  ui_touch_cancel();
   ui_pointer_cancel();
   settings_slider_drag = SETTINGS_DRAG_NONE;
   audio_control_pressed = false;
