@@ -341,6 +341,7 @@ static TouchScroll ui_scroll_gesture;
 static UiScrollKind ui_scroll_kind;
 static bool ui_touch_replayed;
 static bool ui_touch_board_pending;
+static bool ui_touch_board_tap;
 static uint64_t ui_touch_board_generation;
 static int ui_touch_board_row, ui_touch_board_col;
 static size_t ui_scroll_start_index;
@@ -356,6 +357,7 @@ static void ui_scroll_cancel(void) {
 static void ui_touch_cancel(void) {
   touch_input_cancel(&ui_touch_input);
   ui_touch_board_pending = false;
+  ui_touch_board_tap = false;
   ui_touch_replayed = false;
   ui_scroll_cancel();
   settings_slider_drag = SETTINGS_DRAG_NONE;
@@ -619,6 +621,7 @@ static bool ui_touch_board_cell(int x, int y, int *row, int *column) {
    mouse handler. No event is enqueued or dispatched a second time. */
 static bool ui_touch_prepare(SDL_Event *event) {
   ui_touch_replayed = false;
+  ui_touch_board_tap = false;
   if (event->type == SDL_MOUSEMOTION &&
       event->motion.which == SDL_TOUCH_MOUSEID) return false;
   if ((event->type == SDL_MOUSEBUTTONDOWN ||
@@ -665,6 +668,7 @@ static bool ui_touch_prepare(SDL_Event *event) {
         row != ui_touch_board_row || column != ui_touch_board_col)
       return false;
     /* The existing board path acts on a down; only release a valid tap there. */
+    ui_touch_board_tap = true;
     phase = TOUCH_INPUT_DOWN;
   } else if (phase == TOUCH_INPUT_MOTION) {
     if (result.slop_exceeded && !ui_scroll_gesture.active &&
