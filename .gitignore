@@ -52,3 +52,11 @@
 /dmg-verify-macos-*.txt
 /size-comparison-macos-*.txt
 tests/test_library_paging
+
+# Android preview inputs and generated build output (never commit binaries/SDKs).
+/android/.cache/
+/android/.gradle/
+/android/local.properties
+/android/app/.cxx/
+/android/app/build/
+/android/build/
