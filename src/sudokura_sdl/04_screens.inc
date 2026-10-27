@@ -413,6 +413,8 @@ static bool app_init_base(Gfx*g,const char*font_cli){
   memset(g,0,sizeof(*g));g->width=SUDOKURA_DEFAULT_WINDOW_WIDTH;
   g->height=SUDOKURA_DEFAULT_WINDOW_HEIGHT;g->dirty=true;
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");
+  SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
+  SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
   if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){
     fprintf(stderr,"SDL_Init: %s\n",SDL_GetError());return false;
   }
