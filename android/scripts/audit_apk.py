@@ -41,6 +41,9 @@ if not re.search(
     r"android:allowBackup\(0x01010280\)=\(type 0x12\)0x0\b", manifest
 ):
     raise SystemExit("Manifest does not explicitly disable backup")
+for attribute in ("android:fullBackupContent(", "android:dataExtractionRules("):
+    if attribute not in manifest:
+        raise SystemExit(f"Manifest missing prototype backup exclusion reference: {attribute}")
 expected_native = {
     "libSDL2.so",
     "libSDL2_ttf.so",
@@ -56,6 +59,8 @@ with zipfile.ZipFile(apk) as archive:
     if not expected_native.issubset(actual_native):
         raise SystemExit(f"Missing native libraries: {sorted(expected_native - actual_native)}")
     expected_assets = {
+        "res/xml/backup_rules.xml",
+        "res/xml/data_extraction_rules.xml",
         "assets/DejaVuSans.ttf",
         "assets/audio/music-main.ogg",
         "assets/audio/music-fail.ogg",
