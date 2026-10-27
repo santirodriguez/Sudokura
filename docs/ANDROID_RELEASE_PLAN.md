@@ -1,9 +1,10 @@
 # Sudokura: desktop evolution and Android release plan
 
-Status: Phase 0 design; implementation and publication are separate decisions.
+Status: Active roadmap; v1.3.8 published; v1.3.9 Phase 0 complete. Implementation and publication remain separate decisions.
 Reviewed: 2026-10-26.
-Baseline: `483edc8ea3f93698f7781e7fe933a9d996f93fdf` (`main` and `v1.3.7`).
-Next-release specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md).
+Current published baseline: `4d2c8dbddbe906e5dd714a2f6691dd2760e98072` (`main` and `v1.3.8` at review).
+Next-release specification: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
+Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.
 
 ## Outcome and constraints
 
@@ -26,7 +27,7 @@ The planned sequence is 1.3.8 → 1.3.9 → 1.4.0. If evidence requires further 
 | **1.4.0 — shared reliability and Android publicability target** | Robust interruption/resume behavior across screens, generation and audio; readable compact/HiDPI screens and scrolling improvements validated by the prototype | Complete functional parity and distribution candidate, including release APK/AAB preparation, native dependency audit and store-readiness material | Depends on recorded prototype findings. Close concrete shared lifecycle/UI/resource defects; no unrelated feature bundle. Publish Android here only when all publicability gates pass. | Full cross-platform regression, real-device parity, update/data preservation, native 16 KB/ABI validation, release-build/signing verification when separately authorized, honest store metadata and privacy/license material |
 | **1.4.1 onward, ending no later than 1.5.0 — contingency only** | Only actual shared defects or usability gaps identified by testing | Close named publicability blockers; no second architecture | Not preapproved implementation scopes. At each release boundary identify the remaining blockers and update this plan. If remaining work is Android-only and supplies no desktop benefit, keep it within the ongoing useful release rather than inventing a filler desktop release. | Same publicability gates; if quality and the horizon truly conflict, report evidence and seek a decision before changing the horizon or dropping functionality |
 
-Releases 1.3.9 and 1.4.0 are directional scopes, not exhaustive blueprints. Refine them from device evidence at their respective Phase 0 boundaries. Earlier Android delivery is permitted only after satisfying the same gates. A successful v1.4.0 closes the Android-publicability objective; it does not force further releases.
+Release 1.3.9 now has its executable blueprint linked above; 1.4.0 remains directional. Refine the latter from the early device evidence at its Phase 0 boundary. Earlier Android delivery is permitted only after satisfying the same gates. A successful v1.4.0 closes the Android-publicability objective; it does not force further releases.
 
 ## Milestones with different meanings
 
@@ -67,11 +68,11 @@ Parity is necessary but insufficient. Require:
 
 ### Host and build
 
-Use SDL2's Android host/SDLActivity and a thin Android project referencing existing sources. Prefer Gradle plus a small CMake native target if the selected pinned SDL2/add-on versions integrate cleanly; use the upstream-supported ndk-build path if a bounded build probe demonstrates less maintenance. Resolve this during the first prototype, not by migrating the desktop Makefile now.
+Use SDL2's Android host/SDLActivity and a thin Android project referencing existing sources. The v1.3.9 blueprint selects Gradle plus a small CMake native target, supported by the inspected SDL2/add-on source. Retain ndk-build only as a bounded fallback if an actual integration failure demonstrates less maintenance. Do not migrate the desktop Makefile.
 
 Pin compatible SDL2/ttf/mixer, NDK, AGP/Gradle/JDK and source checksums at that milestone. Compile dependencies from inspectable source where practical; no arbitrary prebuilt SDK bundle. Retain only the audio codecs actually needed for the four OGGs. Keep desktop dependency changes separate unless a demonstrated compatibility fix requires them.
 
-Working support hypothesis: minSdk 26, arm64-v8a for physical-device delivery, x86_64 only when needed for emulator validation. These are not final public promises. Check the NDK availability of `getrandom` in `src/seed.c`; if supporting an older API, use a narrowly tested entropy source rather than weakening attempt-ID creation. Do not infer Android package identity from another application; `com.santiagorodriguez.sudokura` currently identifies the macOS bundle only.
+v1.3.9 prototype decision: minSdk 28 and arm64-v8a; x86_64 only when needed for emulator validation. This supersedes the tentative minSdk26 hypothesis: inspected Android bionic declares the existing `getrandom` call from API28, avoiding an unnecessary entropy fallback. Final public support remains subject to device evidence. Do not weaken attempt-ID creation. Do not infer Android package identity from another application; `com.santiagorodriguez.sudokura` currently identifies the macOS bundle only.
 
 ### Input, viewport and lifecycle
 
@@ -101,6 +102,16 @@ Official references checked on 2026-10-26; revalidate mutable requirements befor
 - [Android accessibility](https://developer.android.com/guide/topics/ui/accessibility/apps): 48dp touch-target recommendation, contrast and semantic accessibility inform device acceptance.
 
 These references support retaining SDL2 with small host seams. They do not prove that the current Sudokura binary runs on Android.
+
+## Verified release progress and next gate
+
+v1.3.8 is published at the current baseline above. PR #14 merged its compact controls, More panel, pointer cancellation and Saved Games paging. Exact-head CI runs 40406632381/40397978066 and release workflow 40406631994 completed successfully. The public release contains the established desktop artifacts. These observations do not certify Android, physical touch, or independent Windows/macOS hardware acceptance.
+
+v1.3.9 Phase 0 selects native single-owner touch, bounded Help/library drag also usable by mouse, and a source-built arm64 debug host. The release blueprint owns precise behavior, build versions, prototype-only identity/backup policy, density/inset geometry, lifecycle/Back/resource work and acceptance. No Android implementation or device success is claimed yet. The first physical-device gate is after the critical play/save/resume slice, before optional mobile completion; emulator/CI alone cannot pass it.
+
+A narrow phone cannot fit nine 48dp cells across its width. The prototype must measure and disclose board-cell size/comfort while giving action controls meaningful targets; this is not a blanket accessibility claim. Any paused rotate/enlarge fallback for short surfaces is prototype-only and must be resolved before functional parity/publicability. TalkBack remains an evidence-driven decision before publicability, not an assumed capability or automatic rewrite mandate.
+
+Public Android identity, final minimum support, distribution channels, signing custody and public backup/transfer policy remain decisions before launch. The prototype's separate temporary identity and disabled backup do not preempt them. The v1.4.0 target and v1.5.0 maximum horizon are unchanged.
 
 ## Maintenance of this plan
 
