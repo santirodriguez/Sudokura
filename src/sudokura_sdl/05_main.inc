@@ -2956,6 +2956,7 @@ int main(int argc, char **argv) {
       }
     }
 
+    ui_scroll_flush_preview();
     if (ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
     if (home_daily_scan.active) {
