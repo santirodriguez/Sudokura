@@ -29,7 +29,11 @@
 #include <limits.h>
 
 #include <SDL2/SDL.h>
+#if defined(__ANDROID__)
+#include <SDL_ttf.h>
+#else
 #include <SDL2/SDL_ttf.h>
+#endif
 
 #if defined(_WIN32)
   #include <windows.h>
