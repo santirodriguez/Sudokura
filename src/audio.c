@@ -1,7 +1,11 @@
 #include "audio.h"
 
 #include <SDL2/SDL.h>
+#if defined(__ANDROID__)
+#include <SDL_mixer.h>
+#else
 #include <SDL2/SDL_mixer.h>
+#endif
 
 #include <math.h>
 #include <stdio.h>
