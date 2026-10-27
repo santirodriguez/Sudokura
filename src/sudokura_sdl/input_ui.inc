@@ -330,6 +330,38 @@ static bool ui_pointer_mouse_captured;
 static int ui_pointer_origin_x, ui_pointer_origin_y;
 static PointerTarget ui_pointer_resolve(int x, int y);
 
+typedef enum {
+  UI_SCROLL_NONE,
+  UI_SCROLL_HELP,
+  UI_SCROLL_LIBRARY
+} UiScrollKind;
+
+static TouchInput ui_touch_input;
+static TouchScroll ui_scroll_gesture;
+static UiScrollKind ui_scroll_kind;
+static bool ui_touch_replayed;
+static bool ui_touch_board_pending;
+static uint64_t ui_touch_board_generation;
+static int ui_touch_board_row, ui_touch_board_col;
+static size_t ui_scroll_start_index;
+static GameAttemptId ui_scroll_start_id;
+static bool ui_scroll_started_selection, ui_scroll_preview_pending;
+
+static void ui_scroll_cancel(void) {
+  touch_scroll_cancel(&ui_scroll_gesture);
+  ui_scroll_kind = UI_SCROLL_NONE;
+  ui_scroll_started_selection = false;
+}
+
+static void ui_touch_cancel(void) {
+  touch_input_cancel(&ui_touch_input);
+  ui_touch_board_pending = false;
+  ui_touch_replayed = false;
+  ui_scroll_cancel();
+  settings_slider_drag = SETTINGS_DRAG_NONE;
+  audio_control_pressed = false;
+}
+
 static void ui_pointer_cancel(void) {
   pointer_capture_cancel(&ui_pointer_capture);
   if (ui_pointer_mouse_captured) (void)SDL_CaptureMouse(SDL_FALSE);
@@ -351,8 +383,7 @@ static void ui_pointer_reconcile(void) {
       ui_pointer_busy(), ui_more_open};
   if (memcmp(context, ui_pointer_context, sizeof(context)) != 0) {
     ui_pointer_cancel();
-    settings_slider_drag = SETTINGS_DRAG_NONE;
-    audio_control_pressed = false;
+    ui_touch_cancel();
     memcpy(ui_pointer_context, context, sizeof(context));
     ++ui_pointer_generation;
   }
@@ -482,13 +513,203 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
   return (PointerTarget){0};
 }
 
+/* Scroll owns only the Help body or an enabled library row. Action buttons,
+   Back, paging, and disabled/scanning list surfaces never start a drag. */
+static void ui_scroll_start(int x, int y) {
+  if (!audio_gfx || !audio_ui || settings_open || ui_more_open ||
+      audio_control_popup_open)
+    return;
+  if (audio_ui->screen == SCR_HELP) {
+    AppGeometry geometry;
+    if (get_geometry(audio_gfx, audio_ui, &geometry) &&
+        point_in(sdl_rect(geometry.info_body), x, y)) {
+      ui_scroll_kind = UI_SCROLL_HELP;
+      touch_scroll_begin(&ui_scroll_gesture, x, y);
+    }
+  } else if (audio_ui->screen == APP_SCREEN_GAMES && audio_persistence &&
+             !games_browser.scanning && !games_browser.detail_open &&
+             games_browser.count > 0) {
+    GamesBrowserLayout layout = games_browser_layout(audio_gfx);
+    if (!point_in(layout.list, x, y) || layout.row_height <= 0) return;
+    int row = (y - layout.list.y) / layout.row_height;
+    size_t index = games_browser.scroll + (size_t)row;
+    if (row >= layout.visible || index >= games_browser.count) return;
+    ui_scroll_kind = UI_SCROLL_LIBRARY;
+    ui_scroll_start_index = index;
+    ui_scroll_start_id = games_browser.rows[index].entry.id;
+    touch_scroll_begin(&ui_scroll_gesture, x, y);
+  }
+}
+
+/* Preview loading is deferred until the current SDL event batch is drained,
+   rather than decoding a game record for every finger/mouse motion. */
+static void ui_scroll_flush_preview(void) {
+  if (!ui_scroll_preview_pending) return;
+  ui_scroll_preview_pending = false;
+  if (audio_gfx && audio_persistence && audio_ui &&
+      audio_ui->screen == APP_SCREEN_GAMES && !games_browser.scanning &&
+      !games_browser.detail_open && games_browser.count)
+    games_browser_preview_selected(audio_persistence);
+}
+
+static bool ui_scroll_motion(int x, int y) {
+  if (ui_scroll_kind == UI_SCROLL_NONE) return false;
+  if (ui_scroll_kind == UI_SCROLL_LIBRARY &&
+      (games_browser.scanning || games_browser.detail_open ||
+       ui_scroll_start_index >= games_browser.count ||
+       !game_attempt_id_equal(
+           games_browser.rows[ui_scroll_start_index].entry.id,
+           ui_scroll_start_id))) {
+    ui_scroll_cancel();
+    ui_pointer_cancel();
+    return true;
+  }
+  TouchScrollResult motion = touch_scroll_motion(&ui_scroll_gesture, x, y, 8);
+  if (!motion.scrolling) return false;
+  ui_pointer_cancel();
+  if (ui_scroll_kind == UI_SCROLL_HELP) {
+    help_scroll_by(-motion.delta_y);
+  } else if (ui_scroll_kind == UI_SCROLL_LIBRARY && audio_gfx) {
+    if (!ui_scroll_started_selection) {
+      games_browser.selected = ui_scroll_start_index;
+      games_browser.focus = 0;
+      games_browser_ensure_visible(audio_gfx);
+      ui_scroll_started_selection = true;
+      ui_scroll_preview_pending = true;
+    }
+    GamesBrowserLayout layout = games_browser_layout(audio_gfx);
+    int steps = touch_scroll_rows(&ui_scroll_gesture, motion.delta_y,
+                                 layout.row_height);
+    if (steps != 0) {
+      int64_t next = (int64_t)games_browser.selected - steps;
+      if (next < 0) next = 0;
+      if ((uint64_t)next >= games_browser.count)
+        next = (int64_t)games_browser.count - 1;
+      if ((size_t)next != games_browser.selected) {
+        games_browser.selected = (size_t)next;
+        games_browser_ensure_visible(audio_gfx);
+        ui_scroll_preview_pending = true;
+      }
+    }
+  }
+  return true;
+}
+
+static bool ui_touch_board_cell(int x, int y, int *row, int *column) {
+  if (!audio_gfx || !audio_ui || audio_ui->screen != SCR_PLAY ||
+      settings_open || ui_more_open || audio_control_popup_open ||
+      !app_play_interactions_allowed(audio_ui) ||
+      hint_panel_blocks_point(audio_gfx, audio_ui, x, y))
+    return false;
+  Layout layout = compute_layout(audio_gfx->width, audio_gfx->height,
+                                 audio_ui->mode);
+  if (!point_in(layout.board, x, y)) return false;
+  int side = layout.board.w;
+  int cell = side / 9;
+  if (cell <= 0) return false;
+  int r = (y - layout.board.y) / cell;
+  int c = (x - layout.board.x) / cell;
+  if (r < 0 || r >= 9 || c < 0 || c >= 9) return false;
+  if (row) *row = r;
+  if (column) *column = c;
+  return true;
+}
+
+/* Translate an accepted finger sample in place for the EXISTING semantic
+   mouse handler. No event is enqueued or dispatched a second time. */
+static bool ui_touch_prepare(SDL_Event *event) {
+  ui_touch_replayed = false;
+  if (event->type == SDL_MOUSEMOTION &&
+      event->motion.which == SDL_TOUCH_MOUSEID) return false;
+  if ((event->type == SDL_MOUSEBUTTONDOWN ||
+       event->type == SDL_MOUSEBUTTONUP) &&
+      event->button.which == SDL_TOUCH_MOUSEID) return false;
+  if (event->type == SDL_MOUSEBUTTONDOWN &&
+      event->button.button == SDL_BUTTON_LEFT)
+    ui_touch_cancel(); /* A real mouse has priority over an active finger. */
+
+  if (event->type != SDL_FINGERDOWN && event->type != SDL_FINGERMOTION &&
+      event->type != SDL_FINGERUP)
+    return true;
+  if (!audio_gfx || !audio_gfx->win || !audio_ui) return false;
+  if (event->tfinger.touchId == SDL_MOUSE_TOUCHID) return false;
+  ui_pointer_reconcile();
+  SDL_TouchFingerEvent finger = event->tfinger;
+  TouchInputPhase phase = event->type == SDL_FINGERDOWN ? TOUCH_INPUT_DOWN :
+                          event->type == SDL_FINGERMOTION ? TOUCH_INPUT_MOTION :
+                          TOUCH_INPUT_UP;
+  TouchSample sample = {
+      .touch_id = finger.touchId, .finger_id = finger.fingerId,
+      .window_id = finger.windowID, .x = finger.x, .y = finger.y};
+  TouchInputResult result = touch_input_event(
+      &ui_touch_input, phase, sample, SDL_GetWindowID(audio_gfx->win),
+      audio_gfx->width, audio_gfx->height, 8);
+  if (!result.accepted) return false;
+  if (!result.valid) {
+    ui_pointer_cancel();
+    ui_touch_cancel();
+    return false;
+  }
+  if (phase == TOUCH_INPUT_DOWN) {
+    ui_touch_board_pending =
+        ui_touch_board_cell(result.x, result.y,
+                            &ui_touch_board_row, &ui_touch_board_col);
+    ui_touch_board_generation = ui_pointer_generation;
+    if (ui_touch_board_pending) return false;
+  } else if (ui_touch_board_pending) {
+    if (phase == TOUCH_INPUT_MOTION) return false;
+    ui_touch_board_pending = false;
+    int row = -1, column = -1;
+    if (!result.tap || ui_touch_board_generation != ui_pointer_generation ||
+        !ui_touch_board_cell(result.x, result.y, &row, &column) ||
+        row != ui_touch_board_row || column != ui_touch_board_col)
+      return false;
+    /* The existing board path acts on a down; only release a valid tap there. */
+    phase = TOUCH_INPUT_DOWN;
+  } else if (phase == TOUCH_INPUT_MOTION) {
+    if (result.slop_exceeded && !ui_scroll_gesture.active &&
+        settings_slider_drag == SETTINGS_DRAG_NONE) {
+      ui_pointer_cancel();
+      audio_control_pressed = false;
+    }
+  } else if (!result.tap && settings_slider_drag == SETTINGS_DRAG_NONE) {
+    ui_pointer_cancel();
+    ui_scroll_cancel();
+    audio_control_pressed = false;
+    return false;
+  }
+
+  SDL_Event mapped = {0};
+  ui_touch_replayed = true;
+  if (phase == TOUCH_INPUT_MOTION) {
+    mapped.type = SDL_MOUSEMOTION;
+    mapped.motion.windowID = finger.windowID;
+    mapped.motion.state = SDL_BUTTON_LMASK;
+    mapped.motion.x = result.x;
+    mapped.motion.y = result.y;
+  } else {
+    mapped.type = phase == TOUCH_INPUT_DOWN ? SDL_MOUSEBUTTONDOWN
+                                             : SDL_MOUSEBUTTONUP;
+    mapped.button.windowID = finger.windowID;
+    mapped.button.button = SDL_BUTTON_LEFT;
+    mapped.button.x = result.x;
+    mapped.button.y = result.y;
+  }
+  *event = mapped;
+  return true;
+}
+
 /* True means the original event may continue to its existing handler. */
 static bool ui_pointer_prepare(SDL_Event *event) {
   ui_pointer_reconcile();
   if (event->type == SDL_WINDOWEVENT || event->type == SDL_QUIT ||
       event->type == SDL_RENDER_DEVICE_RESET || event->type == SDL_RENDER_TARGETS_RESET ||
+      event->type == SDL_APP_WILLENTERBACKGROUND ||
+      event->type == SDL_APP_DIDENTERBACKGROUND ||
+      event->type == SDL_APP_TERMINATING ||
       event->type == SDL_KEYDOWN || event->type == SDL_MOUSEWHEEL) {
     ui_pointer_cancel();
+    ui_touch_cancel();
     if (event->type == SDL_WINDOWEVENT) {
       settings_slider_drag = SETTINGS_DRAG_NONE;
       if (event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
@@ -500,8 +721,15 @@ static bool ui_pointer_prepare(SDL_Event *event) {
     }
   }
   if (event->type == SDL_MOUSEMOTION) {
-    if (!(event->motion.state & SDL_BUTTON_LMASK)) ui_pointer_cancel();
-    else pointer_capture_motion(&ui_pointer_capture, event->motion.x, event->motion.y);
+    if (!(event->motion.state & SDL_BUTTON_LMASK)) {
+      ui_pointer_cancel();
+      ui_scroll_cancel();
+    } else if (ui_scroll_motion(event->motion.x, event->motion.y)) {
+      return false;
+    } else {
+      pointer_capture_motion(&ui_pointer_capture, event->motion.x,
+                             event->motion.y);
+    }
     return true;
   }
   if ((event->type != SDL_MOUSEBUTTONDOWN && event->type != SDL_MOUSEBUTTONUP) ||
@@ -510,6 +738,8 @@ static bool ui_pointer_prepare(SDL_Event *event) {
   int x = event->button.x, y = event->button.y;
   if (event->type == SDL_MOUSEBUTTONDOWN) {
     ui_pointer_cancel();
+    ui_scroll_cancel();
+    ui_scroll_start(x, y);
     /* The speaker owns its existing short/long-press gesture. */
     if (!ui_more_open && ui_audio_control_available(audio_ui) &&
         point_in(sdl_rect(ui_audio_control_geometry(audio_gfx, audio_ui).button), x, y))
@@ -522,7 +752,8 @@ static bool ui_pointer_prepare(SDL_Event *event) {
     if (pointer_capture_begin(&ui_pointer_capture, target, x, y)) {
       ui_pointer_origin_x = x;
       ui_pointer_origin_y = y;
-      ui_pointer_mouse_captured = SDL_CaptureMouse(SDL_TRUE) == 0;
+      ui_pointer_mouse_captured =
+          !ui_touch_replayed && SDL_CaptureMouse(SDL_TRUE) == 0;
       return false;
     }
     /* Board selection/note entry remains immediate, including right click. */
@@ -533,6 +764,14 @@ static bool ui_pointer_prepare(SDL_Event *event) {
       return point_in(a.board, x, y);
     }
     return false;
+  }
+  if (ui_scroll_gesture.active) {
+    bool dragged = ui_scroll_gesture.dragging;
+    ui_scroll_cancel();
+    if (dragged) {
+      ui_pointer_cancel();
+      return false;
+    }
   }
   if (audio_control_pressed || settings_slider_drag != SETTINGS_DRAG_NONE)
     return true;
@@ -589,6 +828,7 @@ static bool ui_handle_more_panel_event(SDL_Event *event) {
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
   if(audio_gfx)audio_gfx->dirty=true;
+  if (!ui_touch_prepare(event)) return false;
   if (!ui_pointer_prepare(event)) return false;
   if (ui_handle_more_panel_event(event)) return false;
   if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();
