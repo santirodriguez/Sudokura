@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -57,6 +58,54 @@ def safe_relative(name, root):
     return Path(*path.parts)
 
 
+def safe_link_target(member, root):
+    """Resolve a link lexically within the verified archive's source root."""
+    name = member.linkname
+    if not name or name.startswith("/") or "\\\\" in name:
+        raise RuntimeError(f"Unsafe archive link target: {name}")
+    if member.issym():
+        name = posixpath.join(posixpath.dirname(member.name), name)
+    target = posixpath.normpath(name)
+    return safe_relative(target, root)
+
+
+def materialize_links(stage, root, links):
+    """Preserve verified in-tree links; never follow links outside the source root."""
+    if not links:
+        return
+    base = (stage / root).resolve(strict=True)
+    pending = links
+    for _ in range(len(links)):
+        remaining = []
+        progressed = False
+        for member in pending:
+            relative = safe_relative(member.name, root)
+            target_relative = safe_link_target(member, root)
+            destination = stage / relative
+            source = stage / target_relative
+            if not source.exists():
+                remaining.append(member)
+                continue
+            if (destination.exists() or destination.is_symlink() or
+                    not destination.parent.is_dir() or
+                    not destination.parent.resolve().is_relative_to(base) or
+                    not source.resolve().is_relative_to(base)):
+                raise RuntimeError(f"Unsafe or duplicate archive link: {member.name}")
+            if member.issym():
+                destination.symlink_to(os.path.relpath(source, destination.parent))
+            else:
+                if not source.is_file():
+                    raise RuntimeError(f"Hard link is not a file: {member.name}")
+                os.link(source, destination)
+            progressed = True
+        if not remaining:
+            return
+        if not progressed:
+            raise RuntimeError("Archive contains dangling or cyclic links")
+        pending = remaining
+    raise RuntimeError("Archive link resolution failed")
+
+
 def extract_archive(archive, stage, entry):
     root = entry["directory"]
     total = 0
@@ -80,11 +129,17 @@ def extract_archive(archive, stage, entry):
                     if ((member.external_attr >> 16) & 0o111):
                         target.chmod(0o755)
     else:
+        links = []
         with tarfile.open(archive, "r:gz") as bundle:
             for member in bundle:
                 relative = safe_relative(member.name, root)
+                if member.issym() or member.islnk():
+                    # Defer links so an archive cannot redirect subsequent writes.
+                    safe_link_target(member, root)
+                    links.append(member)
+                    continue
                 if not (member.isfile() or member.isdir()):
-                    raise RuntimeError("Archive links and special entries are not permitted")
+                    raise RuntimeError("Archive special entries are not permitted")
                 total += member.size
                 if total > MAX_UNPACKED:
                     raise RuntimeError("Archive exceeds unpacked byte budget")
@@ -100,6 +155,7 @@ def extract_archive(archive, stage, entry):
                         shutil.copyfileobj(source, dest)
                     if member.mode & 0o111:
                         target.chmod(0o755)
+        materialize_links(stage, root, links)
     if not (stage / root).is_dir():
         raise RuntimeError("Archive lacks expected source root")
 
