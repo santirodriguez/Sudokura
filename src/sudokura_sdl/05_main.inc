@@ -1532,7 +1532,8 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   finger.tfinger.x = (float)bx / gfx->width;
   finger.tfinger.y = (float)by / gfx->height;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
-      !ui_pointer_prepare(&finger) || ui_pointer_capture.active) goto done;
+      !ui_touch_board_tap || !ui_pointer_prepare(&finger) ||
+      ui_pointer_capture.active) goto done;
 
   passed = true;
 done:
