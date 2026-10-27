@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+}
+
+def projectRoot = file('../..')
+def versionHeader = new File(projectRoot, 'src/version.h').text
+def versionComponent = { String name ->
+    def match = (versionHeader =~ /(?m)^#define\s+SUDOKURA_VERSION_${name}\s+(\d+)\s*$/)
+    if (!match.find()) {
+        throw new GradleException("Missing version component ${name}")
+    }
+    return Integer.parseInt(match.group(1))
+}
+def major = versionComponent('MAJOR')
+def minor = versionComponent('MINOR')
+def patch = versionComponent('PATCH')
+if (minor > 99 || patch > 99) {
+    throw new GradleException('Prototype versionCode requires two-digit minor/patch')
+}
+def prototypeCode = major * 10000 + minor * 100 + patch
+
+android {
+    namespace 'org.sudokura.prototype'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+    ndkVersion '28.2.13676358'
+
+    defaultConfig {
+        applicationId 'org.sudokura.prototype.debug'
+        minSdk 28
+        targetSdk 36
+        versionCode prototypeCode
+        versionName "${major}.${minor}.${patch}-prototype"
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDir "${projectRoot}/android/.cache/source/SDL2-2.32.10/android-project/app/src/main/java"
+            assets.srcDir "${buildDir}/generated/sudokura-assets"
+        }
+    }
+}
+
+tasks.register('prepareSudokuraAssets', Copy) {
+    def fontPath = providers.gradleProperty('sudokuraFont')
+    doFirst {
+        if (!fontPath.present || !file(fontPath.get()).isFile()) {
+            throw new GradleException('Specify -PsudokuraFont=/verified/path/DejaVuSans.ttf')
+        }
+    }
+    from(projectRoot) {
+        include 'assets/audio/*.ogg'
+        eachFile { details ->
+            details.path = details.path.replace('assets/', '')
+        }
+        includeEmptyDirs = false
+    }
+    from(fontPath.map { file(it) }) {
+        rename { 'DejaVuSans.ttf' }
+    }
+    into "${buildDir}/generated/sudokura-assets"
+}
+tasks.named('preBuild') {
+    dependsOn tasks.named('prepareSudokuraAssets')
+}
