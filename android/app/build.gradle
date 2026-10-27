@@ -104,6 +104,14 @@ tasks.register('prepareSudokuraAssets', Copy) {
             rename { "${source}-license.txt" }
         }
     }
+    from(new File(projectRoot, 'android/.cache/source/SDL2_ttf-2.24.0/external/freetype/LICENSE.TXT')) {
+        into 'licenses'
+        rename { 'FreeType-license-choice.txt' }
+    }
+    from(new File(projectRoot, 'android/.cache/source/SDL2_ttf-2.24.0/external/freetype/docs/FTL.TXT')) {
+        into 'licenses'
+        rename { 'FreeType-FTL.txt' }
+    }
     into "${buildDir}/generated/sudokura-assets"
 }
 tasks.named('preBuild') {
