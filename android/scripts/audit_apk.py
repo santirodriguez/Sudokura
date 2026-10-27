@@ -66,6 +66,8 @@ with zipfile.ZipFile(apk) as archive:
         "assets/licenses/SDL2-2.32.10-license.txt",
         "assets/licenses/SDL2_ttf-2.24.0-license.txt",
         "assets/licenses/SDL2_mixer-2.8.1-license.txt",
+        "assets/licenses/FreeType-license-choice.txt",
+        "assets/licenses/FreeType-FTL.txt",
     }
     if not expected_assets.issubset(paths):
         raise SystemExit(f"Missing assets/notices: {sorted(expected_assets - paths)}")
