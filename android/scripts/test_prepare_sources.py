@@ -49,6 +49,56 @@ class SourceExtractionTests(unittest.TestCase):
                     archive, root / "stage",
                     {"directory": "SDL2-2.32.10"})
 
+    def test_targz_allows_only_in_tree_symlinks_and_hardlinks(self):
+        with tempfile.TemporaryDirectory() as base:
+            root = Path(base)
+            archive = root / "links.tar.gz"
+            folder = "SDL2-2.32.10"
+            with tarfile.open(archive, "w:gz") as stream:
+                directory = tarfile.TarInfo(f"{folder}/src")
+                directory.type = tarfile.DIRTYPE
+                stream.addfile(directory)
+                file_entry = tarfile.TarInfo(f"{folder}/src/example.c")
+                file_entry.size = 3
+                stream.addfile(file_entry, io.BytesIO(b"yes"))
+                symlink = tarfile.TarInfo(f"{folder}/src/code.c")
+                symlink.type = tarfile.SYMTYPE
+                symlink.linkname = "example.c"
+                stream.addfile(symlink)
+                hardlink = tarfile.TarInfo(f"{folder}/copy.c")
+                hardlink.type = tarfile.LNKTYPE
+                hardlink.linkname = f"{folder}/src/example.c"
+                stream.addfile(hardlink)
+            stage = root / "stage"
+            fetch.extract_archive(archive, stage, {"directory": folder})
+            self.assertEqual((stage / folder / "src/code.c").read_bytes(), b"yes")
+            self.assertTrue((stage / folder / "src/code.c").is_symlink())
+            self.assertEqual((stage / folder / "copy.c").read_bytes(), b"yes")
+
+    def test_targz_rejects_absolute_dangling_and_cyclic_links(self):
+        with tempfile.TemporaryDirectory() as base:
+            root = Path(base)
+            folder = "SDL2-2.32.10"
+            for names in (
+                [("link", "/etc/passwd")],
+                [("link", "missing")],
+                [("a", "b"), ("b", "a")],
+            ):
+                archive = root / "bad-links.tar.gz"
+                with tarfile.open(archive, "w:gz") as stream:
+                    directory = tarfile.TarInfo(folder)
+                    directory.type = tarfile.DIRTYPE
+                    stream.addfile(directory)
+                    for name, linkname in names:
+                        link = tarfile.TarInfo(f"{folder}/{name}")
+                        link.type = tarfile.SYMTYPE
+                        link.linkname = linkname
+                        stream.addfile(link)
+                with self.subTest(names=names):
+                    with self.assertRaises(RuntimeError):
+                        fetch.extract_archive(
+                            archive, root / "stage", {"directory": folder})
+
     def test_zip_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as base:
             root = Path(base)
