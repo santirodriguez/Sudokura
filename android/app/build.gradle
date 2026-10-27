@@ -68,6 +68,10 @@ tasks.register('prepareSudokuraAssets', Copy) {
         if (!fontPath.present || !file(fontPath.get()).isFile()) {
             throw new GradleException('Specify -PsudokuraFont=/verified/path/DejaVuSans.ttf')
         }
+        def license = providers.gradleProperty('sudokuraFontLicense')
+        if (!license.present || !file(license.get()).isFile()) {
+            throw new GradleException('Specify -PsudokuraFontLicense=/verified/path/font-copyright')
+        }
     }
     from(projectRoot) {
         include 'assets/audio/*.ogg'
@@ -78,6 +82,27 @@ tasks.register('prepareSudokuraAssets', Copy) {
     }
     from(fontPath.map { file(it) }) {
         rename { 'DejaVuSans.ttf' }
+    }
+    from(providers.gradleProperty('sudokuraFontLicense').map { file(it) }) {
+        into 'licenses'
+        rename { 'DejaVuSans-copyright.txt' }
+    }
+    from(new File(projectRoot, 'LICENSE')) {
+        into 'licenses'
+        rename { 'Sudokura-GPLv3.txt' }
+    }
+    from(new File(projectRoot, 'assets/audio/README.md')) {
+        into 'audio'
+    }
+    [
+        'SDL2-2.32.10',
+        'SDL2_ttf-2.24.0',
+        'SDL2_mixer-2.8.1'
+    ].each { source ->
+        from(new File(projectRoot, "android/.cache/source/${source}/LICENSE.txt")) {
+            into 'licenses'
+            rename { "${source}-license.txt" }
+        }
     }
     into "${buildDir}/generated/sudokura-assets"
 }
