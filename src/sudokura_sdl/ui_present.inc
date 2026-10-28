@@ -1557,8 +1557,10 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
   AppGeometry geo;
   if (!get_geometry(gfx,ui,&geo) || !geo.play_compact) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  /* Show only an empty board silhouette, never paused puzzle numbers. */
+  /* The paused puzzle remains fully hidden in every game mode. */
   draw_rect(gfx->ren,0,0,gfx->width,gfx->height,theme.bg);
+#if defined(__ANDROID__)
+  /* Show only an empty Android board silhouette, never actual numbers. */
   SDL_Rect board=sdl_rect(geo.board);
   SDL_BlendMode old_blend=SDL_BLENDMODE_NONE;
   (void)SDL_GetRenderDrawBlendMode(gfx->ren,&old_blend);
@@ -1575,6 +1577,7 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
     (void)SDL_RenderDrawLine(gfx->ren,board.x,y,board.x+board.w,y);
   }
   (void)SDL_SetRenderDrawBlendMode(gfx->ren,old_blend);
+#endif
   SDL_Rect panel=sdl_rect(geo.more_panel);
   draw_round_rect(gfx->ren,panel,12,theme.btn);
   SDL_Rect heading={panel.x+12,panel.y+15,panel.w-24,34};

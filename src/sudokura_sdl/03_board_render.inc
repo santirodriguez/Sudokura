@@ -481,10 +481,12 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
                              field, fonts.hud + 1, 10);
       continue;
     }
+#if defined(__ANDROID__)
     if (!desktop_hud && i != 2 && !strict_chip) {
       (void)draw_fitted_text(g, hud[i], th.dim, hr, fonts.hud, 10);
       continue;
     }
+#endif
     SDL_Color bg = strict_chip && ui->strict_mode ? th.title :
                    (hover ? th.hover : th.palette_bg);
     SDL_Color fg = strict_chip && ui->strict_mode ? th.bg : th.dim;
