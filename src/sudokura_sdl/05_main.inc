@@ -773,6 +773,7 @@ static const char *persistence_startup_error(const Persistence *p,
   return NULL;
 }
 
+#if !defined(__ANDROID__)
 static bool saved_window_display(const Preferences *preferences,
                                  int *display_index,
                                  SDL_Rect *usable_out) {
@@ -798,6 +799,7 @@ static bool saved_window_display(const Preferences *preferences,
   }
   return false;
 }
+#endif
 
 static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
 #if defined(__ANDROID__)
