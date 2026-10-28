@@ -135,7 +135,7 @@ For save locations, migration details, rollback guidance, and useful bug-report 
 
 ## More screenshots
 
-The illustration above is the last approved desktop screenshot (v1.3.8). It is retained as historical reference while a genuine v1.3.9 gameplay capture is reviewed. Older images remain in the gallery.
+The v1.3.9 image above reuses the approved regular desktop gameplay screenshot byte-for-byte because that view has not changed. It does not illustrate the new touch gestures or the experimental Android layout. Earlier versions are preserved in the gallery.
 
 [Browse the screenshot gallery →](docs/images/README.md)
 
