@@ -4,7 +4,7 @@ The [main README](../README.md) introduces the game and links to the latest publ
 
 ## Start here
 
-- [Latest candidate release notes — v1.3.9](RELEASE_NOTES_1.3.9.md)
+- [v1.3.9 release notes](RELEASE_NOTES_1.3.9.md)
 - [Changelog](../CHANGELOG.md)
 - [Screenshot gallery](images/README.md)
 - [Issue reporting, saved games, and recovery](REPORTING_ISSUES.md)
