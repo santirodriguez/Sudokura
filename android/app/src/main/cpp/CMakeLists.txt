@@ -60,6 +60,7 @@ set(SUDOKURA_SOURCES
   src/progress.c
   src/input.c
   src/touch_input.c
+  src/android_viewport.c
   src/game.c
   src/human.c
   src/geometry.c
