@@ -41,6 +41,6 @@ The compact portrait layout targets at least 360x600dp of usable surface, with a
 
 The prototype has a separate application ID and debug signing that can differ across CI runs. Android may refuse an update signed with a different key. Do not uninstall or clear an installation carrying saved progress simply to try another preview. Android backup and transfer are intentionally disabled for the prototype. Keep the existing Saved Games and recovery safeguards; do not use production user data for destructive recovery testing.
 
-Do not add this APK to the six usual Sudokura public release assets without separate authorization. v1.4.0 is the preferred Android publishability milestone and v1.5.0 the maximum horizon; public ID, backup policy, supported devices, distribution channels and signing custody remain future explicit decisions.
+Do not add this APK to the six usual Sudokura public release assets without separate authorization. v1.4.0 is the preferred Android publicability milestone and v1.5.0 the maximum horizon. The intended future channels are a release-signed APK on GitHub Releases (followable by Obtainium), an F-Droid inclusion application, and potentially Google Play later. None of these distribution channels is available for this debug prototype. Production app ID, long-term signing, cross-channel update safety, backup and device support remain separate decisions.
 
 Full requirements live in [the v1.3.9 blueprint](../docs/V1.3.9_BLUEPRINT.md) and [Android release roadmap](../docs/ANDROID_RELEASE_PLAN.md).
