@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-closed structural audit of an Android debug APK (not device acceptance)."""
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -37,6 +38,12 @@ for expected in (
         raise SystemExit(f"APK mismatch: {expected}")
 if re.search(r"uses-permission", badging, flags=re.IGNORECASE):
     raise SystemExit("Unexpected prototype manifest permission")
+if not re.search(
+    r"android:icon\(", manifest
+):
+    raise SystemExit("Android launcher icon is missing from merged manifest")
+if not re.search(r"application:.*icon='[^']+'", badging):
+    raise SystemExit("Android launcher icon is not resolved by aapt")
 if not re.search(
     r"android:allowBackup\(0x01010280\)=\(type 0x12\)0x0\b", manifest
 ):
@@ -79,6 +86,22 @@ with zipfile.ZipFile(apk) as archive:
     for path in expected_assets:
         if archive.getinfo(path).file_size == 0:
             raise SystemExit(f"Empty asset: {path}")
+    icon_files = [p for p in paths if p.endswith("/sudokura_icon_source.png")]
+    if len(icon_files) != 1:
+        raise SystemExit(f"Expected one generated launcher icon: {icon_files}")
+    icon_png = archive.read(icon_files[0])
+    if not (icon_png.startswith(b"\x89PNG\r\n\x1a\n") and len(icon_png) >= 24):
+        raise SystemExit("Launcher icon is not a PNG")
+    import struct
+    if struct.unpack(">II", icon_png[16:24]) != (512, 512):
+        raise SystemExit("Launcher icon does not match 512x512 master dimensions")
+    source_audio = Path(__file__).resolve().parents[2] / "assets" / "audio"
+    for name in ("music-main.ogg", "music-fail.ogg",
+                 "jingle-win.ogg", "jingle-fail.ogg"):
+        packed = archive.read(f"assets/audio/{name}")
+        local = (source_audio / name).read_bytes()
+        if hashlib.sha256(packed).digest() != hashlib.sha256(local).digest():
+            raise SystemExit(f"Altered Android OGG resource: {name}")
 print(json.dumps({
     "apk": str(apk),
     "bytes": apk.stat().st_size,

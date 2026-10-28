@@ -58,6 +58,7 @@ android {
         main {
             java.srcDir "${projectRoot}/android/.cache/source/SDL2-2.32.10/android-project/app/src/main/java"
             assets.srcDir "${buildDir}/generated/sudokura-assets"
+            res.srcDir "${buildDir}/generated/sudokura-icons"
         }
     }
 }
@@ -114,6 +115,16 @@ tasks.register('prepareSudokuraAssets', Copy) {
     }
     into "${buildDir}/generated/sudokura-assets"
 }
+// Generated-only resource: reuse the canonical 512px project icon, never a
+// second independently edited Android logo master.
+tasks.register('prepareSudokuraIcon', Copy) {
+    from(new File(projectRoot, 'assets/branding/source/sudokura-512.png')) {
+        into 'drawable-nodpi'
+        rename { 'sudokura_icon_source.png' }
+    }
+    into "${buildDir}/generated/sudokura-icons"
+}
 tasks.named('preBuild') {
-    dependsOn tasks.named('prepareSudokuraAssets')
+    dependsOn tasks.named('prepareSudokuraAssets'),
+              tasks.named('prepareSudokuraIcon')
 }

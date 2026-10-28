@@ -11,7 +11,8 @@ This is an isolated, **debug-only** host for the existing C11/SDL2 game. It is n
 - Exact archive URLs and SHA-256 digests: [dependencies.lock.json](dependencies.lock.json).
 - Temporary application ID: `org.sudokura.prototype.debug`. VersionName and versionCode derive from `src/version.h`; currently `1.3.9-prototype` / `10309`.
 - No INTERNET or broad storage permissions; application backup and device transfer excluded. OEM behavior still requires verification on an actual phone.
-- Runtime OGGs, DejaVuSans.ttf and source/font license notices are APK assets. The font must be a legitimate installed redistributable copy; never commit a downloaded binary merely to satisfy the host.
+- Runtime OGGs, DejaVuSans.ttf and source/font license notices are APK assets. The four OGGs resolve as `audio/*.ogg` relative to the APK's asset root; the audit verifies bytes against the canonical OGG masters. The font must be a legitimate installed redistributable copy; never commit a downloaded binary merely to satisfy the host.
+- The launcher icon is generated at build time from `assets/branding/source/sudokura-512.png`, with a native Android adaptive mask and no new branding master. The prototype theme removes the default Android ActionBar and uses dark system chrome, independently of the saved SDL theme setting.
 
 ## Clean CI build
 

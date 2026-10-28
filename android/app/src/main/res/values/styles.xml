@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sudokura_system_bar">#10121A</color>
+    <style name="SudokuraPrototypeTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/sudokura_system_bar</item>
+        <item name="android:statusBarColor">@color/sudokura_system_bar</item>
+        <item name="android:navigationBarColor">@color/sudokura_system_bar</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
