@@ -77,6 +77,13 @@ static bool try_in_dir(const char*dir,const char*name,char out[PATH_MAX]){
 static const char*find_font_path_dynamic(char out[PATH_MAX],const char*cli){
   /* Explicit developer/user override always wins. */
   if(cli&&try_open_font_path(cli)&&path_copy(out,PATH_MAX,cli))return out;
+#if defined(__ANDROID__)
+  /* SDL_RWFromFile resolves the packaged APK asset without extraction. */
+  if (try_open_font_path("DejaVuSans.ttf") &&
+      path_copy(out, PATH_MAX, "DejaVuSans.ttf"))
+    return out;
+  return NULL; /* The bundled font is mandatory on Android. */
+#endif
 
   /* Packaged resource first: portable ZIP/AppImage place DejaVu beside the
      executable; macOS additionally places it in Contents/Resources. */
