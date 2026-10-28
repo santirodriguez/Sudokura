@@ -832,6 +832,15 @@ static bool ui_handle_more_panel_event(SDL_Event *event) {
 
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
+#if defined(__ANDROID__)
+  if (event->type == SDL_KEYUP && event->key.keysym.sym == SDLK_AC_BACK)
+    return false;
+  if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_AC_BACK) {
+    if (event->key.repeat) return false;
+    event->key.keysym.sym = SDLK_ESCAPE;
+    event->key.keysym.mod = KMOD_NONE;
+  }
+#endif
   if(audio_gfx)audio_gfx->dirty=true;
   if (!ui_touch_prepare(event)) return false;
   if (!ui_pointer_prepare(event)) return false;
