@@ -20,13 +20,13 @@ The Android prototype is not a public APK. Future distribution requirements and 
 
 ## Repository layout
 
-- `src/` — shared Sudoku engine and SDL application code.
-- `android/` — experimental Android host, native build and dependency audits.
-- `assets/` — artwork, flags, music and generated UI resources.
-- `tests/` — gameplay, persistence, input, layout and tooling tests.
-- `scripts/` — asset generation, validation and release helpers.
-- `packaging/` — platform-specific distribution and packaging support.
-- `.github/workflows/` — continuous integration, package previews and release automation.
+- [`src/`](../src/) — shared Sudoku engine and SDL application code.
+- [`android/`](../android/) — experimental Android host, native build and dependency audits.
+- [`assets/`](../assets/) — artwork, flags, music and generated UI resources.
+- [`tests/`](../tests/) — gameplay, persistence, input, layout and tooling tests.
+- [`scripts/`](../scripts/) — asset generation, validation and release helpers.
+- [`packaging/`](../packaging/) — platform-specific distribution and packaging support.
+- [`.github/workflows/`](../.github/workflows/) — continuous integration, package previews and release automation.
 
 The existing paths are intentional: avoid moving source, assets or historical releases solely to shorten the directory tree.
 
