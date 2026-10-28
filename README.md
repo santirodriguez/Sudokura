@@ -16,7 +16,7 @@
 <p align="center">
   <a href="#download-sudokura">Download</a>
   ·
-  <a href="docs/RELEASE_NOTES_1.3.8.md">What's new in 1.3.8</a>
+  <a href="docs/RELEASE_NOTES_1.3.9.md">What's new in 1.3.9</a>
   ·
   <a href="docs/images/README.md">Screenshots</a>
   ·
@@ -25,8 +25,10 @@
 
 <p align="center">
   <a href="docs/images/sudokura-v1.3.8.png">
-    <img src="docs/images/sudokura-v1.3.8.png" alt="Sudokura desktop gameplay with full logo and Save button" width="900">
+    <img src="docs/images/sudokura-v1.3.8.png" alt="Approved v1.3.8 desktop gameplay (historical image)" width="900">
   </a>
+  <br>
+  <sub>Approved v1.3.8 desktop screenshot. A v1.3.9 capture will replace it after review.</sub>
 </p>
 
 ## Download Sudokura
@@ -74,7 +76,7 @@ Easy, Medium, and Hard puzzles have a unique solution, with difficulty shaped by
 </td>
 <td width="33%" valign="top">
 <strong>Fast on a desktop</strong><br><br>
-Mouse and keyboard are first-class. Notes, Undo/Redo, Hint, Verify, Restart, themes, and audio controls stay close at hand without crowding the board.
+Mouse, keyboard, and direct touch share the same controls. Notes, Undo/Redo, Hint, Verify, Restart, themes, and audio controls stay close at hand without crowding the board.
 </td>
 <td width="33%" valign="top">
 <strong>Private by design</strong><br><br>
@@ -91,6 +93,7 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 - **Daily Puzzle** — one deterministic Classic · Medium puzzle for each local calendar day.
 - **Notes, Hint, Verify, Reveal, Undo/Redo, Restart, and Retry** are available when you need them.
 - **Dark and light themes**, reduced motion, responsive layouts, and full mouse/keyboard navigation.
+- Direct touch on desktop touchscreens, with drag scrolling in Help and Saved Games; mouse dragging works there too. A drag never activates Load, Replay, or Delete.
 - **English, Español, and Català.**
 - **Optional music and effects** with master, Music, and FX controls.
 - Independent normal and Daily saves, a retained Saved Games library with visible Previous/Next paging and Load/View/Replay/Delete, automatic recovery safeguards, and local result history.
@@ -116,17 +119,23 @@ Sudokura runs offline. Games, settings, progress, and local results stay on your
 
 Most actions are also available directly from the interface.
 
+## Android prototype
+
+Sudokura 1.3.9 also introduces an **experimental Android ARM64 debug prototype** built from the same game engine. Its on-device gameplay received a positive functional review, including music and manual Save/reopen, but it is **not a public Android release** and is not included with the desktop downloads above.
+
+The prototype uses a separate app identity, an ephemeral debug signing key, and disabled Android backup/transfer. It is not suitable as a stable installation or an upgrade path; do not uninstall a progress-bearing debug build to work around a signature mismatch. See the [Android prototype documentation](android/README.md) for build and testing restrictions.
+
 ## Your progress stays yours
 
 Sudokura stores data in the operating system's normal per-user application-data directory. **Save** keeps the latest state of the same attempt; **Saved Games** lets you load retained progress, view finished results, start a fresh practice replay when an exact finished board is available, or explicitly delete an entry. Completed games remain in the local library beyond the shorter recent-results list.
 
-Existing v1.2 and v1.3 data is preserved through checked migration steps with recovery copies. Do not remove old profile files or the `games/` folder when upgrading or switching packages. Older summary-only results may not include a replayable original board.
+Version 1.3.9 keeps the established profile/library formats, attempt identities, and checked Save/recovery behavior. Existing compatible v1.2 and v1.3 data is preserved through checked migration steps with recovery copies. Do not remove old profile files or the `games/` folder when upgrading or switching packages. Older summary-only results may not include a replayable original board.
 
 For save locations, migration details, rollback guidance, and useful bug-report information, see [Reporting Sudokura issues](docs/REPORTING_ISSUES.md).
 
 ## More screenshots
 
-The v1.3.8 main gameplay image carries forward the approved v1.3.7 capture of the regular desktop layout. It does not show the new compact More panel or Saved Games paging. The gallery preserves earlier screenshots as history.
+The illustration above is the last approved desktop screenshot (v1.3.8). It is retained as historical reference while a genuine v1.3.9 gameplay capture is reviewed. Older images remain in the gallery.
 
 [Browse the screenshot gallery →](docs/images/README.md)
 
@@ -178,6 +187,7 @@ make test-ui
 
 ## Project documentation
 
+- [v1.3.9 release notes](docs/RELEASE_NOTES_1.3.9.md)
 - [v1.3.8 release notes](docs/RELEASE_NOTES_1.3.8.md)
 - [v1.3.7 release notes](docs/RELEASE_NOTES_1.3.7.md)
 - [v1.3.6 release notes](docs/RELEASE_NOTES_1.3.6.md)

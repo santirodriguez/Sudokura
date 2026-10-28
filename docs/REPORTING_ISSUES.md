@@ -9,7 +9,9 @@ Sudokura does not collect telemetry. A useful report is a small, reproducible de
 - Exact steps, expected result, actual result, and whether reopening Sudokura changes the behavior.
 - A screenshot or short recording when the problem is visual and sharing it is safe.
 
-For save/migration problems, also state whether the installation was upgraded from v1.2 and whether recovery was offered.
+For save/migration problems, also state whether the installation was upgraded from v1.2 and whether recovery was offered. If reporting a touch problem, specify finger vs mouse, whether the gesture moved, and whether another finger or a window rotation interrupted it.
+
+For the v1.3.9 Android prototype, include the source commit/build receipt when available, device and Android version/API, portrait or landscape, navigation mode (gesture/three-button), and whether the problem occurred on background, lock, reopen, or Back. Report actual behavior rather than assuming an APK's successful build guarantees it.
 
 ## Privacy and local diagnostics
 Do not post `profile.dat`, `profile.dat.bak`, legacy save files, crash dumps, home-directory paths, usernames, or other personal data unless the specific data is necessary to reproduce the problem and you have reviewed it.
@@ -37,7 +39,10 @@ The `profile.dat` recent-result index retains up to 128 summaries, while complet
 
 A newer profile/session is not expected to become readable by an older incompatible release. Preserve the original data for a future compatible upgrade.
 
+The Android prototype uses a separate application-private data directory and disables Android backup/device transfer. It does not share desktop saves or guarantee transfer between debug installations. Independent CI builds may have incompatible debug signing keys; **do not uninstall the only copy of a game to resolve an installation error**. The desktop directory-copy instructions above do not imply that Android private storage is directly accessible through a file manager.
+
 ## Platform details
 - **Windows:** record the exact SmartScreen/reputation message if launch is warned or blocked; do not disable security protections as troubleshooting.
 - **Linux:** state whether the AppImage used FUSE or `--appimage-extract-and-run`, and whether the session is X11 or Wayland when relevant.
 - **macOS:** the current v1.3.x arm64 build is experimental; record the exact macOS/Gatekeeper/quarantine message and whether the app was launched from the DMG or Applications.
+- **Android prototype (debug-only):** record the package source and build identity, the exact Android system-bar/cutout behavior, and whether touch, audio, and Save/reopen work. It is not a stable publicly distributed Android application; avoid reporting a missing store listing as a runtime defect.

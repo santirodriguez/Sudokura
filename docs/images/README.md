@@ -1,6 +1,10 @@
 # Documentation images
 
-## Sudokura v1.3.8
+## Sudokura v1.3.9 — release candidate
+
+A new canonical gameplay screenshot from the actual v1.3.9 application is not yet approved. The v1.3.8 image below remains the last approved desktop capture and must not be presented as a v1.3.9 screenshot. The v1.3.9 image will be added here only after its real pixels have been reviewed and accepted.
+
+## Sudokura v1.3.8 (historical)
 
 ### Main desktop gameplay image
 

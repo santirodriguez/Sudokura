@@ -1,7 +1,7 @@
 # Sudokura: desktop evolution and Android release plan
 
-Status: Active roadmap; v1.3.8 published; v1.3.9 Phase 0 complete. Implementation and publication remain separate decisions.
-Reviewed: 2026-10-26.
+Status: Active roadmap; v1.3.8 published; v1.3.9 implementation and real-phone functional review completed, release-preparation still open. Android prototype is not public Android parity or distribution.
+Reviewed: 2026-10-28.
 Current published baseline: `4d2c8dbddbe906e5dd714a2f6691dd2760e98072` (`main` and `v1.3.8` at review).
 Next-release specification: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
 Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.
@@ -107,7 +107,7 @@ These references support retaining SDL2 with small host seams. They do not prove
 
 v1.3.8 is published at the current baseline above. PR #14 merged its compact controls, More panel, pointer cancellation and Saved Games paging. Exact-head CI runs 40406632381/40397978066 and release workflow 40406631994 completed successfully. The public release contains the established desktop artifacts. These observations do not certify Android, physical touch, or independent Windows/macOS hardware acceptance.
 
-v1.3.9 Phase 0 selects native single-owner touch, bounded Help/library drag also usable by mouse, and a source-built arm64 debug host. The release blueprint owns precise behavior, build versions, prototype-only identity/backup policy, density/inset geometry, lifecycle/Back/resource work and acceptance. No Android implementation or device success is claimed yet. The first physical-device gate is after the critical play/save/resume slice, before optional mobile completion; emulator/CI alone cannot pass it.
+v1.3.9 now includes native single-owner touch, bounded Help/library drag usable by mouse, and a source-built arm64 debug Android prototype with private storage, lifecycle/Back seams, assets and mobile geometry. The exact-head Android preview and desktop CI/package matrix passed; the maintainer reported successful music, Save/ordinary reopen retaining numbers/notes/progress and generally satisfactory on-device operation, then closed the manual functional test round. This is **user-reported functional prototype acceptance**, not a complete device measurement or itemized test log. Device/OS/API/density and installed APK digest, fixed-seed cross-engine check, forced process termination, full lifecycle/Back/rotation/cutout matrix, latency/CPU/memory measurements and TalkBack observations remain unrecorded. The release blueprint still owns strict formal evidence requirements. No 16 KiB Android runtime test, functional parity or public Android signing/distribution is claimed.
 
 A narrow phone cannot fit nine 48dp cells across its width. The prototype must measure and disclose board-cell size/comfort while giving action controls meaningful targets; this is not a blanket accessibility claim. Any paused rotate/enlarge fallback for short surfaces is prototype-only and must be resolved before functional parity/publicability. TalkBack remains an evidence-driven decision before publicability, not an assumed capability or automatic rewrite mandate.
 
