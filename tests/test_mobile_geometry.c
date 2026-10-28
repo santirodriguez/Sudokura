@@ -22,7 +22,11 @@ static void check(int w, int h, GeometryMode mode) {
       assert(!overlap(g.palette[i], g.palette[j]));
   }
   assert(g.palette[4].y == g.palette[0].y);
-  assert(g.palette[5].y == g.palette[0].y + 54);
+  assert(g.palette[5].y >= g.palette[0].y + g.palette[0].h + 6);
+  assert(g.progress.y >= g.palette[5].y + g.palette[5].h);
+  assert(g.status.y + g.status.h <= h);
+  assert(g.board.y + g.board.h < g.play_controls[PLAY_CONTROL_UNDO].y);
+  assert(g.more_panel.y + g.more_panel.h <= h - 8);
   assert(g.progress.h >= 24);
   assert(g.hud[0].h >= 22);
   assert(geometry_rect_in_bounds(g.status, w, h));
@@ -83,6 +87,10 @@ int main(void) {
   check(360, 600, GEOMETRY_MODE_CLASSIC);
   check(390, 844, GEOMETRY_MODE_STRIKES);
   check(412, 915, GEOMETRY_MODE_TIME);
+  AppGeometry tall;
+  assert(geometry_compute_mobile(390, 920, GEOMETRY_MODE_CLASSIC, &tall));
+  assert(tall.palette[0].h > 48);
+  assert(tall.play_controls[PLAY_CONTROL_UNDO].h > 48);
   AppGeometry g;
   assert(!geometry_compute_mobile(359, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(360, 599, GEOMETRY_MODE_CLASSIC, &g));

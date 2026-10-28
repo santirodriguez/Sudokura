@@ -879,6 +879,14 @@ GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
   if (!geometry || width <= 0) return empty;
   if (width >= 640) return geometry->play_title;
 
+#if defined(__ANDROID__)
+  int logo_width = geometry->play_title.w - 24;
+  if (logo_width > 220) logo_width = 220;
+  return (GeoRect){geometry->play_title.x +
+                       (geometry->play_title.w - logo_width) / 2,
+                   geometry->play_title.y, logo_width,
+                   geometry->play_title.h};
+#else
   int logo_width = geometry->play_title.w - 100;
   if (logo_width > 200) logo_width = 200;
   if (logo_width < 150) logo_width = 150;
@@ -886,6 +894,7 @@ GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
                        logo_width - 8,
                    geometry->play_title.y, logo_width,
                    geometry->play_title.h};
+#endif
 }
 
 GeoRect geometry_play_heading_rect(const AppGeometry *geometry, int width) {
@@ -1000,7 +1009,7 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
 static void geometry_mobile_home(int width, int height, AppGeometry *g) {
   const int margin = 6, gap = 6, w = width - 2 * margin;
   const bool roomy = height >= 700;
-  const int caption_h = roomy ? 18 : 1;
+  const int caption_h = 1; /* Mobile action labels already name each group. */
   g->screen_language = (GeoRect){margin, 6, w - 52, 48};
 
   int y = 60;
@@ -1078,26 +1087,38 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   geometry_final_grid(g->hud, 0, g->hud_count, margin, hud_y,
                       shell_w, 22, 3, 2);
   g->board = (GeoRect){(width - board) / 2, board_y, board, board};
-  const int edit_y = board_y + board + 6;
-  geometry_final_split((GeoRect){margin, edit_y, shell_w, 48},
+  /* Spend tall-phone headroom on real touch surfaces and separation. */
+  const int baseline_bottom = board_y + board + 6 + 54 + 108 + 24 +
+                              (separate_status ? 30 : 0) + 24;
+  int spare = height - baseline_bottom - 12;
+  if (spare < 0) spare = 0;
+  const int board_gap = 6 + (spare / 8 < 14 ? spare / 8 : 14);
+  const int edit_h = 48 + (spare / 5 < 12 ? spare / 5 : 12);
+  const int key_h = 48 + (spare / 4 < 16 ? spare / 4 : 16);
+  const int row_gap = 6 + (spare / 20 < 6 ? spare / 20 : 6);
+  const int progress_gap = 6 + (spare / 20 < 6 ? spare / 20 : 6);
+  const int edit_y = board_y + board + board_gap;
+  geometry_final_split((GeoRect){margin, edit_y, shell_w, edit_h},
                        4, gap, edit);
   g->play_controls[PLAY_CONTROL_UNDO] = edit[0];
   g->play_controls[PLAY_CONTROL_REDO] = edit[1];
   g->play_controls[PLAY_CONTROL_CLEAR] = edit[2];
   g->play_controls[PLAY_CONTROL_NOTES] = edit[3];
 
-  g->palette_label = (GeoRect){margin, edit_y + 48, shell_w, 1};
-  const int palette_y = edit_y + 54;
+  g->palette_label = (GeoRect){margin, edit_y + edit_h, shell_w, 1};
+  const int palette_y = edit_y + edit_h + 6;
   const int key_w = (shell_w - 4 * gap) / 5;
   for (int i = 0; i < 5; ++i)
     g->palette[i] = (GeoRect){margin + i * (key_w + gap),
-                             palette_y, key_w, 48};
+                             palette_y, key_w, key_h};
   const int second_w = 4 * key_w + 3 * gap;
   const int second_x = (width - second_w) / 2;
+  const int second_y = palette_y + key_h + row_gap;
   for (int i = 5; i < GEOMETRY_PALETTE_COUNT; ++i)
     g->palette[i] = (GeoRect){second_x + (i - 5) * (key_w + gap),
-                             palette_y + 54, key_w, 48};
-  g->progress = (GeoRect){margin, palette_y + 108, shell_w, 24};
+                             second_y, key_w, key_h};
+  g->progress = (GeoRect){margin, second_y + key_h + progress_gap,
+                          shell_w, 24};
   /* At 360x600 the transient toast replaces the progress row rather than
      erasing it with a second, always-empty panel. */
   g->status = (GeoRect){margin, g->progress.y + (separate_status ? 30 : 0),
@@ -1107,7 +1128,7 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
 
   const int panel_w = shell_w - 20, panel_h = 252;
   const int panel_x = (width - panel_w) / 2;
-  const int panel_y = (height - panel_h) / 2;
+  const int panel_y = height - panel_h - (height >= 700 ? 24 : 10);
   g->more_panel = (GeoRect){panel_x, panel_y, panel_w, panel_h};
   const int item_w = (panel_w - 24 - gap) / 2;
   for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)
