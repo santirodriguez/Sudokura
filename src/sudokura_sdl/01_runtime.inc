@@ -107,6 +107,9 @@ typedef struct {
 
 /* Shared native gesture policy; on Android slop comes from ViewConfiguration. */
 static int ui_touch_slop = 8;
+#if defined(__ANDROID__)
+static bool ui_keyboard_focus_visible = false;
+#endif
 static bool app_suspended = false;
 #if defined(__ANDROID__)
 static AndroidLifecycle app_lifecycle_state;

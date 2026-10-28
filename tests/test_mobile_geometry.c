@@ -43,6 +43,8 @@ static void check(int w, int h, GeometryMode mode) {
   AudioControlGeometry home_speaker = geometry_audio_control(w, h, &g, false);
   assert(home_speaker.button.w >= 48 && home_speaker.button.h >= 48);
   assert(geometry_rect_in_bounds(home_speaker.button, w, h));
+  assert(home_speaker.music.h >= 48 && home_speaker.fx.h >= 48);
+  assert(geometry_rect_in_bounds(home_speaker.popup, w, h));
   assert(!overlap(home_speaker.button, g.screen_language));
   assert(!overlap(g.home_mode[0], g.home_logo));
   assert(!overlap(g.home_secondary[3], g.home_secondary[4]));
@@ -54,6 +56,8 @@ static void check(int w, int h, GeometryMode mode) {
   AudioControlGeometry speaker = geometry_audio_control(w, h, &g, true);
   assert(speaker.button.w >= 48 && speaker.button.h >= 48);
   assert(geometry_rect_in_bounds(speaker.button, w, h));
+  assert(speaker.music.h >= 48 && speaker.fx.h >= 48);
+  assert(geometry_rect_in_bounds(speaker.popup, w, h));
   for (int i = PLAY_CONTROL_MENU; i <= PLAY_CONTROL_MORE; ++i)
     assert(!overlap(speaker.button, g.play_controls[i]));
   assert(!overlap(speaker.button, g.board));

@@ -890,6 +890,11 @@ static bool ui_prepare_event(SDL_Event *event) {
 #if defined(__ANDROID__)
   if (ui_handle_android_lifecycle_event(event)) return false;
   if (app_suspended && event->type != SDL_QUIT) return false;
+  if (event->type == SDL_FINGERDOWN || event->type == SDL_MOUSEBUTTONDOWN)
+    ui_keyboard_focus_visible = false;
+  if (event->type == SDL_KEYDOWN &&
+      event->key.keysym.sym != SDLK_AC_BACK)
+    ui_keyboard_focus_visible = true;
   if (event->type == SDL_KEYUP && event->key.keysym.sym == SDLK_AC_BACK)
     return false;
   if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_AC_BACK) {

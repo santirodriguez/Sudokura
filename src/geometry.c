@@ -931,7 +931,7 @@ AudioControlGeometry geometry_audio_control(int width, int height,
 
   int popup_w = width < 260 ? width - 16 : 220;
   if (popup_w < 140) popup_w = 140;
-  int popup_h = 92;
+  int popup_h = app && app->play_compact ? 128 : 92;
   int popup_x = out.button.x + out.button.w - popup_w;
   if (popup_x < 8) popup_x = 8;
   if (popup_x + popup_w > width - 8) popup_x = width - 8 - popup_w;
