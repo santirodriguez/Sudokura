@@ -21,7 +21,6 @@ make assets
 make WERROR=-Werror test test-ui
 echo "generator benchmark host: $(uname -a)"
 gcc --version | head -1
-make WERROR=-Werror quality
 windres packaging/windows/sudokura.rc -O coff -o icon.o
 gcc -I. -Isrc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
   -Wformat-truncation=2 -Wstringop-truncation -Wformat-overflow=2 \
@@ -156,6 +155,10 @@ clean_path="$PWD/dist:/c/Windows/System32:/c/Windows"
 env PATH="$clean_path" SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
   SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   "$timeout_bin" 30s "$PWD/dist/sudokura.exe" --smoke-test
+
+# Fail quickly on interactive regressions before the full generator corpus.
+# The same strict quality gate still runs before any package is assembled.
+make WERROR=-Werror quality
 
 find dist -type f -printf '%P\n' | sort | tee inventory-windows.txt
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "audio/$audio" inventory-windows.txt; done
