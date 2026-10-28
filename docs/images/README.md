@@ -1,8 +1,12 @@
 # Documentation images
 
-## Sudokura v1.3.9 — release candidate
+## Sudokura v1.3.9
 
-A new canonical gameplay screenshot from the actual v1.3.9 application is not yet approved. The v1.3.8 image below remains the last approved desktop capture and must not be presented as a v1.3.9 screenshot. The v1.3.9 image will be added here only after its real pixels have been reviewed and accepted.
+### Main desktop gameplay image
+
+[![Sudokura v1.3.9 regular desktop gameplay](sudokura-v1.3.9.png)](sudokura-v1.3.9.png)
+
+- `sudokura-v1.3.9.png` — the maintainer-approved reuse of the unchanged regular desktop gameplay screenshot from v1.3.8, with identical image bytes. The established desktop board and main controls remain represented accurately; the image does not depict the new touch gestures, compact More panel, Saved Games scrolling or the experimental Android prototype.
 
 ## Sudokura v1.3.8 (historical)
 

@@ -24,11 +24,11 @@
 </p>
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.3.8.png">
-    <img src="docs/images/sudokura-v1.3.8.png" alt="Approved v1.3.8 desktop gameplay (historical image)" width="900">
+  <a href="docs/images/sudokura-v1.3.9.png">
+    <img src="docs/images/sudokura-v1.3.9.png" alt="Sudokura v1.3.9 regular desktop gameplay with full logo and Save controls" width="900">
   </a>
   <br>
-  <sub>Approved v1.3.8 desktop screenshot. A v1.3.9 capture will replace it after review.</sub>
+  <sub>Approved v1.3.9 regular desktop gameplay image, reused unchanged from the previous approved capture.</sub>
 </p>
 
 ## Download Sudokura
