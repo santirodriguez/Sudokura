@@ -367,7 +367,7 @@ jobs:
           printf 'Both versions match all 11 full original/solution fixtures.\n'
           printf 'Android build compiles the identical shared generator source files.\n'
           printf 'This does not substitute for executing fixture tests on Android ARM64.\n'
-      - name: Measure v1.3.8 and v1.3.9 on the same software renderer
+      - name: Measure three interleaved desktop samples per version
         shell: bash
         env:
           SDL_VIDEODRIVER: dummy
@@ -376,21 +376,41 @@ jobs:
           SDL_RENDER_VSYNC: '0'
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/sudokura-v138/sudokura" --desktop-benchmark > desktop-v138.txt
-          ./sudokura --desktop-benchmark > desktop-v139.txt
-          python3 scripts/validate_desktop_benchmark.py desktop-v138.txt
-          python3 scripts/validate_desktop_benchmark.py desktop-v139.txt
-          python3 scripts/compare_desktop_benchmarks.py             desktop-v138.txt desktop-v139.txt desktop-v138-v139-comparison.json
-          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v138-smoke.txt             "$RUNNER_TEMP/sudokura-v138/sudokura" --smoke-test
-          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v139-smoke.txt             ./sudokura --smoke-test
+          python3 -m unittest tests/test_compare_desktop_benchmarks.py
+          old="$RUNNER_TEMP/sudokura-v138/sudokura"
+          new="./sudokura"
+          # Warm each executable before collecting comparable process samples.
+          "$old" --desktop-benchmark > /dev/null
+          "$new" --desktop-benchmark > /dev/null
+          sample() {
+            local version="$1" round="$2" executable="$3"
+            local report="desktop-${version}-${round}.txt"
+            "$executable" --desktop-benchmark > "$report"
+            python3 scripts/validate_desktop_benchmark.py "$report"
+          }
+          # Alternate the order to reduce cache/scheduler drift.
+          sample v138 1 "$old"
+          sample v139 1 "$new"
+          sample v139 2 "$new"
+          sample v138 2 "$old"
+          sample v138 3 "$old"
+          sample v139 3 "$new"
+          python3 scripts/compare_desktop_benchmarks.py \
+            --baseline desktop-v138-1.txt desktop-v138-2.txt desktop-v138-3.txt \
+            --candidate desktop-v139-1.txt desktop-v139-2.txt desktop-v139-3.txt \
+            --output desktop-v138-v139-series.json
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' \
+            -o desktop-v138-smoke.txt "$old" --smoke-test
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' \
+            -o desktop-v139-smoke.txt "$new" --smoke-test
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: v139-v138-desktop-comparison
           path: |
             desktop-host.txt
-            desktop-v138.txt
-            desktop-v139.txt
-            desktop-v138-v139-comparison.json
+            desktop-v138-*.txt
+            desktop-v139-*.txt
+            desktop-v138-v139-series.json
             desktop-v138-smoke.txt
             desktop-v139-smoke.txt
             deterministic-v138.txt
