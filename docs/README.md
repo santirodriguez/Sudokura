@@ -18,6 +18,18 @@ The [main README](../README.md) introduces the game and links to the latest publ
 
 The Android prototype is not a public APK. Future distribution requirements and channel decisions belong to the roadmap, not to this documentation index.
 
+## Repository layout
+
+- `src/` — shared Sudoku engine and SDL application code.
+- `android/` — experimental Android host, native build and dependency audits.
+- `assets/` — artwork, flags, music and generated UI resources.
+- `tests/` — gameplay, persistence, input, layout and tooling tests.
+- `scripts/` — asset generation, validation and release helpers.
+- `packaging/` — platform-specific distribution and packaging support.
+- `.github/workflows/` — continuous integration, package previews and release automation.
+
+The existing paths are intentional: avoid moving source, assets or historical releases solely to shorten the directory tree.
+
 ## Previous releases
 
 - [v1.3.8](RELEASE_NOTES_1.3.8.md) · [v1.3.7](RELEASE_NOTES_1.3.7.md) · [v1.3.6](RELEASE_NOTES_1.3.6.md) · [v1.3.5](RELEASE_NOTES_1.3.5.md)

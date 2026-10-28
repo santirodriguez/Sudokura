@@ -3,6 +3,7 @@
 /tests/test_audio
 /tests/test_clock
 /tests/test_desktop
+/tests/test_deterministic_parity
 /tests/test_game_library
 /tests/test_game_migration
 /tests/test_generator_quality
@@ -52,7 +53,7 @@
 /codesign-macos-*.txt
 /dmg-verify-macos-*.txt
 /size-comparison-macos-*.txt
-tests/test_library_paging
+/tests/test_library_paging
 
 # Android preview inputs and generated build output (never commit binaries/SDKs).
 /android/.cache/
@@ -64,3 +65,7 @@ tests/test_library_paging
 
 /tests/test_mobile_geometry
 /tests/test_android_lifecycle
+
+# Python test and validation cache (generated locally).
+__pycache__/
+*.py[cod]
