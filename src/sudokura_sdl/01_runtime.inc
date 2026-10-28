@@ -69,6 +69,9 @@
 #include "seed.h"
 #include "store_io.h"
 #include "url_launcher.h"
+#if defined(__ANDROID__)
+#include "android_viewport.h"
+#endif
 #include "assets/generated/flag_us.h"
 #include "assets/generated/flag_ar.h"
 #include "assets/generated/flag_ca.h"
@@ -100,6 +103,9 @@ typedef struct {
   int restored_x, restored_y, restored_width, restored_height;
   bool restored_bounds_valid;
 } Gfx;
+
+/* Shared native gesture policy; on Android slop comes from ViewConfiguration. */
+static int ui_touch_slop = 8;
 
 typedef struct {
   SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;
