@@ -287,6 +287,18 @@ static bool generation_ui_continue(void *userdata, unsigned attempt,
   if (!context || !context->gfx || !context->ui) return false;
 
   SDL_PumpEvents();
+#if defined(__ANDROID__)
+  SDL_Event pending_app[8];
+  int count;
+  while ((count = SDL_PeepEvents(pending_app, 8, SDL_GETEVENT,
+                                 SDL_APP_TERMINATING,
+                                 SDL_APP_DIDENTERFOREGROUND)) > 0) {
+    for (int i = 0; i < count; ++i)
+      (void)ui_handle_android_lifecycle_event(&pending_app[i]);
+    if (app_suspended) return false;
+  }
+  if (count < 0 || app_suspended) return false;
+#endif
   if (SDL_HasEvent(SDL_QUIT)) return false;
   const Uint8 *keys = SDL_GetKeyboardState(NULL);
   if (keys && keys[SDL_SCANCODE_ESCAPE]) return false;
@@ -842,8 +854,7 @@ static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
 static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
   if (!p || !p->enabled || !g || !g->win || !ui) return;
 #if defined(__ANDROID__)
-  (void)save_preferences(p, ui); /* Save game preferences, not screen geometry. */
-  return;
+  return; /* Android resizing does not rewrite preferences. */
 #endif
   gfx_capture_restored_bounds(g);
   Uint32 flags = SDL_GetWindowFlags(g->win);
@@ -2347,6 +2358,16 @@ int main(int argc, char **argv) {
   bool running = true;
   SDL_Event e;
   while (running) {
+#if defined(__ANDROID__)
+    if (app_suspended) {
+      SDL_Event system_event;
+      if (SDL_WaitEventTimeout(&system_event, 250)) {
+        if (system_event.type == SDL_QUIT) running = false;
+        else (void)ui_prepare_event(&system_event);
+      }
+      continue;
+    }
+#endif
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     ui_pointer_reconcile();
     int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
@@ -2365,6 +2386,7 @@ int main(int argc, char **argv) {
         continue;
       }
       if (e.type == SDL_QUIT) {
+        if (app_suspended) { running = false; continue; }
         if (request_exit(&persistence, &game, &ui, &g))
           running = false;
         continue;
@@ -3072,6 +3094,9 @@ int main(int argc, char **argv) {
       }
     }
 
+#if defined(__ANDROID__)
+    if (app_suspended) continue; /* No scans, rendering or audio. */
+#endif
     ui_scroll_flush_preview();
     if (ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;

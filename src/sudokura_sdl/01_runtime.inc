@@ -71,6 +71,7 @@
 #include "url_launcher.h"
 #if defined(__ANDROID__)
 #include "android_viewport.h"
+#include "android_lifecycle.h"
 #endif
 #include "assets/generated/flag_us.h"
 #include "assets/generated/flag_ar.h"
@@ -106,6 +107,11 @@ typedef struct {
 
 /* Shared native gesture policy; on Android slop comes from ViewConfiguration. */
 static int ui_touch_slop = 8;
+static bool app_suspended = false;
+#if defined(__ANDROID__)
+static AndroidLifecycle app_lifecycle_state;
+static bool app_lifecycle_checkpoint_failed;
+#endif
 
 typedef struct {
   SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;

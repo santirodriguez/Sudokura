@@ -61,3 +61,6 @@ tests/test_library_paging
 /android/app/.cxx/
 /android/app/build/
 /android/build/
+
+/tests/test_mobile_geometry
+/tests/test_android_lifecycle

@@ -74,6 +74,10 @@ static AudioContext audio_context_for_game(const Game *game, const UI *ui) {
 
 static void audio_sync_ui(const Game *game, const UI *ui) {
   if (!ui) return;
+  if (app_suspended) {
+    audio_set_focus_paused(true); /* Background must also silence Home. */
+    return;
+  }
 
   bool result_context = app_result_context_active(ui);
   bool entered_result =
@@ -154,6 +158,7 @@ static void app_shutdown(Gfx *gfx) {
 }
 
 static void app_tick(Gfx *gfx, Game *game, UI *ui) {
+  if (app_suspended) return;
   audio_gfx = gfx;
   audio_game = game;
   audio_ui = ui;
@@ -161,6 +166,7 @@ static void app_tick(Gfx *gfx, Game *game, UI *ui) {
 }
 
 static void app_frame(Gfx *gfx, Game *game, UI *ui) {
+  if (app_suspended) return; /* No rendering on a suspended surface. */
   app_tick(gfx,game,ui);
   app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);

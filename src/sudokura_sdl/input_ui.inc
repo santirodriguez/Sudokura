@@ -830,9 +830,66 @@ static bool ui_handle_more_panel_event(SDL_Event *event) {
          event->type == SDL_MOUSEMOTION;
 }
 
+#if defined(__ANDROID__)
+/* This runs only on SDL's native owner thread, never a Java callback. */
+static bool ui_handle_android_lifecycle_event(const SDL_Event *event) {
+  if (!event) return false;
+  AndroidLifecycleEvent kind;
+  switch (event->type) {
+    case SDL_APP_WILLENTERBACKGROUND: kind = ANDROID_LIFECYCLE_WILL_BACKGROUND; break;
+    case SDL_APP_DIDENTERBACKGROUND: kind = ANDROID_LIFECYCLE_DID_BACKGROUND; break;
+    case SDL_APP_WILLENTERFOREGROUND: kind = ANDROID_LIFECYCLE_WILL_FOREGROUND; break;
+    case SDL_APP_DIDENTERFOREGROUND: kind = ANDROID_LIFECYCLE_DID_FOREGROUND; break;
+    case SDL_APP_LOWMEMORY: kind = ANDROID_LIFECYCLE_LOW_MEMORY; break;
+    case SDL_APP_TERMINATING: kind = ANDROID_LIFECYCLE_TERMINATING; break;
+    default: return false;
+  }
+  const AndroidLifecycleEffects e =
+      android_lifecycle_transition(&app_lifecycle_state, kind);
+  app_suspended = app_lifecycle_state.suspended;
+  if (e.cancel_input) {
+    ui_touch_cancel();
+    ui_pointer_cancel();
+    ui_audio_control_cancel_interaction();
+    if (audio_ui && audio_ui->session_open && audio_ui->result == RES_NONE)
+      (void)clock_pause(audio_ui, PAUSE_FOCUS);
+  }
+  if (e.silence_audio) audio_set_focus_paused(true);
+  if (e.checkpoint) {
+    bool saved = true;
+    if (audio_persistence && audio_persistence->enabled) {
+      if (audio_ui && audio_game && audio_ui->session_open &&
+          audio_ui->result == RES_NONE)
+        saved = checkpoint_current_session(audio_persistence, audio_game,
+                                           audio_ui);
+      else
+        saved = persistence_flush(audio_persistence);
+    } else if (audio_ui && audio_ui->session_open) {
+      saved = false;
+    }
+    app_lifecycle_checkpoint_failed = !saved;
+    if (!saved) fprintf(stderr, "Android background checkpoint failed\n");
+  }
+  if (e.restore_surface) {
+    bool restored = audio_gfx && gfx_refresh_metrics(audio_gfx);
+    if (restored) restored = app_rebuild_renderer_resources(audio_gfx);
+    if (!restored)
+      fprintf(stderr, "Android foreground renderer restore failed: %s\n",
+              SDL_GetError());
+    if (audio_gfx) audio_gfx->dirty = true;
+    if (app_lifecycle_checkpoint_failed && audio_ui)
+      show_toast(audio_ui, tr(audio_ui->language, T_SAVE_FAILED));
+    /* PAUSE_FOCUS remains until explicit Resume. */
+  }
+  return true;
+}
+#endif
+
 static bool ui_prepare_event(SDL_Event *event) {
   if(!event)return false;
 #if defined(__ANDROID__)
+  if (ui_handle_android_lifecycle_event(event)) return false;
+  if (app_suspended && event->type != SDL_QUIT) return false;
   if (event->type == SDL_KEYUP && event->key.keysym.sym == SDLK_AC_BACK)
     return false;
   if (event->type == SDL_KEYDOWN && event->key.keysym.sym == SDLK_AC_BACK) {

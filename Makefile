@@ -94,13 +94,16 @@ tests/test_android_viewport: tests/test_android_viewport.c src/android_viewport.
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_android_viewport.c src/android_viewport.c -o $@ -lm
 tests/test_mobile_geometry: tests/test_mobile_geometry.c src/geometry.c src/geometry.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_mobile_geometry.c src/geometry.c -o $@
+tests/test_android_lifecycle: tests/test_android_lifecycle.c src/android_lifecycle.c src/android_lifecycle.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_android_lifecycle.c src/android_lifecycle.c -o $@
 
-test: tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_mobile_geometry tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
+test: tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_mobile_geometry tests/test_android_lifecycle tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
 	./tests/test_library_paging
 	./tests/test_pointer_capture
 	./tests/test_touch_input
 	./tests/test_android_viewport
 	./tests/test_mobile_geometry
+	./tests/test_android_lifecycle
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
@@ -123,4 +126,4 @@ assets:
 $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/sudokura-head.png assets/flags/raster/us.png assets/flags/raster/ar.png assets/flags/raster/es-ct.png scripts/generate_assets.go scripts/generate_assets.py
 	./scripts/generate_assets.py
 clean:
-	rm -f sudokura tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction
+	rm -f sudokura tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_mobile_geometry tests/test_android_lifecycle tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction

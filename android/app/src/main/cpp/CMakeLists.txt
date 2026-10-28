@@ -61,6 +61,7 @@ set(SUDOKURA_SOURCES
   src/input.c
   src/touch_input.c
   src/android_viewport.c
+  src/android_lifecycle.c
   src/game.c
   src/human.c
   src/geometry.c
