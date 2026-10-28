@@ -1,6 +1,10 @@
 package org.sudokura.prototype;
 
+import android.annotation.TargetApi;
 import android.content.res.Configuration;
+import android.view.KeyEvent;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.graphics.Insets;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,6 +16,43 @@ import org.libsdl.app.SDLActivity;
 
 /** SDL remains the game owner. Java only supplies current Android surface metrics. */
 public final class PrototypeActivity extends SDLActivity {
+    private Object backCallback;
+
+    private void sendBackToNative() {
+        if (mBrokenLibraries || mSDLThread == null) return;
+        /* One key-down/up pair, not Activity.finish or a second UI dispatcher. */
+        onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+        onNativeKeyUp(KeyEvent.KEYCODE_BACK);
+    }
+
+    @TargetApi(33)
+    private static final class BackApi33 {
+        static OnBackInvokedCallback install(PrototypeActivity activity) {
+            final OnBackInvokedCallback callback = activity::sendBackToNative;
+            activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+            return callback;
+        }
+
+        static void remove(PrototypeActivity activity, Object callback) {
+            activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+                    (OnBackInvokedCallback) callback);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        sendBackToNative(); /* Fallback for three-button navigation on older OS. */
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
+            BackApi33.remove(this, backCallback);
+            backCallback = null;
+        }
+        super.onDestroy();
+    }
     @Override
     protected String[] getLibraries() {
         return new String[] {"SDL2", "SDL2_ttf", "SDL2_mixer", "main"};
@@ -65,6 +106,7 @@ public final class PrototypeActivity extends SDLActivity {
             return insets;
         });
         mLayout.requestApplyInsets();
+        if (Build.VERSION.SDK_INT >= 33) backCallback = BackApi33.install(this);
     }
 
     @Override
