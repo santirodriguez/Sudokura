@@ -1431,6 +1431,9 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     SDL_Event key = {0};
     key.type = SDL_KEYDOWN;
     key.key.keysym.sym = SDLK_TAB;
+    key.key.keysym.mod = KMOD_NONE; /* Unmodified Tab must move forward. */
+    const SDL_Keymod smoke_tab_mod_before = key.key.keysym.mod;
+    const SDL_Keycode smoke_tab_sym_before = key.key.keysym.sym;
     const bool more_before_tab = ui_more_open;
     const int focus_before_tab = ui_more_focus;
     const unsigned pause_before_tab = ui->pause_reasons;
@@ -1439,11 +1442,16 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
       fprintf(stderr,
               "More Tab smoke state: before(open=%d,focus=%d,pause=%u) "
               "after(open=%d,focus=%d,pause=%u) propagated=%d "
-              "gfx_width=%d audio_width=%d screen=%d audio_screen=%d\n",
+              "gfx_width=%d audio_width=%d screen=%d audio_screen=%d "
+              "mod_before=%u mod_after=%u sym_before=%ld sym_after=%ld "
+              "tab=%ld up=%ld kmod_shift=%u\n",
               more_before_tab, focus_before_tab, pause_before_tab,
               ui_more_open, ui_more_focus, (unsigned)ui->pause_reasons,
               tab_propagated, gfx->width, audio_gfx ? audio_gfx->width : -1,
-              (int)ui->screen, audio_ui ? (int)audio_ui->screen : -1);
+              (int)ui->screen, audio_ui ? (int)audio_ui->screen : -1,
+              (unsigned)smoke_tab_mod_before, (unsigned)key.key.keysym.mod,
+              (long)smoke_tab_sym_before, (long)key.key.keysym.sym,
+              (long)SDLK_TAB, (long)SDLK_UP, (unsigned)KMOD_SHIFT);
       UI_SMOKE_FAIL();
     }
     key.key.keysym.mod = KMOD_SHIFT;
