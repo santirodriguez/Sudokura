@@ -15,7 +15,7 @@
 ### Existing data and desktop packages
 - Preserved deterministic generator revision 3, revision-2 reconstruction, normal/Daily independence, stable game/attempt identities, library records, versioned migration and deletion receipts, offline operation, languages, themes, and optional audio. No persistence-format change or forced new-game naming was introduced.
 - The public desktop package contract remains Windows x64 installer and portable EXE, Linux x86_64 AppImage, and experimental macOS 15+ Apple Silicon DMG, plus checksums and Build-Info. Android is not a public release asset for v1.3.9.
-- Exact-head Android preview and desktop CI/package checks passed. Optional CI UI review and desktop benchmark jobs were skipped; these were not counted as executed tests.
+- Android debug-preview and desktop CI/package checks passed at the relevant tested source commits. The optional 182-scene UI review and the repeated v1.3.8-to-v1.3.9 desktop benchmark also passed in activated push jobs; their PR-event counterparts were conditionally skipped. Documentation-only follow-up commits did not rerun executable checks.
 
 ## [1.3.8]
 
