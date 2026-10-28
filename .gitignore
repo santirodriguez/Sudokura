@@ -12,6 +12,7 @@
 /tests/test_i18n
 /tests/test_pointer_capture
 /tests/test_touch_input
+/tests/test_android_viewport
 /tests/test_input
 /tests/test_interaction
 /tests/test_live_save
