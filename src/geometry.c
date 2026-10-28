@@ -908,9 +908,13 @@ AudioControlGeometry geometry_audio_control(int width, int height,
   if (app && play_surface) {
     GeoRect settings = app->actions[PLAY_ACTION_AUDIO];
     int size = geometry_final_audio_button_size(width, settings.h);
-    if (size > settings.w / 2) size = settings.w / 2;
+    bool phone_toolbar = app->play_compact &&
+                         settings.h >= 48 && settings.w >= 48;
+    if (phone_toolbar) size = 48;
+    else if (size > settings.w / 2) size = settings.w / 2;
     out.button =
-        (GeoRect){settings.x + settings.w - size,
+        (GeoRect){phone_toolbar ? settings.x + (settings.w - size) / 2
+                               : settings.x + settings.w - size,
                   settings.y + (settings.h - size) / 2, size, size};
   } else if (app) {
     GeoRect language = app->screen_language;
@@ -1012,8 +1016,8 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   g->play_compact = true;
   g->play_language = (GeoRect){margin, margin, 1, 1};
   g->play_title = (GeoRect){margin, margin + 3, shell_w, 20};
-  GeoRect top[4], edit[4];
-  geometry_final_split((GeoRect){margin, 28, shell_w, 48}, 4, gap, top);
+  GeoRect top[5], edit[4];
+  geometry_final_split((GeoRect){margin, 28, shell_w, 48}, 5, gap, top);
   g->play_controls[PLAY_CONTROL_MENU] = top[0];
   g->play_controls[PLAY_CONTROL_PAUSE] = top[1];
   g->play_controls[PLAY_CONTROL_SAVE] = top[2];
@@ -1068,7 +1072,7 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   g->actions[PLAY_ACTION_HINT] = g->more_items[MORE_HINT];
   g->actions[PLAY_ACTION_NOTES] = edit[3];
   g->actions[PLAY_ACTION_VERIFY] = g->more_items[MORE_VERIFY];
-  g->actions[PLAY_ACTION_AUDIO] = top[2];
+  g->actions[PLAY_ACTION_AUDIO] = top[4]; /* Separate from Save. */
   g->actions[PLAY_ACTION_HELP] = g->more_items[MORE_HELP];
   g->actions[PLAY_ACTION_ABOUT] = g->more_items[MORE_ABOUT];
   set_compatibility_aliases(g);
