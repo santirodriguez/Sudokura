@@ -566,7 +566,8 @@ static bool ui_scroll_motion(int x, int y) {
     ui_pointer_cancel();
     return true;
   }
-  TouchScrollResult motion = touch_scroll_motion(&ui_scroll_gesture, x, y, 8);
+  TouchScrollResult motion = touch_scroll_motion(&ui_scroll_gesture, x, y,
+                                                    ui_touch_slop);
   if (!motion.scrolling) return false;
   ui_pointer_cancel();
   if (ui_scroll_kind == UI_SCROLL_HELP) {
@@ -646,7 +647,7 @@ static bool ui_touch_prepare(SDL_Event *event) {
       .window_id = finger.windowID, .x = finger.x, .y = finger.y};
   TouchInputResult result = touch_input_event(
       &ui_touch_input, phase, sample, SDL_GetWindowID(audio_gfx->win),
-      audio_gfx->width, audio_gfx->height, 8);
+      audio_gfx->width, audio_gfx->height, ui_touch_slop);
   if (!result.accepted) return false;
   if (!result.valid) {
     ui_pointer_cancel();
