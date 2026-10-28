@@ -1431,7 +1431,21 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     SDL_Event key = {0};
     key.type = SDL_KEYDOWN;
     key.key.keysym.sym = SDLK_TAB;
-    if (ui_prepare_event(&key) || ui_more_focus != 1) UI_SMOKE_FAIL();
+    const bool more_before_tab = ui_more_open;
+    const int focus_before_tab = ui_more_focus;
+    const unsigned pause_before_tab = ui->pause_reasons;
+    const bool tab_propagated = ui_prepare_event(&key);
+    if (tab_propagated || ui_more_focus != 1) {
+      fprintf(stderr,
+              "More Tab smoke state: before(open=%d,focus=%d,pause=%u) "
+              "after(open=%d,focus=%d,pause=%u) propagated=%d "
+              "gfx_width=%d audio_width=%d screen=%d audio_screen=%d\n",
+              more_before_tab, focus_before_tab, pause_before_tab,
+              ui_more_open, ui_more_focus, (unsigned)ui->pause_reasons,
+              tab_propagated, gfx->width, audio_gfx ? audio_gfx->width : -1,
+              (int)ui->screen, audio_ui ? (int)audio_ui->screen : -1);
+      UI_SMOKE_FAIL();
+    }
     key.key.keysym.mod = KMOD_SHIFT;
     if (ui_prepare_event(&key) || ui_more_focus != 0) UI_SMOKE_FAIL();
     key.key.keysym.sym = SDLK_ESCAPE;
