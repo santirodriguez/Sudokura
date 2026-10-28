@@ -64,6 +64,20 @@ Parity is necessary but insufficient. Require:
 - Accessibility limitations of an SDL-rendered surface documented honestly. Keyboard focus/contrast alone do not establish TalkBack support. Test TalkBack in the prototype; if useful semantic access requires an Android bridge, evaluate a bounded virtual-node bridge for controls/cells before publicability rather than claiming it already exists. Do not make a toolkit rewrite the default.
 - Desktop release validation remains intact. No crash, data-loss, identity or critical interaction regression may be waived to meet the version number.
 
+## Android distribution strategy
+
+**Approved direction (2026-10-28):** Build a dependable public Android release, preferably in v1.4.0 and no later than v1.5.0. The intended distribution channels have different roles:
+
+1. **GitHub Releases + Obtainium — the primary direct channel.** Publish a stable developer-signed, independently installable APK from the exact release tag, with predictable asset naming, SHA-256, build provenance and a monotonically increasing Android version code. Verify that Obtainium can discover the GitHub release and install subsequent signed APK updates without losing saved games. The current ephemeral debug-signed APK is not a public release candidate.
+2. **F-Droid — planned application for inclusion.** Keep dependencies, native source, licenses and build inputs compatible with F-Droid's free-software and source-build requirements. Prepare accurate metadata and genuine localized screenshots. Apply for review once the app and build recipe meet its rules; acceptance is decided by F-Droid. Evaluate reproducible upstream-signed APK publication if consistent update signatures across channels are desired.
+3. **Google Play — optional eventual channel.** If chosen, prepare the Android App Bundle, Play App Signing configuration, store listing, policy declarations and platform-specific verification. The Play Store is not a replacement for the GitHub APK.
+
+**Identity and update safety:** Select the final application ID and secure long-term release signing approach before publishing the first public APK. Android in-place updates require compatible application IDs and signing certificates; a different F-Droid or Google Play signer can prevent cross-store updates. When configuring Play App Signing, consider a developer-provided app-signing key if shared identity across channels is required. Cross-store switching must be tested with existing saved games, or explicitly documented as unsupported until safe data migration exists. Do not rotate release signatures, expose signing credentials, or recommend uninstalling a progress-bearing app simply to change channels.
+
+**Assets and timing:** Use one approved set of real Android screenshots per language/device class for applicable store metadata, with Fastlane metadata as a possible canonical source for F-Droid. Keep the approved desktop screenshot separate. F-Droid inclusion and Google Play registration are **not required before the first safe signed GitHub APK**, and neither listing is claimed to be available today. Actual publishing and signing operations remain separate authorization gates.
+
+References (recheck at launch): [Obtainium](https://github.com/ImranR98/Obtainium) · [F-Droid inclusion](https://f-droid.org/docs/Inclusion_Policy/) · [F-Droid reproducible APKs](https://f-droid.org/docs/Reproducible_Builds/) · [Android signing](https://developer.android.com/studio/publish/app-signing) · [Android App Bundles](https://developer.android.com/guide/app-bundle).
+
 ## Technical direction and decision points
 
 ### Host and build
@@ -111,7 +125,7 @@ v1.3.9 now includes native single-owner touch, bounded Help/library drag usable 
 
 A narrow phone cannot fit nine 48dp cells across its width. The prototype must measure and disclose board-cell size/comfort while giving action controls meaningful targets; this is not a blanket accessibility claim. Any paused rotate/enlarge fallback for short surfaces is prototype-only and must be resolved before functional parity/publicability. TalkBack remains an evidence-driven decision before publicability, not an assumed capability or automatic rewrite mandate.
 
-Public Android identity, final minimum support, distribution channels, signing custody and public backup/transfer policy remain decisions before launch. The prototype's separate temporary identity and disabled backup do not preempt them. The v1.4.0 target and v1.5.0 maximum horizon are unchanged.
+The public distribution priority is now GitHub signed APK/Obtainium first, F-Droid inclusion application next and potentially Google Play later. Production app identity, signing compatibility, supported devices and backup/transfer policy still require dedicated decisions before launch. The prototype's separate temporary identity and disabled backup do not preempt them. The v1.4.0 target and v1.5.0 maximum horizon are unchanged.
 
 ## Maintenance of this plan
 
