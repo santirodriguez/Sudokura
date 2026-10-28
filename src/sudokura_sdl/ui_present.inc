@@ -305,7 +305,12 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   }
 
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
-  (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
+  bool show_group_captions = true;
+#if defined(__ANDROID__)
+  show_group_captions = gfx->width >= 640;
+#endif
+  if (show_group_captions)
+    (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
                          sdl_rect(geometry.home_new_label), fonts.help, 10);
   (void)draw_fitted_text(gfx, tr(ui->language, T_MODE), theme.dim,
                          sdl_rect(geometry.home_mode_label), fonts.help, 10);
@@ -346,7 +351,8 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   polish_home_button(gfx, theme, sdl_rect(geometry.home_primary[0]),
                      tr(ui->language, T_START_NEW_GAME), true, false,
                      show_home_keyboard_focus && home_focus == HOME_FOCUS_NEW, fonts.control);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_CONTINUE), theme.title,
+  if (show_group_captions)
+    (void)draw_fitted_text(gfx, tr(ui->language, T_CONTINUE), theme.title,
                          sdl_rect(geometry.home_continue_label),
                          fonts.help, 10);
 
@@ -1393,7 +1399,11 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
       PLAY_FOCUS_UNDO, PLAY_FOCUS_REDO, PLAY_FOCUS_CLEAR, PLAY_FOCUS_NOTES
     };
     static const TextKey labels[] = {
+#if defined(__ANDROID__)
+      T_HOME_COMPACT, T_PAUSE, T_SAVE, T_MORE,
+#else
       T_MENU, T_PAUSE, T_SAVE, T_MORE,
+#endif
       T_UNDO, T_REDO, T_CLEAR, T_NOTES
     };
     static const PlayControl controls_map[] = {
@@ -1417,10 +1427,18 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
                                          pressed, !enabled);
       (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
                              foreground,face,fonts.control,10);
-      if (enabled && play_keyboard_focus == focus_keys[i])
+      bool show_focus = true;
+#if defined(__ANDROID__)
+      show_focus = ui_keyboard_focus_visible;
+#endif
+      if (show_focus && enabled && play_keyboard_focus == focus_keys[i])
         draw_focus_ring(gfx->ren,rect,theme.sel_outline);
     }
-    if (play_focus_enabled(game,ui,PLAY_FOCUS_STRICT) &&
+    bool show_strict_focus = true;
+#if defined(__ANDROID__)
+    show_strict_focus = ui_keyboard_focus_visible;
+#endif
+    if (show_strict_focus && play_focus_enabled(game,ui,PLAY_FOCUS_STRICT) &&
         play_keyboard_focus == PLAY_FOCUS_STRICT)
       draw_focus_ring(gfx->ren,play_focus_rect(gfx,ui,PLAY_FOCUS_STRICT),
                       theme.sel_outline);
@@ -1539,8 +1557,24 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
   AppGeometry geo;
   if (!get_geometry(gfx,ui,&geo) || !geo.play_compact) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  /* A modal pause must never expose the running Time Attack solution. */
+  /* Show only an empty board silhouette, never paused puzzle numbers. */
   draw_rect(gfx->ren,0,0,gfx->width,gfx->height,theme.bg);
+  SDL_Rect board=sdl_rect(geo.board);
+  SDL_BlendMode old_blend=SDL_BLENDMODE_NONE;
+  (void)SDL_GetRenderDrawBlendMode(gfx->ren,&old_blend);
+  (void)SDL_SetRenderDrawBlendMode(gfx->ren,SDL_BLENDMODE_BLEND);
+  (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
+                               theme.title.b,18);
+  (void)SDL_RenderFillRect(gfx->ren,&board);
+  for(int i=0;i<=9;++i){
+    Uint8 alpha=(Uint8)(i%3==0?54:24);
+    (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
+                                 theme.title.b,alpha);
+    int x=board.x+board.w*i/9,y=board.y+board.h*i/9;
+    (void)SDL_RenderDrawLine(gfx->ren,x,board.y,x,board.y+board.h);
+    (void)SDL_RenderDrawLine(gfx->ren,board.x,y,board.x+board.w,y);
+  }
+  (void)SDL_SetRenderDrawBlendMode(gfx->ren,old_blend);
   SDL_Rect panel=sdl_rect(geo.more_panel);
   draw_round_rect(gfx->ren,panel,12,theme.btn);
   SDL_Rect heading={panel.x+12,panel.y+15,panel.w-24,34};
@@ -1559,7 +1593,11 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
                        ui_pointer_pressed(rect),false);
     (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
                            theme.btnfg,face,17,10);
-    if (ui_more_focus==i)
+    bool show_focus=true;
+#if defined(__ANDROID__)
+    show_focus=ui_keyboard_focus_visible;
+#endif
+    if (show_focus && ui_more_focus==i)
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
 }

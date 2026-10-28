@@ -419,7 +419,11 @@ static bool games_browser_save_current(Persistence *p, Game *game, UI *ui,
   }
   if (ok) {
     p->last_periodic_checkpoint_ms = now_ms();
+#if defined(__ANDROID__)
+    show_toast(ui, tr(ui->language, T_SAVED_LIBRARY));
+#else
     show_toast(ui, tr(ui->language, T_SAVED));
+#endif
     return true;
   }
   /* A failed write must not claim retained progress or clear dirty state. */
