@@ -988,3 +988,89 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
          geometry_rect_in_bounds(out->reveal, width, height) &&
          geometry_rect_in_bounds(out->cancel, width, height);
 }
+
+/* Android's physical surface has already had system insets removed by Java.
+   Compose in dp here, keeping desktop's 360x640 minimum untouched. */
+bool geometry_compute_mobile(int width, int height, GeometryMode mode,
+                             AppGeometry *g) {
+  if (!g || width < 360 || height < 600) return false;
+  if (width >= 640) return geometry_compute(width, height, mode, g);
+
+  const int seed_height = height < 640 ? 640 : height;
+  if (!geometry_compute(width, seed_height, mode, g)) return false;
+  /* Recompute secondary screens at actual usable height, not the seed size. */
+  common_screens(width, height, true, g);
+  geometry_final_reserve_audio(&g->screen_language, width);
+
+  const int margin = 4, gap = 4, shell_w = width - 2 * margin;
+  int board = shell_w;
+  const int available = height - 330;
+  if (board > available) board = available;
+  board -= board % 9;
+  if (board < 270) return false;
+
+  g->play_compact = true;
+  g->play_language = (GeoRect){margin, margin, 1, 1};
+  g->play_title = (GeoRect){margin, margin + 3, shell_w, 20};
+  GeoRect top[4], edit[4];
+  geometry_final_split((GeoRect){margin, 28, shell_w, 48}, 4, gap, top);
+  g->play_controls[PLAY_CONTROL_MENU] = top[0];
+  g->play_controls[PLAY_CONTROL_PAUSE] = top[1];
+  g->play_controls[PLAY_CONTROL_SAVE] = top[2];
+  g->play_controls[PLAY_CONTROL_MORE] = top[3];
+
+  geometry_final_grid(g->hud, 0, g->hud_count, margin, 78,
+                      shell_w, 17, 3, 2);
+  g->board = (GeoRect){(width - board) / 2, 116, board, board};
+  const int edit_y = 116 + board + 4;
+  geometry_final_split((GeoRect){margin, edit_y, shell_w, 48}, 4, gap, edit);
+  g->play_controls[PLAY_CONTROL_UNDO] = edit[0];
+  g->play_controls[PLAY_CONTROL_REDO] = edit[1];
+  g->play_controls[PLAY_CONTROL_CLEAR] = edit[2];
+  g->play_controls[PLAY_CONTROL_NOTES] = edit[3];
+
+  g->palette_label = (GeoRect){margin, edit_y + 50, shell_w, 12};
+  const int palette_y = edit_y + 64;
+  const int key_w = (shell_w - 4 * gap) / 5;
+  for (int i = 0; i < 5; ++i)
+    g->palette[i] = (GeoRect){margin + i * (key_w + gap),
+                             palette_y, key_w, 48};
+  const int second_w = 4 * key_w + 3 * gap;
+  const int second_x = (width - second_w) / 2;
+  for (int i = 5; i < GEOMETRY_PALETTE_COUNT; ++i)
+    g->palette[i] = (GeoRect){second_x + (i - 5) * (key_w + gap),
+                             palette_y + 50, key_w, 48};
+  g->progress = (GeoRect){margin, palette_y + 100, shell_w, 16};
+  g->status = (GeoRect){margin, palette_y + 118, shell_w, 24};
+  g->sidebar = (GeoRect){margin, edit_y, shell_w,
+                         g->status.y + g->status.h - edit_y};
+
+  const int panel_w = shell_w - 20, panel_h = 252;
+  const int panel_x = (width - panel_w) / 2;
+  const int panel_y = (height - panel_h) / 2;
+  g->more_panel = (GeoRect){panel_x, panel_y, panel_w, panel_h};
+  const int item_w = (panel_w - 24 - gap) / 2;
+  for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)
+    g->more_items[i] = (GeoRect){
+        panel_x + 12 + (i % 2) * (item_w + gap),
+        panel_y + 56 + (i / 2) * 56, item_w, 48};
+  g->play_controls[PLAY_CONTROL_RESTART] = g->more_items[MORE_RESTART];
+  g->play_controls[PLAY_CONTROL_HINT] = g->more_items[MORE_HINT];
+  g->play_controls[PLAY_CONTROL_VERIFY] = g->more_items[MORE_VERIFY];
+  g->play_controls[PLAY_CONTROL_SETTINGS] = g->more_items[MORE_SETTINGS];
+  g->play_controls[PLAY_CONTROL_HELP] = g->more_items[MORE_HELP];
+  g->play_controls[PLAY_CONTROL_ABOUT] = g->more_items[MORE_ABOUT];
+
+  /* Compatibility actions share their exact interactive counterparts. */
+  g->actions[PLAY_ACTION_MENU] = top[0];
+  g->actions[PLAY_ACTION_PAUSE] = top[1];
+  g->actions[PLAY_ACTION_RESTART] = g->more_items[MORE_RESTART];
+  g->actions[PLAY_ACTION_HINT] = g->more_items[MORE_HINT];
+  g->actions[PLAY_ACTION_NOTES] = edit[3];
+  g->actions[PLAY_ACTION_VERIFY] = g->more_items[MORE_VERIFY];
+  g->actions[PLAY_ACTION_AUDIO] = top[2];
+  g->actions[PLAY_ACTION_HELP] = g->more_items[MORE_HELP];
+  g->actions[PLAY_ACTION_ABOUT] = g->more_items[MORE_ABOUT];
+  set_compatibility_aliases(g);
+  return geometry_play_valid(g, width, height);
+}
