@@ -3,6 +3,7 @@ package org.sudokura.prototype;
 import android.annotation.TargetApi;
 import android.content.res.Configuration;
 import android.view.KeyEvent;
+import android.view.HapticFeedbackConstants;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import android.graphics.Insets;
@@ -38,6 +39,16 @@ public final class PrototypeActivity extends SDLActivity {
             activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
                     (OnBackInvokedCallback) callback);
         }
+    }
+
+    /* This is called on SDL's owner thread; View feedback runs on the UI
+       thread and honors Android's accessibility/touch-feedback preferences. */
+    public void performSudokuraHaptic() {
+        runOnUiThread(() -> {
+            if (mLayout != null && mLayout.isAttachedToWindow()) {
+                mLayout.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            }
+        });
     }
 
     @Override

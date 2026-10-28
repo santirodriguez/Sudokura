@@ -53,7 +53,36 @@ static void home_move_focus(const UI *ui, int direction) {
   home_focus = next;
 }
 
-static void ui_button_click(void) { audio_play_effect(AUDIO_EFFECT_CLICK); }
+/* One system-respecting tactile confirmation per accepted finger action.
+   Never vibrate on finger motion or expose correctness in Classic/Daily. */
+#if defined(__ANDROID__)
+#include <jni.h>
+#include <SDL_system.h>
+static void ui_android_haptic(void) {
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  if (!env) return;
+  jobject activity = (jobject)SDL_AndroidGetActivity();
+  if (!activity) return;
+  jclass klass = (*env)->GetObjectClass(env, activity);
+  if (klass) {
+    jmethodID method = (*env)->GetMethodID(
+        env, klass, "performSudokuraHaptic", "()V");
+    if (method) (*env)->CallVoidMethod(env, activity, method);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->DeleteLocalRef(env, klass);
+  } else if ((*env)->ExceptionCheck(env)) {
+    (*env)->ExceptionClear(env);
+  }
+  (*env)->DeleteLocalRef(env, activity);
+}
+#else
+static void ui_android_haptic(void) {}
+#endif
+
+static void ui_button_click(void) {
+  audio_play_effect(AUDIO_EFFECT_CLICK);
+  if (ui_touch_replayed) ui_android_haptic();
+}
 
 static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
                                         const UI *ui) {
@@ -683,7 +712,7 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_STRICT:ui_button_click();ui->strict_mode=!ui->strict_mode;show_toast(ui,tr(ui->language,ui->strict_mode?T_STRICT:T_FREE));(void)save_preferences(p,ui);(void)stage_current_session(p,game,ui);return true;
     case PLAY_FOCUS_SAVE_RETRY:ui_button_click();(void)persistence_retry_current(p,game,ui);return true;
     default:
-      if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
+      if(play_keyboard_focus>=PLAY_FOCUS_NUMBER_1){int number=play_keyboard_focus-PLAY_FOCUS_NUMBER_1+1;if(apply_player_input(game,ui,ui->sel_r,ui->sel_c,number,ui->notes_mode)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);if(ui_touch_replayed)ui_android_haptic();}return true;}
       return false;
   }
 }
@@ -2932,6 +2961,7 @@ int main(int argc, char **argv) {
           int c = (x - gx) / cell, r = (y - gy) / cell;
           ui.sel_r = r;
           ui.sel_c = c;
+          if (ui_touch_board_tap) ui_android_haptic();
           int index = IDX(r, c);
           if (!game.fixed[index]) {
             int lx = x - (gx + c * cell), ly = y - (gy + r * cell);
