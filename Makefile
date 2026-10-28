@@ -92,12 +92,15 @@ tests/test_touch_input: tests/test_touch_input.c src/touch_input.c src/touch_inp
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_touch_input.c src/touch_input.c -o $@ -lm
 tests/test_android_viewport: tests/test_android_viewport.c src/android_viewport.c src/android_viewport.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_android_viewport.c src/android_viewport.c -o $@ -lm
+tests/test_mobile_geometry: tests/test_mobile_geometry.c src/geometry.c src/geometry.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_mobile_geometry.c src/geometry.c -o $@
 
-test: tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
+test: tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_mobile_geometry tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_generator_quality tests/test_human_calibration tests/test_seed tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher
 	./tests/test_library_paging
 	./tests/test_pointer_capture
 	./tests/test_touch_input
 	./tests/test_android_viewport
+	./tests/test_mobile_geometry
 	./tests/test_main
 	./tests/test_app
 	./tests/test_clock
