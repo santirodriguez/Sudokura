@@ -505,7 +505,10 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   (void)draw_fitted_text(g,progress_text,th.btnfg,progress_label,fonts.hud,10);
 
   SDL_Rect status=sdl_rect(L.model.status);
-  draw_round_rect(g->ren,status,style.radius_control,th.palette_bg);
+  /* Compact phones share the progress row with temporary save/error toast. */
+  bool shared_status = L.model.status.y == L.model.progress.y;
+  if (!shared_status || ui->toast_on)
+    draw_round_rect(g->ren,status,style.radius_control,th.palette_bg);
   if(ui->toast_on){
     double dt=now_s()-ui->toast_t0;
     if(dt>2.2)ui->toast_on=false;

@@ -918,7 +918,8 @@ AudioControlGeometry geometry_audio_control(int width, int height,
                   settings.y + (settings.h - size) / 2, size, size};
   } else if (app) {
     GeoRect language = app->screen_language;
-    int size = geometry_final_audio_button_size(width, language.h);
+    int size = (app->play_compact && language.h >= 48) ? 48 :
+               geometry_final_audio_button_size(width, language.h);
     out.button =
         (GeoRect){language.x + language.w + 4,
                   language.y + (language.h - size) / 2, size, size};
@@ -993,6 +994,49 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
          geometry_rect_in_bounds(out->cancel, width, height);
 }
 
+/* Mobile Home: use the unused vertical room for real 48dp touch targets,
+   not desktop's 33dp footer. Suppress redundant group captions on the
+   minimum supported height; shared geometry remains the hit-test owner. */
+static void geometry_mobile_home(int width, int height, AppGeometry *g) {
+  const int margin = 6, gap = 6, w = width - 2 * margin;
+  const bool roomy = height >= 700;
+  const int caption_h = roomy ? 18 : 1;
+  g->screen_language = (GeoRect){margin, 6, w - 52, 48};
+
+  int y = 60;
+  int logo_h = height >= 760 ? 80 : height >= 680 ? 64 : 40;
+  g->home_logo = (GeoRect){margin, y, w, logo_h};
+  y += logo_h + 4;
+  g->home_new_label = (GeoRect){margin, y, w, caption_h};
+  y += caption_h + (roomy ? 2 : 0);
+  g->home_mode_label = (GeoRect){margin, y, w, 18};
+  y += 20;
+  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+           g->home_mode, GEOMETRY_HOME_SEGMENT_COUNT);
+  y += 48 + 5;
+  g->home_difficulty_label = (GeoRect){margin, y, w, 18};
+  y += 20;
+  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+           g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
+  y += 48 + 7;
+  g->home_primary[0] = (GeoRect){margin, y, w, 48};
+  y += 48 + 6;
+  g->home_continue_label = (GeoRect){margin, y, w, caption_h};
+  y += caption_h + (roomy ? 2 : 0);
+  g->home_primary[1] = (GeoRect){margin, y, w, 48};
+  y += 48 + 6;
+  g->home_primary[2] = (GeoRect){margin, y, w, 48};
+  y += 48 + 8;
+  g->home_secondary[0] = (GeoRect){margin, y, w, 48};
+  y += 48 + 8;
+
+  GeoRect secondary[GEOMETRY_HOME_SECONDARY_COUNT - 1];
+  grid_gap((GeoRect){margin, y, w, 102}, 2, gap, secondary,
+           GEOMETRY_HOME_SECONDARY_COUNT - 1);
+  for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    g->home_secondary[i] = secondary[i - 1];
+}
+
 /* Android's physical surface has already had system insets removed by Java.
    Compose in dp here, keeping desktop's 360x640 minimum untouched. */
 bool geometry_compute_mobile(int width, int height, GeometryMode mode,
@@ -1002,39 +1046,48 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
 
   const int seed_height = height < 640 ? 640 : height;
   if (!geometry_compute(width, seed_height, mode, g)) return false;
-  /* Recompute secondary screens at actual usable height, not the seed size. */
+  /* Recompose the other screens at current inset-adjusted usable height. */
   common_screens(width, height, true, g);
-  geometry_final_reserve_audio(&g->screen_language, width);
+  geometry_mobile_home(width, height, g);
 
-  const int margin = 4, gap = 4, shell_w = width - 2 * margin;
+  const int margin = 6, gap = 6, shell_w = width - 2 * margin;
+  const int logo_h = height >= 720 ? 36 : height >= 660 ? 28 : 20;
+  const int toolbar_y = logo_h + 8;
+  const int hud_y = toolbar_y + 48 + 6;
+  const int board_y = hud_y + 46 + 4;
+  const bool separate_status = height >= 680;
+  const int reserve_after_board = separate_status ? 228 : 198;
+
   int board = shell_w;
-  const int available = height - 330;
-  if (board > available) board = available;
+  if (board > height - board_y - reserve_after_board)
+    board = height - board_y - reserve_after_board;
   board -= board % 9;
   if (board < 270) return false;
 
   g->play_compact = true;
-  g->play_language = (GeoRect){margin, margin, 1, 1};
-  g->play_title = (GeoRect){margin, margin + 3, shell_w, 20};
+  g->play_language = (GeoRect){margin, 1, 1, 1};
+  g->play_title = (GeoRect){margin, 4, shell_w, logo_h};
   GeoRect top[5], edit[4];
-  geometry_final_split((GeoRect){margin, 28, shell_w, 48}, 5, gap, top);
+  geometry_final_split((GeoRect){margin, toolbar_y, shell_w, 48},
+                       5, gap, top);
   g->play_controls[PLAY_CONTROL_MENU] = top[0];
   g->play_controls[PLAY_CONTROL_PAUSE] = top[1];
   g->play_controls[PLAY_CONTROL_SAVE] = top[2];
   g->play_controls[PLAY_CONTROL_MORE] = top[3];
 
-  geometry_final_grid(g->hud, 0, g->hud_count, margin, 78,
-                      shell_w, 17, 3, 2);
-  g->board = (GeoRect){(width - board) / 2, 116, board, board};
-  const int edit_y = 116 + board + 4;
-  geometry_final_split((GeoRect){margin, edit_y, shell_w, 48}, 4, gap, edit);
+  geometry_final_grid(g->hud, 0, g->hud_count, margin, hud_y,
+                      shell_w, 22, 3, 2);
+  g->board = (GeoRect){(width - board) / 2, board_y, board, board};
+  const int edit_y = board_y + board + 6;
+  geometry_final_split((GeoRect){margin, edit_y, shell_w, 48},
+                       4, gap, edit);
   g->play_controls[PLAY_CONTROL_UNDO] = edit[0];
   g->play_controls[PLAY_CONTROL_REDO] = edit[1];
   g->play_controls[PLAY_CONTROL_CLEAR] = edit[2];
   g->play_controls[PLAY_CONTROL_NOTES] = edit[3];
 
-  g->palette_label = (GeoRect){margin, edit_y + 50, shell_w, 12};
-  const int palette_y = edit_y + 64;
+  g->palette_label = (GeoRect){margin, edit_y + 48, shell_w, 1};
+  const int palette_y = edit_y + 54;
   const int key_w = (shell_w - 4 * gap) / 5;
   for (int i = 0; i < 5; ++i)
     g->palette[i] = (GeoRect){margin + i * (key_w + gap),
@@ -1043,11 +1096,14 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   const int second_x = (width - second_w) / 2;
   for (int i = 5; i < GEOMETRY_PALETTE_COUNT; ++i)
     g->palette[i] = (GeoRect){second_x + (i - 5) * (key_w + gap),
-                             palette_y + 50, key_w, 48};
-  g->progress = (GeoRect){margin, palette_y + 100, shell_w, 16};
-  g->status = (GeoRect){margin, palette_y + 118, shell_w, 24};
-  g->sidebar = (GeoRect){margin, edit_y, shell_w,
-                         g->status.y + g->status.h - edit_y};
+                             palette_y + 54, key_w, 48};
+  g->progress = (GeoRect){margin, palette_y + 108, shell_w, 24};
+  /* At 360x600 the transient toast replaces the progress row rather than
+     erasing it with a second, always-empty panel. */
+  g->status = (GeoRect){margin, g->progress.y + (separate_status ? 30 : 0),
+                        shell_w, 24};
+  int bottom = g->status.y + g->status.h;
+  g->sidebar = (GeoRect){margin, edit_y, shell_w, bottom - edit_y};
 
   const int panel_w = shell_w - 20, panel_h = 252;
   const int panel_x = (width - panel_w) / 2;
@@ -1065,14 +1121,13 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   g->play_controls[PLAY_CONTROL_HELP] = g->more_items[MORE_HELP];
   g->play_controls[PLAY_CONTROL_ABOUT] = g->more_items[MORE_ABOUT];
 
-  /* Compatibility actions share their exact interactive counterparts. */
   g->actions[PLAY_ACTION_MENU] = top[0];
   g->actions[PLAY_ACTION_PAUSE] = top[1];
   g->actions[PLAY_ACTION_RESTART] = g->more_items[MORE_RESTART];
   g->actions[PLAY_ACTION_HINT] = g->more_items[MORE_HINT];
   g->actions[PLAY_ACTION_NOTES] = edit[3];
   g->actions[PLAY_ACTION_VERIFY] = g->more_items[MORE_VERIFY];
-  g->actions[PLAY_ACTION_AUDIO] = top[4]; /* Separate from Save. */
+  g->actions[PLAY_ACTION_AUDIO] = top[4];
   g->actions[PLAY_ACTION_HELP] = g->more_items[MORE_HELP];
   g->actions[PLAY_ACTION_ABOUT] = g->more_items[MORE_ABOUT];
   set_compatibility_aliases(g);

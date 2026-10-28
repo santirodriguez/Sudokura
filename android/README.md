@@ -29,6 +29,8 @@ For an already equipped Android development environment (no local installation i
 
 The committed `android/gradlew` is a small **shell launcher**, not a Gradle wrapper JAR. It verifies and extracts the pinned official Gradle distribution; invoke with `sh` if its file mode is non-executable. Downloaded source archives, SDKs, Gradle distribution/build trees, and generated C artifacts are ignored, not versioned. Java SDLActivity sources come from the exact same verified SDL tarball as native SDL.
 
+On the minimum usable 360x600dp portrait viewport, gameplay uses a >=270dp board, 48dp toolbar/keyboard controls, readable HUD chips and a progress row shared with brief notifications. On too-short rotated screens, the prototype hides the board and focus-pauses the attempt with a localized return-to-portrait instruction; Android Back retains its checked navigation. This is a prototype-only limitation, not landscape parity.
+
 ## Gating and known limitations
 
 This file establishes the unit-1 Android **build vertical slice**, not a verified runtime. Until unit 2, Android-specific lifecycle/save-on-background, touch slop from ViewConfiguration, font load path, density/insets, Back, URL opening and mobile layout remain implementation gates. Do not infer functional quality from a successful assembleDebug or emulator.

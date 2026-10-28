@@ -167,6 +167,26 @@ static void app_tick(Gfx *gfx, Game *game, UI *ui) {
 
 static void app_frame(Gfx *gfx, Game *game, UI *ui) {
   if (app_suspended) return; /* No rendering on a suspended surface. */
+#if defined(__ANDROID__)
+  if (gfx->width < 360 || gfx->height < 600) {
+    /* A short rotated surface cannot contain a 270dp board and 48dp
+       controls. Retain the game and use the existing safe Android Back. */
+    if (ui && ui->session_open) (void)clock_pause(ui, PAUSE_FOCUS);
+    audio_set_focus_paused(true);
+    Theme theme = ui && ui->dark_theme ? theme_dark() : theme_light();
+    SDL_SetRenderDrawColor(gfx->ren, theme.bg.r, theme.bg.g, theme.bg.b, 255);
+    SDL_RenderClear(gfx->ren);
+    if (ui && gfx->width > 48 && gfx->height > 48) {
+      SDL_Rect hint = {12, gfx->height / 2 - 30,
+                       gfx->width - 24, 60};
+      (void)draw_fitted_text(gfx, tr(ui->language, T_ROTATE_PORTRAIT),
+                             theme.btnfg, hint, 22, 12);
+    }
+    SDL_RenderPresent(gfx->ren);
+    gfx->dirty = false;
+    return;
+  }
+#endif
   app_tick(gfx,game,ui);
   app_render_ui(gfx, game, ui);
   SDL_RenderPresent(gfx->ren);

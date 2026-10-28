@@ -212,6 +212,7 @@ typedef enum {
   T_TECH_NAKED_PAIR,
   T_TECH_NAKED_TRIPLE,
   T_TECH_X_WING,
+  T_ROTATE_PORTRAIT,
   T_COUNT
 } TextKey;
 

@@ -22,7 +22,35 @@ static void check(int w, int h, GeometryMode mode) {
       assert(!overlap(g.palette[i], g.palette[j]));
   }
   assert(g.palette[4].y == g.palette[0].y);
-  assert(g.palette[5].y == g.palette[0].y + 50);
+  assert(g.palette[5].y == g.palette[0].y + 54);
+  assert(g.progress.h >= 24);
+  assert(g.hud[0].h >= 22);
+  assert(geometry_rect_in_bounds(g.status, w, h));
+  assert(g.play_title.h >= 20);
+  for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
+    assert(g.home_mode[i].h >= 48 && g.home_difficulty[i].h >= 48);
+    assert(geometry_rect_in_bounds(g.home_mode[i], w, h));
+    assert(geometry_rect_in_bounds(g.home_difficulty[i], w, h));
+  }
+  for (int i = 0; i < GEOMETRY_HOME_PRIMARY_COUNT; ++i) {
+    assert(g.home_primary[i].h >= 48);
+    assert(geometry_rect_in_bounds(g.home_primary[i], w, h));
+  }
+  for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
+    assert(g.home_secondary[i].h >= 48);
+    assert(geometry_rect_in_bounds(g.home_secondary[i], w, h));
+  }
+  AudioControlGeometry home_speaker = geometry_audio_control(w, h, &g, false);
+  assert(home_speaker.button.w >= 48 && home_speaker.button.h >= 48);
+  assert(geometry_rect_in_bounds(home_speaker.button, w, h));
+  assert(!overlap(home_speaker.button, g.screen_language));
+  assert(!overlap(g.home_mode[0], g.home_logo));
+  assert(!overlap(g.home_secondary[3], g.home_secondary[4]));
+  for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i)
+    for (int j = 0; j < i; ++j) {
+      assert(!overlap(g.home_mode[i], g.home_mode[j]));
+      assert(!overlap(g.home_difficulty[i], g.home_difficulty[j]));
+    }
   AudioControlGeometry speaker = geometry_audio_control(w, h, &g, true);
   assert(speaker.button.w >= 48 && speaker.button.h >= 48);
   assert(geometry_rect_in_bounds(speaker.button, w, h));
@@ -54,6 +82,7 @@ int main(void) {
   AppGeometry g;
   assert(!geometry_compute_mobile(359, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(360, 599, GEOMETRY_MODE_CLASSIC, &g));
+  assert(!geometry_compute_mobile(780, 430, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_window_size_supported(360, 600));
   assert(!geometry_compute(360, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(geometry_compute(360, 640, GEOMETRY_MODE_CLASSIC, &g));

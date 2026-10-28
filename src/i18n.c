@@ -211,6 +211,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_TECH_NAKED_PAIR] = "Naked pair",
         [T_TECH_NAKED_TRIPLE] = "Naked triple",
         [T_TECH_X_WING] = "X-Wing",
+        [T_ROTATE_PORTRAIT] = "Rotate to portrait to continue. Use Back to leave.",
     },
     [LANG_ES] = {
         [T_LANGUAGE] = "Idioma",
@@ -421,6 +422,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_TECH_NAKED_PAIR] = "Par desnudo",
         [T_TECH_NAKED_TRIPLE] = "Trío desnudo",
         [T_TECH_X_WING] = "X-Wing",
+        [T_ROTATE_PORTRAIT] = "Girá el teléfono a vertical para seguir. Usá Atrás para volver.",
     },
     [LANG_CA] = {
         [T_LANGUAGE] = "Llengua",
@@ -631,6 +633,7 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_TECH_NAKED_PAIR] = "Parella nua",
         [T_TECH_NAKED_TRIPLE] = "Trio nu",
         [T_TECH_X_WING] = "X-Wing",
+        [T_ROTATE_PORTRAIT] = "Gira el telèfon a vertical per continuar. Fes servir Enrere per tornar.",
     },
 };
 
