@@ -800,6 +800,10 @@ static bool saved_window_display(const Preferences *preferences,
 }
 
 static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
+#if defined(__ANDROID__)
+  (void)g; (void)preferences; /* Host SurfaceView owns its own dimensions. */
+  return;
+#else
   if (!g || !g->win || !preferences) return;
   int display = 0;
   SDL_Rect usable = {0, 0, 0, 0};
@@ -830,10 +834,15 @@ static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
     SDL_PumpEvents();
     (void)gfx_refresh_metrics(g);
   }
+#endif
 }
 
 static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
   if (!p || !p->enabled || !g || !g->win || !ui) return;
+#if defined(__ANDROID__)
+  (void)save_preferences(p, ui); /* Save game preferences, not screen geometry. */
+  return;
+#endif
   gfx_capture_restored_bounds(g);
   Uint32 flags = SDL_GetWindowFlags(g->win);
   if (g->restored_bounds_valid) {
