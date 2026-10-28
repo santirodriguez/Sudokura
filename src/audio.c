@@ -107,7 +107,7 @@ static bool audio_resolve(char out[AUDIO_PATH_CAPACITY], const char *filename) {
 
 #if defined(__ANDROID__)
   /* Android's SDL_RWFromFile sees APK assets relative to assets/, not
-     SDL_GetBasePath(). The Gradle bundle stores audio/*.ogg at that root. */
+     SDL_GetBasePath(). Gradle stores the OGG files under that asset root. */
   if (audio_candidate(out, AUDIO_PATH_CAPACITY, "audio", filename))
     return true;
 #endif
