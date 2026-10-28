@@ -6,6 +6,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false"
+        android:enableOnBackInvokedCallback="true"
         android:hasCode="true">
         <activity
             android:name=".PrototypeActivity"
