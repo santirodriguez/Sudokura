@@ -23,6 +23,12 @@ static void check(int w, int h, GeometryMode mode) {
   }
   assert(g.palette[4].y == g.palette[0].y);
   assert(g.palette[5].y == g.palette[0].y + 50);
+  AudioControlGeometry speaker = geometry_audio_control(w, h, &g, true);
+  assert(speaker.button.w >= 48 && speaker.button.h >= 48);
+  assert(geometry_rect_in_bounds(speaker.button, w, h));
+  for (int i = PLAY_CONTROL_MENU; i <= PLAY_CONTROL_MORE; ++i)
+    assert(!overlap(speaker.button, g.play_controls[i]));
+  assert(!overlap(speaker.button, g.board));
   for (int i = PLAY_CONTROL_MENU; i <= PLAY_CONTROL_NOTES; ++i) {
     assert(geometry_rect_in_bounds(g.play_controls[i], w, h));
     assert(g.play_controls[i].w >= 48 && g.play_controls[i].h >= 48);
