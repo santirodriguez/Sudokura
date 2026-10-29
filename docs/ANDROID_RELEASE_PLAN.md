@@ -1,6 +1,6 @@
 # Sudokura: desktop evolution and Android release plan
 
-Status: Active roadmap; v1.3.8 published; v1.3.9 user-accepted functional Android debug prototype and desktop release candidate, still pre-merge. Maintainer-approved 2026-10-28 boundary assigns unrecorded specialized device proof to the hard public-Android gate; neither debug APK nor functional feedback establishes Android parity or distribution readiness.
+Status: Active roadmap; v1.3.8 is the published historical baseline, and v1.3.9 implements desktop touch alongside a user-accepted functional Android debug prototype. Maintainer-approved 2026-10-28 boundary assigns unrecorded specialized device proof to the hard public-Android gate; neither debug APK nor functional feedback establishes Android parity or distribution readiness.
 Reviewed: 2026-10-28.
 Current published baseline: `4d2c8dbddbe906e5dd714a2f6691dd2760e98072` (`main` and `v1.3.8` at review).
 Next-release specification: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
