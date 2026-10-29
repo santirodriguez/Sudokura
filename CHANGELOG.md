@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.9]
+
+### Direct touch and safer scrolling
+- Added direct finger input using a single active touch owner and matching down/up targets. Cancelling or dragging away cannot activate a different button; real mouse, keyboard, wheel, right-click notes, audio controls, and existing desktop window layouts remain available.
+- Added bounded vertical drag scrolling in Help and Saved Games, including mouse drag. Library scrolling changes only the highlighted entry; swipe gestures cannot execute Load, View, Replay, Delete, or Save.
+
+### Early Android prototype
+- Built an experimental ARM64 Android debug host from the shared C11/SDL2 engine with pinned source dependencies, bundled fonts/music/licenses, private app storage, Android lifecycle/Back handling, display insets, density-aware mobile layout, and the existing Save/recovery paths.
+- Improved the phone layout with a centered gameplay wordmark, larger controls on tall screens, a localized Home action, clearer manual Save confirmation, simplified status labels, soft system-respecting touch haptics, and a bottom-positioned More panel showing only an empty board silhouette.
+- Maintainer testing on a physical phone reported satisfactory general gameplay, working music, and successful manual Save/close/reopen retaining numbers, notes, and progress. Detailed device metrics and specialized edge-case tests were not individually recorded.
+- The Android build remains a **debug-only prototype**, with temporary application identity, ephemeral signing, disabled backup/transfer, and no store or public APK distribution. Landscape on short surfaces, full accessibility, forced-process-death recovery, and real 16 KiB page-size execution are not claimed as accepted.
+
+### Existing data and desktop packages
+- Preserved deterministic generator revision 3, revision-2 reconstruction, normal/Daily independence, stable game/attempt identities, library records, versioned migration and deletion receipts, offline operation, languages, themes, and optional audio. No persistence-format change or forced new-game naming was introduced.
+- The public desktop package contract remains Windows x64 installer and portable EXE, Linux x86_64 AppImage, and experimental macOS 15+ Apple Silicon DMG, plus checksums and Build-Info. Android is not a public release asset for v1.3.9.
+- Android debug-preview and desktop CI/package checks passed at the relevant tested source commits. The optional 182-scene UI review and the repeated v1.3.8-to-v1.3.9 desktop benchmark also passed in activated push jobs; their PR-event counterparts were conditionally skipped. Documentation-only follow-up commits did not rerun executable checks.
+
 ## [1.3.8]
 
 ### Compact desktop play

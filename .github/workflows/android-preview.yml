@@ -1,0 +1,93 @@
+name: Android debug prototype preview
+
+on:
+  push:
+    branches: [release/1.3.9]
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'assets/audio/**'
+      - 'assets/branding/source/**'
+      - 'assets/flags/raster/**'
+      - 'scripts/generate_assets.go'
+      - 'scripts/generate_assets.py'
+      - '.github/workflows/android-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sudokura-android-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Prepare Android SDK and bundled font
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+          test -f /usr/share/doc/fonts-dejavu-core/copyright
+          : "${ANDROID_HOME:?Android SDK required on runner}"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          (yes || true) | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" \
+            "ndk;28.2.13676358" "cmake;3.22.1"
+      - name: Verify source-extraction safety (offline)
+        run: python3 android/scripts/test_prepare_sources.py
+      - name: Verify immutable SDL and Gradle inputs
+        run: python3 android/scripts/prepare_sources.py
+      - name: Generate existing shared C assets
+        run: make assets
+      - name: Build exact-head arm64 debug APK
+        run: |
+          java -version
+          go version
+          bash android/gradlew --no-daemon :app:assembleDebug \
+            -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+            -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
+      - name: Audit APK identity, permissions, assets, ABI and 16 KiB alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          READELF="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -x "$AAPT"
+          test -x "$ZIPALIGN"
+          test -x "$READELF"
+          mkdir -p android-preview-output
+          python3 android/scripts/audit_apk.py "$AAPT" "$APK" | tee android-preview-output/apk-audit.json
+          python3 android/scripts/audit_elf.py "$READELF" "$APK" | tee android-preview-output/elf-audit.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-preview-output/zipalign.txt
+          sha256sum "$APK" | tee android-preview-output/SHA256SUMS.txt
+          printf 'source_sha=%s\n' "$GITHUB_SHA" | tee android-preview-output/build-info.txt
+          printf 'gradle=8.13\nagp=8.11.1\njava=17\nndk=28.2.13676358\ncmake=3.22.1\nmin_sdk=28\ntarget_sdk=36\nabi=arm64-v8a\nphysical_device=NOT_RUN\n' >> android-preview-output/build-info.txt
+          du -h "$APK" | tee android-preview-output/apk-size.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ success() }}
+        with:
+          name: sudokura-android-debug-prototype
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android-preview-output/
+          retention-days: 7
+          if-no-files-found: error

@@ -340,6 +340,30 @@ static bool gfx_refresh_metrics(Gfx*g){
      output_w<=0||output_h<=0){
     output_w=logical_w;output_h=logical_h;
   }
+#if defined(__ANDROID__)
+  /* SDL's renderer output is the already-inset Java SurfaceView in pixels.
+     Convert exactly once; renderer touch filtering then yields logical dp. */
+  const char *density_text = getenv("SUDOKURA_ANDROID_DENSITY");
+  const char *slop_text = getenv("SUDOKURA_ANDROID_TOUCH_SLOP_PX");
+  char *density_end = NULL, *slop_end = NULL;
+  float density = density_text ? strtof(density_text, &density_end) : 0.0f;
+  long slop_px = slop_text ? strtol(slop_text, &slop_end, 10) : 0;
+  if (!density_text || density_end == density_text || *density_end ||
+      (slop_text && (slop_end == slop_text || *slop_end || slop_px < 0 ||
+                     slop_px > INT_MAX))) {
+    fprintf(stderr, "Android viewport environment is invalid\n");
+    return false;
+  }
+  AndroidViewport viewport;
+  if (!android_viewport_compute(output_w, output_h, density,
+                                (int)slop_px, &viewport)) {
+    fprintf(stderr, "Invalid Android surface density/size\n");
+    return false;
+  }
+  logical_w = viewport.width_dp;
+  logical_h = viewport.height_dp;
+  ui_touch_slop = viewport.touch_slop_dp;
+#endif
   DesktopMetrics next;
   if(!desktop_metrics_compute(logical_w,logical_h,output_w,output_h,&next))
     return false;
@@ -358,6 +382,10 @@ static bool gfx_refresh_metrics(Gfx*g){
 }
 
 static void gfx_capture_restored_bounds(Gfx*g){
+#if defined(__ANDROID__)
+  (void)g; /* Android owns its surface; desktop window bounds are meaningless. */
+  return;
+#endif
   if(!g||!g->win)return;
   Uint32 flags=SDL_GetWindowFlags(g->win);
   if(flags&(SDL_WINDOW_MAXIMIZED|SDL_WINDOW_MINIMIZED|SDL_WINDOW_FULLSCREEN|
@@ -413,6 +441,8 @@ static bool app_init_base(Gfx*g,const char*font_cli){
   memset(g,0,sizeof(*g));g->width=SUDOKURA_DEFAULT_WINDOW_WIDTH;
   g->height=SUDOKURA_DEFAULT_WINDOW_HEIGHT;g->dirty=true;
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");
+  SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
+  SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
   if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER)!=0){
     fprintf(stderr,"SDL_Init: %s\n",SDL_GetError());return false;
   }
@@ -427,7 +457,9 @@ static bool app_init_base(Gfx*g,const char*font_cli){
     fprintf(stderr,"SDL_CreateWindow: %s\n",SDL_GetError());
     app_shutdown_base(g);return false;
   }
+#if !defined(__ANDROID__)
   SDL_SetWindowMinimumSize(g->win,360,480);
+#endif
   /* Surface immediately, before font discovery, texture generation and
      profile migration. Keep a real visible window during slow first runs. */
   char loading_title[160];
@@ -479,6 +511,13 @@ static bool make_directory(const char*path){char part[PATH_MAX];size_t length=st
 }part[i]=saved;}return true;}
 static void apply_window_resize(Gfx*g,int requested_width,int requested_height){
   if(!g||!g->win)return;
+#if defined(__ANDROID__)
+  (void)requested_width;
+  (void)requested_height;
+  /* Wait for the real SurfaceView dimensions; never force desktop minimums. */
+  (void)gfx_refresh_metrics(g);
+  return;
+#endif
   int width=0,height=0;
   bool changed=geometry_normalize_window_size(requested_width,requested_height,
                                                &width,&height);

@@ -14,6 +14,7 @@
 #include "seed.h"
 #include "audio.h"
 #include "input.h"
+#include "touch_input.h"
 #include "progress.h"
 
 static void ui_audio_control_cancel_interaction(void);

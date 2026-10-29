@@ -29,7 +29,11 @@
 #include <limits.h>
 
 #include <SDL2/SDL.h>
+#if defined(__ANDROID__)
+#include <SDL_ttf.h>
+#else
 #include <SDL2/SDL_ttf.h>
+#endif
 
 #if defined(_WIN32)
   #include <windows.h>
@@ -65,6 +69,10 @@
 #include "seed.h"
 #include "store_io.h"
 #include "url_launcher.h"
+#if defined(__ANDROID__)
+#include "android_viewport.h"
+#include "android_lifecycle.h"
+#endif
 #include "assets/generated/flag_us.h"
 #include "assets/generated/flag_ar.h"
 #include "assets/generated/flag_ca.h"
@@ -96,6 +104,17 @@ typedef struct {
   int restored_x, restored_y, restored_width, restored_height;
   bool restored_bounds_valid;
 } Gfx;
+
+/* Shared native gesture policy; on Android slop comes from ViewConfiguration. */
+static int ui_touch_slop = 8;
+#if defined(__ANDROID__)
+static bool ui_keyboard_focus_visible = false;
+#endif
+static bool app_suspended = false;
+#if defined(__ANDROID__)
+static AndroidLifecycle app_lifecycle_state;
+static bool app_lifecycle_checkpoint_failed;
+#endif
 
 typedef struct {
   SDL_Color bg, board, thin, thick, hover, sel, sel_outline, text_given, text_edit, text_wrong, boxhl, samehl, shadow, btn, btnfg, dim, title, palette_bg, palette_fg, conflict;

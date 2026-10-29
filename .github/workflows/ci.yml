@@ -341,34 +341,78 @@ jobs:
           uname -a | tee desktop-host.txt
           cc --version | head -1 | tee -a desktop-host.txt
           lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' | tee -a desktop-host.txt || true
-      - run: make assets && make WERROR=-Werror all
-      - name: Measure v1.3 desktop paths
+      - name: Build v1.3.9 and frozen v1.3.8 under identical toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          make assets && make WERROR=-Werror all tests/test_deterministic_parity
+          test "$(git rev-parse 'v1.3.8^{commit}')" = '4d2c8dbddbe906e5dd714a2f6691dd2760e98072'
+          git worktree add --detach "$RUNNER_TEMP/sudokura-v138" 4d2c8dbddbe906e5dd714a2f6691dd2760e98072
+          make -C "$RUNNER_TEMP/sudokura-v138" assets
+          make -C "$RUNNER_TEMP/sudokura-v138" WERROR=-Werror all
+          cc -I"$RUNNER_TEMP/sudokura-v138/src" -std=c11 -O2             -Wall -Wextra -Wpedantic -Werror             tests/test_deterministic_parity.c             "$RUNNER_TEMP/sudokura-v138/src/game.c"             "$RUNNER_TEMP/sudokura-v138/src/human.c"             -o "$RUNNER_TEMP/deterministic-v138"
+      - name: Verify original/solution deterministic identity against v1.3.8
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in src/game.c src/game.h src/human.c src/human.h; do
+            cmp "$file" "$RUNNER_TEMP/sudokura-v138/$file"
+          done
+          grep -Fq '  src/game.c' android/app/src/main/cpp/CMakeLists.txt
+          grep -Fq '  src/human.c' android/app/src/main/cpp/CMakeLists.txt
+          ./tests/test_deterministic_parity > deterministic-v139.txt
+          "$RUNNER_TEMP/deterministic-v138" > deterministic-v138.txt
+          diff -u deterministic-v138.txt deterministic-v139.txt
+          test "$(wc -l < deterministic-v139.txt)" -eq 12
+          printf 'Both versions match all 11 full original/solution fixtures.\n'
+          printf 'Android build compiles the identical shared generator source files.\n'
+          printf 'This does not substitute for executing fixture tests on Android ARM64.\n'
+      - name: Measure three interleaved desktop samples per version
+        shell: bash
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
           SDL_RENDER_DRIVER: software
           SDL_RENDER_VSYNC: '0'
         run: |
-          ./sudokura --desktop-benchmark | tee desktop-v13.txt
-          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v13-smoke.txt ./sudokura --smoke-test
-          python3 scripts/validate_desktop_benchmark.py desktop-v13.txt
-      - name: Measure v1.2 smoke baseline on the same runner
-        env:
-          SDL_VIDEODRIVER: dummy
-          SDL_AUDIODRIVER: dummy
-          SDL_RENDER_DRIVER: software
-          SDL_RENDER_VSYNC: '0'
-        run: |
-          git worktree add /tmp/sudokura-v12 v1.2.0
-          make -C /tmp/sudokura-v12 assets
-          make -C /tmp/sudokura-v12 WERROR=-Werror
-          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' -o desktop-v12-smoke.txt /tmp/sudokura-v12/sudokura --smoke-test
+          set -euo pipefail
+          python3 -m unittest tests/test_compare_desktop_benchmarks.py
+          old="$RUNNER_TEMP/sudokura-v138/sudokura"
+          new="./sudokura"
+          # Warm each executable before collecting comparable process samples.
+          "$old" --desktop-benchmark > /dev/null
+          "$new" --desktop-benchmark > /dev/null
+          sample() {
+            local version="$1" round="$2" executable="$3"
+            local report="desktop-${version}-${round}.txt"
+            "$executable" --desktop-benchmark > "$report"
+            python3 scripts/validate_desktop_benchmark.py "$report"
+          }
+          # Alternate the order to reduce cache/scheduler drift.
+          sample v138 1 "$old"
+          sample v139 1 "$new"
+          sample v139 2 "$new"
+          sample v138 2 "$old"
+          sample v138 3 "$old"
+          sample v139 3 "$new"
+          python3 scripts/compare_desktop_benchmarks.py \
+            --baseline desktop-v138-1.txt desktop-v138-2.txt desktop-v138-3.txt \
+            --candidate desktop-v139-1.txt desktop-v139-2.txt desktop-v139-3.txt \
+            --output desktop-v138-v139-series.json
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' \
+            -o desktop-v138-smoke.txt "$old" --smoke-test
+          /usr/bin/time -f 'wall_s=%e max_rss_kb=%M' \
+            -o desktop-v139-smoke.txt "$new" --smoke-test
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: phase6-desktop-benchmark
+          name: v139-v138-desktop-comparison
           path: |
             desktop-host.txt
-            desktop-v13.txt
-            desktop-v13-smoke.txt
-            desktop-v12-smoke.txt
+            desktop-v138-*.txt
+            desktop-v139-*.txt
+            desktop-v138-v139-series.json
+            desktop-v138-smoke.txt
+            desktop-v139-smoke.txt
+            deterministic-v138.txt
+            deterministic-v139.txt
           retention-days: 14

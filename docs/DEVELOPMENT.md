@@ -1,6 +1,6 @@
-# Sudokura development rules
+# Sudokura development guidelines
 
-These instructions apply to the entire repository.
+This document describes the project's maintained technical, gameplay, and release conventions. Release-specific scopes and decisions belong to their respective plans and blueprints.
 
 ## Product constraints
 
@@ -8,7 +8,7 @@ These instructions apply to the entire repository.
 - Do not rewrite it in another language, toolkit, engine, or web framework.
 - Preserve the established visual identity, game modes, keyboard/mouse interaction, offline behavior, and optional-audio model unless an explicitly approved change requires otherwise.
 - Keep runtime dependencies and packaged size low. Do not add SDL_image only to load icons or flags, and do not add media dependencies for UI effects that can be generated safely at runtime.
-- Target Sudokura v1.3.8. The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings.
+- The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings. Refer to the current release blueprint for the intended next version.
 
 ## Engineering requirements
 
@@ -45,7 +45,7 @@ These instructions apply to the entire repository.
 ## Localization
 
 - Supported languages are English, Español, and Català.
-- Use general Spanish for new and maintained public strings.
+- Keep new and maintained Spanish public strings consistent with the product's established localization conventions.
 - Display the language simply as `Español` without regional labels in public documentation.
 - Route user-visible strings through the translation table instead of scattering literals through rendering or event-handling code.
 - Preserve UTF-8 throughout.
@@ -58,7 +58,7 @@ These instructions apply to the entire repository.
 - Do not reintroduce retired favicon, Android, packed, historical, or alternate logo masters into the active branding pipeline.
 - Keep vendored language flags and their license/provenance under `assets/flags/`; runtime must not fetch them from the network.
 - Generate derived PNG, ICO, ICNS, SDL window-icon, embedded head, and embedded flag resources reproducibly without SDL_image.
-- The canonical v1.3.8 desktop documentation image is `docs/images/sudokura-v1.3.8.png`, an exact copy of the maintainer-approved v1.3.7 regular-layout gameplay screenshot. It does not show the new compact More panel or Saved Games paging. Preserve `docs/images/sudokura-v1.3.7.png` and earlier screenshots as historical; diagnostic UI renders are never canonical artwork, and the accepted image must not be replaced without explicit approval.
+- The canonical and historical screenshots are described in [Documentation images](images/README.md). Preserve approved screenshot versions and historical provenance; diagnostic UI renders are never canonical artwork, and the accepted image must not be replaced without explicit approval.
 
 ## Packaging
 

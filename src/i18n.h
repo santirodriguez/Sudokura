@@ -37,6 +37,7 @@ typedef enum {
   T_ANOTHER_NORMAL,
   T_RETRY_SAME,
   T_HOME,
+  T_HOME_COMPACT,
   T_COMPLETED,
   T_BEST,
   T_CANCEL,
@@ -133,6 +134,7 @@ typedef enum {
   T_SAVE_FAILED,
   T_SAVE,
   T_SAVED,
+  T_SAVED_LIBRARY,
   T_GAMES,
   T_GAMES_LIBRARY_TITLE,
   T_MORE,
@@ -212,6 +214,7 @@ typedef enum {
   T_TECH_NAKED_PAIR,
   T_TECH_NAKED_TRIPLE,
   T_TECH_X_WING,
+  T_ROTATE_PORTRAIT,
   T_COUNT
 } TextKey;
 

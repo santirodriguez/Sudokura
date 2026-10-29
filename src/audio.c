@@ -1,7 +1,11 @@
 #include "audio.h"
 
 #include <SDL2/SDL.h>
+#if defined(__ANDROID__)
+#include <SDL_mixer.h>
+#else
 #include <SDL2/SDL_mixer.h>
+#endif
 
 #include <math.h>
 #include <stdio.h>
@@ -100,6 +104,13 @@ static bool audio_resolve(char out[AUDIO_PATH_CAPACITY], const char *filename) {
   if (override && override[0] &&
       audio_candidate(out, AUDIO_PATH_CAPACITY, override, filename))
     return true;
+
+#if defined(__ANDROID__)
+  /* Android's SDL_RWFromFile sees APK assets relative to assets/, not
+     SDL_GetBasePath(). Gradle stores the OGG files under that asset root. */
+  if (audio_candidate(out, AUDIO_PATH_CAPACITY, "audio", filename))
+    return true;
+#endif
 
   char *base = SDL_GetBasePath();
   if (base) {

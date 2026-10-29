@@ -27,7 +27,16 @@ bool url_launcher_is_allowed(const char *url) {
   return false;
 }
 
-#if defined(_WIN32)
+#if defined(__ANDROID__)
+
+#include <SDL2/SDL.h>
+
+UrlLaunchResult url_launcher_open(const char *url) {
+  if (!url_launcher_is_allowed(url)) return URL_LAUNCH_INVALID;
+  return SDL_OpenURL(url) == 0 ? URL_LAUNCH_OK : URL_LAUNCH_FAILED;
+}
+
+#elif defined(_WIN32)
 
 #include <windows.h>
 #include <shellapi.h>

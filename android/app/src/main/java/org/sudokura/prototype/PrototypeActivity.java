@@ -1,0 +1,129 @@
+package org.sudokura.prototype;
+
+import android.annotation.TargetApi;
+import android.content.res.Configuration;
+import android.view.KeyEvent;
+import android.view.HapticFeedbackConstants;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
+import android.graphics.Insets;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.DisplayCutout;
+import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.WindowInsets;
+import org.libsdl.app.SDLActivity;
+
+/** SDL remains the game owner. Java only supplies current Android surface metrics. */
+public final class PrototypeActivity extends SDLActivity {
+    private Object backCallback;
+
+    private void sendBackToNative() {
+        if (mBrokenLibraries || mSDLThread == null) return;
+        /* One key-down/up pair, not Activity.finish or a second UI dispatcher. */
+        onNativeKeyDown(KeyEvent.KEYCODE_BACK);
+        onNativeKeyUp(KeyEvent.KEYCODE_BACK);
+    }
+
+    @TargetApi(33)
+    private static final class BackApi33 {
+        static OnBackInvokedCallback install(PrototypeActivity activity) {
+            final OnBackInvokedCallback callback = activity::sendBackToNative;
+            activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+            return callback;
+        }
+
+        static void remove(PrototypeActivity activity, Object callback) {
+            activity.getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(
+                    (OnBackInvokedCallback) callback);
+        }
+    }
+
+    /* This is called on SDL's owner thread; View feedback runs on the UI
+       thread and honors Android's accessibility/touch-feedback preferences. */
+    public void performSudokuraHaptic() {
+        runOnUiThread(() -> {
+            if (mLayout != null && mLayout.isAttachedToWindow()) {
+                mLayout.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            }
+        });
+    }
+
+    @Override
+    public void onBackPressed() {
+        sendBackToNative(); /* Fallback for three-button navigation on older OS. */
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
+            BackApi33.remove(this, backCallback);
+            backCallback = null;
+        }
+        super.onDestroy();
+    }
+    @Override
+    protected String[] getLibraries() {
+        return new String[] {"SDL2", "SDL2_ttf", "SDL2_mixer", "main"};
+    }
+
+    private void publishDensityAndSlop() {
+        final float density = getResources().getDisplayMetrics().density;
+        final int slopPx = ViewConfiguration.get(this).getScaledTouchSlop();
+        if (!mBrokenLibraries) {
+            nativeSetenv("SUDOKURA_ANDROID_DENSITY", Float.toString(density));
+            nativeSetenv("SUDOKURA_ANDROID_TOUCH_SLOP_PX", Integer.toString(slopPx));
+        }
+    }
+
+    private static int[] usableInsets(WindowInsets insets) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            final Insets safe = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            return new int[] {safe.left, safe.top, safe.right, safe.bottom};
+        }
+        int left = insets.getSystemWindowInsetLeft();
+        int top = insets.getSystemWindowInsetTop();
+        int right = insets.getSystemWindowInsetRight();
+        int bottom = insets.getSystemWindowInsetBottom();
+        final DisplayCutout cutout = insets.getDisplayCutout();
+        if (cutout != null) {
+            left = Math.max(left, cutout.getSafeInsetLeft());
+            top = Math.max(top, cutout.getSafeInsetTop());
+            right = Math.max(right, cutout.getSafeInsetRight());
+            bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+        }
+        return new int[] {left, top, right, bottom};
+    }
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        if (mBrokenLibraries || mLayout == null) return;
+        publishDensityAndSlop();
+
+        /* SDL sees only its padded usable SurfaceView: never subtract these
+           insets again when computing native board and pointer coordinates. */
+        mLayout.setOnApplyWindowInsetsListener((View view, WindowInsets insets) -> {
+            final int[] safe = usableInsets(insets);
+            if (view.getPaddingLeft() != safe[0] ||
+                view.getPaddingTop() != safe[1] ||
+                view.getPaddingRight() != safe[2] ||
+                view.getPaddingBottom() != safe[3]) {
+                view.setPadding(safe[0], safe[1], safe[2], safe[3]);
+            }
+            return insets;
+        });
+        mLayout.requestApplyInsets();
+        if (Build.VERSION.SDK_INT >= 33) backCallback = BackApi33.install(this);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        publishDensityAndSlop();
+        if (mLayout != null) mLayout.requestApplyInsets();
+    }
+}

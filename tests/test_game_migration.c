@@ -4,6 +4,7 @@
 #include "store_io.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -33,10 +34,10 @@ static void cleanup(void) {
   const char *games = ".sudokura-migration-test/games";
   StoreStatus status = store_list_directory(games, delete_visit, (void *)games);
   assert(status == STORE_OK || status == STORE_NOT_FOUND);
-  (void)test_rmdir(games);
+  if (test_rmdir(games) != 0) assert(errno == ENOENT);
   status = store_list_directory(root, delete_visit, (void *)root);
   assert(status == STORE_OK || status == STORE_NOT_FOUND);
-  (void)test_rmdir(root);
+  if (test_rmdir(root) != 0) assert(errno == ENOENT);
 }
 static void prepare(void) {
   cleanup();
