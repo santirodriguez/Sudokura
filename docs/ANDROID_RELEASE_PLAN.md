@@ -1,16 +1,16 @@
 # Sudokura: desktop evolution and Android release plan
 
-Status: Active roadmap; v1.3.8 is the published historical baseline, and v1.3.9 implements desktop touch alongside a user-accepted functional Android debug prototype. Maintainer-approved 2026-10-28 boundary assigns unrecorded specialized device proof to the hard public-Android gate; neither debug APK nor functional feedback establishes Android parity or distribution readiness.
-Reviewed: 2026-10-28.
-Current published baseline: `4d2c8dbddbe906e5dd714a2f6691dd2760e98072` (`main` and `v1.3.8` at review).
-Next-release specification: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
+Status: Active roadmap. Desktop v1.3.9 is published; its user-accepted Android debug prototype does not establish functional parity or public distribution. v1.4.0 planning targets shared reliability and Android publicability; all deferred physical gates remain mandatory.
+Reviewed: 2026-10-29.
+Current published baseline: `f7e8acb4a2a3fdfed9267d8862e8b30057710d7a` (`main` and `v1.3.9`).
+Next-release specification: [v1.4.0 blueprint](V1.4.0_BLUEPRINT.md). Completed prototype contract: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
 Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.
 
 ## Outcome and constraints
 
 Deliver a publishable Android version no later than v1.5.0, preferably v1.4.0 if device evidence supports it. This is a release horizon, not a date or a promise of store approval. A debug APK alone does not meet it. Keep improving the desktop game throughout the work.
 
-Keep the same repository and C11 engine with SDL2, SDL2_ttf and SDL2_mixer. Add `android/` when the first real Android build is made. Do not fork gameplay, rewrite in another framework, migrate to SDL3 by anticipation, reorganize the source tree wholesale, or build a generic platform framework. A narrow Android host and the platform seams actually exercised by it are sufficient.
+Keep the same repository and C11 engine with SDL2, SDL2_ttf and SDL2_mixer. Retain the shared-engine `android/` host introduced in v1.3.9. Do not fork gameplay, rewrite in another framework, migrate to SDL3 by anticipation, reorganize the source tree wholesale, or build a generic platform framework. A narrow Android host and the platform seams actually exercised by it are sufficient.
 
 Preserve all modes, deterministic generation revision 3, revision-2 reconstruction, puzzle and attempt identity, normal/Daily independence, restart/retry identity, Save/Load/View/Replay/Delete, recovery and deletion receipts, EN/ES/CA, themes, optional audio and offline operation. Classic/Daily must remain neutral about hidden-solution correctness. Android must use the same codecs and tests; this does not imply automatic device-to-device save synchronization.
 
@@ -27,7 +27,7 @@ The planned sequence is 1.3.8 → 1.3.9 → 1.4.0. If evidence requires further 
 | **1.4.0 — shared reliability and Android publicability target** | Robust interruption/resume behavior across screens, generation and audio; readable compact/HiDPI screens and scrolling improvements validated by the prototype | Complete functional parity and distribution candidate, including release APK/AAB preparation, native dependency audit and store-readiness material | Depends on recorded prototype findings, including **all specifically deferred physical proof** from v1.3.9. Close concrete shared lifecycle/UI/resource defects; no unrelated feature bundle. Publish Android here only when every publicability gate passes. | Full cross-platform regression; documented tested-device/installed APK identity, fixed-seed ARM64 original/solution equality, acknowledged-save process death recovery and lifecycle/Back/rotation/cutout coverage, TalkBack audit, measured device performance, verified 16 KiB execution, native dependency/ABI audits, clean-update and signing verification when separately authorized, honest store metadata/privacy/licensing. |
 | **1.4.1 onward, ending no later than 1.5.0 — contingency only** | Only actual shared defects or usability gaps identified by testing | Close named publicability blockers; no second architecture | Not preapproved implementation scopes. At each release boundary identify the remaining blockers and update this plan. If remaining work is Android-only and supplies no desktop benefit, keep it within the ongoing useful release rather than inventing a filler desktop release. | Same publicability gates; if quality and the horizon truly conflict, report evidence and seek a decision before changing the horizon or dropping functionality |
 
-Release 1.3.9 now has its executable blueprint linked above; 1.4.0 remains directional. Refine the latter from the early device evidence at its Phase 0 boundary. Earlier Android delivery is permitted only after satisfying the same gates. A successful v1.4.0 closes the Android-publicability objective; it does not force further releases.
+Release 1.3.9 is published. The v1.4.0 executable blueprint linked above defines shared modal/recovery improvements, responsive parity, bounded accessibility integration and stable Android distribution preparation. Earlier Android delivery is permitted only after satisfying the same gates. A successful v1.4.0 closes the Android-publicability objective; it does not force further releases.
 
 ## Milestones with different meanings
 
@@ -119,7 +119,7 @@ These references support retaining SDL2 with small host seams. They do not prove
 
 ## Verified release progress and next gate
 
-v1.3.8 is published at the current baseline above. PR #14 merged its compact controls, More panel, pointer cancellation and Saved Games paging. Exact-head CI runs 40406632381/40397978066 and release workflow 40406631994 completed successfully. The public release contains the established desktop artifacts. These observations do not certify Android, physical touch, or independent Windows/macOS hardware acceptance.
+v1.3.8 is a historical published milestone at `4d2c8dbddbe906e5dd714a2f6691dd2760e98072`. PR #14 merged its compact controls, More panel, pointer cancellation and Saved Games paging. Exact-head CI runs 40406632381/40397978066 and release workflow 40406631994 completed successfully. The public release contains the established desktop artifacts. These observations do not certify Android, physical touch, or independent Windows/macOS hardware acceptance.
 
 v1.3.9 now includes native single-owner touch, bounded Help/library drag usable by mouse, and a source-built arm64 debug Android prototype with private storage, lifecycle/Back seams, assets and mobile geometry. The exact-head Android preview and desktop CI/package matrix passed; the maintainer reported successful music, Save/ordinary reopen retaining numbers/notes/progress and generally satisfactory on-device operation, then closed the manual functional test round. This is **user-reported functional prototype acceptance**, not a complete device measurement or itemized test log. Device/OS/API/ABI/density/usable surface/navigation, installed APK digest, ARM64 fixed-seed cross-engine identity execution, acknowledged-save forced process death/recovery, full per-mode lifecycle/Back/rotation/cutout matrix, cold/warm/input/save/CPU/RSS measurements and TalkBack observations remain unrecorded. Under the maintainer-approved bounded 2026-10-28 acceptance amendment, these are **hard requirements before public Android distribution**, not preconditions for the v1.3.9 desktop-led release with a nonpublic debug prototype. No actual 16 KiB Android runtime test, functional parity or public Android signing/distribution is claimed.
 
@@ -130,3 +130,9 @@ The public distribution priority is now GitHub signed APK/Obtainium first, F-Dro
 ## Maintenance of this plan
 
 Update only at a meaningful decision, verified prototype, release closure or changed dependency/blocker. Keep release implementation details in their release blueprint; retain this document as the owner of the horizon and milestone gates. Never mark the roadmap complete merely because Phase 0 or v1.3.8 is complete. If a future release promotes this plan to another canonical path/ref, verify that the full current material is retrievable before retiring the old owner.
+
+## v1.4.0 planning handoff and release closure
+
+The v1.4.0 blueprint owns executable scope and acceptance. Its Phase 0 completion is not implementation or Android acceptance. The preferred v1.4.0 / maximum v1.5.0 horizon remains unchanged. GitHub APK/Obtainium is primary, F-Droid inclusion is separate, Play optional. Confirm public identity before freezing it; signing/custody/publication require separate authority. Preserve all detailed gates above.
+
+After every actual publication, verify public release/tag/source, CI/packages and remaining Android obligations, then update the transversal roadmap continuity before closing the release-specific workstream. A merged PR, tag or draft alone is not publication.
