@@ -134,25 +134,56 @@ static bool app_rebuild_renderer_resources(Gfx *gfx) {
   return true;
 }
 
-/* A failed reset must never fall through to drawing with missing textures.
-   Retry only on an explicit R key or a later legitimate surface/reset event. */
+/* A failed metrics refresh is as unsafe as a failed texture rebuild:
+   invalidate any deferred action and keep the session concealed until retry. */
+static void app_mark_renderer_unavailable(Gfx *gfx, UI *ui) {
+  if (!gfx) return;
+  ui_modal_invalidate();
+  ui_pointer_cancel();
+  ui_touch_cancel();
+  gfx->renderer_ready = false;
+  gfx->dirty = false;
+  if (ui && ui->session_open && ui->result == RES_NONE)
+    (void)clock_pause(ui, PAUSE_FOCUS);
+  audio_set_focus_paused(true);
+  if (gfx->win)
+    SDL_SetWindowTitle(gfx->win,
+        tr(ui ? ui->language : LANG_EN, T_RENDERER_UNAVAILABLE));
+}
+
+/* Retry on explicit R or a legitimate surface/reset event, never a frame loop. */
 static bool app_restore_renderer_resources(Gfx *gfx, UI *ui) {
   if (!gfx) return false;
   gfx->renderer_ready = false;
   bool restored = gfx_refresh_metrics(gfx) &&
                   app_rebuild_renderer_resources(gfx);
   if (!restored) {
-    gfx->dirty = false;
-    if (ui && ui->session_open && ui->result == RES_NONE)
-      (void)clock_pause(ui, PAUSE_FOCUS);
-    audio_set_focus_paused(true);
-    if (gfx->win)
-      SDL_SetWindowTitle(gfx->win,
-          tr(ui ? ui->language : LANG_EN, T_RENDERER_UNAVAILABLE));
+    app_mark_renderer_unavailable(gfx, ui);
   } else if (gfx->win) {
     SDL_SetWindowTitle(gfx->win, SUDOKURA_NAME_VERSION);
   }
   return restored;
+}
+
+/* Ordinary size/move changes retain valid textures, but metrics failures
+   must fail closed. Only an already-unavailable renderer is fully rebuilt. */
+static bool app_refresh_renderer_metrics(Gfx *gfx, UI *ui) {
+  if (!gfx) return false;
+  if (!gfx->renderer_ready)
+    return app_restore_renderer_resources(gfx, ui);
+  if (gfx_refresh_metrics(gfx)) return true;
+  app_mark_renderer_unavailable(gfx, ui);
+  return false;
+}
+
+static bool app_resize_renderer_metrics(Gfx *gfx, UI *ui,
+                                        int width, int height) {
+  if (!gfx) return false;
+  if (!apply_window_resize(gfx, width, height)) {
+    app_mark_renderer_unavailable(gfx, ui);
+    return false;
+  }
+  return gfx->renderer_ready || app_restore_renderer_resources(gfx, ui);
 }
 
 static bool app_init(Gfx *gfx, const char *font_cli) {

@@ -847,12 +847,14 @@ static bool saved_window_display(const Preferences *preferences,
 }
 #endif
 
-static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
+static void apply_window_preferences(Gfx *g, const Preferences *preferences,
+                                     UI *ui) {
 #if defined(__ANDROID__)
-  (void)g; (void)preferences; /* Host SurfaceView owns its own dimensions. */
+  (void)g; (void)preferences; (void)ui;
+  /* Host SurfaceView owns its own dimensions. */
   return;
 #else
-  if (!g || !g->win || !preferences) return;
+  if (!g || !g->win || !preferences || !ui) return;
   int display = 0;
   SDL_Rect usable = {0, 0, 0, 0};
   bool saved_visible = saved_window_display(preferences, &display, &usable);
@@ -875,12 +877,17 @@ static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
                           SDL_WINDOWPOS_CENTERED_DISPLAY(display));
   }
   SDL_PumpEvents();
-  (void)gfx_refresh_metrics(g);
-  gfx_capture_restored_bounds(g);
+  if (!app_refresh_renderer_metrics(g, ui))
+    fprintf(stderr, "restored window metrics unavailable: %s\n",
+            SDL_GetError());
+  else
+    gfx_capture_restored_bounds(g);
   if (preferences->window_maximized) {
     SDL_MaximizeWindow(g->win);
     SDL_PumpEvents();
-    (void)gfx_refresh_metrics(g);
+    if (!app_refresh_renderer_metrics(g, ui))
+      fprintf(stderr, "maximized window metrics unavailable: %s\n",
+              SDL_GetError());
   }
 #endif
 }
@@ -2440,6 +2447,30 @@ int main(int argc, char **argv) {
         fprintf(stderr,"renderer explicit restore regression\n");
         app_shutdown(&g); return 1;
       }
+      /* Route an actual failed resize metrics call through the same
+         fail-closed state; restoration must not release focus pause. */
+      g.ren=NULL;
+      bool bad_resize=app_resize_renderer_metrics(&g,&ui,g.width,g.height);
+      g.ren=saved_renderer;
+      if (bad_resize || g.renderer_ready || g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer failed-resize gate regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!app_refresh_renderer_metrics(&g,&ui) ||
+          !g.renderer_ready || !g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer resize restoration regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* A missing font alias simulates the cache emptied by a failed
+         font reopen: same-scale metrics retry must repopulate the cache. */
+      g.font_big=NULL;
+      if (!app_refresh_renderer_metrics(&g,&ui) || !g.font_big ||
+          !g.renderer_ready) {
+        fprintf(stderr,"renderer same-scale font recovery regression\n");
+        app_shutdown(&g); return 1;
+      }
       (void)clock_resume(&ui,PAUSE_FOCUS);
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
@@ -2981,7 +3012,7 @@ int main(int argc, char **argv) {
   ui.mode = persistence.preferences.mode;
   home_difficulty = persistence.preferences.difficulty;
   set_mode_params(&ui);
-  apply_window_preferences(&g, &persistence.preferences);
+  apply_window_preferences(&g, &persistence.preferences, &ui);
   refresh_resume_info(&persistence, &ui);
   home_focus = ui.normal_resume.can_continue
                    ? HOME_FOCUS_CONTINUE
@@ -3055,23 +3086,32 @@ int main(int argc, char **argv) {
       }
       if (e.type == SDL_WINDOWEVENT) {
         if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-          apply_window_resize(&g, e.window.data1, e.window.data2);
-          capture_window_preferences(&persistence, &g, &ui);
+          if (app_resize_renderer_metrics(&g, &ui,
+                                          e.window.data1, e.window.data2))
+            capture_window_preferences(&persistence, &g, &ui);
+          else
+            fprintf(stderr, "window resize metrics unavailable: %s\n",
+                    SDL_GetError());
         } else if (e.window.event == SDL_WINDOWEVENT_MOVED ||
                    e.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
                    e.window.event == SDL_WINDOWEVENT_RESTORED) {
-          (void)gfx_refresh_metrics(&g);
-          gfx_capture_restored_bounds(&g);
-          capture_window_preferences(&persistence, &g, &ui);
+          if (app_refresh_renderer_metrics(&g, &ui)) {
+            gfx_capture_restored_bounds(&g);
+            capture_window_preferences(&persistence, &g, &ui);
+          } else {
+            fprintf(stderr, "window metrics unavailable: %s\n",
+                    SDL_GetError());
+          }
 #if SDL_VERSION_ATLEAST(2,0,18)
         } else if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
           if (!app_restore_renderer_resources(&g, &ui))
             fprintf(stderr, "display-scale resource rebuild failed: %s\n",
                     SDL_GetError());
-          capture_window_preferences(&persistence, &g, &ui);
+          else
+            capture_window_preferences(&persistence, &g, &ui);
 #endif
         } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
-          g.dirty = true;
+          if (g.renderer_ready) g.dirty = true;
         } else if (ui.session_open && ui.result == RES_NONE &&
                    window_event_requires_focus_pause(&g, &e.window)) {
           if (clock_pause(&ui, PAUSE_FOCUS))

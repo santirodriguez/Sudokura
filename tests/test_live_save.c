@@ -274,6 +274,85 @@ static void test_daily_activation_retry_and_back(void) {
   cleanup();
 }
 
+/* A background checkpoint may fail before replacement or after rename.
+   A new primary after failed parent sync is not an acknowledged Save:
+   the in-memory dirty state persists until verified, idempotent retry. */
+static void test_interrupted_verified_checkpoint_requires_ack(void) {
+  cleanup();
+  ProfileData acknowledged = original_daily_profile();
+  assert(profile_save_runtime_file(active_path, backup_path, &acknowledged) ==
+         STORE_OK);
+
+  ProfileData staged = acknowledged;
+  SessionState progress = make_session();
+  int cell = first_playable(&progress.game);
+  assert(cell >= 0);
+  int value = progress.game.solution[cell];
+  assert(game_place(&progress.game, cell / 9, cell % 9, value, false) ==
+         GAME_INPUT_CORRECT);
+  progress.elapsed_ms = UINT64_C(22000);
+  assert(profile_slot_set_runtime(&staged.normal, &progress, false));
+  staged.normal.attempt_id = acknowledged.normal.attempt_id;
+  staged.normal.revision = acknowledged.normal.revision + 1u;
+  staged.normal.retained = acknowledged.normal.retained;
+  assert(profile_validate_runtime(&staged));
+  assert(!profile_encoded_equal(&acknowledged, &staged));
+
+  SavePolicy policy;
+  save_policy_init(&policy);
+  save_policy_mark(&policy, SAVE_DIRTY_NORMAL, 100);
+
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  StoreStatus failed =
+      profile_save_runtime_verified(active_path, backup_path, &staged);
+  assert(failed == STORE_IO_ERROR);
+  save_policy_record_result(&policy, failed, 200);
+  assert(save_policy_has_error(&policy));
+  assert(!save_policy_transition_ready(&policy, false));
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  ProfileData disk, backup;
+  assert(profile_load_file(active_path, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &acknowledged));
+  assert(staged.normal.value.session.game.puzzle[cell] == value);
+  assert(disk.normal.value.session.game.puzzle[cell] != value);
+
+  /* Pretend the process ends here: only the earlier acknowledged snapshot
+     may be relied on after relaunch; unacknowledged input is not promised. */
+  ProfileData relaunched;
+  assert(profile_load_file(active_path, &relaunched) == STORE_OK);
+  assert(profile_encoded_equal(&relaunched, &acknowledged));
+
+  store_test_fail_parent_sync_at(active_path);
+  failed = profile_save_runtime_verified(active_path, backup_path, &staged);
+  assert(failed == STORE_IO_ERROR);
+  save_policy_record_result(&policy, failed, 300);
+  assert(save_policy_has_error(&policy));
+  assert(!save_policy_transition_ready(&policy, true));
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(active_path, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &staged));
+  assert(profile_load_file(backup_path, &backup) == STORE_OK);
+  assert(profile_encoded_equal(&backup, &acknowledged));
+
+  /* A successful same-candidate retry acknowledges the profile without
+     rotating the previous valid copy or changing either attempt identity. */
+  StoreStatus retried =
+      profile_save_runtime_verified(active_path, backup_path, &staged);
+  assert(retried == STORE_OK);
+  save_policy_record_result(&policy, retried, 400);
+  assert(!save_policy_has_error(&policy));
+  assert(save_policy_transition_ready(&policy, true));
+  assert(profile_load_file(active_path, &disk) == STORE_OK);
+  assert(profile_encoded_equal(&disk, &staged));
+  assert(profile_load_file(backup_path, &backup) == STORE_OK);
+  assert(profile_encoded_equal(&backup, &acknowledged));
+  assert(disk.normal.attempt_id.low == acknowledged.normal.attempt_id.low);
+  assert(disk.normal.revision == acknowledged.normal.revision + 1u);
+  assert(disk.daily.attempt_id.low == acknowledged.daily.attempt_id.low);
+  assert(disk.daily.revision == acknowledged.daily.revision);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
 
@@ -331,6 +410,7 @@ int main(void) {
   cleanup();
   test_winning_checkpoint_is_durable_without_debounce();
   test_verified_replacement_faults_and_backups();
+  test_interrupted_verified_checkpoint_requires_ack();
   test_daily_activation_retry_and_back();
   puts("live profile remains authoritative across failed save and retry");
   return 0;

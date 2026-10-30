@@ -354,7 +354,10 @@ static bool gfx_refresh_metrics(Gfx*g){
     fprintf(stderr,"SDL_RenderSetLogicalSize: %s\n",SDL_GetError());
     return false;
   }
-  if(old_scale>0&&old_scale!=next.scale_milli&&g->font_path[0]&&
+  /* A failed font reopen clears the cache. Retrying at the same scale must
+     rebuild it instead of treating a now-empty cache as usable. */
+  if(g->font_path[0] &&
+     ((old_scale>0 && old_scale!=next.scale_milli) || !g->font_big) &&
      !gfx_open_fonts(g))
     return false;
   g->dirty=true;
@@ -489,19 +492,20 @@ static bool make_directory(const char*path){char part[PATH_MAX];size_t length=st
   if(mkdir(part,0755)!=0&&errno!=EEXIST)return false;
 #endif
 }part[i]=saved;}return true;}
-static void apply_window_resize(Gfx*g,int requested_width,int requested_height){
-  if(!g||!g->win)return;
+static bool apply_window_resize(Gfx*g,int requested_width,int requested_height){
+  if(!g||!g->win)return false;
 #if defined(__ANDROID__)
   (void)requested_width;
   (void)requested_height;
   /* Wait for the real SurfaceView dimensions; never force desktop minimums. */
-  (void)gfx_refresh_metrics(g);
-  return;
-#endif
+  return gfx_refresh_metrics(g);
+#else
   int width=0,height=0;
   bool changed=geometry_normalize_window_size(requested_width,requested_height,
                                                &width,&height);
   if(changed)SDL_SetWindowSize(g->win,width,height);
-  (void)gfx_refresh_metrics(g);
+  if(!gfx_refresh_metrics(g))return false;
   gfx_capture_restored_bounds(g);
+  return true;
+#endif
 }
