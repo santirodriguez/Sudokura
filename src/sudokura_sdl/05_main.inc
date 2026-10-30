@@ -129,6 +129,20 @@ typedef enum {
 
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
 
+static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  AppModalRequest request = {
+      .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_EXIT,
+      .binding = ui_modal_current_binding(p, ui),
+      .title = T_UNSAVED_TITLE, .body = T_UNSAVED_EXIT,
+      .buttons = {T_BACK, T_RETRY_SAVE, T_DISCARD}, .button_count = 3,
+      .destructive_buttons = 4u};
+  ui_pointer_cancel();
+  ui_touch_cancel();
+  return ui_modal_open_request(gfx, ui, &request);
+}
+
+
 static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
                                       const Game *game, UI *ui,
                                       unsigned dirty_mask,
@@ -899,11 +913,16 @@ static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
 
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   if (!p || !ui || !g) return true;
+  if (ui_modal.active || ui_modal_has_pending()) return false;
   if (ui->session_open && game) (void)stage_current_session(p, game, ui);
   capture_window_preferences(p, g, ui);
-  SaveGateResult gate =
-      resolve_unsaved(p, g, game, ui, UINT_MAX, T_UNSAVED_EXIT);
-  return gate != SAVE_GATE_BACK;
+  if (p->save_policy.dirty_mask == 0 ||
+      persistence_retry_current(p, game, ui))
+    return true;
+  /* A failed save must never spin inside SDL_ShowMessageBox or discard state.
+     The main pump owns the Retry/Discard/Back continuation. */
+  (void)ui_modal_open_exit(p, ui, g);
+  return false;
 }
 
 static double wall_clock_ms(void){
@@ -1832,6 +1851,119 @@ int main(int argc, char **argv) {
         app_shutdown(&g);
         return 1;
       }
+      /* Real SDL event preparation/dispatch, without writing any profile.
+         Default Enter cancels; Retry and Discard need deliberate selection. */
+      ui.screen = SCR_PLAY;
+      ui.session_open = true;
+      ui.pause_reasons = 0;
+      AppModalRequest test_modal = {
+          .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_EXIT,
+          .binding = ui_modal_current_binding(&settings_persistence, &ui),
+          .title = T_UNSAVED_TITLE, .body = T_UNSAVED_EXIT,
+          .buttons = {T_BACK, T_RETRY_SAVE, T_DISCARD},
+          .button_count = 3, .destructive_buttons = 4u};
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal request regression\n");
+        app_shutdown(&g); return 1;
+      }
+      app_frame(&g, &game, &ui);
+      SDL_Event modal_event = {0};
+      modal_event.type = SDL_KEYDOWN;
+      modal_event.key.type = SDL_KEYDOWN;
+      modal_event.key.keysym.sym = SDLK_RETURN;
+      modal_event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding = ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal reopen regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym = SDLK_TAB;
+      if (ui_prepare_event(&modal_event) || ui_modal.focus != 1) {
+        fprintf(stderr, "SDL modal keyboard focus regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym = SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active) {
+        fprintf(stderr, "SDL modal keyboard completion regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalResult smoke_result;
+      if (!ui_modal_take_result(&smoke_result) ||
+          smoke_result.action != APP_MODAL_EXIT ||
+          smoke_result.button != 1 || ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal once-only Retry regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal pointer setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      UiModalLayout modal_layout = ui_modal_layout(&g,3);
+      int tx=modal_layout.buttons[2].x+modal_layout.buttons[2].w/2;
+      int ty=modal_layout.buttons[2].y+modal_layout.buttons[2].h/2;
+      modal_event = (SDL_Event){0};
+      modal_event.type = SDL_MOUSEBUTTONDOWN;
+      modal_event.button.type = SDL_MOUSEBUTTONDOWN;
+      modal_event.button.button = SDL_BUTTON_LEFT;
+      modal_event.button.x=tx;modal_event.button.y=ty;
+      if (ui_prepare_event(&modal_event) || !ui_modal.active ||
+          ui_modal_has_pending()) {
+        fprintf(stderr, "SDL modal pointer-down regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.type = SDL_MOUSEBUTTONUP;
+      modal_event.button.type = SDL_MOUSEBUTTONUP;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.button != 2 || smoke_result.action != APP_MODAL_EXIT ||
+          ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal pointer-release regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal touch setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_FINGERDOWN;
+      modal_event.tfinger.type=SDL_FINGERDOWN;
+      modal_event.tfinger.touchId=42;
+      modal_event.tfinger.fingerId=43;
+      modal_event.tfinger.x=(float)tx/g.width;
+      modal_event.tfinger.y=(float)ty/g.height;
+      if (ui_prepare_event(&modal_event) || !ui_modal.active ||
+          ui_modal_has_pending()) {
+        fprintf(stderr, "SDL modal touch-down regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.type=SDL_FINGERUP;
+      modal_event.tfinger.type=SDL_FINGERUP;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.button != 2 || smoke_result.action != APP_MODAL_EXIT) {
+        fprintf(stderr, "SDL modal touch-release regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal lifecycle setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui, PAUSE_FOCUS);
+      ui_modal_invalidate();
+      if (ui_modal.active || ui_modal_has_pending() ||
+          ui.pause_reasons != PAUSE_FOCUS) {
+        fprintf(stderr, "SDL modal focus-pause ownership regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui, PAUSE_FOCUS);
       audio_persistence = NULL;
     }
     if (screenshot_dir) {
@@ -2399,8 +2531,9 @@ int main(int argc, char **argv) {
 #endif
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     ui_pointer_reconcile();
-    int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
-                             games_browser.scanning) || home_daily_scan.active)
+    int wait_ms=(g.dirty || (!ui_modal.active &&
+                            ((ui.screen == APP_SCREEN_GAMES &&
+                               games_browser.scanning) || home_daily_scan.active)))
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
     int button_feedback_wait = ui_feedback_remaining(&ui);
     if (button_feedback_wait > 0 &&
@@ -2432,6 +2565,7 @@ int main(int argc, char **argv) {
       }
       if (e.type == SDL_RENDER_DEVICE_RESET ||
           e.type == SDL_RENDER_TARGETS_RESET) {
+        ui_modal_invalidate();
         (void)gfx_refresh_metrics(&g);
         if (!app_rebuild_renderer_resources(&g))
           fprintf(stderr, "renderer resource rebuild failed: %s\n",
@@ -2463,6 +2597,13 @@ int main(int argc, char **argv) {
           if (clock_pause(&ui, PAUSE_FOCUS))
             (void)checkpoint_current_session(&persistence, &game, &ui);
         }
+        if ((ui_modal.active || ui_modal_has_pending()) &&
+            (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+             e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+             e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
+             e.window.event == SDL_WINDOWEVENT_HIDDEN ||
+             e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED))
+          ui_modal_invalidate();
         /* Focus recovery intentionally leaves PAUSE_FOCUS set. The board stays
            hidden until the player explicitly resumes, so a stopped Time
            Attack clock cannot be used to inspect the puzzle. */
@@ -3124,28 +3265,52 @@ int main(int argc, char **argv) {
       }
     }
 
+    /* Consume one modal choice only after queued lifecycle/window events. */
+    AppModalResult modal_result;
+    if (ui_modal_take_result(&modal_result)) {
+      AppModalBinding current = ui_modal_current_binding(&persistence, &ui);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          app_modal_binding_equal(modal_result.binding, current) &&
+          modal_result.action == APP_MODAL_EXIT) {
+        if (modal_result.button == 2) {
+          running = false;  /* Explicit Discard only. */
+        } else if (modal_result.button == 1) {
+          if (persistence_retry_current(&persistence, &game, &ui))
+            running = false;
+          else
+            (void)ui_modal_open_exit(&persistence, &ui, &g);
+        }
+      }
+      if (!running) break;
+      g.dirty = true;
+    }
+
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */
 #endif
     ui_scroll_flush_preview();
-    if (ui.screen == APP_SCREEN_GAMES &&
+    if (!ui_modal.active && ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
-    if (home_daily_scan.active) {
+    if (!ui_modal.active && home_daily_scan.active) {
       home_daily_scan_pump(&persistence,&game,&ui,&g);
       g.dirty=true;
     }
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     uint64_t checkpoint_now = now_ms();
-    if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
+    if (!ui_modal.active && ui.session_open && ui.result == RES_NONE &&
+        ui.pause_reasons == 0 &&
         checkpoint_now - persistence.last_periodic_checkpoint_ms >=
             SUDOKURA_AUTOSAVE_MAX_MS) {
       (void)checkpoint_current_session(&persistence, &game, &ui);
       g.dirty=true;
-    } else if (save_policy_checkpoint_due(&persistence.save_policy,
+    } else if (!ui_modal.active &&
+               save_policy_checkpoint_due(&persistence.save_policy,
                                           checkpoint_now)) {
       (void)persistence_flush(&persistence);
       g.dirty=true;
     }
+    if (ui_modal.active && ui.screen != ui_modal.request.binding.screen)
+      ui_modal_invalidate();
     if(desktop_dynamic_frame_due(&ui))g.dirty=true;
     if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);

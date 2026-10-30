@@ -14,6 +14,7 @@
 #include "seed.h"
 #include "audio.h"
 #include "input.h"
+#include "app_modal.h"
 #include "touch_input.h"
 #include "progress.h"
 
@@ -24,6 +25,7 @@ static void ui_audio_control_cancel_interaction(void);
 #include "sudokura_sdl/03_board_render.inc"
 #include "sudokura_sdl/04_screens.inc"
 #include "sudokura_sdl/ui_present.inc"
+#include "sudokura_sdl/modal_ui.inc"
 #include "sudokura_sdl/games_ui.inc"
 #include "sudokura_sdl/audio_ui.inc"
 #include "sudokura_sdl/input_ui.inc"

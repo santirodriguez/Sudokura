@@ -82,6 +82,16 @@ while (( index < ${#queue[@]} )); do
   while read -r dep; do
     case "$dep" in
       "$PREFIX"/*) queue+=("$dep") ;;
+      @rpath/*.dylib|@loader_path/*.dylib)
+        # Homebrew dependencies may use install-name indirection instead
+        # of absolute paths. Bundle that entire closure before signing.
+        candidate="$PREFIX/lib/$(basename "$dep")"
+        if [[ ! -f "$candidate" ]]; then
+          echo "unresolved Homebrew dylib dependency: $dep ($src)" >&2
+          exit 1
+        fi
+        queue+=("$candidate")
+        ;;
     esac
   done < <(otool -L "$src" | tail -n +2 | awk '{print $1}')
 done
@@ -115,7 +125,11 @@ fi
 for file_path in "$APP/Contents/MacOS/sudokura" "${frameworks[@]}"; do
   while read -r dep; do
     case "$dep" in
-      "$PREFIX"/*)
+      "$PREFIX"/*|@loader_path/*.dylib)
+        if [[ ! -f "$APP/Contents/Frameworks/$(basename "$dep")" ]]; then
+          echo "missing bundled dependency: $dep ($file_path)" >&2
+          exit 1
+        fi
         install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$file_path"
         ;;
     esac

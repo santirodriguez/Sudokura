@@ -853,6 +853,7 @@ static bool ui_handle_android_lifecycle_event(const SDL_Event *event) {
     ui_audio_control_cancel_interaction();
     if (audio_ui && audio_ui->session_open && audio_ui->result == RES_NONE)
       (void)clock_pause(audio_ui, PAUSE_FOCUS);
+    ui_modal_invalidate();
   }
   if (e.silence_audio) audio_set_focus_paused(true);
   if (e.checkpoint) {
@@ -904,7 +905,19 @@ static bool ui_prepare_event(SDL_Event *event) {
   }
 #endif
   if(audio_gfx)audio_gfx->dirty=true;
+  /* Preserve lifecycle, window and renderer-reset events even if a modal
+     choice is waiting for the main-loop continuation. */
+  if (ui_modal_has_pending() && event->type != SDL_WINDOWEVENT &&
+      event->type != SDL_RENDER_DEVICE_RESET &&
+      event->type != SDL_RENDER_TARGETS_RESET) return false;
+  if (ui_modal.active &&
+      (event->type == SDL_FINGERDOWN || event->type == SDL_FINGERMOTION ||
+       event->type == SDL_FINGERUP)) {
+    (void)ui_modal_handle_event(event);
+    return false;
+  }
   if (!ui_touch_prepare(event)) return false;
+  if (ui_modal_handle_event(event)) return false;
   if (!ui_pointer_prepare(event)) return false;
   if (ui_handle_more_panel_event(event)) return false;
   if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();

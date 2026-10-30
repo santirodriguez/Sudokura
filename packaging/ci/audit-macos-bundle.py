@@ -44,9 +44,18 @@ for path in sorted(p for p in app.rglob("*") if p.is_file()):
     for line in loads:
         dep = line.strip().split(" (", 1)[0]
         deps.append(dep)
-        if dep.startswith(("@rpath/", "@loader_path/", "@executable_path/", "/usr/lib/", "/System/Library/")):
+        if dep.startswith(("/usr/lib/", "/System/Library/")):
             continue
-        raise SystemExit(f"{path}: unbundled or build-host dependency {dep}")
+        if dep.startswith("@rpath/"):
+            resolved = app / "Contents" / "Frameworks" / dep[len("@rpath/"):]
+        elif dep.startswith("@loader_path/"):
+            resolved = path.parent / dep[len("@loader_path/"):]
+        elif dep.startswith("@executable_path/"):
+            resolved = app / "Contents" / "MacOS" / dep[len("@executable_path/"):]
+        else:
+            raise SystemExit(f"{path}: unbundled or build-host dependency {dep}")
+        if not resolved.is_file():
+            raise SystemExit(f"{path}: unresolved bundled dependency {dep}")
 
     load_commands = run("otool", "-l", str(path)).splitlines()
     min_versions = []

@@ -1744,6 +1744,7 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
 }
 
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui);
+static void ui_modal_render(Gfx *gfx, UI *ui);
 
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   ui_feedback_render_screen = ui ? (int)ui->screen : -1;
@@ -1764,6 +1765,7 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   rc2_render_generation_overlay(gfx, ui);
   rc2_render_audio_control(gfx, ui);
   rc2_render_more_panel(gfx, ui);
+  ui_modal_render(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {
