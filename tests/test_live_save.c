@@ -295,7 +295,7 @@ static void test_interrupted_verified_checkpoint_requires_ack(void) {
   staged.normal.attempt_id = acknowledged.normal.attempt_id;
   staged.normal.revision = acknowledged.normal.revision + 1u;
   staged.normal.retained = acknowledged.normal.retained;
-  assert(profile_validate_runtime(&staged));
+  assert(profile_validate(&staged));
   assert(!profile_encoded_equal(&acknowledged, &staged));
 
   SavePolicy policy;
