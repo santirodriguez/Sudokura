@@ -196,6 +196,9 @@ typedef struct {
   bool capture_failed;
   /* An interrupted first Save still owes its retained record/profile link. */
   unsigned keep_pending_mask;
+  /* An uncertain post-rename Replay activation blocks unrelated saves. */
+  bool replay_activation_unresolved;
+  Preferences replay_activation_expected_preferences;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
@@ -520,20 +523,23 @@ static void persistence_refresh_normal(Persistence*p){
 
 static StoreStatus persistence_write_profile_callback(void*context){
   Persistence*p=(Persistence*)context;
-  if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask)return STORE_IO_ERROR;
+  if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask||
+     p->replay_activation_unresolved)return STORE_IO_ERROR;
   p->profile.preferences=p->preferences;
   return profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
 }
 
 static bool persistence_write_profile(Persistence*p){
-  if(!p||!p->enabled||p->capture_failed)return false;
+  if(!p||!p->enabled||p->capture_failed||
+     p->replay_activation_unresolved)return false;
   return save_policy_checkpoint_now(
       &p->save_policy,persistence_write_profile_callback,p,now_ms());
 }
 
 static bool persistence_flush(Persistence*p){
-  if(!p||!p->enabled||p->keep_pending_mask)return false;
+  if(!p||!p->enabled||p->keep_pending_mask||
+     p->replay_activation_unresolved)return false;
   if(!save_policy_dirty(&p->save_policy))return true;
   return persistence_write_profile(p);
 }
@@ -562,6 +568,7 @@ static bool persistence_recover_previous(Persistence*p){
   p->active_attempt_id=(GameAttemptId){0,0};
   memset(&p->active_replay,0,sizeof(p->active_replay));
   p->capture_failed=false;
+  p->replay_activation_unresolved=false;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
@@ -817,6 +824,7 @@ static bool persistence_apply_replay_origin(const Persistence*p,
 }
 
 static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
+  if(p && p->replay_activation_unresolved)return false;
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   if(p->profile.codec_version!=SUDOKURA_PROFILE_CONTENT_VERSION){
     persistence_capture_failure(p,ui);
@@ -909,13 +917,14 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
 }
 
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
+  if(p && p->replay_activation_unresolved)return false;
   if(!stage_current_session(p,game,ui))return false;
   p->last_periodic_checkpoint_ms=now_ms();
   return persistence_flush(p);
 }
 
 static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
-  if(!p)return false;
+  if(!p||p->replay_activation_unresolved)return false;
   if(p->capture_failed &&
      (!game||!ui||!ui->session_open||
       !stage_current_session(p,game,ui)))return false;

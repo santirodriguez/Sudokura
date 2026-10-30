@@ -2281,7 +2281,26 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay retention gate setup regression\n");
         app_shutdown(&g); return 1;
       }
+      /* Use explicit event-local modifiers. Shift+Tab must wrap back,
+         ordinary Tab forward, and arrows must select Discard deliberately. */
+      if (ui_modal.focus!=0) {
+        fprintf(stderr,"Replay retention initial focus regression\n");
+        app_shutdown(&g); return 1;
+      }
       modal_event.key.keysym.sym=SDLK_TAB;
+      modal_event.key.keysym.mod=KMOD_SHIFT;
+      (void)ui_prepare_event(&modal_event);
+      if (ui_modal.focus!=2) {
+        fprintf(stderr,"Replay retention reverse-tab regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.mod=KMOD_NONE;
+      (void)ui_prepare_event(&modal_event);
+      if (ui_modal.focus!=0) {
+        fprintf(stderr,"Replay retention forward-tab regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RIGHT;
       (void)ui_prepare_event(&modal_event);
       unsigned first_replay_focus=ui_modal.focus;
       (void)ui_prepare_event(&modal_event);
@@ -2289,11 +2308,11 @@ int main(int argc, char **argv) {
       modal_event.key.keysym.sym=SDLK_RETURN;
       bool replay_enter_leaked=ui_prepare_event(&modal_event);
       bool replay_choice_ready=ui_modal_take_result(&smoke_result);
-      if (replay_enter_leaked || !replay_choice_ready ||
+      if (first_replay_focus!=1 || second_replay_focus!=2 ||
+          replay_enter_leaked || !replay_choice_ready ||
           smoke_result.action!=APP_MODAL_REPLAY_KEEP ||
           smoke_result.button!=2 || ui.pause_reasons!=PAUSE_MODAL ||
-          !app_modal_binding_equal(smoke_result.binding,
-                                   save_gate_binding)) {
+          !app_modal_binding_equal(smoke_result.binding,save_gate_binding)) {
         fprintf(stderr,"Replay retention explicit-choice regression: "
                 "first_focus=%u second_focus=%u entered=%d ready=%d "
                 "resolution=%u action=%u button=%u pause=%u\n",
@@ -2326,6 +2345,16 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       (void)clock_resume(&ui,PAUSE_FOCUS);
+      /* An unresolved post-rename activation must never be overwritten
+         by ordinary periodic/manual retry paths on the native owner. */
+      bool prior_activation_guard=settings_persistence.replay_activation_unresolved;
+      settings_persistence.replay_activation_unresolved=true;
+      if (persistence_flush(&settings_persistence) ||
+          persistence_retry_current(&settings_persistence,&game,&ui)) {
+        fprintf(stderr,"Replay uncertain-profile checkpoint regression\n");
+        app_shutdown(&g); return 1;
+      }
+      settings_persistence.replay_activation_unresolved=prior_activation_guard;
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;

@@ -2139,6 +2139,111 @@ static void test_replay_intent_survives_failed_cuts(void) {
   cleanup();
 }
 
+/* A deferred Replay activation must preserve the old live profile and
+   stable reserved attempt through pre-rename and post-rename save failures. */
+static void test_replay_activation_interrupted_and_retried(void) {
+  prepare();
+  char primary[160], backup[160];
+  int n=snprintf(primary,sizeof(primary),"%s/games/replay-activation.dat",root);
+  assert(n>0 && (size_t)n<sizeof(primary));
+  n=snprintf(backup,sizeof(backup),"%s/games/replay-activation.dat.bak",root);
+  assert(n>0 && (size_t)n<sizeof(backup));
+
+  ProfileData previous;
+  profile_defaults(&previous);
+  previous.normal.present=true;
+  previous.normal.retained=false;
+  previous.normal.attempt_id=make_id(9971);
+  previous.normal.revision=3;
+  previous.normal.value=make_session(SESSION_ACTIVE);
+  assert(profile_validate(&previous));
+  assert(profile_save_runtime_file(primary,backup,&previous)==STORE_OK);
+
+  GameAttemptId source_id=make_id(9972),practice_id=make_id(9973);
+  ProfileSession finished=make_session(SESSION_WON);
+  GameLibraryRecord source,replay,disk_replay;
+  assert(game_library_make_exact(&source,source_id,1,&finished,true));
+  assert(game_library_save(root,&source)==STORE_OK);
+  GameReplayIntent pending={source_id,practice_id,GAME_REPLAY_PREPARED};
+  assert(game_library_replay_intent_write(root,&pending)==STORE_OK);
+  assert(game_library_prepare_replay(&replay,&source,practice_id));
+  GameLibraryHotCache cache={0};
+  assert(game_library_save_runtime(root,&replay,&cache)==STORE_OK);
+
+  ProfileData candidate=previous;
+  candidate.normal.present=true;
+  candidate.normal.retained=true;
+  candidate.normal.attempt_id=practice_id;
+  candidate.normal.revision=replay.revision;
+  candidate.normal.value=replay.exact;
+  assert(profile_validate(&candidate));
+  ProfileData disk,back;
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  store_test_fail_parent_sync_at(primary);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  GameReplayIntent observed={0};
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK);
+  assert(observed.state==GAME_REPLAY_PREPARED &&
+         game_attempt_id_equal(observed.attempt_id,practice_id));
+  assert(game_library_load(root,practice_id,&disk_replay)==STORE_OK);
+  assert(game_library_replay_pending_matches(&source,&disk_replay));
+
+  /* If restoring itself fails, an uncertain primary must not silently
+     rotate away the known-good previous profile. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+
+  /* Safe Back restores the recognized previous hot pointer without moving
+     the backup or losing the separate Prepared Replay reservation. */
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==
+         STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK &&
+         observed.state==GAME_REPLAY_PREPARED);
+
+  /* Later Retry reuses the same practice ID even when preferences changed
+     while the earlier attempt was pending; old backup stays intact. */
+  ProfileData adjusted=candidate;
+  adjusted.preferences.music_volume =
+      adjusted.preferences.music_volume==42 ? 43 : 42;
+  assert(profile_validate(&adjusted));
+  assert(profile_save_runtime_verified(primary,backup,&adjusted)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&adjusted)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&adjusted));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_load(root,practice_id,&disk_replay)==STORE_OK);
+  assert(game_library_replay_pending_matches(&source,&disk_replay));
+  pending.state=GAME_REPLAY_COMMITTED;
+  assert(game_library_replay_intent_write(root,&pending)==STORE_OK);
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK &&
+         observed.state==GAME_REPLAY_COMMITTED &&
+         game_attempt_id_equal(observed.attempt_id,practice_id));
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   prepare();
@@ -2151,6 +2256,7 @@ int main(void) {
   test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
   test_replay_intent_survives_failed_cuts();
+  test_replay_activation_interrupted_and_retried();
   test_replay_linked_selection_respects_source();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();

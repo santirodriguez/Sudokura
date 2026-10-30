@@ -396,7 +396,7 @@ static bool games_browser_open_focused(Persistence *p, Game *game,
 }
 
 static bool games_browser_save_hot(Persistence *p, bool daily) {
-  if (!p || !p->enabled) return false;
+  if (!p || !p->enabled || p->replay_activation_unresolved) return false;
   unsigned bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
   ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   if (!slot->present || !game_attempt_id_valid(slot->attempt_id) ||
@@ -1187,19 +1187,44 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
     games_browser_replay_error(gfx, ui);
     return false;
   }
+  if (p->replay_activation_unresolved) {
+    /* This retry must first re-establish the previous known-good primary.
+       A failed prior write may have installed the original candidate on
+       disk, with preferences from the earlier attempt. Match exactly and
+       restore without rotating backup before attempting another commit. */
+    ProfileData interrupted = candidate;
+    interrupted.preferences = p->replay_activation_expected_preferences;
+    if (profile_restore_runtime_activation(
+            p->profile_path, &p->profile, &interrupted) != STORE_OK) {
+      games_browser_replay_error(gfx,ui);
+      return false;
+    }
+    p->replay_activation_unresolved = false;
+  }
   if (profile_save_runtime_verified(
           p->profile_path, p->profile_backup_path, &candidate) != STORE_OK) {
-    /* Keep the Prepared intent and original hot board while the owner
-       handles Retry or Back as a separate, cancellable SDL event. */
-    uint64_t failed_at=now_ms();
-    save_policy_mark(&p->save_policy,SAVE_DIRTY_NORMAL,failed_at);
-    save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failed_at);
+    /* A post-rename sync error can leave the candidate on disk although the
+       previous live profile is still in memory. Restore only a recognized
+       candidate, without rotating the previous valid backup, before the
+       main event pump can resume checkpointing. Keep the PREPARED intent. */
+    StoreStatus restored = profile_restore_runtime_activation(
+        p->profile_path, &p->profile, &candidate);
+    p->replay_activation_unresolved = restored != STORE_OK;
+    if (p->replay_activation_unresolved) {
+      p->replay_activation_expected_preferences = candidate.preferences;
+      /* An unknown primary must not be overwritten by an unrelated autosave
+         or exit checkpoint until an explicit Replay retry reconciles it. */
+      uint64_t failed_at=now_ms();
+      save_policy_mark(&p->save_policy,SAVE_DIRTY_NORMAL,failed_at);
+      save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failed_at);
+    }
     if (!games_browser_replay_offer(p,ui,gfx,expected,
              APP_MODAL_REPLAY_ACTIVATE_RETRY,false))
       show_toast(ui,tr(ui->language,T_SAVE_FAILED));
     return false;
   }
 
+  p->replay_activation_unresolved = false;
   p->profile = candidate;
   p->game_cache[0] = new_cache;
   persistence_refresh_normal(p);
@@ -1374,6 +1399,16 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
   if (row->hot_only || row->entry.status != STORE_OK ||
       row->entry.kind != GAME_RECORD_EXACT ||
       row->entry.result.status == SESSION_ACTIVE) return false;
+  /* Back or lifecycle cancellation can close the prior retry modal while
+     the disk profile remains uncertain. Only the same PREPARED attempt may
+     be retried; never start a different Replay through this guard. */
+  if (p->replay_activation_unresolved) {
+    bool offered=games_browser_replay_offer(p,ui,gfx,binding,
+                                            APP_MODAL_REPLAY_ACTIVATE_RETRY,
+                                            false);
+    if (!offered) games_browser_replay_error(gfx,ui);
+    return offered;
+  }
   AppModalRequest request={
       .kind=APP_MODAL_CONFIRM, .action=APP_MODAL_REPLAY,
       .binding=binding, .title=T_GAMES_REPLAY,
