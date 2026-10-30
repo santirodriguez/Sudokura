@@ -169,7 +169,11 @@ static void new_game_dispatch(Persistence *p, Game *game, UI *ui, Gfx *gfx,
       (void)new_game_open_keep_retry(p, ui, gfx);
   } else if (result->action == APP_MODAL_NEW_GENERATE_RETRY &&
              result->button == 1u) {
-    /* Retry cannot reuse a stale pre-generation Discard authorization. */
-    new_game_requested(p, game, ui, gfx);
+    /* A verified, unchanged Save can retry generation immediately. A
+       previously discarded failed Save must pass the gate again. */
+    if (new_game_ready(p))
+      (void)new_game_launch(p, game, ui, gfx, false);
+    else
+      new_game_requested(p, game, ui, gfx);
   }
 }

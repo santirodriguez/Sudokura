@@ -515,6 +515,14 @@ static void test_new_game_modal_stages(void) {
   assert(app_modal_request_valid(&request));
   invalid=request;invalid.kind=APP_MODAL_RECOVERY;
   assert(!app_modal_request_valid(&invalid));
+  assert(app_modal_begin(&modal,&state,&request,1000));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t retry_serial=modal.serial;
+  assert(app_modal_choose(&modal,retry_serial,&request.binding,1,1100,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN &&
+         result.action==APP_MODAL_NEW_GENERATE_RETRY && result.button==1);
+  assert(!app_modal_choose(&modal,retry_serial,&request.binding,1,1200,&result));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
 }
 
 int main(void) {
