@@ -2283,15 +2283,25 @@ int main(int argc, char **argv) {
       }
       modal_event.key.keysym.sym=SDLK_TAB;
       (void)ui_prepare_event(&modal_event);
+      unsigned first_replay_focus=ui_modal.focus;
       (void)ui_prepare_event(&modal_event);
+      unsigned second_replay_focus=ui_modal.focus;
       modal_event.key.keysym.sym=SDLK_RETURN;
-      if (ui_prepare_event(&modal_event) ||
-          !ui_modal_take_result(&smoke_result) ||
+      bool replay_enter_leaked=ui_prepare_event(&modal_event);
+      bool replay_choice_ready=ui_modal_take_result(&smoke_result);
+      if (replay_enter_leaked || !replay_choice_ready ||
           smoke_result.action!=APP_MODAL_REPLAY_KEEP ||
           smoke_result.button!=2 || ui.pause_reasons!=PAUSE_MODAL ||
           !app_modal_binding_equal(smoke_result.binding,
                                    save_gate_binding)) {
-        fprintf(stderr,"Replay retention explicit-choice regression\n");
+        fprintf(stderr,"Replay retention explicit-choice regression: "
+                "first_focus=%u second_focus=%u entered=%d ready=%d "
+                "resolution=%u action=%u button=%u pause=%u\n",
+                first_replay_focus,second_replay_focus,
+                replay_enter_leaked,replay_choice_ready,
+                (unsigned)smoke_result.resolution,
+                (unsigned)smoke_result.action,smoke_result.button,
+                ui.pause_reasons);
         app_shutdown(&g); return 1;
       }
       AppModalBinding stale_gate_binding=smoke_result.binding;
