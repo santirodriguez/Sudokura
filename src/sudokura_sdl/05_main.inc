@@ -350,6 +350,52 @@ typedef struct {
 } HomeDailyScan;
 static HomeDailyScan home_daily_scan;
 
+/* The UI owner snapshots today's date and the departing Daily slot before
+   offering a choice. A queued decision cannot silently cross midnight. */
+typedef struct {
+  bool active, slot_present;
+  int year, month, day;
+  int older_year, older_month, older_day;
+  GameAttemptId slot_id;
+  uint64_t revision;
+} HomeDailyIntent;
+static HomeDailyIntent home_daily_intent;
+
+static bool home_daily_intent_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_intent.active || p->replay_activation_unresolved)
+    return false;
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) || y!=home_daily_intent.year ||
+      m!=home_daily_intent.month || d!=home_daily_intent.day)
+    return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  return slot->present==home_daily_intent.slot_present &&
+      (!slot->present ||
+       (game_attempt_id_equal(slot->attempt_id,home_daily_intent.slot_id) &&
+        slot->revision==home_daily_intent.revision));
+}
+
+static HomeDailyIntent home_daily_capture_intent(const Persistence *p,
+                                                  int y,int m,int d) {
+  HomeDailyIntent intent={0};
+  intent.active=true;
+  intent.year=y;intent.month=m;intent.day=d;
+  if (p && p->profile.daily.present) {
+    const ProfileSlot *slot=&p->profile.daily;
+    intent.slot_present=true;
+    intent.slot_id=slot->attempt_id;
+    intent.revision=slot->revision;
+    const SessionState *saved=profile_slot_session(slot);
+    if (saved) {
+      intent.older_year=saved->daily_year;
+      intent.older_month=saved->daily_month;
+      intent.older_day=saved->daily_day;
+    }
+  }
+  return intent;
+}
+
 static bool ui_pointer_busy(void) { return home_daily_scan.active; }
 
 static void home_daily_cancel(void) {
@@ -460,45 +506,129 @@ static void home_daily_scan_pump(Persistence *p, Game *game,
   if (finished || home_daily_scan.status!=STORE_OK)
     home_daily_finish(p,game,ui,gfx);
 }
-static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (!p || !p->enabled || !game || !ui || !g || ui->screen!=SCR_TITLE) return;
-  if (home_daily_scan.active) { home_daily_cancel(); return; }
-  int year=0,month=0,day=0;
-  if (!local_date(&year,&month,&day)) {
-    home_daily_warning(game,ui,g,T_DAILY_DATE_CHANGED);
+/* Only this pre-scan gate is converted here. Recovery of a previous
+   record and rollover retention keep their existing checked transaction. */
+static void home_daily_begin_scan(Persistence *p, Game *game, UI *ui,
+                                  Gfx *gfx) {
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
     return;
   }
-  const SessionState *saved=profile_slot_session(&p->profile.daily);
-  if (saved && session_can_continue_runtime(saved) &&
-      !saved_daily_matches(p,year,month,day)) {
-    char date[64],message[384];
-    (void)snprintf(date,sizeof(date),"%04d-%02d-%02d",
-                   saved->daily_year,saved->daily_month,saved->daily_day);
-    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,250,
-                   tr(ui->language,T_DAILY_CHOOSE_PROMPT));
-    int choice=choice_box(g,game,ui,tr(ui->language,T_DAILY_CHOOSE_TITLE),
-                          message,tr(ui->language,T_CANCEL),
-                          tr(ui->language,T_DAILY_OLDER),
-                          tr(ui->language,T_DAILY_TODAY));
-    if(choice==0)return;
-    if(choice==1) {
-      victory_animation_reset();
-      restore_saved_session(p,game,ui,true);
-      return;
-    }
-  }
-  if (games_browser_checkpoint_gate(
-          p,game,ui,g,true,false,true,T_DAILY_SAVE_RETRY_PROMPT) !=
-      GAMES_CHECKPOINT_READY)
-    return;
+  int year=home_daily_intent.year;
+  int month=home_daily_intent.month;
+  int day=home_daily_intent.day;
+  home_daily_intent.active=false;
   memset(&home_daily_scan,0,sizeof(home_daily_scan));
   home_daily_scan.year=year;home_daily_scan.month=month;home_daily_scan.day=day;
   home_daily_scan.status=game_library_scan_begin(
       p->profile_directory,&home_daily_scan.cursor);
   home_daily_scan.active=true;
   daily_lookup_scanning=true;
-  if(home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
-    home_daily_finish(p,game,ui,g);
+  if (home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
+    home_daily_finish(p,game,ui,gfx);
+}
+
+static bool home_daily_open_checkpoint(Persistence *p, UI *ui, Gfx *gfx) {
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_DAILY_CHECKPOINT,
+      .binding=ui_modal_daily_binding(p,ui),
+      .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
+static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
+                                  Gfx *gfx, bool retry) {
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  if (p->replay_activation_unresolved) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_GAMES_ACTION_FAILED);
+    return;
+  }
+  /* Preserve the verified Daily write and its post-rename idempotence.
+     A failed retry owns only one SDL event, never a nested input loop. */
+  bool saved=retry && (p->capture_failed || p->keep_pending_mask)
+      ? persistence_retry_current(p,game,ui)
+      : games_browser_daily_flush_verified(p);
+  bool ready=saved && !p->capture_failed && !p->keep_pending_mask &&
+             !save_policy_dirty(&p->save_policy);
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+  } else if (ready) {
+    home_daily_begin_scan(p,game,ui,gfx);
+  } else {
+    (void)home_daily_open_checkpoint(p,ui,gfx);
+  }
+}
+
+static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
+    return;
+  if (home_daily_scan.active) { home_daily_cancel(); return; }
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  const SessionState *saved=profile_slot_session(&p->profile.daily);
+  HomeDailyIntent intent=home_daily_capture_intent(p,year,month,day);
+  if (saved && session_can_continue_runtime(saved) &&
+      !saved_daily_matches(p,year,month,day)) {
+    AppModalRequest request={
+        .kind=APP_MODAL_CONFIRM,.action=APP_MODAL_DAILY,
+        .binding=ui_modal_daily_binding(p,ui),
+        .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
+        .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
+        .button_count=3};
+    if (ui_modal_open_request(gfx,ui,&request))
+      home_daily_intent=intent;
+    return;
+  }
+  home_daily_intent=intent;
+  home_daily_checkpoint(p,game,ui,gfx,false);
+}
+
+static void home_daily_dispatch(Persistence *p, Game *game, UI *ui,
+                                Gfx *gfx, const AppModalResult *choice) {
+  if (!p || !game || !ui || !gfx || !choice ||
+      choice->resolution!=APP_MODAL_CHOSEN ||
+      (choice->action!=APP_MODAL_DAILY &&
+       choice->action!=APP_MODAL_DAILY_CHECKPOINT))
+    return;
+  if (!app_modal_binding_equal(choice->binding,
+        ui_modal_daily_binding(p,ui)) ||
+      !home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    return;
+  }
+  if (choice->action==APP_MODAL_DAILY && choice->button==1) {
+    const SessionState *saved=profile_slot_session(&p->profile.daily);
+    if (!saved || !session_can_continue_runtime(saved) ||
+        !saved->is_daily ||
+        saved->daily_year!=home_daily_intent.older_year ||
+        saved->daily_month!=home_daily_intent.older_month ||
+        saved->daily_day!=home_daily_intent.older_day ||
+        saved_daily_matches(p,home_daily_intent.year,
+                           home_daily_intent.month,home_daily_intent.day)) {
+      home_daily_intent.active=false;
+      home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+      return;
+    }
+    home_daily_intent.active=false;
+    victory_animation_reset();
+    restore_saved_session(p,game,ui,true);
+  } else if ((choice->action==APP_MODAL_DAILY && choice->button==2) ||
+             (choice->action==APP_MODAL_DAILY_CHECKPOINT &&
+              choice->button==1)) {
+    home_daily_checkpoint(p,game,ui,gfx,
+                          choice->action==APP_MODAL_DAILY_CHECKPOINT);
+  }
 }
 
 static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
@@ -4003,6 +4133,7 @@ int main(int argc, char **argv) {
                                              &g, modal_result.binding);
       restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
       new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);
       if (!running) break;
       g.dirty = true;
     }

@@ -136,9 +136,21 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
   (void)draw_fitted_text(gfx,
       tr(ui->language,ui_modal.request.title),theme.title,layout.title,25,14);
 
+  const char *body_text=tr(ui->language,ui_modal.request.body);
+  char dated_body[512];
+  if (ui_modal.request.action==APP_MODAL_DAILY && audio_persistence) {
+    const SessionState *older=
+        profile_slot_session(&audio_persistence->profile.daily);
+    if (older && older->is_daily) {
+      (void)snprintf(dated_body,sizeof(dated_body),"%04d-%02d-%02d\n%s",
+                     older->daily_year,older->daily_month,older->daily_day,
+                     body_text);
+      body_text=dated_body;
+    }
+  }
   int text_w=0,text_h=0;
   SDL_Texture *body=render_text_wrapped(
-      gfx,gfx->font_body,tr(ui->language,ui_modal.request.body),
+      gfx,gfx->font_body,body_text,
       theme.btnfg,layout.body.w,&text_w,&text_h);
   ui_modal_scroll_max_px = text_h > layout.body.h ?
                            text_h-layout.body.h : 0;
@@ -186,8 +198,24 @@ static AppModalBinding ui_modal_new_game_binding(const Persistence *p,
   return binding;
 }
 
+/* A Home Daily decision binds the departing Daily slot, not the active game. */
+static AppModalBinding ui_modal_daily_binding(const Persistence *p,
+                                               const UI *ui) {
+  AppModalBinding binding=ui_modal_current_binding(p,ui);
+  binding.key_hi=binding.key_lo=binding.revision=0;
+  if (p && p->profile.daily.present) {
+    const ProfileSlot *slot=&p->profile.daily;
+    binding.key_hi=slot->attempt_id.high;
+    binding.key_lo=slot->attempt_id.low;
+    binding.revision=slot->revision;
+  }
+  return binding;
+}
+
 static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
                                                    AppModalAction action) {
+  if (action==APP_MODAL_DAILY || action==APP_MODAL_DAILY_CHECKPOINT)
+    return ui_modal_daily_binding(p,ui);
   if (action == APP_MODAL_NEW_GAME ||
       action == APP_MODAL_NEW_SAVE ||
       action == APP_MODAL_NEW_KEEP ||

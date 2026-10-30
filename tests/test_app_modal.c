@@ -525,7 +525,73 @@ static void test_new_game_modal_stages(void) {
   assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
 }
 
+static void test_daily_choice_and_checkpoint_modal(void) {
+  AppState state=playing();
+  state.screen=APP_SCREEN_HOME;
+  state.pause_reasons=APP_PAUSE_HOME|APP_PAUSE_FOCUS;
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM,.action=APP_MODAL_DAILY,
+      .binding={APP_SCREEN_HOME,19,42,43,9},
+      .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
+      .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
+      .button_count=3,.destructive_buttons=0};
+  assert(app_modal_request_valid(&request));
+  AppModalRequest invalid=request;
+  invalid.destructive_buttons=4;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request; invalid.button_count=2;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request; invalid.binding.key_hi=0; invalid.binding.key_lo=0;
+  assert(!app_modal_request_valid(&invalid));
+  AppModal modal={0};
+  AppModalResult choice={0};
+  assert(app_modal_begin(&modal,&state,&request,100));
+  assert(modal.focus==0 && modal.owns_pause);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS|APP_PAUSE_MODAL));
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,200,&choice));
+  assert(choice.resolution==APP_MODAL_CANCELLED);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  assert(app_modal_begin(&modal,&state,&request,300));
+  AppModalBinding stale=request.binding;
+  ++stale.revision;
+  assert(app_modal_choose(&modal,modal.serial,&stale,2,400,&choice));
+  assert(choice.resolution==APP_MODAL_STALE);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  assert(app_modal_begin(&modal,&state,&request,500));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,600,&choice));
+  assert(choice.resolution==APP_MODAL_CHOSEN &&
+         choice.action==APP_MODAL_DAILY && choice.button==1);
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,700,&choice));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+
+  request.kind=APP_MODAL_RECOVERY;
+  request.action=APP_MODAL_DAILY_CHECKPOINT;
+  request.title=T_UNSAVED_TITLE;request.body=T_DAILY_SAVE_RETRY_PROMPT;
+  request.buttons[0]=T_BACK;request.buttons[1]=T_RETRY_SAVE;
+  request.button_count=2;request.destructive_buttons=0;
+  request.binding.key_hi=request.binding.key_lo=request.binding.revision=0;
+  assert(app_modal_request_valid(&request));
+  invalid=request;invalid.destructive_buttons=2u;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;invalid.kind=APP_MODAL_CONFIRM;
+  assert(!app_modal_request_valid(&invalid));
+  assert(app_modal_begin(&modal,&state,&request,800));
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,900,&choice));
+  assert(choice.resolution==APP_MODAL_CANCELLED);
+  assert(app_modal_begin(&modal,&state,&request,1000));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,1100,&choice));
+  assert(choice.resolution==APP_MODAL_CHOSEN &&
+         choice.action==APP_MODAL_DAILY_CHECKPOINT && choice.button==1);
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,1200,&choice));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+}
+
 int main(void) {
+  test_daily_choice_and_checkpoint_modal();
   test_new_game_modal_stages();
   test_restart_modal_contract();
   test_default_cancel_and_once();
