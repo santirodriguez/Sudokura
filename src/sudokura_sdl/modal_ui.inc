@@ -1,4 +1,6 @@
 /* One SDL-owner modal surface; no separate event pump, storage or thread. */
+static void ui_pointer_cancel(void);
+static void ui_touch_cancel(void);
 static AppModal ui_modal;
 static AppModalResult ui_modal_pending;
 static uint64_t ui_modal_generation = 1;
@@ -51,12 +53,26 @@ static bool ui_modal_open_request(Gfx *gfx, UI *ui,
   if (!gfx || !ui || ui_modal_has_pending() ||
       !app_modal_begin(&ui_modal, ui, request, now_ms()))
     return false;
+  ui_pointer_cancel();
+  ui_touch_cancel();
   ui_modal_pressed = -1;
   ui_modal_touch_active = false;
   ui_modal_scroll_px = ui_modal_scroll_max_px = 0;
   ui_audio_control_cancel_interaction();
   gfx->dirty = true;
   return true;
+}
+
+/* Informational errors use the same event-driven surface without a
+   continuation or a native blocking message box. */
+static bool ui_modal_message(Gfx *gfx, UI *ui, TextKey title, TextKey body) {
+  if (!gfx || !ui) return false;
+  AppModalRequest request = {
+      .kind = APP_MODAL_MESSAGE, .action = APP_MODAL_ACTION_NONE,
+      .binding = ui_modal_current_binding(audio_persistence, ui),
+      .title = title, .body = body,
+      .buttons = {T_BACK}, .button_count = 1};
+  return ui_modal_open_request(gfx, ui, &request);
 }
 
 static void ui_modal_cancel_current(void) {

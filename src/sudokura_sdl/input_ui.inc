@@ -14,10 +14,7 @@ static void ui_open_url(const char *url) {
   if (!url || !audio_gfx || !audio_game || !audio_ui) return;
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    (void)show_simple_message_box(audio_gfx, audio_game, audio_ui,
-                                  SDL_MESSAGEBOX_WARNING,
-                                  tr(audio_ui->language, T_ABOUT),
-                                  tr(audio_ui->language, T_LINK_ERROR));
+    (void)ui_modal_message(audio_gfx, audio_ui, T_ABOUT, T_LINK_ERROR);
   }
 }
 

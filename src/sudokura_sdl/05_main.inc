@@ -129,6 +129,16 @@ typedef enum {
 
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
 
+static bool ui_modal_open_home(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  AppModalRequest request = {
+      .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_HOME,
+      .binding = ui_modal_current_binding(p, ui),
+      .title = T_UNSAVED_TITLE, .body = T_UNSAVED_HOME,
+      .buttons = {T_BACK, T_RETRY_SAVE}, .button_count = 2};
+  return ui_modal_open_request(gfx, ui, &request);
+}
+
 static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
   if (!p || !ui || !gfx) return false;
   AppModalRequest request = {
@@ -183,21 +193,8 @@ static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) 
       ? checkpoint_current_session(p, game, ui)
       : persistence_flush(p);
   if (!save_policy_transition_ready(&p->save_policy, checkpointed)) {
-    bool modal_owned = clock_pause(ui, PAUSE_MODAL);
-    bool retry = confirm_box(gfx, game, ui,
-                             tr(ui->language, T_UNSAVED_TITLE),
-                             tr(ui->language, T_UNSAVED_HOME),
-                             tr(ui->language, T_RETRY_SAVE),
-                             tr(ui->language, T_BACK));
-    bool saved = retry && persistence_retry_current(p, game, ui);
-    if (retry && !saved)
-      (void)show_simple_message_box(gfx, game, ui,
-                                    SDL_MESSAGEBOX_WARNING,
-                                    tr(ui->language, T_STORAGE_ERROR),
-                                    tr(ui->language, T_SAVE_FAILED));
-    if (modal_owned) (void)clock_resume(ui, PAUSE_MODAL);
-    if (!save_policy_transition_ready(&p->save_policy, saved))
-      return false;
+    (void)ui_modal_open_home(p, ui, gfx);
+    return false;
   }
   go_home(p, game, ui);
   return true;
@@ -408,9 +405,7 @@ static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
       return false;
     }
     if (result != GAME_GENERATION_EXHAUSTED) {
-      (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_ERROR,
-                                    tr(ui->language, T_GENERATION_FAILED),
-                                    tr(ui->language, T_PROFILE_IO_ERROR));
+      (void)ui_modal_message(g, ui, T_GENERATION_FAILED, T_PROFILE_IO_ERROR);
       return false;
     }
     bool retry = confirm_box(g, game, ui, tr(ui->language, T_GENERATION_FAILED),
@@ -430,10 +425,8 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
     show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
     return false;
   }
-  (void)show_simple_message_box(
-      g, game, ui, SDL_MESSAGEBOX_WARNING,
-      tr(ui->language, T_GENERATION_FAILED),
-      tr(ui->language, T_GENERATION_FAILED_BODY));
+  (void)ui_modal_message(g, ui, T_GENERATION_FAILED,
+                         T_GENERATION_FAILED_BODY);
   return false;
 }
 
@@ -467,9 +460,8 @@ static bool home_daily_visit(const GameLibraryEntry *entry, void *context) {
   return true;
 }
 static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
-  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-                                tr(ui->language, T_DAILY),
-                                tr(ui->language, key));
+  (void)game;
+  (void)ui_modal_message(gfx, ui, T_DAILY, key);
 }
 static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   const HomeDailyScan scan = home_daily_scan;
@@ -666,9 +658,8 @@ static void open_about_url(Gfx *g, const Game *game, UI *ui, int index) {
   if (!url) return;
   ui_button_click();
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
-                                  tr(ui->language, T_ABOUT),
-                                  tr(ui->language, T_LINK_ERROR));
+    (void)game;
+    (void)ui_modal_message(g, ui, T_ABOUT, T_LINK_ERROR);
   }
 }
 
@@ -1964,6 +1955,34 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       (void)clock_resume(&ui, PAUSE_FOCUS);
+      if (!ui_modal_message(&g, &ui, T_ABOUT, T_LINK_ERROR)) {
+        fprintf(stderr, "SDL modal message setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      app_frame(&g, &game, &ui);
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_ESCAPE;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=0) {
+        fprintf(stderr, "SDL modal message Back regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!ui_modal_open_home(&settings_persistence,&ui,&g)) {
+        fprintf(stderr, "SDL modal Home setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.action!=APP_MODAL_HOME ||
+          smoke_result.button!=1 || ui.pause_reasons!=0) {
+        fprintf(stderr, "SDL modal Home Retry regression\n");
+        app_shutdown(&g); return 1;
+      }
       audio_persistence = NULL;
     }
     if (screenshot_dir) {
@@ -3280,6 +3299,15 @@ int main(int argc, char **argv) {
           else
             (void)ui_modal_open_exit(&persistence, &ui, &g);
         }
+      } else if (modal_result.resolution == APP_MODAL_CHOSEN &&
+                 app_modal_binding_equal(modal_result.binding, current) &&
+                 modal_result.action == APP_MODAL_HOME &&
+                 modal_result.button == 1) {
+        bool saved = persistence_retry_current(&persistence, &game, &ui);
+        if (save_policy_transition_ready(&persistence.save_policy, saved))
+          go_home(&persistence, &game, &ui);
+        else
+          (void)ui_modal_open_home(&persistence, &ui, &g);
       }
       if (!running) break;
       g.dirty = true;

@@ -184,12 +184,33 @@ static void test_message_and_recovery(void) {
   }
 }
 
+static void test_home_recovery(void) {
+  AppState state = playing();
+  AppModal modal = {0};
+  AppModalRequest request = deletion();
+  request.kind = APP_MODAL_RECOVERY;
+  request.action = APP_MODAL_HOME;
+  request.buttons[0] = T_BACK;
+  request.buttons[1] = T_RETRY_SAVE;
+  request.button_count = 2;
+  request.destructive_buttons = 0;
+  request.binding.key_hi = request.binding.key_lo = 0;
+  assert(app_modal_begin(&modal, &state, &request, 200));
+  assert(app_modal_focus(&modal, modal.serial, 1));
+  AppModalResult result;
+  assert(app_modal_choose(&modal, modal.serial,
+                          &request.binding, 1, 300, &result));
+  assert(result.action == APP_MODAL_HOME && result.button == 1);
+  assert(state.pause_reasons == 0);
+}
+
 int main(void) {
   test_default_cancel_and_once();
   test_pause_ownership();
   test_stale_identity();
   test_invalid_and_nested();
   test_message_and_recovery();
+  test_home_recovery();
   puts("app modal contract: PASS (including 64 pause-ownership combinations)");
   return 0;
 }
