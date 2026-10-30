@@ -115,21 +115,49 @@ static void persistence_init(Persistence *persistence) {
 }
 
 static bool app_rebuild_renderer_resources(Gfx *gfx) {
-  if (!gfx || !gfx->ren) return false;
+  if (!gfx) return false;
+  gfx->renderer_ready = false;
+  gfx->dirty = false;
+  if (!gfx->ren) return false;
   text_cache_clear();
   if (!app_rebuild_base_textures(gfx)) return false;
   if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
   app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
                                        sudokura_icon_width,
                                        sudokura_icon_height);
-  if (!app_icon_texture)
+  if (!app_icon_texture) {
     fprintf(stderr, "compact icon texture: %s\n", SDL_GetError());
+    return false;
+  }
+  gfx->renderer_ready = true;
   gfx->dirty = true;
-  return app_icon_texture != NULL;
+  return true;
+}
+
+/* A failed reset must never fall through to drawing with missing textures.
+   Retry only on an explicit R key or a later legitimate surface/reset event. */
+static bool app_restore_renderer_resources(Gfx *gfx, UI *ui) {
+  if (!gfx) return false;
+  gfx->renderer_ready = false;
+  bool restored = gfx_refresh_metrics(gfx) &&
+                  app_rebuild_renderer_resources(gfx);
+  if (!restored) {
+    gfx->dirty = false;
+    if (ui && ui->session_open && ui->result == RES_NONE)
+      (void)clock_pause(ui, PAUSE_FOCUS);
+    audio_set_focus_paused(true);
+    if (gfx->win)
+      SDL_SetWindowTitle(gfx->win,
+          tr(ui ? ui->language : LANG_EN, T_RENDERER_UNAVAILABLE));
+  } else if (gfx->win) {
+    SDL_SetWindowTitle(gfx->win, SUDOKURA_NAME_VERSION);
+  }
+  return restored;
 }
 
 static bool app_init(Gfx *gfx, const char *font_cli) {
   if (!app_init_base(gfx, font_cli)) return false;
+  gfx->renderer_ready = true;
   audio_gfx = gfx;
   app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
                                        sudokura_icon_width,
@@ -158,7 +186,10 @@ static void app_shutdown(Gfx *gfx) {
 }
 
 static void app_tick(Gfx *gfx, Game *game, UI *ui) {
-  if (app_suspended) return;
+  if (app_suspended || !gfx || !gfx->renderer_ready) {
+    audio_set_focus_paused(true);
+    return;
+  }
   audio_gfx = gfx;
   audio_game = game;
   audio_ui = ui;
@@ -166,6 +197,10 @@ static void app_tick(Gfx *gfx, Game *game, UI *ui) {
 }
 
 static void app_frame(Gfx *gfx, Game *game, UI *ui) {
+  if (!gfx || !gfx->renderer_ready) {
+    if (gfx) gfx->dirty = false;
+    return; /* Never render with missing or invalid resources. */
+  }
   if (app_suspended) return; /* No rendering on a suspended surface. */
 #if defined(__ANDROID__)
   if (gfx->width < 360 || gfx->height < 600) {

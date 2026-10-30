@@ -869,12 +869,10 @@ static bool ui_handle_android_lifecycle_event(const SDL_Event *event) {
     if (!saved) fprintf(stderr, "Android background checkpoint failed\n");
   }
   if (e.restore_surface) {
-    bool restored = audio_gfx && gfx_refresh_metrics(audio_gfx);
-    if (restored) restored = app_rebuild_renderer_resources(audio_gfx);
+    bool restored = app_restore_renderer_resources(audio_gfx, audio_ui);
     if (!restored)
       fprintf(stderr, "Android foreground renderer restore failed: %s\n",
               SDL_GetError());
-    if (audio_gfx) audio_gfx->dirty = true;
     if (app_lifecycle_checkpoint_failed && audio_ui)
       show_toast(audio_ui, tr(audio_ui->language, T_SAVE_FAILED));
     /* PAUSE_FOCUS remains until explicit Resume. */
@@ -901,6 +899,24 @@ static bool ui_prepare_event(SDL_Event *event) {
     event->key.keysym.mod = KMOD_NONE;
   }
 #endif
+  if (audio_gfx && !audio_gfx->renderer_ready) {
+    /* Fail closed while the renderer is unavailable: input cannot mutate a
+       hidden board or complete a queued destructive modal. */
+    if (event->type == SDL_KEYDOWN && !event->key.repeat) {
+      SDL_Keycode key = event->key.keysym.sym;
+      if (key == SDLK_r) {
+        (void)app_restore_renderer_resources(audio_gfx, audio_ui);
+        return false;
+      }
+      if (key == SDLK_ESCAPE || key == SDLK_AC_BACK) {
+        event->key.keysym.sym = SDLK_ESCAPE;
+        return true; /* The main owner attempts checked exit without a modal. */
+      }
+    }
+    return event->type == SDL_QUIT || event->type == SDL_WINDOWEVENT ||
+           event->type == SDL_RENDER_DEVICE_RESET ||
+           event->type == SDL_RENDER_TARGETS_RESET;
+  }
   if(audio_gfx)audio_gfx->dirty=true;
   /* Preserve lifecycle, window and renderer-reset events even if a modal
      choice is waiting for the main-loop continuation. */

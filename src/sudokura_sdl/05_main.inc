@@ -916,6 +916,21 @@ static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   return false;
 }
 
+/* When no renderer exists, a normal Exit modal would be invisible. Only
+   leave after the established durable save gate confirms safe persistence. */
+static bool renderer_unavailable_safe_exit(Persistence *p, const Game *game,
+                                            UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  if (ui->session_open && game &&
+      !stage_current_session(p, game, ui)) return false;
+  capture_window_preferences(p, gfx, ui);
+  if (p->save_policy.dirty_mask == 0 ||
+      persistence_retry_current(p, game, ui))
+    return true;
+  fprintf(stderr, "renderer unavailable: exit deferred; unsaved data retained\n");
+  return false;
+}
+
 static double wall_clock_ms(void){
   Uint64 frequency=SDL_GetPerformanceFrequency();
   if(frequency==0)return 0.0;
@@ -948,7 +963,7 @@ static long desktop_benchmark_rss_kb(void){
 }
 
 static int desktop_wait_timeout_ms(const Gfx*g,const UI*ui){
-  if(!g||!ui)return 250;
+  if(!g||!ui||!g->renderer_ready)return 250;
   if(victory_animation_active||ui->toast_on)return g->software_renderer?34:16;
   if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
      !app_pause_hides_play(ui)&&!ui->reduced_motion)
@@ -2109,6 +2124,27 @@ int main(int argc, char **argv) {
         fprintf(stderr,"library Replay one-shot event regression\n");
         app_shutdown(&g); return 1;
       }
+      /* A choice accepted by SDL is still transient until the main owner
+         dispatches it. A subsequent focus/resize event must discard it. */
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"Replay queued cancellation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || !ui_modal_has_pending()) {
+        fprintf(stderr,"Replay queued acceptance setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui, PAUSE_FOCUS);
+      ui_modal_invalidate(); /* Focus loss before main-owner continuation. */
+      if (ui_modal_has_pending() || ui_modal.active ||
+          ui.pause_reasons != (PAUSE_MODAL | PAUSE_FOCUS)) {
+        fprintf(stderr,"Replay queued choice survived focus loss\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui, PAUSE_FOCUS);
       if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
         fprintf(stderr,"library Delete modal setup regression\n");
         app_shutdown(&g); return 1;
@@ -2369,6 +2405,42 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       settings_persistence.replay_activation_unresolved=prior_activation_guard;
+
+      /* Inject an absent renderer handle without destroying the real SDL
+         renderer; assert blocked input/frame and explicit one-shot restore. */
+      SDL_Renderer *saved_renderer=g.ren;
+      g.ren=NULL;
+      bool failed_restore=app_restore_renderer_resources(&g,&ui);
+      g.ren=saved_renderer;
+      if (failed_restore || g.renderer_ready || g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer unavailable transition regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_MOUSEBUTTONDOWN;
+      modal_event.button.type=SDL_MOUSEBUTTONDOWN;
+      modal_event.button.button=SDL_BUTTON_LEFT;
+      if (ui_prepare_event(&modal_event) || ui_modal_has_pending()) {
+        fprintf(stderr,"renderer unavailable input leakage regression\n");
+        app_shutdown(&g); return 1;
+      }
+      g.dirty=true;
+      app_frame(&g,&game,&ui);
+      if (g.dirty || g.renderer_ready) {
+        fprintf(stderr,"renderer unavailable draw regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_r;
+      if (ui_prepare_event(&modal_event) || !g.renderer_ready ||
+          !g.dirty || (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer explicit restore regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui,PAUSE_FOCUS);
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;
@@ -2957,7 +3029,9 @@ int main(int argc, char **argv) {
       }
       if (e.type == SDL_QUIT) {
         if (app_suspended) { running = false; continue; }
-        if (request_exit(&persistence, &game, &ui, &g))
+        if ((!g.renderer_ready
+                ? renderer_unavailable_safe_exit(&persistence,&game,&ui,&g)
+                : request_exit(&persistence, &game, &ui, &g)))
           running = false;
         continue;
       }
@@ -2974,8 +3048,7 @@ int main(int argc, char **argv) {
       if (e.type == SDL_RENDER_DEVICE_RESET ||
           e.type == SDL_RENDER_TARGETS_RESET) {
         ui_modal_invalidate();
-        (void)gfx_refresh_metrics(&g);
-        if (!app_rebuild_renderer_resources(&g))
+        if (!app_restore_renderer_resources(&g, &ui))
           fprintf(stderr, "renderer resource rebuild failed: %s\n",
                   SDL_GetError());
         continue;
@@ -2992,8 +3065,7 @@ int main(int argc, char **argv) {
           capture_window_preferences(&persistence, &g, &ui);
 #if SDL_VERSION_ATLEAST(2,0,18)
         } else if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
-          (void)gfx_refresh_metrics(&g);
-          if (!app_rebuild_renderer_resources(&g))
+          if (!app_restore_renderer_resources(&g, &ui))
             fprintf(stderr, "display-scale resource rebuild failed: %s\n",
                     SDL_GetError());
           capture_window_preferences(&persistence, &g, &ui);
@@ -3015,6 +3087,13 @@ int main(int argc, char **argv) {
         /* Focus recovery intentionally leaves PAUSE_FOCUS set. The board stays
            hidden until the player explicitly resumes, so a stopped Time
            Attack clock cannot be used to inspect the puzzle. */
+        continue;
+      }
+      if (!g.renderer_ready) {
+        if (e.type == SDL_KEYDOWN && !e.key.repeat &&
+            e.key.keysym.sym == SDLK_ESCAPE &&
+            renderer_unavailable_safe_exit(&persistence,&game,&ui,&g))
+          running = false;
         continue;
       }
       if (e.type == SDL_KEYDOWN) {
@@ -3739,6 +3818,10 @@ int main(int argc, char **argv) {
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */
 #endif
+    if (!g.renderer_ready) {
+      g.dirty = false; /* Suspended rendering must not hot-loop or scan. */
+      continue;
+    }
     ui_scroll_flush_preview();
     if (!ui_modal.active && ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
