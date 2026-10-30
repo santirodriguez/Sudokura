@@ -34,6 +34,10 @@ typedef enum {
   APP_MODAL_CHANGE_MODE,
   APP_MODAL_RESTART_SAVE,
   APP_MODAL_RESTART_DISCARD,
+  APP_MODAL_NEW_SAVE,
+  APP_MODAL_NEW_KEEP,
+  APP_MODAL_NEW_KEEP_RETRY,
+  APP_MODAL_NEW_GENERATE_RETRY,
   APP_MODAL_ACTION_COUNT
 } AppModalAction;
 
@@ -143,6 +147,37 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
        request->action == APP_MODAL_REPLAY_ACTIVATE_RETRY) &&
       (request->button_count != 2 || request->destructive_buttons != 0))
     return false;
+  if ((request->action == APP_MODAL_NEW_GAME ||
+       request->action == APP_MODAL_NEW_SAVE ||
+       request->action == APP_MODAL_NEW_KEEP ||
+       request->action == APP_MODAL_NEW_KEEP_RETRY ||
+       request->action == APP_MODAL_NEW_GENERATE_RETRY)) {
+    switch (request->action) {
+      case APP_MODAL_NEW_GAME:
+        return request->kind == APP_MODAL_CONFIRM &&
+               request->button_count == 2 &&
+               request->destructive_buttons == 2u;
+      case APP_MODAL_NEW_SAVE:
+        return request->kind == APP_MODAL_RECOVERY &&
+               ((request->button_count == 2 &&
+                 request->destructive_buttons == 0) ||
+                (request->button_count == 3 &&
+                 request->destructive_buttons == 4u));
+      case APP_MODAL_NEW_KEEP:
+        return request->kind == APP_MODAL_CONFIRM &&
+               request->button_count == 3 &&
+               request->destructive_buttons == 4u;
+      case APP_MODAL_NEW_KEEP_RETRY:
+        return request->kind == APP_MODAL_RECOVERY &&
+               request->button_count == 2 &&
+               request->destructive_buttons == 0;
+      case APP_MODAL_NEW_GENERATE_RETRY:
+        return request->kind == APP_MODAL_CONFIRM &&
+               request->button_count == 2 &&
+               request->destructive_buttons == 0;
+      default: break;
+    }
+  }
   return true;
 }
 

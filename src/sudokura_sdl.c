@@ -30,5 +30,6 @@ static void ui_audio_control_cancel_interaction(void);
 #include "sudokura_sdl/audio_ui.inc"
 #include "sudokura_sdl/input_ui.inc"
 #include "sudokura_sdl/restart_ui.inc"
+#include "sudokura_sdl/new_game_ui.inc"
 
 #include "sudokura_sdl/05_main.inc"

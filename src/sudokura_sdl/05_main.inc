@@ -121,12 +121,6 @@ static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
 }
 
 
-typedef enum {
-  SAVE_GATE_BACK = 0,
-  SAVE_GATE_SAVED,
-  SAVE_GATE_DISCARD
-} SaveGateResult;
-
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
 
 static bool ui_modal_open_home(Persistence *p, UI *ui, Gfx *gfx) {
@@ -152,37 +146,6 @@ static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
   return ui_modal_open_request(gfx, ui, &request);
 }
 
-
-static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
-                                      const Game *game, UI *ui,
-                                      unsigned dirty_mask,
-                                      TextKey prompt_key) {
-  if (!p || !g || !ui ||
-      (p->save_policy.dirty_mask & dirty_mask) == 0)
-    return SAVE_GATE_SAVED;
-  if (persistence_retry_current(p, game, ui)) return SAVE_GATE_SAVED;
-
-  bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
-  for (;;) {
-    int choice = choice_box(g, game, ui, tr(ui->language, T_UNSAVED_TITLE),
-                            tr(ui->language, prompt_key),
-                            tr(ui->language, T_BACK),
-                            tr(ui->language, T_RETRY_SAVE),
-                            tr(ui->language, T_DISCARD));
-    if (choice == 0) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_BACK;
-    }
-    if (choice == 2) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_DISCARD;
-    }
-    if (persistence_retry_current(p, game, ui)) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_SAVED;
-    }
-  }
-}
 
 /* Keep the live session and terminal archive in memory until every
    required persistence domain is acknowledged. Home has no discard path:
@@ -259,38 +222,6 @@ static bool reveal_selected_cell(Persistence *p, Game *game, UI *ui) {
   if (!game || !ui) return false;
   if (!apply_reveal_action(game, ui, ui->sel_r, ui->sel_c)) return false;
   if (p) (void)stage_current_session(p, game, ui);
-  return true;
-}
-
-static bool replace_saved_session_confirmed(Persistence *p,
-                                            const Game *game, UI *ui, Gfx *g,
-                                            bool daily) {
-  if (!p) return true;
-  unsigned dirty_bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
-  SaveGateResult gate =
-      resolve_unsaved(p, g, game, ui, dirty_bit, T_UNSAVED_REPLACE);
-  if (gate == SAVE_GATE_BACK) return false;
-  if (gate == SAVE_GATE_DISCARD) return true;
-
-  const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
-  const SessionState *saved = profile_slot_session(slot);
-  if (!saved || !session_has_meaningful_progress_runtime(saved)) return true;
-  if (slot->retained)
-    return confirm_box(g, game, ui, tr(ui->language, T_NEW_GAME),
-                       tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
-                       tr(ui->language, T_CANCEL));
-  int choice = choice_box(g, game, ui, tr(ui->language, T_GAMES_KEEP_TITLE),
-                          tr(ui->language, T_GAMES_NEW_PROMPT),
-                          tr(ui->language, T_CANCEL),
-                          tr(ui->language, T_GAMES_SAVE_CONTINUE),
-                          tr(ui->language, T_DISCARD));
-  if (choice == 0) return false;
-  if (choice == 1 && !games_browser_save_hot(p, daily)) {
-    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
-                                  tr(ui->language, T_STORAGE_ERROR),
-                                  tr(ui->language, T_SAVE_FAILED));
-    return false;
-  }
   return true;
 }
 
@@ -377,23 +308,19 @@ static GameGenerationResult generate_daily_with_ui(
 
 static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
                                    Gfx *g) {
-  for (;;) {
-    GameGenerationResult result = generate_normal_with_ui(p, game, ui, g);
-    if (result == GAME_GENERATION_OK) return true;
-    if (result == GAME_GENERATION_CANCELLED) {
-      show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
-      return false;
-    }
-    if (result != GAME_GENERATION_EXHAUSTED) {
-      (void)ui_modal_message(g, ui, T_GENERATION_FAILED, T_PROFILE_IO_ERROR);
-      return false;
-    }
-    bool retry = confirm_box(g, game, ui, tr(ui->language, T_GENERATION_FAILED),
-                             tr(ui->language, T_GENERATION_FAILED_BODY),
-                             tr(ui->language, T_RETRY),
-                             tr(ui->language, T_CANCEL));
-    if (!retry) return false;
+  GameGenerationResult result = generate_normal_with_ui(p, game, ui, g);
+  if (result == GAME_GENERATION_OK) return true;
+  if (result == GAME_GENERATION_CANCELLED) {
+    show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
+    return false;
   }
+  if (result != GAME_GENERATION_EXHAUSTED) {
+    (void)ui_modal_message(g, ui, T_GENERATION_FAILED, T_PROFILE_IO_ERROR);
+    return false;
+  }
+  /* The old session is still valid. Retry requires a fresh SDL choice. */
+  (void)new_game_open_generation_retry(p, ui, g);
+  return false;
 }
 
 static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
@@ -411,10 +338,7 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (replace_saved_session_confirmed(p, game, ui, g, false)) {
-    victory_animation_reset();
-    (void)start_new_game_with_ui(p, game, ui, g);
-  }
+  new_game_requested(p, game, ui, g);
 }
 
 typedef struct {
@@ -661,7 +585,7 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   ui_button_click();victory_animation_reset();
   if(result_keyboard_focus==1){go_home_checked(p,game,ui,g);return;}
-  if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,game,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
+  if(ui->result==RES_WIN){new_game_requested(p,game,ui,g);}
   else restart_requested(p,game,ui,g);
 }
 static void activate_pause_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
@@ -1977,6 +1901,123 @@ int main(int argc, char **argv) {
         ui.screen=old_screen;ui.session_open=old_session;
         ui.is_daily=old_daily;ui.result=old_result;
         ui.pause_reasons=old_pauses;
+      }
+      /* New uses the SDL owner and the normal hot-slot identity, not
+         the active ID (which can be absent while Home is visible). */
+      {
+        ProfileSlot saved_normal=settings_persistence.profile.normal;
+        SavePolicy saved_policy=settings_persistence.save_policy;
+        unsigned saved_keep=settings_persistence.keep_pending_mask;
+        bool saved_capture=settings_persistence.capture_failed;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.profile.normal.present=true;
+        settings_persistence.profile.normal.retained=false;
+        settings_persistence.profile.normal.attempt_id=(GameAttemptId){95,96};
+        settings_persistence.profile.normal.revision=7;
+        settings_persistence.profile.normal.value.session.status=SESSION_ACTIVE;
+        settings_persistence.keep_pending_mask=0;
+        settings_persistence.capture_failed=false;
+        settings_persistence.replay_activation_unresolved=false;
+        save_policy_init(&settings_persistence.save_policy);
+        SDL_Event new_key={0};
+        new_key.type=SDL_KEYDOWN;new_key.key.type=SDL_KEYDOWN;
+        new_key.key.keysym.sym=SDLK_RETURN;
+        if (!new_game_open_keep(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0 || ui_modal.request.button_count!=3 ||
+            ui_prepare_event(&new_key) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New modal default cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!new_game_open_keep(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New keep modal open regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        AppModalResult new_result={0};
+        if (!ui_modal_take_result(&new_result) ||
+            new_result.action!=APP_MODAL_NEW_KEEP ||
+            new_result.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New keep choice one-shot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!new_game_open_confirm(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New bound confirm setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.normal.revision;
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New stale normal slot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.normal.revision;
+        if (!new_game_open_confirm(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New queued confirm setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"New queued choice setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"New background choice cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        save_policy_mark(&settings_persistence.save_policy,
+                         SAVE_DIRTY_NORMAL,100);
+        if (!new_game_discard_allowed(&settings_persistence) ||
+            !new_game_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=3) {
+          fprintf(stderr,"New isolated Discard gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        save_policy_mark(&settings_persistence.save_policy,
+                         SAVE_DIRTY_PREFERENCES,200);
+        if (new_game_discard_allowed(&settings_persistence) ||
+            !new_game_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=2) {
+          fprintf(stderr,"New cross-domain Discard gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        if (!new_game_open_generation_retry(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0) {
+          fprintf(stderr,"New generation Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_RETURN;
+        if (ui_prepare_event(&new_key) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New generation default Cancel regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.profile.normal=saved_normal;
+        settings_persistence.save_policy=saved_policy;
+        settings_persistence.keep_pending_mask=saved_keep;
+        settings_persistence.capture_failed=saved_capture;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
       }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
@@ -3677,8 +3718,7 @@ int main(int argc, char **argv) {
             ui_button_click();
             victory_animation_reset();
             if (ui.result == RES_WIN) {
-              if (replace_saved_session_confirmed(&persistence, &game, &ui, &g, false))
-                (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
+              new_game_requested(&persistence,&game,&ui,&g);
             } else {
               restart_requested(&persistence,&game,&ui,&g);
             }
@@ -3962,6 +4002,7 @@ int main(int argc, char **argv) {
         (void)games_browser_delete_confirmed(&persistence, &game, &ui,
                                              &g, modal_result.binding);
       restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
       if (!running) break;
       g.dirty = true;
     }

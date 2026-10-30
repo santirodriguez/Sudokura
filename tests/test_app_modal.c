@@ -444,7 +444,81 @@ static void test_restart_modal_contract(void) {
   assert(state.pause_reasons==(APP_PAUSE_MANUAL|APP_PAUSE_FOCUS));
 }
 
+static void test_new_game_modal_stages(void) {
+  AppState state=playing();
+  state.screen=APP_SCREEN_HOME;
+  state.pause_reasons=APP_PAUSE_HOME|APP_PAUSE_FOCUS;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_NEW_SAVE,
+      .binding={APP_SCREEN_HOME,19,5,7,11},
+      .title=T_UNSAVED_TITLE,.body=T_UNSAVED_REPLACE,
+      .buttons={T_BACK,T_RETRY_SAVE,T_DISCARD},
+      .button_count=3,.destructive_buttons=4u};
+  AppModal modal={0};
+  AppModalResult result={0};
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&modal,&state,&request,100));
+  assert(modal.focus==0);
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,200,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  AppModalRequest invalid=request;
+  invalid.destructive_buttons=0;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;invalid.button_count=2;
+  assert(!app_modal_request_valid(&invalid));
+  request.button_count=2;request.destructive_buttons=0;
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&modal,&state,&request,300));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,1,400,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN && result.button==1);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+
+  request.action=APP_MODAL_NEW_KEEP;request.kind=APP_MODAL_CONFIRM;
+  request.title=T_GAMES_KEEP_TITLE;request.body=T_GAMES_NEW_PROMPT;
+  request.buttons[0]=T_CANCEL;
+  request.buttons[1]=T_GAMES_SAVE_CONTINUE;
+  request.buttons[2]=T_DISCARD;
+  request.button_count=3;request.destructive_buttons=4u;
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&modal,&state,&request,500));
+  AppModalBinding stale=request.binding;
+  ++stale.revision;
+  assert(app_modal_choose(&modal,modal.serial,&stale,2,600,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  request.action=APP_MODAL_NEW_GAME;request.kind=APP_MODAL_CONFIRM;
+  request.title=T_NEW_GAME;request.body=T_NEW_PROMPT;
+  request.buttons[0]=T_CANCEL;request.buttons[1]=T_NEW;
+  request.button_count=2;request.destructive_buttons=2u;
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&modal,&state,&request,700));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,800,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN &&
+         result.action==APP_MODAL_NEW_GAME && result.button==1);
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,900,&result));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+
+  request.kind=APP_MODAL_RECOVERY;request.action=APP_MODAL_NEW_KEEP_RETRY;
+  request.title=T_STORAGE_ERROR;request.body=T_GAMES_RETRY_SAVE_PROMPT;
+  request.buttons[0]=T_BACK;request.buttons[1]=T_RETRY_SAVE;
+  request.destructive_buttons=0;
+  assert(app_modal_request_valid(&request));
+  invalid=request;invalid.destructive_buttons=2;
+  assert(!app_modal_request_valid(&invalid));
+  request.kind=APP_MODAL_CONFIRM;request.action=APP_MODAL_NEW_GENERATE_RETRY;
+  request.title=T_GENERATION_FAILED;request.body=T_GENERATION_FAILED_BODY;
+  request.buttons[0]=T_CANCEL;request.buttons[1]=T_RETRY;
+  assert(app_modal_request_valid(&request));
+  invalid=request;invalid.kind=APP_MODAL_RECOVERY;
+  assert(!app_modal_request_valid(&invalid));
+}
+
 int main(void) {
+  test_new_game_modal_stages();
   test_restart_modal_contract();
   test_default_cancel_and_once();
   test_pause_ownership();

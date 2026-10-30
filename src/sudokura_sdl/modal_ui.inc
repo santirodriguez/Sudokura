@@ -171,8 +171,29 @@ static int ui_modal_button_at(const Gfx *gfx, int x, int y) {
   return -1;
 }
 
+/* New is requested from Home or the result screen: neither guarantees
+   active_attempt_id names the departing normal hot slot. Bind to that slot. */
+static AppModalBinding ui_modal_new_game_binding(const Persistence *p,
+                                                  const UI *ui) {
+  AppModalBinding binding = ui_modal_current_binding(p, ui);
+  binding.key_hi = binding.key_lo = binding.revision = 0;
+  if (p && p->profile.normal.present) {
+    const ProfileSlot *slot = &p->profile.normal;
+    binding.key_hi = slot->attempt_id.high;
+    binding.key_lo = slot->attempt_id.low;
+    binding.revision = slot->revision;
+  }
+  return binding;
+}
+
 static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
                                                    AppModalAction action) {
+  if (action == APP_MODAL_NEW_GAME ||
+      action == APP_MODAL_NEW_SAVE ||
+      action == APP_MODAL_NEW_KEEP ||
+      action == APP_MODAL_NEW_KEEP_RETRY ||
+      action == APP_MODAL_NEW_GENERATE_RETRY)
+    return ui_modal_new_game_binding(p, ui);
   if (action == APP_MODAL_DELETE || action == APP_MODAL_REPLAY ||
       action == APP_MODAL_REPLAY_CONFLICT ||
       action == APP_MODAL_REPLAY_CHECKPOINT ||
