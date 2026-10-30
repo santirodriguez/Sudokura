@@ -490,8 +490,8 @@ static bool games_browser_save_current(Persistence *p, Game *game, UI *ui,
 /* Daily's Home preflight also needs idempotent profile acknowledgement.
    Do not rotate the prior good copy on a repeated post-rename write. */
 static bool games_browser_daily_flush_verified(Persistence *p) {
-  if (!p || !p->enabled || p->capture_failed || p->keep_pending_mask)
-    return false;
+  if (!p || !p->enabled || p->capture_failed || p->keep_pending_mask ||
+      p->replay_activation_unresolved) return false;
   if (!save_policy_dirty(&p->save_policy)) return true;
   ProfileData candidate = p->profile;
   candidate.preferences = p->preferences;
@@ -514,6 +514,13 @@ static GamesCheckpointGate games_browser_checkpoint_gate(
     TextKey retry_prompt) {
   if (!p || !p->enabled || !game || !ui || !gfx)
     return GAMES_CHECKPOINT_BACK;
+  if (p->replay_activation_unresolved) {
+    /* A Discard of another hot slot cannot abandon an uncertain Replay
+       profile commit or rotate the previous valid backup. */
+    if (!ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED))
+      show_toast(ui,tr(ui->language,T_GAMES_ACTION_FAILED));
+    return GAMES_CHECKPOINT_BACK;
+  }
   bool flushed = verified_daily
       ? games_browser_daily_flush_verified(p) : persistence_flush(p);
   if (flushed && !p->capture_failed &&
@@ -561,7 +568,8 @@ static bool games_browser_commit_profile(Persistence *p, Game *game,
                                          UI *ui, Gfx *gfx, bool daily,
                                          const ProfileData *candidate,
                                          bool restore_on_back) {
-  if (!p || !p->enabled || !candidate) return false;
+  if (!p || !p->enabled || !candidate ||
+      p->replay_activation_unresolved) return false;
   for (;;) {
     if (profile_save_runtime_verified(
             p->profile_path, p->profile_backup_path, candidate) == STORE_OK)

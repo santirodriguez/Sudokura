@@ -988,7 +988,8 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
 
 static GameGenerationResult start_new_session_base(
     Persistence*p,Game*game,UI*ui,const GameGenerationControl*control){
-  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  if(!p||!game||!ui||p->replay_activation_unresolved)
+    return GAME_GENERATION_INVALID;
   Game generated;
   GameGenerationResult result=game_generate_difficulty(
       &generated,next_seed(),p->preferences.difficulty,
@@ -1008,7 +1009,8 @@ static GameGenerationResult start_new_session_base(
 static GameGenerationResult start_daily_session_base(
     Persistence*p,Game*game,UI*ui,int year,int month,int day,
     const GameGenerationControl*control){
-  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  if(!p||!game||!ui||p->replay_activation_unresolved)
+    return GAME_GENERATION_INVALID;
   uint64_t seed=0;
   if(!game_daily_seed_revision(year,month,day,SUDOKURA_GENERATOR_REVISION,&seed))
     return GAME_GENERATION_INVALID;
@@ -1035,6 +1037,7 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
+  if(p && p->replay_activation_unresolved)return;
   bool retry_after_loss=ui&&ui->result==RES_LOSE;
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));

@@ -2350,8 +2350,22 @@ int main(int argc, char **argv) {
       bool prior_activation_guard=settings_persistence.replay_activation_unresolved;
       settings_persistence.replay_activation_unresolved=true;
       if (persistence_flush(&settings_persistence) ||
-          persistence_retry_current(&settings_persistence,&game,&ui)) {
+          persistence_retry_current(&settings_persistence,&game,&ui) ||
+          games_browser_daily_flush_verified(&settings_persistence) ||
+          games_browser_commit_profile(&settings_persistence,&game,&ui,
+              &g,false,&settings_persistence.profile,false)) {
         fprintf(stderr,"Replay uncertain-profile checkpoint regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (games_browser_checkpoint_gate(&settings_persistence,&game,&ui,
+              &g,false,true,false,T_GAMES_RETRY_SAVE_PROMPT) !=
+              GAMES_CHECKPOINT_BACK || !ui_modal.active) {
+        fprintf(stderr,"Replay uncertain-profile Discard gate regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ui_modal_cancel_current();
+      if (ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay uncertain-profile pause regression\n");
         app_shutdown(&g); return 1;
       }
       settings_persistence.replay_activation_unresolved=prior_activation_guard;
