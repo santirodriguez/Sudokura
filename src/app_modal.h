@@ -32,6 +32,8 @@ typedef enum {
   APP_MODAL_RECOVER_PROFILE,
   APP_MODAL_DAILY,
   APP_MODAL_CHANGE_MODE,
+  APP_MODAL_RESTART_SAVE,
+  APP_MODAL_RESTART_DISCARD,
   APP_MODAL_ACTION_COUNT
 } AppModalAction;
 
@@ -126,6 +128,16 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
     return false;
   if (request->action == APP_MODAL_REPLAY_KEEP &&
       (request->button_count != 3 || request->destructive_buttons != 4u))
+    return false;
+  if (request->action == APP_MODAL_RESTART_SAVE &&
+      (request->kind != APP_MODAL_RECOVERY ||
+       !((request->button_count == 2 && request->destructive_buttons == 0) ||
+         (request->button_count == 3 && request->destructive_buttons == 4u))))
+    return false;
+  if ((request->action == APP_MODAL_RESTART ||
+       request->action == APP_MODAL_RESTART_DISCARD) &&
+      (request->kind != APP_MODAL_CONFIRM ||
+       request->button_count != 2 || request->destructive_buttons != 2u))
     return false;
   if ((request->action == APP_MODAL_REPLAY_RETAIN_RETRY ||
        request->action == APP_MODAL_REPLAY_ACTIVATE_RETRY) &&

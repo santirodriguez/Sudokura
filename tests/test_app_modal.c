@@ -368,7 +368,84 @@ static void test_replay_save_stages(void) {
   }
 }
 
+static void test_restart_modal_contract(void) {
+  AppState state=playing();
+  state.pause_reasons=APP_PAUSE_MANUAL|APP_PAUSE_FOCUS;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_RESTART_SAVE,
+      .binding={APP_SCREEN_PLAY,7,11,22,3},
+      .title=T_UNSAVED_TITLE,.body=T_UNSAVED_REPLACE,
+      .buttons={T_BACK,T_RETRY_SAVE,T_DISCARD},
+      .button_count=3,.destructive_buttons=4u};
+  AppModal invalid_modal={0};
+  AppModalRequest invalid=request;
+  invalid.destructive_buttons=0;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;
+  invalid.kind=APP_MODAL_CONFIRM;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;
+  invalid.button_count=2;
+  assert(!app_modal_request_valid(&invalid));
+  assert(app_modal_request_valid(&request));
+  AppModalResult result={0};
+  assert(app_modal_begin(&invalid_modal,&state,&request,100));
+  assert(invalid_modal.focus==0 && invalid_modal.owns_pause);
+  assert(state.pause_reasons==
+         (APP_PAUSE_MANUAL|APP_PAUSE_FOCUS|APP_PAUSE_MODAL));
+  assert(app_modal_choose(&invalid_modal,invalid_modal.serial,
+                          &request.binding,0,200,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(state.pause_reasons==(APP_PAUSE_MANUAL|APP_PAUSE_FOCUS));
+
+  assert(app_modal_begin(&invalid_modal,&state,&request,300));
+  AppModalBinding stale=request.binding;
+  ++stale.revision;
+  assert(app_modal_choose(&invalid_modal,invalid_modal.serial,
+                          &stale,2,400,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(state.pause_reasons==(APP_PAUSE_MANUAL|APP_PAUSE_FOCUS));
+
+  assert(app_modal_begin(&invalid_modal,&state,&request,500));
+  assert(app_modal_focus(&invalid_modal,invalid_modal.serial,2));
+  uint64_t serial=invalid_modal.serial;
+  assert(app_modal_choose(&invalid_modal,serial,
+                          &request.binding,2,600,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN &&
+         result.action==APP_MODAL_RESTART_SAVE && result.button==2);
+  assert(!app_modal_choose(&invalid_modal,serial,&request.binding,2,700,&result));
+  assert(state.pause_reasons==(APP_PAUSE_MANUAL|APP_PAUSE_FOCUS));
+
+  request.button_count=2;
+  request.destructive_buttons=0;
+  assert(app_modal_request_valid(&request));
+  request.kind=APP_MODAL_CONFIRM;
+  request.action=APP_MODAL_RESTART;
+  request.title=T_RESTART;request.body=T_RESTART_PROMPT;
+  request.buttons[0]=T_CANCEL;request.buttons[1]=T_RESTART;
+  request.destructive_buttons=2u;
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&invalid_modal,&state,&request,800));
+  assert(app_modal_choose(&invalid_modal,invalid_modal.serial,
+                          &request.binding,0,900,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  request.action=APP_MODAL_RESTART_DISCARD;
+  assert(app_modal_request_valid(&request));
+  invalid=request; invalid.destructive_buttons=0;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request; invalid.button_count=3;
+  assert(!app_modal_request_valid(&invalid));
+  assert(app_modal_begin(&invalid_modal,&state,&request,1000));
+  assert(app_modal_focus(&invalid_modal,invalid_modal.serial,1));
+  assert(app_modal_choose(&invalid_modal,invalid_modal.serial,
+                          &request.binding,1,1100,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN &&
+         result.action==APP_MODAL_RESTART_DISCARD && result.button==1);
+  assert(state.pause_reasons==(APP_PAUSE_MANUAL|APP_PAUSE_FOCUS));
+}
+
 int main(void) {
+  test_restart_modal_contract();
   test_default_cancel_and_once();
   test_pause_ownership();
   test_stale_identity();
