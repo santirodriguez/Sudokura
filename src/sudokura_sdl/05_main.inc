@@ -2149,6 +2149,110 @@ int main(int argc, char **argv) {
         settings_persistence.replay_activation_unresolved=saved_replay;
         ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
       }
+      /* Native SDL Daily modal events against a disposable in-memory slot. */
+      {
+        ProfileSlot before_slot=settings_persistence.profile.daily;
+        HomeDailyIntent before_intent=home_daily_intent;
+        Screen before_screen=ui.screen;
+        unsigned before_pause=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily smoke date missing\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){51,52};
+        settings_persistence.profile.daily.revision=4;
+        home_daily_intent=home_daily_capture_intent(&settings_persistence,y,m,d);
+        AppModalRequest request={
+            .kind=APP_MODAL_CONFIRM,.action=APP_MODAL_DAILY,
+            .binding=ui_modal_daily_binding(&settings_persistence,&ui),
+            .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
+            .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
+            .button_count=3};
+        SDL_Event event={0};
+        event.type=SDL_KEYDOWN;event.key.type=SDL_KEYDOWN;
+        event.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_intent_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&request) ||
+            ui_prepare_event(&event) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL default Cancel failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily SDL choice reopen failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        AppModalResult choice={0};
+        if (!ui_modal_take_result(&choice) ||
+            choice.action!=APP_MODAL_DAILY || choice.button!=1 ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL older one-shot failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily SDL stale setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            home_daily_intent_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily SDL stale revision accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        ++home_daily_intent.day;
+        if (home_daily_intent_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily SDL changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_intent.day;
+        if (!home_daily_open_checkpoint(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0 || ui_modal.request.button_count!=2 ||
+            ui_modal.request.destructive_buttons!=0) {
+          fprintf(stderr,"Daily SDL checkpoint setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_RETURN;
+        if (ui_prepare_event(&event) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL checkpoint Back failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!home_daily_open_checkpoint(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily SDL Retry setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily SDL Retry selection failed\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily SDL focus cancellation failed\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        settings_persistence.profile.daily=before_slot;
+        home_daily_intent=before_intent;
+        ui.screen=before_screen;ui.pause_reasons=before_pause;
+      }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
       ui.screen = SCR_PLAY;
