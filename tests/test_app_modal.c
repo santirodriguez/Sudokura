@@ -590,7 +590,58 @@ static void test_daily_choice_and_checkpoint_modal(void) {
   assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
 }
 
+static void test_daily_previous_recovery_confirmation(void) {
+  AppState state=playing();
+  state.screen=APP_SCREEN_HOME;
+  state.pause_reasons=APP_PAUSE_HOME|APP_PAUSE_FOCUS;
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM,
+      .action=APP_MODAL_DAILY_RECOVER_PREVIOUS,
+      .binding={APP_SCREEN_HOME,33,52,53,7},
+      .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
+      .buttons={T_CANCEL,T_RECOVER},
+      .button_count=2,.destructive_buttons=2u};
+  assert(app_modal_request_valid(&request));
+  AppModalRequest unsafe=request;
+  unsafe.destructive_buttons=0;
+  assert(!app_modal_request_valid(&unsafe));
+  unsafe=request;unsafe.kind=APP_MODAL_RECOVERY;
+  assert(!app_modal_request_valid(&unsafe));
+  unsafe=request;unsafe.button_count=3;
+  assert(!app_modal_request_valid(&unsafe));
+  unsafe=request;unsafe.binding.key_hi=0;unsafe.binding.key_lo=0;
+  assert(!app_modal_request_valid(&unsafe));
+  unsafe=request;unsafe.binding.screen=APP_SCREEN_GAMES;
+  assert(!app_modal_request_valid(&unsafe));
+  AppModal modal={0};
+  AppModalResult result={0};
+  assert(app_modal_begin(&modal,&state,&request,100));
+  assert(modal.focus==0 && modal.owns_pause);
+  assert(state.pause_reasons ==
+         (APP_PAUSE_HOME|APP_PAUSE_FOCUS|APP_PAUSE_MODAL));
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,200,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  assert(app_modal_begin(&modal,&state,&request,300));
+  AppModalBinding stale=request.binding;
+  ++stale.revision;
+  assert(app_modal_choose(&modal,modal.serial,&stale,1,400,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+  assert(app_modal_begin(&modal,&state,&request,500));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,600,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN &&
+         result.action==APP_MODAL_DAILY_RECOVER_PREVIOUS &&
+         result.button==1);
+  assert(app_modal_binding_equal(result.binding,request.binding));
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,700,&result));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+}
+
 int main(void) {
+  test_daily_previous_recovery_confirmation();
   test_daily_choice_and_checkpoint_modal();
   test_new_game_modal_stages();
   test_restart_modal_contract();

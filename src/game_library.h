@@ -86,6 +86,10 @@ StoreStatus game_library_peek(const unsigned char *bytes, size_t size,
                               GameLibraryEntry *entry);
 StoreStatus game_library_load(const char *root, GameAttemptId id,
                               GameLibraryRecord *record);
+/* Canonically validate a prior copy without restoring it or writing files.
+   Use before asking the user to authorize a Daily recovery. */
+StoreStatus game_library_load_previous(const char *root, GameAttemptId id,
+                                       GameLibraryRecord *record);
 /* Decide a same-attempt Load without rolling back a newer hot revision.
    The record is a canonically validated exact record from game_library_load.
    On a conflict, callers must leave both profile and live board untouched. */

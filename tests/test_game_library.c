@@ -1740,6 +1740,10 @@ static void test_daily_lookup_previous_copy_and_uncertainty(void) {
   assert(lookup.matching_attempts == 1 && !lookup.uncertain);
   assert(lookup.match.status == STORE_CORRUPT);
   assert(lookup.match.previous_status == STORE_OK);
+  /* A read-only preview must leave the damaged primary intact. */
+  assert(game_library_load_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1 && previous.original_daily);
+  assert(game_library_load(root, id, &record) == STORE_CORRUPT);
   assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
   assert(previous.revision == 1 && previous.original_daily);
   assert(game_library_load(root, id, &record) == STORE_OK);
@@ -1751,6 +1755,9 @@ static void test_daily_lookup_previous_copy_and_uncertainty(void) {
   assert(lookup.matching_attempts == 1 && !lookup.uncertain);
   assert(lookup.match.status == STORE_NOT_FOUND);
   assert(lookup.match.previous_status == STORE_OK);
+  assert(game_library_load_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1 && previous.original_daily);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
   assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
 
   /* Damaged unknown entries must not be silently classified as other dates. */

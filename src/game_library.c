@@ -181,6 +181,16 @@ StoreStatus game_library_load(const char *root, GameAttemptId id,
   return load_from_suffix(root, id, ".dat", record);
 }
 
+StoreStatus game_library_load_previous(const char *root, GameAttemptId id,
+                                       GameLibraryRecord *record) {
+  if (!root || !record || !game_attempt_id_valid(id))
+    return STORE_IO_ERROR;
+  StoreStatus receipt = game_library_receipt_status(root, id);
+  if (receipt == STORE_OK) return STORE_NOT_FOUND;
+  if (receipt != STORE_NOT_FOUND) return receipt;
+  return load_from_suffix(root, id, ".dat.bak", record);
+}
+
 /* This runs only for a user-selected, canonically loaded full record,
    never during catalogue enumeration or autosave. */
 StoreStatus game_library_resolve_hot_record(const ProfileSlot *hot,

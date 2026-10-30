@@ -39,6 +39,7 @@ typedef enum {
   APP_MODAL_NEW_KEEP_RETRY,
   APP_MODAL_NEW_GENERATE_RETRY,
   APP_MODAL_DAILY_CHECKPOINT,
+  APP_MODAL_DAILY_RECOVER_PREVIOUS,
   APP_MODAL_ACTION_COUNT
 } AppModalAction;
 
@@ -158,6 +159,13 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
       (request->kind != APP_MODAL_RECOVERY ||
        request->button_count != 2 ||
        request->destructive_buttons != 0u))
+    return false;
+  if (request->action == APP_MODAL_DAILY_RECOVER_PREVIOUS &&
+      (request->kind != APP_MODAL_CONFIRM ||
+       request->binding.screen != APP_SCREEN_HOME ||
+       !(request->binding.key_hi | request->binding.key_lo) ||
+       request->button_count != 2 ||
+       request->destructive_buttons != 2u))
     return false;
   if ((request->action == APP_MODAL_NEW_GAME ||
        request->action == APP_MODAL_NEW_SAVE ||

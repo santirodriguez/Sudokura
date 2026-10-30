@@ -3,6 +3,8 @@ static void ui_pointer_cancel(void);
 static void ui_touch_cancel(void);
 static bool games_browser_modal_binding(Persistence *p, UI *ui,
                                         AppModalBinding *out);
+static AppModalBinding home_daily_recovery_modal_binding(
+    const Persistence *p, const UI *ui);
 static AppModal ui_modal;
 static AppModalResult ui_modal_pending;
 static uint64_t ui_modal_generation = 1;
@@ -214,6 +216,8 @@ static AppModalBinding ui_modal_daily_binding(const Persistence *p,
 
 static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
                                                    AppModalAction action) {
+  if (action == APP_MODAL_DAILY_RECOVER_PREVIOUS)
+    return home_daily_recovery_modal_binding(p, ui);
   if (action==APP_MODAL_DAILY || action==APP_MODAL_DAILY_CHECKPOINT)
     return ui_modal_daily_binding(p,ui);
   if (action == APP_MODAL_NEW_GAME ||

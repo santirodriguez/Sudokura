@@ -361,6 +361,45 @@ typedef struct {
 } HomeDailyIntent;
 static HomeDailyIntent home_daily_intent;
 
+/* Explicit recovery of one validated previous Daily archive copy. Never
+   bind a catalogue row position or infer identity from the active board. */
+typedef struct {
+  bool active, hot_present;
+  GameLibraryEntry entry;
+  GameAttemptId hot_id;
+  uint64_t hot_revision;
+  int year, month, day;
+} HomeDailyRecovery;
+static HomeDailyRecovery home_daily_recovery;
+
+static AppModalBinding home_daily_recovery_modal_binding(
+    const Persistence *p, const UI *ui) {
+  AppModalBinding binding=ui_modal_current_binding(p,ui);
+  binding.key_hi=binding.key_lo=binding.revision=0;
+  if (home_daily_recovery.active) {
+    binding.key_hi=home_daily_recovery.entry.id.high;
+    binding.key_lo=home_daily_recovery.entry.id.low;
+    binding.revision=home_daily_recovery.entry.revision;
+  }
+  return binding;
+}
+
+static bool home_daily_recovery_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_recovery.active || p->replay_activation_unresolved)
+    return false;
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) ||
+      y!=home_daily_recovery.year || m!=home_daily_recovery.month ||
+      d!=home_daily_recovery.day)
+    return false;
+  const ProfileSlot *hot=&p->profile.daily;
+  return hot->present==home_daily_recovery.hot_present &&
+      (!hot->present ||
+       (game_attempt_id_equal(hot->attempt_id,home_daily_recovery.hot_id) &&
+        hot->revision==home_daily_recovery.hot_revision));
+}
+
 static bool home_daily_intent_valid(const Persistence *p, const UI *ui) {
   if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
       !home_daily_intent.active || p->replay_activation_unresolved)
@@ -413,6 +452,48 @@ static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
   (void)game;
   (void)ui_modal_message(gfx, ui, T_DAILY, key);
 }
+
+/* Read-only canonical preview before offering recovery. The selected
+   previous copy is revalidated again after explicit confirmation. */
+static bool home_daily_offer_recovery(Persistence *p, UI *ui, Gfx *gfx,
+                                      const GameLibraryEntry *entry,
+                                      int year,int month,int day) {
+  if (!p || !ui || !gfx || !game_library_entry_recoverable(entry) ||
+      !game_library_is_original_daily_on(entry,year,month,day))
+    return false;
+  GameLibraryRecord previous;
+  if (game_library_load_previous(p->profile_directory,entry->id,&previous)
+          != STORE_OK ||
+      previous.revision!=entry->revision ||
+      previous.kind!=entry->kind ||
+      previous.result.status!=entry->result.status ||
+      previous.practice || !previous.original_daily ||
+      !previous.result.is_daily || previous.result.practice ||
+      previous.result.daily_year!=(uint16_t)year ||
+      previous.result.daily_month!=(uint8_t)month ||
+      previous.result.daily_day!=(uint8_t)day)
+    return false;
+  HomeDailyRecovery pending={0};
+  pending.active=true;
+  pending.entry=*entry;
+  pending.year=year;pending.month=month;pending.day=day;
+  pending.hot_present=p->profile.daily.present;
+  if (pending.hot_present) {
+    pending.hot_id=p->profile.daily.attempt_id;
+    pending.hot_revision=p->profile.daily.revision;
+  }
+  home_daily_recovery=pending;
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM,
+      .action=APP_MODAL_DAILY_RECOVER_PREVIOUS,
+      .binding=home_daily_recovery_modal_binding(p,ui),
+      .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
+      .buttons={T_CANCEL,T_RECOVER},.button_count=2,
+      .destructive_buttons=2u};
+  if (ui_modal_open_request(gfx,ui,&request)) return true;
+  home_daily_recovery.active=false;
+  return false;
+}
 static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   const HomeDailyScan scan = home_daily_scan;
   home_daily_cancel();
@@ -460,26 +541,11 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
         home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
         return;
       }
-      /* Never roll back to a previous copy without an explicit decision. */
-      bool recover=confirm_box(gfx,game,ui,
-              tr(ui->language,T_DAILY),
-              tr(ui->language,T_DAILY_RECOVER_PREVIOUS),
-              tr(ui->language,T_RECOVER),tr(ui->language,T_CANCEL));
-      if(!recover)return;
-      GameLibraryRecord recovered;
-      if (game_library_recover_previous(p->profile_directory,entry.id,
-                                        &recovered)!=STORE_OK ||
-          !recovered.original_daily || recovered.practice ||
-          recovered.result.daily_year!=(uint16_t)y ||
-          recovered.result.daily_month!=(uint8_t)m ||
-          recovered.result.daily_day!=(uint8_t)d) {
+      /* Consent is asynchronous; the current hot slot and the validated
+         previous archive are checked again before any disk mutation. */
+      if (!home_daily_offer_recovery(p,ui,gfx,&entry,y,m,d))
         home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
-        return;
-      }
-      entry.status=STORE_OK;
-      entry.kind=recovered.kind;
-      entry.result=recovered.result;
-      entry.revision=recovered.revision;
+      return;
     }
     if (entry.result.status==SESSION_ACTIVE) {
       (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d);
@@ -497,6 +563,73 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   victory_animation_reset();
   (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
 }
+/* Only an explicitly chosen, still-bound modal may restore the backup.
+   An incompatible/healthy newer primary or changed backup aborts safely. */
+static void home_daily_recover_confirmed(Persistence *p, Game *game,
+                                         UI *ui, Gfx *gfx,
+                                         const AppModalResult *choice) {
+  if (!p || !game || !ui || !gfx || !choice ||
+      choice->resolution!=APP_MODAL_CHOSEN ||
+      choice->action!=APP_MODAL_DAILY_RECOVER_PREVIOUS ||
+      choice->button!=1)
+    return;
+  if (!home_daily_recovery_valid(p,ui) ||
+      !app_modal_binding_equal(choice->binding,
+          home_daily_recovery_modal_binding(p,ui))) {
+    home_daily_recovery.active=false;
+    return;
+  }
+  HomeDailyRecovery pending=home_daily_recovery;
+  home_daily_recovery.active=false;
+  if (!game_library_entry_recoverable(&pending.entry) ||
+      !game_library_is_original_daily_on(&pending.entry,
+          pending.year,pending.month,pending.day)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord current;
+  StoreStatus primary=game_library_load(
+      p->profile_directory,pending.entry.id,&current);
+  if (primary!=(pending.entry.only_backup ? STORE_NOT_FOUND : STORE_CORRUPT)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord previous;
+  if (game_library_load_previous(
+          p->profile_directory,pending.entry.id,&previous)!=STORE_OK ||
+      previous.revision!=pending.entry.revision ||
+      previous.kind!=pending.entry.kind ||
+      previous.result.status!=pending.entry.result.status ||
+      previous.practice || !previous.original_daily ||
+      !previous.result.is_daily || previous.result.practice ||
+      previous.result.daily_year!=(uint16_t)pending.year ||
+      previous.result.daily_month!=(uint8_t)pending.month ||
+      previous.result.daily_day!=(uint8_t)pending.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord recovered;
+  if (game_library_recover_previous(
+          p->profile_directory,pending.entry.id,&recovered)!=STORE_OK ||
+      recovered.revision!=previous.revision ||
+      recovered.kind!=previous.kind ||
+      recovered.result.status!=previous.result.status ||
+      !recovered.original_daily || recovered.practice ||
+      recovered.result.daily_year!=(uint16_t)pending.year ||
+      recovered.result.daily_month!=(uint8_t)pending.month ||
+      recovered.result.daily_day!=(uint8_t)pending.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  if (recovered.result.status==SESSION_ACTIVE) {
+    (void)games_browser_resume_daily(p,game,ui,gfx,pending.entry.id,
+                                     pending.year,pending.month,pending.day);
+  } else if (!games_browser_open_focused(
+                 p,game,ui,gfx,pending.entry.id,true)) {
+    home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+  }
+}
+
 static void home_daily_scan_pump(Persistence *p, Game *game,
                                  UI *ui, Gfx *gfx) {
   if (!home_daily_scan.active) return;
@@ -570,6 +703,7 @@ static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
 static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
     return;
+  home_daily_recovery.active=false;
   if (home_daily_scan.active) { home_daily_cancel(); return; }
   int year=0,month=0,day=0;
   if (!local_date(&year,&month,&day)) {
@@ -2252,6 +2386,129 @@ int main(int argc, char **argv) {
         settings_persistence.profile.daily=before_slot;
         home_daily_intent=before_intent;
         ui.screen=before_screen;ui.pause_reasons=before_pause;
+      }
+      /* Daily prior-copy recovery stays bound to its selected archive and
+         hot pointer. Synthetic modal events never write any game files. */
+      {
+        HomeDailyRecovery saved_recovery=home_daily_recovery;
+        ProfileSlot saved_daily=settings_persistence.profile.daily;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily recovery smoke date unavailable\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.enabled=true;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){61,62};
+        settings_persistence.profile.daily.revision=14;
+        home_daily_recovery=(HomeDailyRecovery){0};
+        home_daily_recovery.active=true;
+        home_daily_recovery.hot_present=true;
+        home_daily_recovery.hot_id=settings_persistence.profile.daily.attempt_id;
+        home_daily_recovery.hot_revision=14;
+        home_daily_recovery.entry.id=(GameAttemptId){63,64};
+        home_daily_recovery.entry.revision=7;
+        home_daily_recovery.entry.status=STORE_CORRUPT;
+        home_daily_recovery.entry.previous_status=STORE_OK;
+        home_daily_recovery.year=y;
+        home_daily_recovery.month=m;
+        home_daily_recovery.day=d;
+        AppModalRequest request={
+            .kind=APP_MODAL_CONFIRM,
+            .action=APP_MODAL_DAILY_RECOVER_PREVIOUS,
+            .binding=home_daily_recovery_modal_binding(
+                &settings_persistence,&ui),
+            .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
+            .buttons={T_CANCEL,T_RECOVER},.button_count=2,
+            .destructive_buttons=2u};
+        SDL_Event key={0};
+        key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_recovery_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&request) ||
+            ui_modal.focus!=0 || ui_prepare_event(&key) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily recovery default-Cancel regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery choice setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        AppModalResult recovery_choice={0};
+        if (!ui_modal_take_result(&recovery_choice) ||
+            recovery_choice.action!=APP_MODAL_DAILY_RECOVER_PREVIOUS ||
+            recovery_choice.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily recovery explicit choice regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery stale setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_take_result(&recovery_choice) ||
+            home_daily_recovery_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily recovery stale hot-slot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        home_daily_recover_confirmed(
+            &settings_persistence,&game,&ui,&g,&recovery_choice);
+        if (home_daily_recovery.active) {
+          fprintf(stderr,"Daily recovery stale action retained\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        home_daily_recovery.active=true;
+        ++home_daily_recovery.day;
+        if (home_daily_recovery_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily recovery changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_recovery.day;
+        request.binding=home_daily_recovery_modal_binding(
+            &settings_persistence,&ui);
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily recovery pending choice regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily recovery focus invalidation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        home_daily_recovery=saved_recovery;
+        settings_persistence.profile.daily=saved_daily;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
       }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
@@ -4238,6 +4495,7 @@ int main(int argc, char **argv) {
       restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
       new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_recover_confirmed(&persistence,&game,&ui,&g,&modal_result);
       if (!running) break;
       g.dirty = true;
     }
