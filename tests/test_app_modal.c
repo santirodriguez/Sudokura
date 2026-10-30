@@ -1,0 +1,195 @@
+#include "app_modal.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+static AppState playing(void) {
+  AppState state = {0};
+  state.session_open = state.has_session = true;
+  state.screen = APP_SCREEN_PLAY;
+  state.running_since_ms = 100;
+  return state;
+}
+
+static AppModalRequest deletion(void) {
+  return (AppModalRequest){
+      .kind = APP_MODAL_CONFIRM, .action = APP_MODAL_DELETE,
+      .binding = {APP_SCREEN_PLAY, 7, 11, 22, 3},
+      .title = T_GAMES, .body = T_GAMES_DELETE_PROMPT,
+      .buttons = {T_CANCEL, T_GAMES_DELETE}, .button_count = 2,
+      .destructive_buttons = 2u};
+}
+
+static void test_default_cancel_and_once(void) {
+  AppState state = playing();
+  AppModal modal = {0};
+  AppModalRequest request = deletion();
+  AppModalResult result;
+  assert(app_modal_begin(&modal, &state, &request, 200));
+  uint64_t first = modal.serial;
+  assert(modal.focus == 0 && modal.owns_pause);
+  assert(app_clock_elapsed_ms(&state, 900) == 100);
+  assert(app_modal_choose(&modal, first, &request.binding,
+                          modal.focus, 1000, &result));
+  assert(result.resolution == APP_MODAL_CANCELLED);
+  assert(result.action == APP_MODAL_ACTION_NONE);
+  assert(app_clock_elapsed_ms(&state, 1100) == 200);
+  assert(!app_modal_choose(&modal, first, &request.binding, 1, 1100, &result));
+  assert(result.resolution == APP_MODAL_NO_RESULT);
+
+  assert(app_modal_begin(&modal, &state, &request, 1200));
+  assert(modal.serial != first);
+  assert(!app_modal_choose(&modal, first, &request.binding, 1, 1300, &result));
+  assert(!app_modal_cancel(&modal, first, 1300));
+  assert(!app_modal_focus(&modal, first, 1));
+  assert(modal.active && modal.focus == 0);
+  assert(app_modal_focus(&modal, modal.serial, 1));
+  assert(app_modal_choose(&modal, modal.serial, &request.binding,
+                          modal.focus, 1400, &result));
+  assert(result.resolution == APP_MODAL_CHOSEN);
+  assert(result.action == APP_MODAL_DELETE && result.button == 1);
+  assert(app_modal_binding_equal(result.binding, request.binding));
+  assert(!modal.active && !modal.owner && !modal.owns_pause);
+  assert(!app_modal_cancel(&modal, modal.serial, 1500));
+}
+
+static void test_pause_ownership(void) {
+  /* Every combination of pre-existing reasons, with focus acquired while the
+     dialog is open. The real clock implementation must preserve all owners. */
+  for (unsigned reasons = 0; reasons < 32; ++reasons) {
+    for (unsigned focus = 0; focus < 2; ++focus) {
+      AppState state = playing();
+      state.pause_reasons = reasons;
+      AppModal modal = {0};
+      AppModalRequest request = deletion();
+      assert(app_modal_begin(&modal, &state, &request, 200));
+      assert(modal.owns_pause == !(reasons & APP_PAUSE_MODAL));
+      assert(state.pause_reasons == (reasons | APP_PAUSE_MODAL));
+      if (focus) (void)app_clock_pause(&state, APP_PAUSE_FOCUS, 300);
+      assert(app_modal_cancel(&modal, modal.serial, 400));
+      unsigned expected = reasons | (focus ? APP_PAUSE_FOCUS : 0);
+      assert(state.pause_reasons == expected);
+      assert(app_clock_running(&state) == (expected == 0));
+      uint64_t elapsed = reasons == 0 ? 100 : 0;
+      assert(app_clock_elapsed_ms(&state, 500) ==
+             elapsed + (expected == 0 ? 100 : 0));
+    }
+  }
+}
+
+static void test_stale_identity(void) {
+  for (unsigned field = 0; field < 7; ++field) {
+    AppState state = playing();
+    AppModal modal = {0};
+    AppModalRequest request = deletion();
+    if (field & 1u) {
+      request.action = APP_MODAL_REPLAY;
+      request.buttons[1] = T_GAMES_REPLAY;
+      request.destructive_buttons = 0;
+    }
+    assert(app_modal_begin(&modal, &state, &request, 200));
+    AppModalBinding current = request.binding;
+    switch (field) {
+      case 0: ++current.generation; break;
+      case 1: ++current.key_hi; break;
+      case 2: ++current.key_lo; break;
+      case 3: ++current.revision; break;
+      case 4: current.screen = APP_SCREEN_HOME; break;
+      case 5: state.screen = APP_SCREEN_HOME; break;
+      default: break;
+    }
+    AppModalResult result;
+    assert(app_modal_choose(&modal, modal.serial,
+                            field == 6 ? NULL : &current, 1, 300, &result));
+    assert(result.resolution == APP_MODAL_STALE);
+    assert(result.action == APP_MODAL_ACTION_NONE && result.button == 0);
+    assert(!modal.active && state.pause_reasons == 0);
+  }
+}
+
+static void test_invalid_and_nested(void) {
+  AppState state = playing();
+  AppModal modal = {0};
+  AppModalRequest request = deletion();
+  assert(!app_modal_begin(NULL, &state, &request, 200));
+  assert(!app_modal_begin(&modal, NULL, &request, 200));
+  assert(!app_modal_begin(&modal, &state, NULL, 200));
+  for (unsigned field = 0; field < 12; ++field) {
+    AppModalRequest bad = request;
+    switch (field) {
+      case 0: bad.button_count = 0; break;
+      case 1: bad.button_count = 4; break;
+      case 2: bad.destructive_buttons = 1; break;
+      case 3: bad.destructive_buttons = 4; break;
+      case 4: bad.binding.generation = 0; break;
+      case 5: bad.binding.key_hi = bad.binding.key_lo = 0; break;
+      case 6: bad.title = T_COUNT; break;
+      case 7: bad.body = (TextKey)-1; break;
+      case 8: bad.buttons[1] = T_COUNT; break;
+      case 9: bad.action = APP_MODAL_ACTION_COUNT; break;
+      case 10: bad.kind = APP_MODAL_NONE; break;
+      default: bad.binding.screen = APP_SCREEN_HOME; break;
+    }
+    assert(!app_modal_begin(&modal, &state, &bad, 200));
+    assert(!modal.active && modal.serial == 0 && state.pause_reasons == 0);
+  }
+  assert(app_modal_begin(&modal, &state, &request, 200));
+  AppModal saved = modal;
+  assert(!app_modal_begin(&modal, &state, &request, 300));
+  assert(memcmp(&modal, &saved, sizeof modal) == 0);
+  AppModalResult result;
+  assert(!app_modal_focus(&modal, modal.serial, 2));
+  assert(!app_modal_choose(&modal, modal.serial, &request.binding, 3, 300, &result));
+  assert(!app_modal_choose(&modal, modal.serial, &request.binding, 1, 300, NULL));
+  assert(modal.active && state.pause_reasons == APP_PAUSE_MODAL);
+  assert(app_modal_cancel(&modal, modal.serial, 300));
+  modal.serial = UINT64_MAX - 1;
+  assert(app_modal_begin(&modal, &state, &request, 400));
+  assert(modal.serial == UINT64_MAX);
+  assert(app_modal_cancel(&modal, modal.serial, 500));
+  assert(!app_modal_begin(&modal, &state, &request, 600));
+  assert(state.pause_reasons == 0);
+}
+
+static void test_message_and_recovery(void) {
+  AppState state = playing();
+  AppModal modal = {0};
+  AppModalRequest request = deletion();
+  request.kind = APP_MODAL_MESSAGE;
+  request.action = APP_MODAL_ACTION_NONE;
+  request.title = T_STORAGE_ERROR;
+  request.body = T_SAVE_FAILED;
+  request.buttons[0] = T_BACK;
+  request.button_count = 1;
+  request.destructive_buttons = 0;
+  AppModalResult result;
+  assert(app_modal_begin(&modal, &state, &request, 200));
+  assert(app_modal_choose(&modal, modal.serial, &request.binding, 0, 300, &result));
+  assert(result.action == APP_MODAL_ACTION_NONE);
+  request.kind = APP_MODAL_RECOVERY;
+  request.action = APP_MODAL_RETRY_SAVE;
+  request.buttons[1] = T_RETRY_SAVE;
+  request.buttons[2] = T_DISCARD;
+  request.button_count = 3;
+  request.destructive_buttons = 4;
+  for (unsigned button = 0; button < 3; ++button) {
+    assert(app_modal_begin(&modal, &state, &request, 400));
+    assert(modal.focus == 0);
+    assert(app_modal_choose(&modal, modal.serial, &request.binding,
+                            button, 500, &result));
+    assert(result.resolution == (button ? APP_MODAL_CHOSEN : APP_MODAL_CANCELLED));
+    assert(result.action == (button ? APP_MODAL_RETRY_SAVE : APP_MODAL_ACTION_NONE));
+    assert(result.button == button);
+  }
+}
+
+int main(void) {
+  test_default_cancel_and_once();
+  test_pause_ownership();
+  test_stale_identity();
+  test_invalid_and_nested();
+  test_message_and_recovery();
+  puts("app modal contract: PASS (including 64 pause-ownership combinations)");
+  return 0;
+}
