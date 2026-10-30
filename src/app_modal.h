@@ -23,6 +23,10 @@ typedef enum {
   APP_MODAL_LOAD,
   APP_MODAL_REPLAY,
   APP_MODAL_REPLAY_CONFLICT,
+  APP_MODAL_REPLAY_CHECKPOINT,
+  APP_MODAL_REPLAY_KEEP,
+  APP_MODAL_REPLAY_RETAIN_RETRY,
+  APP_MODAL_REPLAY_ACTIVATE_RETRY,
   APP_MODAL_DELETE,
   APP_MODAL_RECOVER_RECORD,
   APP_MODAL_RECOVER_PROFILE,
@@ -104,6 +108,10 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
   if (request->action == APP_MODAL_LOAD ||
       request->action == APP_MODAL_REPLAY ||
       request->action == APP_MODAL_REPLAY_CONFLICT ||
+      request->action == APP_MODAL_REPLAY_CHECKPOINT ||
+      request->action == APP_MODAL_REPLAY_KEEP ||
+      request->action == APP_MODAL_REPLAY_RETAIN_RETRY ||
+      request->action == APP_MODAL_REPLAY_ACTIVATE_RETRY ||
       request->action == APP_MODAL_DELETE ||
       request->action == APP_MODAL_RECOVER_RECORD) {
     if (!(request->binding.key_hi | request->binding.key_lo)) return false;
@@ -111,6 +119,17 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
   if ((request->action == APP_MODAL_DELETE ||
        request->action == APP_MODAL_REPLAY_CONFLICT) &&
       (request->button_count != 2 || request->destructive_buttons != 2u))
+    return false;
+  if (request->action == APP_MODAL_REPLAY_CHECKPOINT &&
+      !((request->button_count == 2 && request->destructive_buttons == 0) ||
+        (request->button_count == 3 && request->destructive_buttons == 4u)))
+    return false;
+  if (request->action == APP_MODAL_REPLAY_KEEP &&
+      (request->button_count != 3 || request->destructive_buttons != 4u))
+    return false;
+  if ((request->action == APP_MODAL_REPLAY_RETAIN_RETRY ||
+       request->action == APP_MODAL_REPLAY_ACTIVATE_RETRY) &&
+      (request->button_count != 2 || request->destructive_buttons != 0))
     return false;
   return true;
 }

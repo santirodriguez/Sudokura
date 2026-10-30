@@ -2259,6 +2259,63 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay pending stale continuation regression\n");
         app_shutdown(&g); return 1;
       }
+      AppModalBinding save_gate_binding;
+      if (!games_browser_modal_binding(&settings_persistence,&ui,
+                                       &save_gate_binding) ||
+          !games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_CHECKPOINT,false)) {
+        fprintf(stderr,"Replay checkpoint gate setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay checkpoint default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_KEEP,true)) {
+        fprintf(stderr,"Replay retention gate setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.action!=APP_MODAL_REPLAY_KEEP ||
+          smoke_result.button!=2 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+                                   save_gate_binding)) {
+        fprintf(stderr,"Replay retention explicit-choice regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalBinding stale_gate_binding=smoke_result.binding;
+      ++stale_gate_binding.revision;
+      if (games_browser_replay_gate_chosen(
+              &settings_persistence,&game,&ui,&g,stale_gate_binding,
+              APP_MODAL_REPLAY_KEEP,smoke_result.button) ||
+          games_replay_gate.action!=APP_MODAL_ACTION_NONE) {
+        fprintf(stderr,"Replay retention stale-continuation regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_RETAIN_RETRY,false)) {
+        fprintf(stderr,"Replay retention Retry setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui,PAUSE_FOCUS);
+      ui_modal_invalidate();
+      if (ui_modal.active || ui_modal_has_pending() ||
+          ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+        fprintf(stderr,"Replay save lifecycle-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui,PAUSE_FOCUS);
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;
@@ -3600,13 +3657,22 @@ int main(int argc, char **argv) {
           modal_result.button == 1 &&
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_replay_confirmed(&persistence, &game, &ui,
-                                             &g, modal_result.binding);
+                                             &g, modal_result.binding,false);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
           modal_result.action == APP_MODAL_REPLAY_CONFLICT &&
           modal_result.button == 1 &&
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_pending_accepted(&persistence, &game, &ui,
                                              &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          app_modal_binding_equal(modal_result.binding,current) &&
+          (modal_result.action == APP_MODAL_REPLAY_CHECKPOINT ||
+           modal_result.action == APP_MODAL_REPLAY_KEEP ||
+           modal_result.action == APP_MODAL_REPLAY_RETAIN_RETRY ||
+           modal_result.action == APP_MODAL_REPLAY_ACTIVATE_RETRY))
+        (void)games_browser_replay_gate_chosen(
+            &persistence,&game,&ui,&g,modal_result.binding,
+            modal_result.action,modal_result.button);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
           modal_result.action == APP_MODAL_DELETE &&
           modal_result.button == 1 &&

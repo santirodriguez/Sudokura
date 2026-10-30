@@ -308,6 +308,66 @@ static void test_pending_replay_consent(void) {
   assert(state.pause_reasons==APP_PAUSE_MODAL);
 }
 
+static void test_replay_save_stages(void) {
+  const struct {
+    AppModalAction action;
+    unsigned buttons, destructive, accept;
+  } cases[] = {
+      {APP_MODAL_REPLAY_CHECKPOINT,2,0,1},
+      {APP_MODAL_REPLAY_CHECKPOINT,3,4u,2},
+      {APP_MODAL_REPLAY_KEEP,3,4u,2},
+      {APP_MODAL_REPLAY_RETAIN_RETRY,2,0,1},
+      {APP_MODAL_REPLAY_ACTIVATE_RETRY,2,0,1}
+  };
+  for (size_t i=0;i<sizeof(cases)/sizeof(cases[0]);++i) {
+    AppState state=playing();
+    state.screen=APP_SCREEN_GAMES;
+    state.pause_reasons=APP_PAUSE_MODAL;
+    AppModalRequest request=deletion();
+    request.kind=APP_MODAL_RECOVERY;
+    request.action=cases[i].action;
+    request.binding.screen=APP_SCREEN_GAMES;
+    request.title=T_STORAGE_ERROR;
+    request.body=T_GAMES_RETRY_SAVE_PROMPT;
+    request.buttons[0]=T_BACK;
+    request.buttons[1]=T_RETRY_SAVE;
+    request.buttons[2]=T_DISCARD;
+    request.button_count=cases[i].buttons;
+    request.destructive_buttons=cases[i].destructive;
+    assert(app_modal_request_valid(&request));
+    AppModalRequest unsafe=request;
+    unsafe.destructive_buttons=cases[i].destructive?0:2u;
+    assert(!app_modal_request_valid(&unsafe));
+    AppModal modal={0};
+    AppModalResult result;
+    assert(app_modal_begin(&modal,&state,&request,100));
+    assert(!modal.owns_pause && modal.focus==0);
+    assert(app_modal_choose(&modal,modal.serial,&request.binding,
+                            0,200,&result));
+    assert(result.resolution==APP_MODAL_CANCELLED);
+    assert(state.pause_reasons==APP_PAUSE_MODAL);
+    assert(app_modal_begin(&modal,&state,&request,300));
+    AppModalBinding stale=request.binding;
+    ++stale.revision;
+    assert(app_modal_choose(&modal,modal.serial,&stale,
+                            cases[i].accept,400,&result));
+    assert(result.resolution==APP_MODAL_STALE);
+    assert(state.pause_reasons==APP_PAUSE_MODAL);
+    assert(app_modal_begin(&modal,&state,&request,500));
+    assert(app_modal_focus(&modal,modal.serial,cases[i].accept));
+    uint64_t serial=modal.serial;
+    assert(app_modal_choose(&modal,serial,&request.binding,
+                            cases[i].accept,600,&result));
+    assert(result.resolution==APP_MODAL_CHOSEN);
+    assert(result.action==cases[i].action);
+    assert(result.button==cases[i].accept);
+    assert(app_modal_binding_equal(result.binding,request.binding));
+    assert(!app_modal_choose(&modal,serial,&request.binding,
+                             cases[i].accept,700,&result));
+    assert(state.pause_reasons==APP_PAUSE_MODAL);
+  }
+}
+
 int main(void) {
   test_default_cancel_and_once();
   test_pause_ownership();
@@ -318,6 +378,7 @@ int main(void) {
   test_library_recovery_identity();
   test_replay_confirmation_identity();
   test_pending_replay_consent();
+  test_replay_save_stages();
   puts("app modal contract: PASS (including 64 pause-ownership combinations)");
   return 0;
 }

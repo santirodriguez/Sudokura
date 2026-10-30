@@ -33,6 +33,19 @@ typedef struct {
 } GamesReplayConflict;
 
 static GamesReplayConflict games_replay_conflict;
+/* A deferred replacement choice must also match the departing hot slot.
+   No record or profile is copied into this transient confirmation token. */
+typedef struct {
+  AppModalAction action;
+  AppModalBinding binding;
+  GameAttemptId departing_id;
+  uint64_t departing_revision;
+  bool departing_present, departing_retained;
+  GameReplayIntent pending_intent;
+} GamesReplayGate;
+
+static GamesReplayGate games_replay_gate;
+
 
 /* A library modal binds the selected record, not its position in a list. */
 static bool games_browser_modal_binding(Persistence *p, UI *ui,
@@ -288,6 +301,7 @@ static void games_browser_ensure_visible(const Gfx *gfx) {
 
 static void games_browser_close(Persistence *p, Game *game, UI *ui) {
   games_replay_conflict = (GamesReplayConflict){0};
+  games_replay_gate = (GamesReplayGate){0};
   game_library_scan_close(&games_browser.scanner);
   bool resume = games_browser.modal_owned &&
                 ui->prev_screen == SCR_PLAY;
@@ -304,6 +318,7 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
 /* Enumerate at most sixteen directory names per frame. */
 static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
   games_replay_conflict = (GamesReplayConflict){0};
+  games_replay_gate = (GamesReplayGate){0};
   game_library_scan_close(&games_browser.scanner);
   games_browser.scanning = false;
   games_browser.incomplete = games_browser.scan_status != STORE_OK;
@@ -351,6 +366,7 @@ static bool games_browser_open(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
   games_replay_conflict = (GamesReplayConflict){0};
+  games_replay_gate = (GamesReplayGate){0};
   games_browser.modal_owned = modal_owned;
   games_browser_window = gfx;
   clear_hint_preview(ui);
@@ -908,6 +924,94 @@ static void games_browser_replay_error(Gfx *gfx, UI *ui) {
     show_toast(ui,tr(ui->language,T_GAMES_ACTION_FAILED));
 }
 
+static bool games_browser_replay_offer(
+    Persistence *p, UI *ui, Gfx *gfx, AppModalBinding binding,
+    AppModalAction action, bool allow_discard) {
+  AppModalBinding current;
+  if (!p || !p->enabled || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(binding,current)) return false;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY, .action=action, .binding=binding,
+      .title=T_STORAGE_ERROR, .body=T_GAMES_RETRY_SAVE_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE}, .button_count=2};
+  switch (action) {
+    case APP_MODAL_REPLAY_CHECKPOINT:
+      request.title=T_UNSAVED_TITLE;
+      if (allow_discard) {
+        request.body=T_GAMES_SAFE_DISCARD_PROMPT;
+        request.buttons[2]=T_DISCARD;
+        request.button_count=3;
+        request.destructive_buttons=4u;
+      }
+      break;
+    case APP_MODAL_REPLAY_KEEP:
+      request.title=T_GAMES_KEEP_TITLE;
+      request.body=T_GAMES_KEEP_PROMPT;
+      request.buttons[0]=T_CANCEL;
+      request.buttons[1]=T_GAMES_SAVE_CONTINUE;
+      request.buttons[2]=T_DISCARD;
+      request.button_count=3;
+      request.destructive_buttons=4u;
+      break;
+    case APP_MODAL_REPLAY_RETAIN_RETRY:
+      break;
+    case APP_MODAL_REPLAY_ACTIVATE_RETRY:
+      request.body=T_GAMES_ACTIVATE_RETRY_PROMPT;
+      break;
+    default:
+      return false;
+  }
+  GameReplayIntent pending_intent={0};
+  if (action==APP_MODAL_REPLAY_ACTIVATE_RETRY) {
+    if (game_library_replay_intent_load(
+            p->profile_directory,&pending_intent)!=STORE_OK ||
+        pending_intent.state!=GAME_REPLAY_PREPARED ||
+        pending_intent.source_id.high!=binding.key_hi ||
+        pending_intent.source_id.low!=binding.key_lo)
+      return false;
+  }
+  if (!ui_modal_open_request(gfx,ui,&request)) return false;
+  const ProfileSlot *normal=&p->profile.normal;
+  games_replay_gate=(GamesReplayGate){
+      .action=action, .binding=binding,
+      .departing_id=normal->attempt_id,
+      .departing_revision=normal->revision,
+      .departing_present=normal->present,
+      .departing_retained=normal->retained,
+      .pending_intent=pending_intent};
+  return true;
+}
+
+/* Replay-specific save gate: one attempt, then return to the main pump.
+   Other Games operations retain their existing checked save protocol. */
+static bool games_browser_replay_preflight(
+    Persistence *p, Game *game, UI *ui, Gfx *gfx,
+    AppModalBinding binding) {
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  bool flushed=persistence_flush(p);
+  if (!flushed || p->capture_failed || p->keep_pending_mask ||
+      save_policy_dirty(&p->save_policy)) {
+    const ProfileSlot *normal=&p->profile.normal;
+    bool unretained_active=normal->present && !normal->retained &&
+                            normal->value.session.status==SESSION_ACTIVE;
+    bool can_discard=save_policy_replacement_discard_allowed(
+        &p->save_policy,false,unretained_active,
+        p->capture_failed,p->keep_pending_mask);
+    (void)games_browser_replay_offer(p,ui,gfx,binding,
+             APP_MODAL_REPLAY_CHECKPOINT,can_discard);
+    return false;
+  }
+  const ProfileSlot *normal=&p->profile.normal;
+  if (normal->present && !normal->retained &&
+      session_has_meaningful_progress_runtime(&normal->value.session)) {
+    (void)games_browser_replay_offer(p,ui,gfx,binding,
+             APP_MODAL_REPLAY_KEEP,true);
+    return false;
+  }
+  return true;
+}
+
 static bool games_browser_pending_dialog(
     Persistence *p, UI *ui, Gfx *gfx, AppModalBinding binding,
     GameReplayIntent intent, TextKey prompt) {
@@ -932,7 +1036,8 @@ static bool games_browser_pending_dialog(
 
 static bool games_browser_replay_confirmed(Persistence *p, Game *game,
                                            UI *ui, Gfx *gfx,
-                                           AppModalBinding expected) {
+                                           AppModalBinding expected,
+                                           bool preflight_ready) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
       games_browser.scanning || games_browser.selected >= games_browser.count)
     return false;
@@ -954,7 +1059,8 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
     games_browser_replay_error(gfx, ui);
     return false;
   }
-  if (!games_browser_gate_replacement(p, game, ui, gfx, false))
+  if (!preflight_ready &&
+      !games_browser_replay_preflight(p, game, ui, gfx, expected))
     return false;
 
   GameReplayIntent intent = {0};
@@ -1081,9 +1187,18 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
     games_browser_replay_error(gfx, ui);
     return false;
   }
-  if (!games_browser_commit_profile(
-          p, game, ui, gfx, false, &candidate, false))
-    return false; /* The Prepared intent and record remain available. */
+  if (profile_save_runtime_verified(
+          p->profile_path, p->profile_backup_path, &candidate) != STORE_OK) {
+    /* Keep the Prepared intent and original hot board while the owner
+       handles Retry or Back as a separate, cancellable SDL event. */
+    uint64_t failed_at=now_ms();
+    save_policy_mark(&p->save_policy,SAVE_DIRTY_NORMAL,failed_at);
+    save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failed_at);
+    if (!games_browser_replay_offer(p,ui,gfx,expected,
+             APP_MODAL_REPLAY_ACTIVATE_RETRY,false))
+      show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+    return false;
+  }
 
   p->profile = candidate;
   p->game_cache[0] = new_cache;
@@ -1172,11 +1287,84 @@ static bool games_browser_pending_accepted(
     (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
     return false;
   }
-  return games_browser_replay_confirmed(p,game,ui,gfx,expected);
+  return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
 }
 
-/* A Replay starts with a record-bound confirmation. Checkpoint, retention
-   and activation retry dialogs remain in their existing checked paths. */
+/* A decision is accepted only for both the same selected source and
+   the same departing hot profile state. Every write remains on the owner. */
+static bool games_browser_replay_gate_chosen(
+    Persistence *p, Game *game, UI *ui, Gfx *gfx,
+    AppModalBinding expected, AppModalAction action, unsigned button) {
+  GamesReplayGate consent=games_replay_gate;
+  games_replay_gate=(GamesReplayGate){0};
+  AppModalBinding current;
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      action!=consent.action ||
+      !app_modal_binding_equal(consent.binding,expected) ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(current,expected)) return false;
+  const ProfileSlot *normal=&p->profile.normal;
+  if (normal->present!=consent.departing_present ||
+      normal->retained!=consent.departing_retained ||
+      normal->revision!=consent.departing_revision ||
+      !game_attempt_id_equal(normal->attempt_id,consent.departing_id))
+    return false;
+  switch (action) {
+    case APP_MODAL_REPLAY_CHECKPOINT:
+      if (button==2) {
+        bool unretained_active=normal->present && !normal->retained &&
+            normal->value.session.status==SESSION_ACTIVE;
+        if (!save_policy_replacement_discard_allowed(
+                &p->save_policy,false,unretained_active,
+                p->capture_failed,p->keep_pending_mask)) return false;
+        return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+      }
+      if (button!=1) return false;
+      (void)persistence_retry_current(p,game,ui);
+      return games_browser_replay_confirmed(p,game,ui,gfx,expected,false);
+    case APP_MODAL_REPLAY_KEEP:
+      if (!normal->present || normal->retained ||
+          !session_has_meaningful_progress_runtime(
+              &normal->value.session)) return false;
+      if (button==2)
+        return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+      if (button!=1) return false;
+      if (games_browser_save_hot(p,false))
+        return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+      if (!games_browser_replay_offer(p,ui,gfx,expected,
+              APP_MODAL_REPLAY_RETAIN_RETRY,false))
+        show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+      return false;
+    case APP_MODAL_REPLAY_RETAIN_RETRY:
+      if (button!=1) return false;
+      if (persistence_retry_current(p,game,ui) &&
+          p->profile.normal.present && p->profile.normal.retained)
+        return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+      if (!games_browser_replay_offer(p,ui,gfx,expected,
+              APP_MODAL_REPLAY_RETAIN_RETRY,false))
+        show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+      return false;
+    case APP_MODAL_REPLAY_ACTIVATE_RETRY: {
+      if (button!=1 || consent.pending_intent.state!=GAME_REPLAY_PREPARED)
+        return false;
+      GameReplayIntent live={0};
+      if (game_library_replay_intent_load(
+              p->profile_directory,&live)!=STORE_OK ||
+          live.state!=GAME_REPLAY_PREPARED ||
+          !game_attempt_id_equal(live.source_id,
+                                 consent.pending_intent.source_id) ||
+          !game_attempt_id_equal(live.attempt_id,
+                                 consent.pending_intent.attempt_id))
+        return false;
+      return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+    }
+    default:
+      return false;
+  }
+}
+
+/* Replay starts with record-bound consent; save, retention and activation
+   retries return through the SDL owner with their original identity. */
 static bool games_browser_replay_selected(Persistence *p, Game *game,
                                           UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx) return false;

@@ -175,6 +175,10 @@ static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
                                                    AppModalAction action) {
   if (action == APP_MODAL_DELETE || action == APP_MODAL_REPLAY ||
       action == APP_MODAL_REPLAY_CONFLICT ||
+      action == APP_MODAL_REPLAY_CHECKPOINT ||
+      action == APP_MODAL_REPLAY_KEEP ||
+      action == APP_MODAL_REPLAY_RETAIN_RETRY ||
+      action == APP_MODAL_REPLAY_ACTIVATE_RETRY ||
       action == APP_MODAL_RECOVER_RECORD) {
     AppModalBinding selected = {0};
     (void)games_browser_modal_binding(p, ui, &selected);
