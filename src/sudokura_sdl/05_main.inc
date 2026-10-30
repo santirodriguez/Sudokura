@@ -2192,6 +2192,73 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       ui_modal_cancel_current();
+      AppModalBinding conflict_binding;
+      if (!games_browser_modal_binding(&settings_persistence,&ui,
+                                       &conflict_binding)) {
+        fprintf(stderr,"Replay pending identity regression\n");
+        app_shutdown(&g); return 1;
+      }
+      GameReplayIntent mock_pending={
+          .source_id=modal_rows[0].entry.id,
+          .attempt_id=(GameAttemptId){55,66},
+          .state=GAME_REPLAY_PREPARED};
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_OTHER)) {
+        fprintf(stderr,"Replay pending modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay pending safe-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_CONFLICT)) {
+        fprintf(stderr,"Replay pending conflict setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay pending stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_CONFLICT)) {
+        fprintf(stderr,"Replay pending choice setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_REPLAY_CONFLICT ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !games_replay_conflict.armed) {
+        fprintf(stderr,"Replay pending one-shot regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalBinding invalid_pending_binding=smoke_result.binding;
+      ++invalid_pending_binding.revision;
+      if (games_browser_pending_accepted(&settings_persistence,&game,&ui,
+                                         &g,invalid_pending_binding) ||
+          games_replay_conflict.armed) {
+        fprintf(stderr,"Replay pending stale continuation regression\n");
+        app_shutdown(&g); return 1;
+      }
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;
@@ -3533,6 +3600,12 @@ int main(int argc, char **argv) {
           modal_result.button == 1 &&
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_replay_confirmed(&persistence, &game, &ui,
+                                             &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_REPLAY_CONFLICT &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_pending_accepted(&persistence, &game, &ui,
                                              &g, modal_result.binding);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
           modal_result.action == APP_MODAL_DELETE &&

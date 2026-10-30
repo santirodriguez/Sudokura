@@ -23,6 +23,17 @@ typedef struct {
 static GamesBrowser games_browser;
 static const Gfx *games_browser_window;
 
+/* Consent to abandon an interrupted Replay's marker is transient. A stale
+   choice must never authorize a different saved game or pending attempt. */
+typedef struct {
+  bool armed;
+  AppModalBinding binding;
+  GameReplayIntent intent;
+  TextKey prompt;
+} GamesReplayConflict;
+
+static GamesReplayConflict games_replay_conflict;
+
 /* A library modal binds the selected record, not its position in a list. */
 static bool games_browser_modal_binding(Persistence *p, UI *ui,
                                         AppModalBinding *out) {
@@ -276,6 +287,7 @@ static void games_browser_ensure_visible(const Gfx *gfx) {
 }
 
 static void games_browser_close(Persistence *p, Game *game, UI *ui) {
+  games_replay_conflict = (GamesReplayConflict){0};
   game_library_scan_close(&games_browser.scanner);
   bool resume = games_browser.modal_owned &&
                 ui->prev_screen == SCR_PLAY;
@@ -291,6 +303,7 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
 
 /* Enumerate at most sixteen directory names per frame. */
 static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
+  games_replay_conflict = (GamesReplayConflict){0};
   game_library_scan_close(&games_browser.scanner);
   games_browser.scanning = false;
   games_browser.incomplete = games_browser.scan_status != STORE_OK;
@@ -337,6 +350,7 @@ static bool games_browser_open(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   }
   free(games_browser.rows);
   memset(&games_browser, 0, sizeof(games_browser));
+  games_replay_conflict = (GamesReplayConflict){0};
   games_browser.modal_owned = modal_owned;
   games_browser_window = gfx;
   clear_hint_preview(ui);
@@ -889,6 +903,33 @@ static void games_browser_operation_error(Gfx *gfx, Game *game,
 /* The intent is a tiny durable operation marker, not a collection index.
    A failed profile write can be retried after Games closes or Sudokura
    restarts without allocating a second practice attempt. */
+static void games_browser_replay_error(Gfx *gfx, UI *ui) {
+  if (!ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED))
+    show_toast(ui,tr(ui->language,T_GAMES_ACTION_FAILED));
+}
+
+static bool games_browser_pending_dialog(
+    Persistence *p, UI *ui, Gfx *gfx, AppModalBinding binding,
+    GameReplayIntent intent, TextKey prompt) {
+  AppModalBinding current;
+  if (!p || !ui || !gfx || intent.state != GAME_REPLAY_PREPARED ||
+      !game_attempt_id_valid(intent.source_id) ||
+      !game_attempt_id_valid(intent.attempt_id) ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(current,binding)) return false;
+  if (prompt != T_GAMES_REPLAY_PENDING_OTHER &&
+      prompt != T_GAMES_REPLAY_PENDING_CONFLICT) return false;
+  AppModalRequest request = {
+      .kind=APP_MODAL_CONFIRM, .action=APP_MODAL_REPLAY_CONFLICT,
+      .binding=binding, .title=T_GAMES_REPLAY, .body=prompt,
+      .buttons={T_CANCEL,T_DISCARD}, .button_count=2,
+      .destructive_buttons=2u};
+  if (!ui_modal_open_request(gfx,ui,&request)) return false;
+  games_replay_conflict = (GamesReplayConflict){
+      .armed=true, .binding=binding, .intent=intent, .prompt=prompt};
+  return true;
+}
+
 static bool games_browser_replay_confirmed(Persistence *p, Game *game,
                                            UI *ui, Gfx *gfx,
                                            AppModalBinding expected) {
@@ -910,7 +951,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
       source.kind != GAME_RECORD_EXACT ||
       source.result.status == SESSION_ACTIVE ||
       source.revision != row.entry.revision) {
-    games_browser_operation_error(gfx, game, ui);
+    games_browser_replay_error(gfx, ui);
     return false;
   }
   if (!games_browser_gate_replacement(p, game, ui, gfx, false))
@@ -920,7 +961,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
   StoreStatus status = game_library_replay_intent_load(
       p->profile_directory, &intent);
   if (status != STORE_OK && status != STORE_NOT_FOUND) {
-    games_browser_operation_error(gfx, game, ui);
+    games_browser_replay_error(gfx, ui);
     return false;
   }
   bool pending = status == STORE_OK &&
@@ -939,7 +980,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
                                       intent.attempt_id)
         : STORE_NOT_FOUND;
     if (receipt != STORE_NOT_FOUND && receipt != STORE_OK) {
-      games_browser_operation_error(gfx, game, ui);
+      games_browser_replay_error(gfx, ui);
       return false;
     }
     if (linked) {
@@ -948,7 +989,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
           game_library_replay_linked_selection(
               &intent, source.id, &p->profile.normal, &interrupted,
               &resume_selected) != STORE_OK) {
-        games_browser_operation_error(gfx, game, ui);
+        games_browser_replay_error(gfx, ui);
         return false;
       }
       /* A previously committed hot pointer settles the old intent, but
@@ -956,7 +997,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
       intent.state = GAME_REPLAY_COMMITTED;
       if (game_library_replay_intent_write(p->profile_directory, &intent) !=
           STORE_OK) {
-        games_browser_operation_error(gfx, game, ui);
+        games_browser_replay_error(gfx, ui);
         return false;
       }
       if (resume_selected) {
@@ -972,38 +1013,20 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
          practice attempt and its profile record remain discoverable. */
       pending = false;
     } else if (!game_attempt_id_equal(intent.source_id, source.id)) {
-      if (!confirm_destructive_box(gfx, game, ui,
-             tr(ui->language, T_GAMES_REPLAY),
-             tr(ui->language, T_GAMES_REPLAY_PENDING_OTHER),
-             tr(ui->language, T_DISCARD)))
-        return false;
-      intent.state = GAME_REPLAY_ABANDONED;
-      if (game_library_replay_intent_write(p->profile_directory, &intent) !=
-          STORE_OK) {
-        games_browser_operation_error(gfx, game, ui);
+      if (record_status != STORE_NOT_FOUND && record_status != STORE_OK) {
+        games_browser_replay_error(gfx, ui);
         return false;
       }
-      pending = false;
+      return games_browser_pending_dialog(p,ui,gfx,expected,intent,
+                                          T_GAMES_REPLAY_PENDING_OTHER);
     } else if ((record_status == STORE_OK &&
                  !game_library_replay_pending_matches(&source, &interrupted)) ||
                receipt == STORE_OK) {
-      /* It might be a genuine older practice attempt. Never overwrite it
-         or silently call it an unfinished duplicate. */
-      if (!confirm_destructive_box(gfx, game, ui,
-             tr(ui->language, T_GAMES_REPLAY),
-             tr(ui->language, T_GAMES_REPLAY_PENDING_CONFLICT),
-             tr(ui->language, T_DISCARD)))
-        return false;
-      intent.state = GAME_REPLAY_ABANDONED;
-      if (game_library_replay_intent_write(p->profile_directory, &intent) !=
-          STORE_OK) {
-        games_browser_operation_error(gfx, game, ui);
-        return false;
-      }
-      pending = false;
+      return games_browser_pending_dialog(p,ui,gfx,expected,intent,
+                                          T_GAMES_REPLAY_PENDING_CONFLICT);
     } else if (record_status != STORE_NOT_FOUND &&
                record_status != STORE_OK) {
-      games_browser_operation_error(gfx, game, ui);
+      games_browser_replay_error(gfx, ui);
       return false;
     }
   }
@@ -1013,13 +1036,13 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
   if (!pending) {
     GameAttemptId fresh;
     if (!persistence_new_attempt_id(p, &fresh)) {
-      games_browser_operation_error(gfx, game, ui);
+      games_browser_replay_error(gfx, ui);
       return false;
     }
     intent = (GameReplayIntent){source.id, fresh, GAME_REPLAY_PREPARED};
     if (game_library_replay_intent_write(p->profile_directory, &intent) !=
         STORE_OK) {
-      games_browser_operation_error(gfx, game, ui);
+      games_browser_replay_error(gfx, ui);
       return false;
     }
   }
@@ -1033,15 +1056,15 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
             STORE_OK ||
         game_library_load(p->profile_directory, intent.attempt_id, &replay) !=
             STORE_OK) {
-      games_browser_operation_error(gfx, game, ui);
+      games_browser_replay_error(gfx, ui);
       return false;
     }
   } else if (status != STORE_OK) {
-    games_browser_operation_error(gfx, game, ui);
+    games_browser_replay_error(gfx, ui);
     return false;
   }
   if (!game_library_replay_pending_matches(&source, &replay)) {
-    games_browser_operation_error(gfx, game, ui);
+    games_browser_replay_error(gfx, ui);
     return false;
   }
 
@@ -1055,7 +1078,7 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
   normal->value = replay.exact;
   candidate.preferences = p->preferences;
   if (!profile_validate(&candidate)) {
-    games_browser_operation_error(gfx, game, ui);
+    games_browser_replay_error(gfx, ui);
     return false;
   }
   if (!games_browser_commit_profile(
@@ -1078,15 +1101,82 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
   intent.state = GAME_REPLAY_COMMITTED;
   if (game_library_replay_intent_write(p->profile_directory, &intent) !=
       STORE_OK) {
-    (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-          tr(ui->language, T_STORAGE_ERROR),
-          tr(ui->language, T_GAMES_REPLAY_FINALIZE_FAILED));
+    if (!ui_modal_message(gfx,ui,T_STORAGE_ERROR,
+                          T_GAMES_REPLAY_FINALIZE_FAILED))
+      show_toast(ui,tr(ui->language,T_GAMES_REPLAY_FINALIZE_FAILED));
   }
   return true;
 }
 
-/* A Replay always starts with an asynchronous, record-bound consent.
-   Complex save/replay conflict gates still use their existing checked path. */
+static bool games_browser_pending_accepted(
+    Persistence *p, Game *game, UI *ui, Gfx *gfx,
+    AppModalBinding expected) {
+  GamesReplayConflict consent=games_replay_conflict;
+  games_replay_conflict=(GamesReplayConflict){0};
+  if (!consent.armed ||
+      !app_modal_binding_equal(consent.binding,expected))
+    return false;
+  AppModalBinding current;
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(current,expected)) return false;
+  const GamesRow row=games_browser.rows[games_browser.selected];
+  if (row.hot_only || row.entry.status!=STORE_OK ||
+      row.entry.kind!=GAME_RECORD_EXACT ||
+      row.entry.result.status==SESSION_ACTIVE) return false;
+  GameLibraryRecord source;
+  StoreStatus source_status=game_library_load(
+      p->profile_directory,row.entry.id,&source);
+  if (source_status!=STORE_OK) {
+    games_browser_replay_error(gfx,ui);
+    return false;
+  }
+  if (source.kind!=GAME_RECORD_EXACT ||
+      source.result.status==SESSION_ACTIVE ||
+      source.revision!=row.entry.revision)
+    return false;
+  GameReplayIntent live;
+  StoreStatus intent_status=game_library_replay_intent_load(
+      p->profile_directory,&live);
+  if (intent_status!=STORE_OK) {
+    games_browser_replay_error(gfx,ui);
+    return false;
+  }
+  if (live.state!=GAME_REPLAY_PREPARED ||
+      !game_attempt_id_equal(live.source_id,consent.intent.source_id) ||
+      !game_attempt_id_equal(live.attempt_id,consent.intent.attempt_id))
+    return false;
+  if (p->profile.normal.present && p->profile.normal.retained &&
+      game_attempt_id_equal(p->profile.normal.attempt_id,live.attempt_id))
+    return false;
+  GameLibraryRecord interrupted;
+  StoreStatus record_status=game_library_load(
+      p->profile_directory,live.attempt_id,&interrupted);
+  if (record_status!=STORE_OK && record_status!=STORE_NOT_FOUND)
+    return false;
+  StoreStatus receipt=record_status==STORE_NOT_FOUND
+      ? game_library_receipt_status(p->profile_directory,live.attempt_id)
+      : STORE_NOT_FOUND;
+  if (receipt!=STORE_NOT_FOUND && receipt!=STORE_OK)
+    return false;
+  bool other = !game_attempt_id_equal(live.source_id,source.id);
+  bool conflict = !other && ((record_status==STORE_OK &&
+      !game_library_replay_pending_matches(&source,&interrupted)) ||
+      receipt==STORE_OK);
+  bool accepted = other
+      ? consent.prompt==T_GAMES_REPLAY_PENDING_OTHER
+      : (conflict && consent.prompt==T_GAMES_REPLAY_PENDING_CONFLICT);
+  if (!accepted) return false;
+  live.state=GAME_REPLAY_ABANDONED;
+  if (game_library_replay_intent_write(p->profile_directory,&live)!=STORE_OK) {
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
+    return false;
+  }
+  return games_browser_replay_confirmed(p,game,ui,gfx,expected);
+}
+
+/* A Replay starts with a record-bound confirmation. Checkpoint, retention
+   and activation retry dialogs remain in their existing checked paths. */
 static bool games_browser_replay_selected(Persistence *p, Game *game,
                                           UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx) return false;

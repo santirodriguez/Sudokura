@@ -271,6 +271,43 @@ static void test_replay_confirmation_identity(void) {
   assert(state.pause_reasons==APP_PAUSE_MODAL);
 }
 
+static void test_pending_replay_consent(void) {
+  AppState state=playing();
+  state.screen=APP_SCREEN_GAMES;
+  state.pause_reasons=APP_PAUSE_MODAL;
+  AppModalRequest request=deletion();
+  request.action=APP_MODAL_REPLAY_CONFLICT;
+  request.binding.screen=APP_SCREEN_GAMES;
+  request.title=T_GAMES_REPLAY;
+  request.body=T_GAMES_REPLAY_PENDING_CONFLICT;
+  request.buttons[1]=T_DISCARD;
+  AppModal modal={0};
+  AppModalResult result;
+  assert(app_modal_request_valid(&request));
+  AppModalRequest unsafe=request;
+  unsafe.destructive_buttons=0;
+  assert(!app_modal_request_valid(&unsafe));
+  assert(app_modal_begin(&modal,&state,&request,300));
+  assert(modal.focus==0 && !modal.owns_pause);
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,400,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(state.pause_reasons==APP_PAUSE_MODAL);
+  assert(app_modal_begin(&modal,&state,&request,500));
+  AppModalBinding stale=request.binding;
+  ++stale.revision;
+  assert(app_modal_choose(&modal,modal.serial,&stale,1,600,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(app_modal_begin(&modal,&state,&request,700));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,800,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN);
+  assert(result.action==APP_MODAL_REPLAY_CONFLICT && result.button==1);
+  assert(app_modal_binding_equal(result.binding,request.binding));
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,900,&result));
+  assert(state.pause_reasons==APP_PAUSE_MODAL);
+}
+
 int main(void) {
   test_default_cancel_and_once();
   test_pause_ownership();
@@ -280,6 +317,7 @@ int main(void) {
   test_home_recovery();
   test_library_recovery_identity();
   test_replay_confirmation_identity();
+  test_pending_replay_consent();
   puts("app modal contract: PASS (including 64 pause-ownership combinations)");
   return 0;
 }

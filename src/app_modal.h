@@ -22,6 +22,7 @@ typedef enum {
   APP_MODAL_EXIT,
   APP_MODAL_LOAD,
   APP_MODAL_REPLAY,
+  APP_MODAL_REPLAY_CONFLICT,
   APP_MODAL_DELETE,
   APP_MODAL_RECOVER_RECORD,
   APP_MODAL_RECOVER_PROFILE,
@@ -102,11 +103,13 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
     return false;
   if (request->action == APP_MODAL_LOAD ||
       request->action == APP_MODAL_REPLAY ||
+      request->action == APP_MODAL_REPLAY_CONFLICT ||
       request->action == APP_MODAL_DELETE ||
       request->action == APP_MODAL_RECOVER_RECORD) {
     if (!(request->binding.key_hi | request->binding.key_lo)) return false;
   }
-  if (request->action == APP_MODAL_DELETE &&
+  if ((request->action == APP_MODAL_DELETE ||
+       request->action == APP_MODAL_REPLAY_CONFLICT) &&
       (request->button_count != 2 || request->destructive_buttons != 2u))
     return false;
   return true;
