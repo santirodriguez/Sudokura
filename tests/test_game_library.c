@@ -2143,6 +2143,11 @@ static void test_replay_intent_survives_failed_cuts(void) {
    stable reserved attempt through pre-rename and post-rename save failures. */
 static void test_replay_activation_interrupted_and_retried(void) {
   prepare();
+  char games_directory[160];
+  int directory_size=snprintf(games_directory,sizeof(games_directory),
+                              "%s/games",root);
+  assert(directory_size>0 && (size_t)directory_size<sizeof(games_directory));
+  assert(store_ensure_directory(games_directory)==STORE_OK);
   char primary[160], backup[160];
   int n=snprintf(primary,sizeof(primary),"%s/games/replay-activation.dat",root);
   assert(n>0 && (size_t)n<sizeof(primary));
