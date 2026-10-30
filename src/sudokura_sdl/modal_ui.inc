@@ -1,6 +1,8 @@
 /* One SDL-owner modal surface; no separate event pump, storage or thread. */
 static void ui_pointer_cancel(void);
 static void ui_touch_cancel(void);
+static bool games_browser_modal_binding(Persistence *p, UI *ui,
+                                        AppModalBinding *out);
 static AppModal ui_modal;
 static AppModalResult ui_modal_pending;
 static uint64_t ui_modal_generation = 1;
@@ -166,10 +168,20 @@ static int ui_modal_button_at(const Gfx *gfx, int x, int y) {
   return -1;
 }
 
+static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
+                                                   AppModalAction action) {
+  if (action == APP_MODAL_DELETE || action == APP_MODAL_RECOVER_RECORD) {
+    AppModalBinding selected = {0};
+    (void)games_browser_modal_binding(p, ui, &selected);
+    return selected;
+  }
+  return ui_modal_current_binding(p, ui);
+}
+
 static void ui_modal_select(unsigned button) {
   if (!ui_modal.active) return;
-  AppModalBinding current =
-      ui_modal_current_binding(audio_persistence,audio_ui);
+  AppModalBinding current = ui_modal_dispatch_binding(
+      audio_persistence, audio_ui, ui_modal.request.action);
   AppModalResult result={0};
   uint64_t serial=ui_modal.serial;
   if (app_modal_choose(&ui_modal,serial,&current,button,now_ms(),&result) &&

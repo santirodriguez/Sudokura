@@ -23,6 +23,23 @@ typedef struct {
 static GamesBrowser games_browser;
 static const Gfx *games_browser_window;
 
+/* A library modal binds the selected record, not its position in a list. */
+static bool games_browser_modal_binding(Persistence *p, UI *ui,
+                                        AppModalBinding *out) {
+  if (!p || !p->enabled || !ui || !out ||
+      ui->screen != APP_SCREEN_GAMES || games_browser.scanning ||
+      games_browser.selected >= games_browser.count) return false;
+  const GameLibraryEntry *entry =
+      &games_browser.rows[games_browser.selected].entry;
+  if (!game_attempt_id_valid(entry->id)) return false;
+  *out = ui_modal_current_binding(p, ui);
+  out->key_hi = entry->id.high;
+  out->key_lo = entry->id.low;
+  out->revision = entry->revision;
+  return true;
+}
+
+
 typedef struct {
   SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
   SDL_Rect page_previous, page_next, page_label;
@@ -672,16 +689,29 @@ static void games_browser_operation_error(Gfx *gfx, Game *game, UI *ui);
 
 static bool games_browser_recover_selected(Persistence *p, Game *game,
                                            UI *ui, Gfx *gfx) {
-  if (!p || !p->enabled || !game || !ui || !gfx ||
-      games_browser.scanning || games_browser.selected >= games_browser.count)
-    return false;
-  GamesRow *row = &games_browser.rows[games_browser.selected];
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  AppModalBinding binding;
+  if (!games_browser_modal_binding(p, ui, &binding)) return false;
+  const GamesRow *row=&games_browser.rows[games_browser.selected];
   if (row->hot_only || !game_library_entry_recoverable(&row->entry))
     return false;
-  if (!confirm_destructive_box(gfx, game, ui,
-                               tr(ui->language, T_GAMES),
-                               tr(ui->language, T_GAMES_RECOVER_PROMPT),
-                               tr(ui->language, T_RECOVER)))
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM, .action=APP_MODAL_RECOVER_RECORD,
+      .binding=binding, .title=T_GAMES, .body=T_GAMES_RECOVER_PROMPT,
+      .buttons={T_CANCEL, T_RECOVER}, .button_count=2,
+      .destructive_buttons=2u};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
+static bool games_browser_recover_confirmed(Persistence *p, Game *game,
+                                            UI *ui, Gfx *gfx,
+                                            AppModalBinding expected) {
+  AppModalBinding actual;
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&actual) ||
+      !app_modal_binding_equal(expected,actual)) return false;
+  GamesRow *row=&games_browser.rows[games_browser.selected];
+  if (row->hot_only || !game_library_entry_recoverable(&row->entry))
     return false;
   GameLibraryRecord current;
   StoreStatus primary = game_library_load(
@@ -689,13 +719,13 @@ static bool games_browser_recover_selected(Persistence *p, Game *game,
   /* Stale catalogue metadata cannot justify overriding a healthy,
      incompatible or unreadable primary record. */
   if (primary != STORE_CORRUPT && primary != STORE_NOT_FOUND) {
-    games_browser_operation_error(gfx, game, ui);
+    ui_modal_message(gfx, ui, T_STORAGE_ERROR, T_GAMES_ACTION_FAILED);
     return false;
   }
   GameLibraryRecord recovered;
   if (game_library_recover_previous(p->profile_directory, row->entry.id,
                                     &recovered) != STORE_OK) {
-    games_browser_operation_error(gfx, game, ui);
+    ui_modal_message(gfx, ui, T_STORAGE_ERROR, T_GAMES_ACTION_FAILED);
     return false;
   }
   row->entry.kind = recovered.kind;
@@ -710,9 +740,7 @@ static bool games_browser_recover_selected(Persistence *p, Game *game,
   games_browser.detail_open = false;
   games_browser.focus = 0;
   games_browser_preview_selected(p);
-  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_INFORMATION,
-                                tr(ui->language, T_GAMES),
-                                tr(ui->language, T_GAMES_RECOVERED));
+  (void)ui_modal_message(gfx, ui, T_GAMES, T_GAMES_RECOVERED);
   return true;
 }
 

@@ -1983,6 +1983,72 @@ int main(int argc, char **argv) {
         fprintf(stderr, "SDL modal Home Retry regression\n");
         app_shutdown(&g); return 1;
       }
+      /* Simulated library rows exercise native-owner SDL dispatch. No
+         record is recovered or modified in this smoke fixture. */
+      GamesBrowser saved_library_browser = games_browser;
+      GamesRow modal_rows[2] = {0};
+      modal_rows[0].entry.id = (GameAttemptId){1, 101};
+      modal_rows[0].entry.revision = 7;
+      modal_rows[0].entry.status = STORE_CORRUPT;
+      modal_rows[0].entry.previous_status = STORE_OK;
+      modal_rows[1].entry.id = (GameAttemptId){1, 202};
+      modal_rows[1].entry.revision = 8;
+      modal_rows[1].entry.status = STORE_CORRUPT;
+      modal_rows[1].entry.previous_status = STORE_OK;
+      games_browser = (GamesBrowser){.rows=modal_rows, .count=2,
+                                    .capacity=2, .selected=0};
+      ui.screen = APP_SCREEN_GAMES;
+      ui.pause_reasons = PAUSE_MODAL;
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr, "library stale-selection confirmation regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery modal reopen regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr, "library recovery safe-Back regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.action!=APP_MODAL_RECOVER_RECORD ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr, "library recovery one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser=saved_library_browser;
+      ui.pause_reasons=0;
+      ui.screen=SCR_PLAY;
       audio_persistence = NULL;
     }
     if (screenshot_dir) {
@@ -3287,7 +3353,8 @@ int main(int argc, char **argv) {
     /* Consume one modal choice only after queued lifecycle/window events. */
     AppModalResult modal_result;
     if (ui_modal_take_result(&modal_result)) {
-      AppModalBinding current = ui_modal_current_binding(&persistence, &ui);
+      AppModalBinding current = ui_modal_dispatch_binding(
+          &persistence, &ui, modal_result.action);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
           app_modal_binding_equal(modal_result.binding, current) &&
           modal_result.action == APP_MODAL_EXIT) {
@@ -3309,6 +3376,12 @@ int main(int argc, char **argv) {
         else
           (void)ui_modal_open_home(&persistence, &ui, &g);
       }
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_RECOVER_RECORD &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_recover_confirmed(&persistence, &game, &ui,
+                                              &g, modal_result.binding);
       if (!running) break;
       g.dirty = true;
     }

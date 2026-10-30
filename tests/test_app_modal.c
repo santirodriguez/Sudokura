@@ -204,6 +204,35 @@ static void test_home_recovery(void) {
   assert(state.pause_reasons == 0);
 }
 
+static void test_library_recovery_identity(void) {
+  AppState state = playing();
+  state.screen = APP_SCREEN_GAMES;
+  state.pause_reasons = APP_PAUSE_MODAL;
+  AppModalRequest request = deletion();
+  request.kind = APP_MODAL_CONFIRM;
+  request.action = APP_MODAL_RECOVER_RECORD;
+  request.binding.screen = APP_SCREEN_GAMES;
+  request.buttons[1] = T_RECOVER;
+  AppModal modal = {0};
+  AppModalResult result;
+  assert(app_modal_begin(&modal, &state, &request, 200));
+  assert(!modal.owns_pause && modal.focus == 0);
+  AppModalBinding changed = request.binding;
+  ++changed.revision;
+  assert(app_modal_choose(&modal, modal.serial, &changed, 1, 300, &result));
+  assert(result.resolution == APP_MODAL_STALE);
+  assert(state.pause_reasons == APP_PAUSE_MODAL);
+  assert(app_modal_begin(&modal, &state, &request, 400));
+  assert(app_modal_choose(&modal, modal.serial, &request.binding, 0, 500, &result));
+  assert(result.resolution == APP_MODAL_CANCELLED);
+  assert(app_modal_begin(&modal, &state, &request, 600));
+  assert(app_modal_focus(&modal, modal.serial, 1));
+  assert(app_modal_choose(&modal, modal.serial, &request.binding, 1, 700, &result));
+  assert(result.resolution == APP_MODAL_CHOSEN &&
+         result.action == APP_MODAL_RECOVER_RECORD && result.button == 1);
+  assert(state.pause_reasons == APP_PAUSE_MODAL);
+}
+
 int main(void) {
   test_default_cancel_and_once();
   test_pause_ownership();
@@ -211,6 +240,7 @@ int main(void) {
   test_invalid_and_nested();
   test_message_and_recovery();
   test_home_recovery();
+  test_library_recovery_identity();
   puts("app modal contract: PASS (including 64 pause-ownership combinations)");
   return 0;
 }
