@@ -889,11 +889,15 @@ static void games_browser_operation_error(Gfx *gfx, Game *game,
 /* The intent is a tiny durable operation marker, not a collection index.
    A failed profile write can be retried after Games closes or Sudokura
    restarts without allocating a second practice attempt. */
-static bool games_browser_replay_selected(Persistence *p, Game *game,
-                                          UI *ui, Gfx *gfx) {
+static bool games_browser_replay_confirmed(Persistence *p, Game *game,
+                                           UI *ui, Gfx *gfx,
+                                           AppModalBinding expected) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
       games_browser.scanning || games_browser.selected >= games_browser.count)
     return false;
+  AppModalBinding current;
+  if (!games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(expected,current)) return false;
   const GamesRow row = games_browser.rows[games_browser.selected];
   if (row.hot_only || row.entry.status != STORE_OK ||
       row.entry.kind != GAME_RECORD_EXACT ||
@@ -904,7 +908,8 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
   if (game_library_load(p->profile_directory, row.entry.id, &source) !=
           STORE_OK ||
       source.kind != GAME_RECORD_EXACT ||
-      source.result.status == SESSION_ACTIVE) {
+      source.result.status == SESSION_ACTIVE ||
+      source.revision != row.entry.revision) {
     games_browser_operation_error(gfx, game, ui);
     return false;
   }
@@ -1078,6 +1083,25 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
           tr(ui->language, T_GAMES_REPLAY_FINALIZE_FAILED));
   }
   return true;
+}
+
+/* A Replay always starts with an asynchronous, record-bound consent.
+   Complex save/replay conflict gates still use their existing checked path. */
+static bool games_browser_replay_selected(Persistence *p, Game *game,
+                                          UI *ui, Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  AppModalBinding binding;
+  if (!games_browser_modal_binding(p,ui,&binding)) return false;
+  const GamesRow *row=&games_browser.rows[games_browser.selected];
+  if (row->hot_only || row->entry.status != STORE_OK ||
+      row->entry.kind != GAME_RECORD_EXACT ||
+      row->entry.result.status == SESSION_ACTIVE) return false;
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM, .action=APP_MODAL_REPLAY,
+      .binding=binding, .title=T_GAMES_REPLAY,
+      .body=T_GAMES_REPLAY_START_PROMPT,
+      .buttons={T_CANCEL,T_GAMES_REPLAY}, .button_count=2};
+  return ui_modal_open_request(gfx,ui,&request);
 }
 
 /* Cancel is the native dialog's default/escape action; deleting is explicit. */

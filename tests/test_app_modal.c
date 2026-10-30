@@ -233,6 +233,44 @@ static void test_library_recovery_identity(void) {
   assert(state.pause_reasons == APP_PAUSE_MODAL);
 }
 
+static void test_replay_confirmation_identity(void) {
+  AppState state=playing();
+  state.screen=APP_SCREEN_GAMES;
+  state.pause_reasons=APP_PAUSE_MODAL;
+  AppModalRequest request=deletion();
+  request.action=APP_MODAL_REPLAY;
+  request.binding.screen=APP_SCREEN_GAMES;
+  request.title=T_GAMES_REPLAY;
+  request.body=T_GAMES_REPLAY_START_PROMPT;
+  request.buttons[1]=T_GAMES_REPLAY;
+  request.destructive_buttons=0;
+  AppModal modal={0};
+  AppModalResult result;
+  assert(app_modal_request_valid(&request));
+  assert(app_modal_begin(&modal,&state,&request,200));
+  assert(modal.focus==0 && !modal.owns_pause);
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,
+                          0,300,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(result.action==APP_MODAL_ACTION_NONE);
+  assert(state.pause_reasons==APP_PAUSE_MODAL);
+  assert(app_modal_begin(&modal,&state,&request,400));
+  AppModalBinding stale=request.binding;
+  ++stale.key_hi;
+  assert(app_modal_choose(&modal,modal.serial,&stale,1,500,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(state.pause_reasons==APP_PAUSE_MODAL);
+  assert(app_modal_begin(&modal,&state,&request,600));
+  assert(app_modal_focus(&modal,modal.serial,1));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,700,&result));
+  assert(result.resolution==APP_MODAL_CHOSEN);
+  assert(result.action==APP_MODAL_REPLAY && result.button==1);
+  assert(app_modal_binding_equal(result.binding,request.binding));
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,800,&result));
+  assert(state.pause_reasons==APP_PAUSE_MODAL);
+}
+
 int main(void) {
   test_default_cancel_and_once();
   test_pause_ownership();
@@ -241,6 +279,7 @@ int main(void) {
   test_message_and_recovery();
   test_home_recovery();
   test_library_recovery_identity();
+  test_replay_confirmation_identity();
   puts("app modal contract: PASS (including 64 pause-ownership combinations)");
   return 0;
 }

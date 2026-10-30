@@ -2046,6 +2046,69 @@ int main(int argc, char **argv) {
         fprintf(stderr, "library recovery one-shot event regression\n");
         app_shutdown(&g); return 1;
       }
+      /* Replay acceptance is bound to a finished record, not its row. */
+      modal_rows[0].entry.status=STORE_OK;
+      modal_rows[0].entry.kind=GAME_RECORD_EXACT;
+      modal_rows[0].entry.result.status=SESSION_WON;
+      modal_rows[1].entry.status=STORE_OK;
+      modal_rows[1].entry.kind=GAME_RECORD_EXACT;
+      modal_rows[1].entry.result.status=SESSION_WON;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay safe-default regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay stale-selection setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay stale-revision setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ++modal_rows[0].entry.revision;
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay stale-revision regression\n");
+        app_shutdown(&g); return 1;
+      }
+      --modal_rows[0].entry.revision;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_REPLAY ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr,"library Replay one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;
@@ -3382,6 +3445,12 @@ int main(int argc, char **argv) {
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_recover_confirmed(&persistence, &game, &ui,
                                               &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_REPLAY &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_replay_confirmed(&persistence, &game, &ui,
+                                             &g, modal_result.binding);
       if (!running) break;
       g.dirty = true;
     }
