@@ -7,6 +7,7 @@ static AppModal ui_modal;
 static AppModalResult ui_modal_pending;
 static uint64_t ui_modal_generation = 1;
 static int ui_modal_pressed = -1;
+static bool ui_modal_mouse_active;
 static bool ui_modal_touch_active;
 static SDL_TouchID ui_modal_touch_id;
 static SDL_FingerID ui_modal_finger_id;
@@ -58,6 +59,7 @@ static bool ui_modal_open_request(Gfx *gfx, UI *ui,
   ui_pointer_cancel();
   ui_touch_cancel();
   ui_modal_pressed = -1;
+  ui_modal_mouse_active = false;
   ui_modal_touch_active = false;
   ui_modal_scroll_px = ui_modal_scroll_max_px = 0;
   ui_audio_control_cancel_interaction();
@@ -81,6 +83,7 @@ static void ui_modal_cancel_current(void) {
   if (!ui_modal.active) return;
   (void)app_modal_cancel(&ui_modal, ui_modal.serial, now_ms());
   ui_modal_pressed = -1;
+  ui_modal_mouse_active = false;
   ui_modal_touch_active = false;
   if (audio_gfx) audio_gfx->dirty = true;
 }
@@ -189,6 +192,7 @@ static void ui_modal_select(unsigned button) {
       result.resolution==APP_MODAL_CHOSEN)
     ui_modal_pending=result;
   ui_modal_pressed=-1;
+  ui_modal_mouse_active=false;
   ui_modal_touch_active=false;
   if (audio_gfx) audio_gfx->dirty=true;
 }
@@ -237,7 +241,7 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
              finger->y>=0.0f && finger->y<=1.0f) ?
         ui_modal_button_at(audio_gfx,x,y):-1;
     if (event->type==SDL_FINGERDOWN) {
-      if (ui_modal_touch_active) {
+      if (ui_modal_touch_active || ui_modal_mouse_active) {
         ui_modal_pressed=-1; /* Multiple fingers cannot confirm. */
       } else {
         ui_modal_touch_active=true;
@@ -253,7 +257,8 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
       if (event->type==SDL_FINGERMOTION && hit!=ui_modal_pressed)
         ui_modal_pressed=-1;
       if (event->type==SDL_FINGERUP) {
-        if (ui_modal_pressed>=0 && hit==ui_modal_pressed)
+        if (!ui_modal_mouse_active && ui_modal_pressed>=0 &&
+            hit==ui_modal_pressed)
           ui_modal_select((unsigned)hit);
         ui_modal_touch_active=false;
         ui_modal_pressed=-1;
@@ -264,7 +269,9 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
   }
   if (event->type==SDL_MOUSEBUTTONDOWN) {
     ui_modal_pressed=-1;
-    if (event->button.button==SDL_BUTTON_LEFT) {
+    ui_modal_mouse_active=event->button.button==SDL_BUTTON_LEFT &&
+                          !ui_modal_touch_active;
+    if (ui_modal_mouse_active) {
       int hit=ui_modal_button_at(audio_gfx,event->button.x,event->button.y);
       if (hit>=0) {
         ui_modal_pressed=hit;
@@ -277,8 +284,10 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
   if (event->type==SDL_MOUSEBUTTONUP) {
     int hit=event->button.button==SDL_BUTTON_LEFT ?
         ui_modal_button_at(audio_gfx,event->button.x,event->button.y):-1;
-    if (ui_modal_pressed>=0 && hit==ui_modal_pressed)
+    if (ui_modal_mouse_active && ui_modal_pressed>=0 &&
+        hit==ui_modal_pressed)
       ui_modal_select((unsigned)hit);
+    ui_modal_mouse_active=false;
     ui_modal_pressed=-1;
     return true;
   }

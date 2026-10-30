@@ -1104,28 +1104,22 @@ static bool games_browser_replay_selected(Persistence *p, Game *game,
   return ui_modal_open_request(gfx,ui,&request);
 }
 
-/* Cancel is the native dialog's default/escape action; deleting is explicit. */
-static bool games_browser_confirm_delete(Gfx *gfx,Game *game,UI *ui){
-  return confirm_destructive_box(gfx,game,ui,
-           tr(ui->language,T_GAMES_DELETE),
-           tr(ui->language,T_GAMES_DELETE_PROMPT),
-           tr(ui->language,T_GAMES_DELETE));
-}
-
-static bool games_browser_delete_selected(Persistence *p,Game *game,
-                                          UI *ui,Gfx *gfx){
-  if(!p||!p->enabled||games_browser.scanning||
-     games_browser.selected>=games_browser.count)return false;
+/* Delete is resolved by the SDL owner only after a matching choice. */
+static bool games_browser_delete_confirmed(Persistence *p,Game *game,
+                                           UI *ui,Gfx *gfx,
+                                           AppModalBinding expected) {
+  AppModalBinding current;
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(expected,current)) return false;
   GameAttemptId id=games_browser.rows[games_browser.selected].entry.id;
-  if(!game_attempt_id_valid(id)||!games_browser_confirm_delete(gfx,game,ui))
-    return false;
   if(!persistence_flush(p)){
-    games_browser_operation_error(gfx,game,ui);
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
     return false;
   }
   ProfileData candidate;
   if(!game_library_forget_attempt(&candidate,&p->profile,id)){
-    games_browser_operation_error(gfx,game,ui);
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
     return false;
   }
   bool deleting_live=ui->session_open &&
@@ -1139,7 +1133,7 @@ static bool games_browser_delete_selected(Persistence *p,Game *game,
       p->profile_directory,id,&receipt_committed);
   StoreStatus receipt=game_library_receipt_status(p->profile_directory,id);
   if(!receipt_committed || receipt!=STORE_OK){
-    games_browser_operation_error(gfx,game,ui);
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
     return false;
   }
   /* Receipt is durable even if unlink/profile update fails. Never stage
@@ -1182,10 +1176,23 @@ static bool games_browser_delete_selected(Persistence *p,Game *game,
     games_browser_ensure_visible(gfx);
   }
   if(cleanup!=STORE_OK || !profile_written)
-    (void)show_simple_message_box(gfx,game,ui,SDL_MESSAGEBOX_WARNING,
-       tr(ui->language,T_STORAGE_ERROR),
-       tr(ui->language,T_GAMES_DELETE_PENDING));
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_DELETE_PENDING);
   return true;
+}
+
+static bool games_browser_delete_selected(Persistence *p,Game *game,
+                                          UI *ui,Gfx *gfx) {
+  if (!p || !p->enabled || !game || !ui || !gfx) return false;
+  AppModalBinding binding;
+  if (!games_browser_modal_binding(p,ui,&binding)) return false;
+  AppModalRequest request = {
+      .kind=APP_MODAL_CONFIRM, .action=APP_MODAL_DELETE,
+      .binding=binding, .title=T_GAMES_DELETE,
+      .body=T_GAMES_DELETE_PROMPT,
+      .buttons={T_CANCEL,T_GAMES_DELETE}, .button_count=2,
+      .destructive_buttons=2u
+  };
+  return ui_modal_open_request(gfx,ui,&request);
 }
 
 /* Record previews show only visible saved digits and notes, never the

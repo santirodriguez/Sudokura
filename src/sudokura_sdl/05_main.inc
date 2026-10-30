@@ -2109,6 +2109,89 @@ int main(int argc, char **argv) {
         fprintf(stderr,"library Replay one-shot event regression\n");
         app_shutdown(&g); return 1;
       }
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete stale setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete stale-revision setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      ++modal_rows[0].entry.revision;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete stale-revision regression\n");
+        app_shutdown(&g); return 1;
+      }
+      --modal_rows[0].entry.revision;
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_DELETE ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr,"library Delete one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"mixed-pointer modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      UiModalLayout ml=ui_modal_layout(&g,2);
+      int mx=ml.buttons[1].x+ml.buttons[1].w/2;
+      int my=ml.buttons[1].y+ml.buttons[1].h/2;
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_FINGERDOWN;
+      modal_event.tfinger.type=SDL_FINGERDOWN;
+      modal_event.tfinger.touchId=9;
+      modal_event.tfinger.fingerId=10;
+      modal_event.tfinger.x=(float)mx/g.width;
+      modal_event.tfinger.y=(float)my/g.height;
+      (void)ui_prepare_event(&modal_event);
+      modal_event=(SDL_Event){0};
+      modal_event.type=SDL_MOUSEBUTTONUP;
+      modal_event.button.type=SDL_MOUSEBUTTONUP;
+      modal_event.button.button=SDL_BUTTON_LEFT;
+      modal_event.button.x=mx;
+      modal_event.button.y=my;
+      (void)ui_prepare_event(&modal_event);
+      if (!ui_modal.active || ui_modal_has_pending()) {
+        fprintf(stderr,"mixed-pointer false-confirm regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ui_modal_cancel_current();
       games_browser=saved_library_browser;
       ui.pause_reasons=0;
       ui.screen=SCR_PLAY;
@@ -3450,6 +3533,12 @@ int main(int argc, char **argv) {
           modal_result.button == 1 &&
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_replay_confirmed(&persistence, &game, &ui,
+                                             &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_DELETE &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_delete_confirmed(&persistence, &game, &ui,
                                              &g, modal_result.binding);
       if (!running) break;
       g.dirty = true;
