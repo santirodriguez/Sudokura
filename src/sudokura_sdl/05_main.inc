@@ -361,6 +361,16 @@ typedef struct {
 } HomeDailyIntent;
 static HomeDailyIntent home_daily_intent;
 
+/* A completed no-match scan may defer only its departing-slot retention.
+   Never store a profile candidate or skip the checked retention writer. */
+typedef struct {
+  bool active, slot_present, slot_retained;
+  GameAttemptId slot_id;
+  uint64_t revision;
+  int year, month, day;
+} HomeDailyRollover;
+static HomeDailyRollover home_daily_rollover;
+
 /* Explicit recovery of one validated previous Daily archive copy. Never
    bind a catalogue row position or infer identity from the active board. */
 typedef struct {
@@ -451,6 +461,123 @@ static bool home_daily_visit(const GameLibraryEntry *entry, void *context) {
 static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
   (void)game;
   (void)ui_modal_message(gfx, ui, T_DAILY, key);
+}
+
+/* The chosen calendar date and hot-slot revision must still be current
+   before any retry; the modal binding independently guards its UI generation. */
+static bool home_daily_rollover_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_rollover.active || p->replay_activation_unresolved)
+    return false;
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day) ||
+      year!=home_daily_rollover.year ||
+      month!=home_daily_rollover.month ||
+      day!=home_daily_rollover.day)
+    return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  return slot->present==home_daily_rollover.slot_present &&
+      (!slot->present ||
+       (game_attempt_id_equal(slot->attempt_id,home_daily_rollover.slot_id) &&
+        slot->revision==home_daily_rollover.revision &&
+        slot->retained==home_daily_rollover.slot_retained));
+}
+
+/* The retained writer may advance the same slot revision during this exact
+   owner-thread operation. Adopt only that monotonic transition; never an ID
+   replacement, revision rollback or loss of a previously retained link. */
+static bool home_daily_rollover_refresh_after_write(const Persistence *p) {
+  if (!p || !home_daily_rollover.active) return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  if (slot->present!=home_daily_rollover.slot_present) return false;
+  if (slot->present) {
+    if (!game_attempt_id_equal(slot->attempt_id,home_daily_rollover.slot_id) ||
+        slot->revision<home_daily_rollover.revision ||
+        (home_daily_rollover.slot_retained && !slot->retained))
+      return false;
+    home_daily_rollover.revision=slot->revision;
+    home_daily_rollover.slot_retained=slot->retained;
+  }
+  return true;
+}
+
+static void home_daily_rollover_attempt(Persistence *p, Game *game, UI *ui,
+                                        Gfx *gfx, bool retry) {
+  if (!p || !game || !ui || !gfx || !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    return;
+  }
+  const int year=home_daily_rollover.year;
+  const int month=home_daily_rollover.month;
+  const int day=home_daily_rollover.day;
+  /* Preserve the existing pending-keep retry semantics, including a
+     previous write whose rename succeeded without an acknowledged sync. */
+  if (retry && (p->capture_failed || p->keep_pending_mask))
+    (void)persistence_retry_current(p,game,ui);
+  if (!home_daily_rollover_refresh_after_write(p)) {
+    home_daily_rollover.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  bool retained=games_browser_retain_daily_for_rollover(p);
+  if (!home_daily_rollover_refresh_after_write(p) ||
+      !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  if (retained && !p->capture_failed && p->keep_pending_mask==0 &&
+      !save_policy_dirty(&p->save_policy)) {
+    home_daily_rollover.active=false;
+    victory_animation_reset();
+    (void)start_daily_game_with_ui(p,game,ui,gfx,year,month,day);
+    return;
+  }
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,
+      .action=APP_MODAL_DAILY_ROLLOVER_RETRY,
+      .binding=ui_modal_daily_binding(p,ui),
+      .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  if (!ui_modal_open_request(gfx,ui,&request)) {
+    home_daily_rollover.active=false;
+    show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+  }
+}
+
+static void home_daily_rollover_begin(Persistence *p, Game *game,
+                                      UI *ui, Gfx *gfx,
+                                      int year, int month, int day) {
+  home_daily_rollover=(HomeDailyRollover){0};
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE) return;
+  home_daily_rollover.active=true;
+  home_daily_rollover.year=year;
+  home_daily_rollover.month=month;
+  home_daily_rollover.day=day;
+  const ProfileSlot *slot=&p->profile.daily;
+  home_daily_rollover.slot_present=slot->present;
+  if (slot->present) {
+    home_daily_rollover.slot_id=slot->attempt_id;
+    home_daily_rollover.revision=slot->revision;
+    home_daily_rollover.slot_retained=slot->retained;
+  }
+  home_daily_rollover_attempt(p,game,ui,gfx,false);
+}
+
+/* Retry executes only from an exact, still-valid SDL-owner result. */
+static void home_daily_rollover_dispatch(Persistence *p, Game *game,
+                                         UI *ui, Gfx *gfx,
+                                         const AppModalResult *choice) {
+  if (!choice || choice->action!=APP_MODAL_DAILY_ROLLOVER_RETRY)
+    return;
+  if (choice->resolution!=APP_MODAL_CHOSEN || choice->button!=1 ||
+      !app_modal_binding_equal(choice->binding,
+                              ui_modal_daily_binding(p,ui)) ||
+      !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    return;
+  }
+  home_daily_rollover_attempt(p,game,ui,gfx,true);
 }
 
 /* Read-only canonical preview before offering recovery. The selected
@@ -556,12 +683,9 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
     }
     return;
   }
-  /* All older Daily attempts, including an empty autosave, remain
-     durably recoverable before today's new original is generated. */
-  if (!games_browser_retain_daily_with_retry(p,game,ui,gfx))
-    return;
-  victory_animation_reset();
-  (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
+  /* Preserve the departing original with one checked write per SDL event.
+     A failed retention leaves Home active with safe Back/Retry. */
+  home_daily_rollover_begin(p,game,ui,gfx,y,m,d);
 }
 /* Only an explicitly chosen, still-bound modal may restore the backup.
    An incompatible/healthy newer primary or changed backup aborts safely. */
@@ -639,8 +763,8 @@ static void home_daily_scan_pump(Persistence *p, Game *game,
   if (finished || home_daily_scan.status!=STORE_OK)
     home_daily_finish(p,game,ui,gfx);
 }
-/* Only this pre-scan gate is converted here. Recovery of a previous
-   record and rollover retention keep their existing checked transaction. */
+/* The pre-scan checkpoint is separate from backup recovery and the
+   checked post-scan retention retry. */
 static void home_daily_begin_scan(Persistence *p, Game *game, UI *ui,
                                   Gfx *gfx) {
   if (!home_daily_intent_valid(p,ui)) {
@@ -704,6 +828,7 @@ static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
     return;
   home_daily_recovery.active=false;
+  home_daily_rollover.active=false;
   if (home_daily_scan.active) { home_daily_cancel(); return; }
   int year=0,month=0,day=0;
   if (!local_date(&year,&month,&day)) {
@@ -2505,6 +2630,128 @@ int main(int argc, char **argv) {
         }
         (void)clock_resume(&ui,PAUSE_FOCUS);
         home_daily_recovery=saved_recovery;
+        settings_persistence.profile.daily=saved_daily;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Home Daily rollover retry uses the real SDL event owner. The old
+         slot is synthetic: no archive/profile writes occur in this smoke. */
+      {
+        HomeDailyRollover saved_rollover=home_daily_rollover;
+        ProfileSlot saved_daily=settings_persistence.profile.daily;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily rollover smoke date unavailable\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.enabled=true;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.retained=false;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){71,72};
+        settings_persistence.profile.daily.revision=8;
+        home_daily_rollover=(HomeDailyRollover){0};
+        home_daily_rollover.active=true;
+        home_daily_rollover.slot_present=true;
+        home_daily_rollover.slot_id=(GameAttemptId){71,72};
+        home_daily_rollover.revision=8;
+        home_daily_rollover.year=y;
+        home_daily_rollover.month=m;
+        home_daily_rollover.day=d;
+        AppModalRequest retry_request={
+            .kind=APP_MODAL_RECOVERY,
+            .action=APP_MODAL_DAILY_ROLLOVER_RETRY,
+            .binding=ui_modal_daily_binding(&settings_persistence,&ui),
+            .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+            .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+        SDL_Event key={0};
+        key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_rollover_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&retry_request) ||
+            ui_modal.focus!=0 || ui_prepare_event(&key) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily rollover default Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        AppModalResult retry_choice={0};
+        if (!ui_modal_take_result(&retry_choice) ||
+            retry_choice.action!=APP_MODAL_DAILY_ROLLOVER_RETRY ||
+            retry_choice.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily rollover Retry one-shot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover stale setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover stale revision accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.profile.daily.retained=true;
+        if (!home_daily_rollover_refresh_after_write(&settings_persistence) ||
+            !home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover own retention revision rejected\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        if (home_daily_rollover_refresh_after_write(&settings_persistence)) {
+          fprintf(stderr,"Daily rollover revision rollback accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        ++home_daily_rollover.day;
+        if (home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_rollover.day;
+        retry_request.binding=ui_modal_daily_binding(
+            &settings_persistence,&ui);
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily rollover queued Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily rollover background cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        home_daily_rollover=saved_rollover;
         settings_persistence.profile.daily=saved_daily;
         settings_persistence.enabled=saved_enabled;
         settings_persistence.replay_activation_unresolved=saved_replay;
@@ -4496,6 +4743,7 @@ int main(int argc, char **argv) {
       new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_recover_confirmed(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_rollover_dispatch(&persistence,&game,&ui,&g,&modal_result);
       if (!running) break;
       g.dirty = true;
     }

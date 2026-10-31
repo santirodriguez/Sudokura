@@ -218,7 +218,8 @@ static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
                                                    AppModalAction action) {
   if (action == APP_MODAL_DAILY_RECOVER_PREVIOUS)
     return home_daily_recovery_modal_binding(p, ui);
-  if (action==APP_MODAL_DAILY || action==APP_MODAL_DAILY_CHECKPOINT)
+  if (action==APP_MODAL_DAILY || action==APP_MODAL_DAILY_CHECKPOINT ||
+      action==APP_MODAL_DAILY_ROLLOVER_RETRY)
     return ui_modal_daily_binding(p,ui);
   if (action == APP_MODAL_NEW_GAME ||
       action == APP_MODAL_NEW_SAVE ||
