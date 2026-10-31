@@ -491,11 +491,7 @@ static bool games_browser_save_current(Persistence *p, Game *game, UI *ui,
                    ui->is_daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL,
                    failed_at);
   save_policy_record_result(&p->save_policy, STORE_IO_ERROR, failed_at);
-  bool modal_owned = clock_pause(ui, PAUSE_MODAL);
-  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-                                tr(ui->language, T_STORAGE_ERROR),
-                                tr(ui->language, T_SAVE_FAILED));
-  if (modal_owned) (void)clock_resume(ui, PAUSE_MODAL);
+  (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_SAVE_FAILED);
   return false;
 }
 

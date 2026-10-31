@@ -929,8 +929,18 @@ static bool ui_prepare_event(SDL_Event *event) {
     (void)ui_modal_handle_event(event);
     return false;
   }
+  if (startup_recovery_active && !ui_modal.active &&
+      event->type!=SDL_QUIT && event->type!=SDL_WINDOWEVENT &&
+      event->type!=SDL_RENDER_DEVICE_RESET && event->type!=SDL_RENDER_TARGETS_RESET &&
+      event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)
+    return false;
   if (!ui_touch_prepare(event)) return false;
   if (ui_modal_handle_event(event)) return false;
+  if (startup_recovery_active && event->type!=SDL_QUIT &&
+      event->type!=SDL_WINDOWEVENT && event->type!=SDL_RENDER_DEVICE_RESET &&
+      event->type!=SDL_RENDER_TARGETS_RESET &&
+      event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)
+    return false;
   if (!ui_pointer_prepare(event)) return false;
   if (ui_handle_more_panel_event(event)) return false;
   if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();

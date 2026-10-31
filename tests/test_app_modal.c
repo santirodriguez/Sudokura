@@ -725,7 +725,41 @@ static void test_load_save_stages(void) {
   }
 }
 
+static void test_profile_recovery_consent(void) {
+  AppState state=playing();state.screen=APP_SCREEN_HOME;
+  state.pause_reasons=APP_PAUSE_HOME|APP_PAUSE_FOCUS;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_RECOVER_PROFILE,
+      .binding={APP_SCREEN_HOME,75,0,0,0},
+      .title=T_STORAGE_ERROR,.body=T_PROFILE_RECOVER_PROMPT,
+      .buttons={T_QUIT,T_RECOVER},.button_count=2,.destructive_buttons=2u};
+  assert(app_modal_request_valid(&request));
+  AppModalRequest invalid=request;invalid.destructive_buttons=0;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;invalid.binding.screen=APP_SCREEN_GAMES;
+  assert(!app_modal_request_valid(&invalid));
+  invalid=request;invalid.kind=APP_MODAL_CONFIRM;
+  assert(!app_modal_request_valid(&invalid));
+  AppModal modal={0};AppModalResult result={0};
+  assert(app_modal_begin(&modal,&state,&request,100));
+  assert(modal.focus==0);
+  assert(app_modal_choose(&modal,modal.serial,&request.binding,0,200,&result));
+  assert(result.resolution==APP_MODAL_CANCELLED);
+  assert(app_modal_begin(&modal,&state,&request,300));
+  AppModalBinding stale=request.binding;++stale.generation;
+  assert(app_modal_choose(&modal,modal.serial,&stale,1,400,&result));
+  assert(result.resolution==APP_MODAL_STALE);
+  assert(app_modal_begin(&modal,&state,&request,500));
+  uint64_t serial=modal.serial;
+  assert(app_modal_choose(&modal,serial,&request.binding,1,600,&result));
+  assert(result.action==APP_MODAL_RECOVER_PROFILE &&
+         result.resolution==APP_MODAL_CHOSEN && result.button==1);
+  assert(!app_modal_choose(&modal,serial,&request.binding,1,700,&result));
+  assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
+}
+
 int main(void) {
+  test_profile_recovery_consent();
   test_load_save_stages();
   test_daily_activation_retry();
   test_daily_previous_recovery_confirmation();

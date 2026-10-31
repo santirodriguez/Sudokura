@@ -170,6 +170,11 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
        request->action == APP_MODAL_REPLAY_ACTIVATE_RETRY) &&
       (request->button_count != 2 || request->destructive_buttons != 0))
     return false;
+  if (request->action == APP_MODAL_RECOVER_PROFILE &&
+      (request->kind != APP_MODAL_RECOVERY ||
+       request->binding.screen != APP_SCREEN_HOME ||
+       request->button_count != 2 || request->destructive_buttons != 2u))
+    return false;
   if (request->action == APP_MODAL_DAILY &&
       (request->kind != APP_MODAL_CONFIRM ||
        request->button_count != 3 ||

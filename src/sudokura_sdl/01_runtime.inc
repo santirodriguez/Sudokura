@@ -217,6 +217,8 @@ static bool games_browser_load_restore(Persistence *p);
 
 /* Home Daily scan runs incrementally. Rendering reads only this state. */
 static bool daily_lookup_scanning = false;
+/* Startup recovery owns Home until explicit consent or Quit. */
+static bool startup_recovery_active = false;
 
 /* Native message boxes can enqueue transient focus events. The SDL shell
    advances this guard after each modal so those older events cannot pause a
@@ -586,12 +588,6 @@ static bool persistence_recover_previous(Persistence*p){
   p->last_periodic_checkpoint_ms=now_ms();
   p->enabled=true;
   return true;
-}
-
-static bool persistence_previous_available(const Persistence*p){
-  if(!p)return false;
-  ProfileData previous;
-  return profile_load_file(p->profile_backup_path,&previous)==STORE_OK;
 }
 
 /* Do not treat lost primary+backup as a new installation when durable

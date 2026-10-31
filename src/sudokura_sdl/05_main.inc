@@ -1102,20 +1102,14 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   return true;
 }
 
-static const char *persistence_startup_error(const Persistence *p,
-                                             Language language) {
-  if (!p) return tr(language, T_PROFILE_IO_ERROR);
-  if (p->lock_status == STORE_LOCK_BUSY)
-    return tr(language, T_PROFILE_IN_USE);
-  if (p->lock_status != STORE_LOCK_ACQUIRED)
-    return tr(language, T_PROFILE_IO_ERROR);
-  if (p->profile_status == STORE_CORRUPT)
-    return tr(language, T_PROFILE_CORRUPT);
-  if (p->profile_status == STORE_INCOMPATIBLE)
-    return tr(language, T_PROFILE_INCOMPATIBLE);
-  if (p->profile_status != STORE_OK)
-    return tr(language, T_PROFILE_IO_ERROR);
-  return NULL;
+static TextKey persistence_startup_error_key(const Persistence *p) {
+  if (!p) return T_PROFILE_IO_ERROR;
+  if (p->lock_status==STORE_LOCK_BUSY) return T_PROFILE_IN_USE;
+  if (p->lock_status!=STORE_LOCK_ACQUIRED) return T_PROFILE_IO_ERROR;
+  if (p->profile_status==STORE_CORRUPT) return T_PROFILE_CORRUPT;
+  if (p->profile_status==STORE_INCOMPATIBLE) return T_PROFILE_INCOMPATIBLE;
+  if (p->profile_status!=STORE_OK) return T_PROFILE_IO_ERROR;
+  return T_COUNT;
 }
 
 #if !defined(__ANDROID__)
@@ -1964,6 +1958,135 @@ done:
   return passed;
 }
 #undef UI_SMOKE_FAIL
+
+typedef struct {
+  bool previous, fatal, failed, attempted, opened;
+  StoreStatus primary_status;
+  GameMigrationRecoveryRoute route;
+  TextKey error;
+  AppModalBinding binding;
+  ProfileData backup;
+} StartupRecovery;
+static StartupRecovery startup_recovery;
+
+static void startup_apply_ready_preferences(Persistence *p, UI *ui, Gfx *gfx) {
+  ui->language=p->preferences.language;
+  ui->dark_theme=p->preferences.dark_theme;
+  ui->reduced_motion=p->preferences.reduced_motion;
+  ui->strict_mode=p->preferences.strict_mode;
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
+  ui->mode=p->preferences.mode;
+  home_difficulty=p->preferences.difficulty;
+  set_mode_params(ui);
+  apply_window_preferences(gfx,&p->preferences,ui);
+  refresh_resume_info(p,ui);
+  home_focus=ui->normal_resume.can_continue ? HOME_FOCUS_CONTINUE : HOME_FOCUS_NEW;
+  SDL_SetWindowTitle(gfx->win,SUDOKURA_NAME_VERSION);
+}
+
+static bool startup_recovery_open(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!startup_recovery_active || !p || !ui || !gfx || app_suspended ||
+      !gfx->renderer_ready) return false;
+  TextKey body=startup_recovery.previous ? T_PROFILE_RECOVER_PROMPT :
+      (startup_recovery.route==GAME_MIGRATION_RECOVERY_IMPORT ?
+       T_PROFILE_RECOVER_IMPORT_PROMPT : T_PROFILE_RECOVER_COLLECTION_PROMPT);
+  if (startup_recovery.failed) body=T_PROFILE_IO_ERROR;
+  if (startup_recovery.fatal) body=startup_recovery.error;
+  AppModalRequest request={
+      .kind=startup_recovery.fatal ? APP_MODAL_MESSAGE : APP_MODAL_RECOVERY,
+      .action=startup_recovery.fatal ? APP_MODAL_ACTION_NONE : APP_MODAL_RECOVER_PROFILE,
+      .binding=ui_modal_current_binding(p,ui),
+      .title=T_STORAGE_ERROR,.body=body,
+      .buttons={T_QUIT,startup_recovery.failed ? T_RETRY_SAVE : T_RECOVER},
+      .button_count=startup_recovery.fatal ? 1u : 2u,
+      .destructive_buttons=startup_recovery.fatal ? 0u : 2u};
+  if (!ui_modal_open_request(gfx,ui,&request)) return false;
+  startup_recovery.binding=request.binding;
+  startup_recovery.opened=true;
+  return true;
+}
+
+static void startup_recovery_begin(Persistence *p, UI *ui, Gfx *gfx) {
+  startup_recovery=(StartupRecovery){0};
+  startup_recovery_active=false;
+  if (p->lock_status==STORE_LOCK_ACQUIRED &&
+      (p->profile_status==STORE_CORRUPT || p->profile_status==STORE_NOT_FOUND) &&
+      profile_load_file(p->profile_backup_path,&startup_recovery.backup)==STORE_OK) {
+    startup_recovery.previous=true;
+    startup_recovery.primary_status=p->profile_status;
+    startup_recovery_active=true;
+  } else if (persistence_missing_hot_recovery_available(p,&startup_recovery.route)) {
+    startup_recovery_active=true;
+  } else {
+    startup_recovery.error=persistence_startup_error_key(p);
+    startup_recovery.fatal=startup_recovery.error!=T_COUNT;
+    startup_recovery_active=startup_recovery.fatal;
+  }
+  if (startup_recovery_active) {
+    audio_set_focus_paused(true);
+    (void)startup_recovery_open(p,ui,gfx);
+  }
+}
+
+/* Consent names a verified backup, never whatever backup happens to exist
+   later. A failed prior rename may be retried only for that same candidate. */
+static bool startup_recovery_target_valid(const Persistence *p) {
+  if (!p || p->enabled || p->lock_status!=STORE_LOCK_ACQUIRED ||
+      !startup_recovery_active || startup_recovery.fatal) return false;
+  if (startup_recovery.previous) {
+    ProfileData backup,primary;
+    if (profile_load_file(p->profile_backup_path,&backup)!=STORE_OK ||
+        !profile_encoded_equal(&backup,&startup_recovery.backup)) return false;
+    StoreStatus status=profile_load_file(p->profile_path,&primary);
+    return status==startup_recovery.primary_status ||
+        (startup_recovery.attempted && status==STORE_OK &&
+         profile_encoded_equal(&primary,&startup_recovery.backup));
+  }
+  GameMigrationRecoveryRoute route=GAME_MIGRATION_RECOVERY_NONE;
+  return persistence_missing_hot_recovery_available(p,&route) &&
+         route==startup_recovery.route;
+}
+
+static void startup_recovery_dispatch(Persistence *p, UI *ui, Gfx *gfx,
+                                       const AppModalResult *choice) {
+  if (!p || !ui || !gfx || app_suspended || !gfx->renderer_ready ||
+      ui_modal.active || ui_modal_has_pending() ||
+      !choice || choice->action!=APP_MODAL_RECOVER_PROFILE ||
+      choice->resolution!=APP_MODAL_CHOSEN || choice->button!=1 ||
+      !startup_recovery_active || startup_recovery.fatal ||
+      !app_modal_binding_equal(choice->binding,startup_recovery.binding) ||
+      !app_modal_binding_equal(choice->binding,ui_modal_current_binding(p,ui)))
+    return;
+  bool recovered=false;
+  if (startup_recovery_target_valid(p)) {
+    startup_recovery.attempted=true;
+    recovered=startup_recovery.previous ? persistence_recover_previous(p) :
+        persistence_recover_missing_hot(p,startup_recovery.route);
+  }
+  if (recovered) {
+    startup_recovery_active=false;
+    startup_recovery=(StartupRecovery){0};
+    audio_apply_preferences(p);
+    startup_apply_ready_preferences(p,ui,gfx);
+  } else {
+    startup_recovery.failed=true;
+    startup_recovery.opened=false;
+    (void)startup_recovery_open(p,ui,gfx);
+  }
+}
+
+/* Default Quit/Back closes the app without writing. Lifecycle/layout
+   invalidation advances generation: reopen consent instead of treating that
+   cancellation as a user Quit. No nested SDL polling or background writes. */
+static bool startup_recovery_poll(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!startup_recovery_active || ui_modal.active || ui_modal_has_pending())
+    return true;
+  if (startup_recovery.opened &&
+      startup_recovery.binding.generation==ui_modal_generation) return false;
+  startup_recovery.opened=false;
+  if (app_suspended || !gfx->renderer_ready) return true;
+  return startup_recovery_open(p,ui,gfx);
+}
 
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
@@ -3012,6 +3135,79 @@ int main(int argc, char **argv) {
         settings_persistence.keep_pending_mask=saved_keep;
         ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
       }
+      /* Startup consent runs through the same SDL owner. The disabled
+         persistence probe has no paths; this smoke never recovers disk data. */
+      {
+        StartupRecovery saved_startup=startup_recovery;
+        bool saved_active=startup_recovery_active;
+        bool saved_enabled=settings_persistence.enabled;
+        StoreStatus saved_status=settings_persistence.profile_status;
+        StoreLockStatus saved_lock=settings_persistence.lock_status;
+        Screen saved_screen=ui.screen;unsigned saved_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME|PAUSE_FOCUS;
+        settings_persistence.enabled=false;
+        settings_persistence.profile_status=STORE_IO_ERROR;
+        settings_persistence.lock_status=STORE_LOCK_BUSY;
+        startup_recovery_begin(&settings_persistence,&ui,&g);
+        if (!startup_recovery_active || !startup_recovery.fatal ||
+            !ui_modal.active || ui_modal.focus!=0) {
+          fprintf(stderr,"Startup locked-profile modal regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        if (startup_recovery_poll(&settings_persistence,&ui,&g) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Startup safe Quit regression\n");
+          app_shutdown(&g);return 1;
+        }
+        startup_recovery=(StartupRecovery){.previous=true};
+        if (!startup_recovery_open(&settings_persistence,&ui,&g)) {
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult recovery_choice={0};
+        if (!ui_modal_take_result(&recovery_choice) ||
+            recovery_choice.action!=APP_MODAL_RECOVER_PROFILE ||
+            recovery_choice.button!=1 || ui_modal_has_pending()) {
+          fprintf(stderr,"Startup explicit one-shot Recover regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_invalidate();
+        startup_recovery_dispatch(&settings_persistence,&ui,&g,&recovery_choice);
+        if (settings_persistence.enabled || ui_modal.active ||
+            ui_modal_has_pending()) {
+          fprintf(stderr,"Startup stale Recover accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_n;
+        if (ui_prepare_event(&key) || ui.screen!=SCR_TITLE ||
+            settings_persistence.enabled) {
+          fprintf(stderr,"Startup Home input leaked through canceled consent\n");
+          app_shutdown(&g);return 1;
+        }
+        bool saved_ready=g.renderer_ready;
+        g.renderer_ready=false;
+        if (!startup_recovery_poll(&settings_persistence,&ui,&g) || ui_modal.active) {
+          fprintf(stderr,"Startup unavailable renderer recovery regression\n");
+          app_shutdown(&g);return 1;
+        }
+        g.renderer_ready=saved_ready;
+        if (!startup_recovery_poll(&settings_persistence,&ui,&g) ||
+            !ui_modal.active || ui_modal.focus!=0 ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS|PAUSE_MODAL)) {
+          fprintf(stderr,"Startup lifecycle consent reopening regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        startup_recovery=saved_startup;startup_recovery_active=saved_active;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.profile_status=saved_status;
+        settings_persistence.lock_status=saved_lock;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
       ui.screen = SCR_PLAY;
@@ -3949,7 +4145,8 @@ int main(int argc, char **argv) {
               focus="audio-button";focus_rect=sdl_rect(audio_geo.button);
               app_render_ui(&g,&game,&ui);
               SDL_RenderPresent(g.ren);
-              native_dialog_prepare(&g,&game,&ui);
+              ui_audio_control_cancel_interaction();
+              app_frame(&g,&game,&ui);
             }else{
               ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
               AppGeometry geometry;
@@ -4094,77 +4291,9 @@ int main(int argc, char **argv) {
   persistence_init(&persistence);
   double profile_end_ms=wall_clock_ms();
   ui.language = persistence.preferences.language;
-  if ((persistence.profile_status == STORE_CORRUPT ||
-       persistence.profile_status == STORE_NOT_FOUND) &&
-      persistence_previous_available(&persistence)) {
-    bool recover = confirm_box(&g, &game, &ui, tr(ui.language, T_STORAGE_ERROR),
-                               tr(ui.language, T_PROFILE_RECOVER_PROMPT),
-                               tr(ui.language, T_RECOVER),
-                               tr(ui.language, T_QUIT));
-    if (!recover) {
-      app_shutdown(&g);
-      return 1;
-    }
-    if (!persistence_recover_previous(&persistence)) {
-      (void)show_simple_message_box(
-          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-          tr(ui.language, T_STORAGE_ERROR),
-          tr(ui.language, T_PROFILE_IO_ERROR));
-      app_shutdown(&g);
-      return 1;
-    }
-    ui.language = persistence.preferences.language;
-    audio_apply_preferences(&persistence);
-  }
-  GameMigrationRecoveryRoute missing_route = GAME_MIGRATION_RECOVERY_NONE;
-  if (persistence_missing_hot_recovery_available(&persistence,
-                                                  &missing_route)) {
-    /* Explicit user consent is required before publishing any recovered
-       hot profile. Native Cancel/Escape always quits without a write. */
-    TextKey prompt = missing_route == GAME_MIGRATION_RECOVERY_IMPORT
-        ? T_PROFILE_RECOVER_IMPORT_PROMPT
-        : T_PROFILE_RECOVER_COLLECTION_PROMPT;
-    if (!confirm_box(&g, &game, &ui,
-                     tr(ui.language, T_STORAGE_ERROR),
-                     tr(ui.language, prompt),
-                     tr(ui.language, T_RECOVER),
-                     tr(ui.language, T_QUIT))) {
-      app_shutdown(&g);
-      return 1;
-    }
-    if (!persistence_recover_missing_hot(&persistence, missing_route)) {
-      (void)show_simple_message_box(
-          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-          tr(ui.language, T_STORAGE_ERROR),
-          tr(ui.language, T_PROFILE_IO_ERROR));
-      app_shutdown(&g);
-      return 1;
-    }
-    ui.language = persistence.preferences.language;
-    audio_apply_preferences(&persistence);
-  }
-  const char *startup_error =
-      persistence_startup_error(&persistence, ui.language);
-  if (startup_error) {
-    (void)show_simple_message_box(
-        &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-        tr(ui.language, T_STORAGE_ERROR), startup_error);
-    app_shutdown(&g);
-    return 1;
-  }
-  ui.dark_theme = persistence.preferences.dark_theme;
-  ui.reduced_motion = persistence.preferences.reduced_motion;
-  ui.strict_mode = persistence.preferences.strict_mode;
-  ui.auto_remove_peer_notes = persistence.preferences.auto_remove_peer_notes;
-  ui.mode = persistence.preferences.mode;
-  home_difficulty = persistence.preferences.difficulty;
-  set_mode_params(&ui);
-  apply_window_preferences(&g, &persistence.preferences, &ui);
-  refresh_resume_info(&persistence, &ui);
-  home_focus = ui.normal_resume.can_continue
-                   ? HOME_FOCUS_CONTINUE
-                   : HOME_FOCUS_NEW;
-  SDL_SetWindowTitle(g.win,SUDOKURA_NAME_VERSION);
+  startup_apply_ready_preferences(&persistence,&ui,&g);
+  audio_gfx=&g;audio_game=&game;audio_ui=&ui;
+  startup_recovery_begin(&persistence,&ui,&g);
   if (startup_timings) {
     double ready_ms=wall_clock_ms();
     fprintf(stderr,
@@ -4175,13 +4304,17 @@ int main(int argc, char **argv) {
   window_focus_guard_reset();
 
   bool running = true;
+  int exit_status = 0;
   SDL_Event e;
   while (running) {
 #if defined(__ANDROID__)
     if (app_suspended) {
       SDL_Event system_event;
       if (SDL_WaitEventTimeout(&system_event, 250)) {
-        if (system_event.type == SDL_QUIT) running = false;
+        if (system_event.type == SDL_QUIT) {
+          running=false;
+          if (startup_recovery_active) exit_status=1;
+        }
         else (void)ui_prepare_event(&system_event);
       }
       continue;
@@ -4204,6 +4337,11 @@ int main(int argc, char **argv) {
           settle_terminal(&persistence, &game, &ui)) {
         ui_pointer_cancel();
         continue;
+      }
+      if (startup_recovery_active &&
+          (e.type==SDL_QUIT || (e.type==SDL_KEYDOWN &&
+                               e.key.keysym.sym==SDLK_ESCAPE))) {
+        running=false;exit_status=1;continue;
       }
       if (e.type == SDL_QUIT) {
         if (app_suspended) { running = false; continue; }
@@ -4937,6 +5075,7 @@ int main(int argc, char **argv) {
     /* Consume one modal choice only after queued lifecycle/window events. */
     AppModalResult modal_result;
     if (ui_modal_take_result(&modal_result)) {
+      startup_recovery_dispatch(&persistence,&ui,&g,&modal_result);
       AppModalBinding current = ui_modal_dispatch_binding(
           &persistence, &ui, modal_result.action);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
@@ -5005,6 +5144,9 @@ int main(int argc, char **argv) {
       g.dirty = true;
     }
 
+    if (!startup_recovery_poll(&persistence,&ui,&g)) {
+      exit_status=1;running=false;break;
+    }
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */
 #endif
@@ -5045,5 +5187,5 @@ int main(int argc, char **argv) {
   game_library_scan_close(&games_browser.scanner);
   free(games_browser.rows);
   app_shutdown(&g);
-  return 0;
+  return exit_status;
 }
