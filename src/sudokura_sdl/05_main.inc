@@ -135,6 +135,8 @@ static bool ui_modal_open_home(Persistence *p, UI *ui, Gfx *gfx) {
 
 static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
   if (!p || !ui || !gfx) return false;
+  if (p->daily_activation_unresolved)
+    return games_daily_activation_offer(p,ui,gfx);
   AppModalRequest request = {
       .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_EXIT,
       .binding = ui_modal_current_binding(p, ui),
@@ -396,7 +398,7 @@ static AppModalBinding home_daily_recovery_modal_binding(
 
 static bool home_daily_recovery_valid(const Persistence *p, const UI *ui) {
   if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
-      !home_daily_recovery.active || p->replay_activation_unresolved)
+      !home_daily_recovery.active || persistence_activation_blocked(p))
     return false;
   int y=0,m=0,d=0;
   if (!local_date(&y,&m,&d) ||
@@ -412,7 +414,7 @@ static bool home_daily_recovery_valid(const Persistence *p, const UI *ui) {
 
 static bool home_daily_intent_valid(const Persistence *p, const UI *ui) {
   if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
-      !home_daily_intent.active || p->replay_activation_unresolved)
+      !home_daily_intent.active || persistence_activation_blocked(p))
     return false;
   int y=0,m=0,d=0;
   if (!local_date(&y,&m,&d) || y!=home_daily_intent.year ||
@@ -467,7 +469,7 @@ static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
    before any retry; the modal binding independently guards its UI generation. */
 static bool home_daily_rollover_valid(const Persistence *p, const UI *ui) {
   if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
-      !home_daily_rollover.active || p->replay_activation_unresolved)
+      !home_daily_rollover.active || persistence_activation_blocked(p))
     return false;
   int year=0,month=0,day=0;
   if (!local_date(&year,&month,&day) ||
@@ -675,7 +677,7 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
       return;
     }
     if (entry.result.status==SESSION_ACTIVE) {
-      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d);
+      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,entry.revision,y,m,d);
     } else {
       /* The original finished Daily remains read-only; no new attempt. */
       if (!games_browser_open_focused(p,game,ui,gfx,entry.id,true))
@@ -746,7 +748,7 @@ static void home_daily_recover_confirmed(Persistence *p, Game *game,
     return;
   }
   if (recovered.result.status==SESSION_ACTIVE) {
-    (void)games_browser_resume_daily(p,game,ui,gfx,pending.entry.id,
+    (void)games_browser_resume_daily(p,game,ui,gfx,pending.entry.id,recovered.revision,
                                      pending.year,pending.month,pending.day);
   } else if (!games_browser_open_focused(
                  p,game,ui,gfx,pending.entry.id,true)) {
@@ -802,7 +804,7 @@ static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
     home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
     return;
   }
-  if (p->replay_activation_unresolved) {
+  if (persistence_activation_blocked(p)) {
     home_daily_intent.active=false;
     home_daily_warning(game,ui,gfx,T_GAMES_ACTION_FAILED);
     return;
@@ -827,6 +829,10 @@ static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
 static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
     return;
+  if (p->daily_activation_unresolved) {
+    (void)games_daily_activation_offer(p,ui,gfx);
+    return;
+  }
   home_daily_recovery.active=false;
   home_daily_rollover.active=false;
   if (home_daily_scan.active) { home_daily_cancel(); return; }
@@ -2756,6 +2762,77 @@ int main(int argc, char **argv) {
         settings_persistence.enabled=saved_enabled;
         settings_persistence.replay_activation_unresolved=saved_replay;
         ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Daily Retry uses the real SDL owner; this fixture never writes disk. */
+      {
+        GamesDailyActivation saved_activation=games_daily_activation;
+        bool old_guard=settings_persistence.daily_activation_unresolved;
+        Screen old_screen=ui.screen;
+        unsigned old_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME|PAUSE_FOCUS;
+        games_daily_activation=(GamesDailyActivation){0};
+        games_daily_activation.active=true;
+        games_daily_activation.previous=settings_persistence.profile;
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation modal setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation default Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult choice={0};
+        if (!ui_modal_take_result(&choice) ||
+            choice.action!=APP_MODAL_DAILY_ACTIVATE_RETRY || choice.button!=1 ||
+            ui_modal_take_result(&choice) ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation one-shot Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        /* A changed generation must prevent even entry to the writer. */
+        ui_modal_invalidate();
+        games_daily_activation_dispatch(&settings_persistence,&game,&ui,&g,&choice);
+        if (ui.screen!=SCR_TITLE || ui_modal.active || ui_modal_has_pending()) {
+          fprintf(stderr,"Daily activation stale continuation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation queued focus cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.daily_activation_unresolved=true;
+        if (!persistence_activation_blocked(&settings_persistence) ||
+            persistence_flush(&settings_persistence) ||
+            persistence_retry_current(&settings_persistence,&game,&ui) ||
+            games_browser_daily_flush_verified(&settings_persistence) ||
+            games_browser_save_hot(&settings_persistence,true) ||
+            games_browser_commit_profile(&settings_persistence,&game,&ui,
+                &g,true,&settings_persistence.profile,true) ||
+            new_game_discard_allowed(&settings_persistence)) {
+          fprintf(stderr,"Daily unresolved activation writer guard regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.daily_activation_unresolved=old_guard;
+        games_daily_activation=saved_activation;
+        ui.screen=old_screen;ui.pause_reasons=old_pauses;
       }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
@@ -4744,6 +4821,7 @@ int main(int argc, char **argv) {
       home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_recover_confirmed(&persistence,&game,&ui,&g,&modal_result);
       home_daily_rollover_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      games_daily_activation_dispatch(&persistence,&game,&ui,&g,&modal_result);
       if (!running) break;
       g.dirty = true;
     }

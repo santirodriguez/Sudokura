@@ -2256,7 +2256,85 @@ static void test_replay_activation_interrupted_and_retried(void) {
   cleanup();
 }
 
+/* Daily activation changes only its hot pointer; interrupted candidates
+   are recognized exactly and never rotate an acknowledged previous copy. */
+static void test_daily_activation_interrupted_and_retried(void) {
+  prepare();
+  ProfileData previous;
+  profile_defaults(&previous);
+  previous.normal.present=true;
+  previous.normal.attempt_id=make_id(9981);
+  previous.normal.revision=4;
+  previous.normal.value=make_session(SESSION_ACTIVE);
+  previous.daily.present=true;
+  previous.daily.retained=true;
+  previous.daily.attempt_id=make_id(9982);
+  previous.daily.revision=8;
+  previous.daily.value=daily_fixture(2026,10,28,SESSION_ACTIVE);
+  GameLibraryRecord departing,target,loaded;
+  assert(game_library_make_exact(&departing,previous.daily.attempt_id,
+                                8,&previous.daily.value,true));
+  assert(game_library_save(root,&departing)==STORE_OK);
+  ProfileSession today=daily_fixture(2026,10,29,SESSION_ACTIVE);
+  assert(game_library_make_exact(&target,make_id(9983),12,&today,true));
+  assert(game_library_save(root,&target)==STORE_OK);
+  const char *primary=".sudokura-library-test/games/daily-activation.dat";
+  const char *backup=".sudokura-library-test/games/daily-activation.dat.bak";
+  assert(profile_validate(&previous));
+  assert(profile_save_runtime_file(primary,backup,&previous)==STORE_OK);
+  ProfileData candidate=previous;
+  candidate.daily.attempt_id=target.id;
+  candidate.daily.revision=target.revision;
+  candidate.daily.value=target.exact;
+  assert(profile_validate(&candidate));
+  ProfileData disk,back;
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  store_test_fail_parent_sync_at(primary);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  /* A different valid primary is not permission to restore over it. */
+  ProfileData foreign=previous;
+  ++foreign.daily.revision;
+  assert(profile_save_runtime_file(primary,NULL,&foreign)==STORE_OK);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_CORRUPT);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&foreign));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  /* Explicit fixture reset; product recovery never resets unknown data. */
+  assert(profile_save_runtime_file(primary,NULL,&previous)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_load(root,departing.id,&loaded)==STORE_OK);
+  assert(loaded.revision==departing.revision);
+  assert(game_library_load(root,target.id,&loaded)==STORE_OK);
+  assert(loaded.revision==target.revision);
+  cleanup();
+}
+
 int main(void) {
+  test_daily_activation_interrupted_and_retried();
   cleanup();
   prepare();
   test_hex_and_collision();

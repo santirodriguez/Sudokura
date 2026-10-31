@@ -1,7 +1,7 @@
 /* Native-owner Restart continuation. No nested event pump or new persistence. */
 static bool restart_discard_allowed(const Persistence *p, const UI *ui) {
   if (!p || !p->enabled || !ui || !ui->session_open ||
-      ui->result != RES_NONE || p->replay_activation_unresolved)
+      ui->result != RES_NONE || persistence_activation_blocked(p))
     return false;
   const ProfileSlot *slot = ui->is_daily ? &p->profile.daily : &p->profile.normal;
   bool unretained = slot->present && !slot->retained &&
@@ -47,7 +47,7 @@ static void restart_commit(Persistence *p, Game *game, UI *ui) {
 static void restart_after_gate(Persistence *p, Game *game, UI *ui,
                                Gfx *gfx, bool discard) {
   if (!p || !game || !ui || !gfx || !ui->session_open) return;
-  if (p->replay_activation_unresolved ||
+  if (persistence_activation_blocked(p) ||
       (discard ? !restart_discard_allowed(p, ui) :
        (p->capture_failed || save_policy_dirty(&p->save_policy)))) {
     (void)restart_open_save(p, ui, gfx);
@@ -64,7 +64,7 @@ static void restart_requested(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx || !ui->session_open ||
       (ui->screen != SCR_PLAY && ui->screen != SCR_END))
     return;
-  if (p->replay_activation_unresolved) {
+  if (persistence_activation_blocked(p)) {
     (void)ui_modal_message(gfx, ui, T_STORAGE_ERROR, T_GAMES_ACTION_FAILED);
     return;
   }
@@ -103,7 +103,7 @@ static void restart_dispatch(Persistence *p, Game *game, UI *ui, Gfx *gfx,
               result->action == APP_MODAL_RESTART_DISCARD) &&
              result->button == 1) {
     bool discard = result->action == APP_MODAL_RESTART_DISCARD;
-    if (!p->replay_activation_unresolved &&
+    if (!persistence_activation_blocked(p) &&
         (discard ? restart_discard_allowed(p, ui) :
          (!p->capture_failed && !save_policy_dirty(&p->save_policy))))
       restart_commit(p, game, ui);

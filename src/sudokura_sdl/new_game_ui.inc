@@ -3,14 +3,14 @@ static bool start_new_game_with_ui(Persistence *, Game *, UI *, Gfx *);
 
 static bool new_game_ready(const Persistence *p) {
   return p && p->enabled && !p->capture_failed &&
-         !p->keep_pending_mask && !p->replay_activation_unresolved &&
+         !p->keep_pending_mask && !persistence_activation_blocked(p) &&
          !save_policy_dirty(&p->save_policy);
 }
 
 /* Only a single, unretained, active normal slot can be abandoned after
    an unsuccessful checkpoint; other dirty domains must be preserved. */
 static bool new_game_discard_allowed(const Persistence *p) {
-  if (!p || !p->enabled || p->replay_activation_unresolved) return false;
+  if (!p || !p->enabled || persistence_activation_blocked(p)) return false;
   const ProfileSlot *slot = &p->profile.normal;
   bool eligible = slot->present && !slot->retained &&
       slot->value.session.status == SESSION_ACTIVE &&
@@ -109,7 +109,7 @@ static void new_game_requested(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
       (ui->screen != SCR_TITLE && ui->screen != SCR_END))
     return;
-  if (p->replay_activation_unresolved) {
+  if (persistence_activation_blocked(p)) {
     (void)ui_modal_message(gfx, ui, T_STORAGE_ERROR, T_GAMES_ACTION_FAILED);
     return;
   }

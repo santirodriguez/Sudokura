@@ -41,6 +41,7 @@ typedef enum {
   APP_MODAL_DAILY_CHECKPOINT,
   APP_MODAL_DAILY_RECOVER_PREVIOUS,
   APP_MODAL_DAILY_ROLLOVER_RETRY,
+  APP_MODAL_DAILY_ACTIVATE_RETRY,
   APP_MODAL_ACTION_COUNT
 } AppModalAction;
 
@@ -168,7 +169,8 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
        request->button_count != 2 ||
        request->destructive_buttons != 2u))
     return false;
-  if (request->action == APP_MODAL_DAILY_ROLLOVER_RETRY &&
+  if ((request->action == APP_MODAL_DAILY_ROLLOVER_RETRY ||
+       request->action == APP_MODAL_DAILY_ACTIVATE_RETRY) &&
       (request->kind != APP_MODAL_RECOVERY ||
        request->binding.screen != APP_SCREEN_HOME ||
        request->button_count != 2 ||

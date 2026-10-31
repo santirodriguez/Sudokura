@@ -199,9 +199,16 @@ typedef struct {
   unsigned keep_pending_mask;
   /* An uncertain post-rename Replay activation blocks unrelated saves. */
   bool replay_activation_unresolved;
+  /* Failed Daily rollback blocks every unrelated checkpoint. */
+  bool daily_activation_unresolved;
   Preferences replay_activation_expected_preferences;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
+
+static bool persistence_activation_blocked(const Persistence *p) {
+  return p && (p->replay_activation_unresolved ||
+               p->daily_activation_unresolved);
+}
 
 /* Defined later in games_ui.inc; also used by the global Retry action. */
 static bool games_browser_save_hot(Persistence *p, bool daily);
@@ -525,7 +532,7 @@ static void persistence_refresh_normal(Persistence*p){
 static StoreStatus persistence_write_profile_callback(void*context){
   Persistence*p=(Persistence*)context;
   if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask||
-     p->replay_activation_unresolved)return STORE_IO_ERROR;
+     persistence_activation_blocked(p))return STORE_IO_ERROR;
   p->profile.preferences=p->preferences;
   return profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
@@ -533,14 +540,14 @@ static StoreStatus persistence_write_profile_callback(void*context){
 
 static bool persistence_write_profile(Persistence*p){
   if(!p||!p->enabled||p->capture_failed||
-     p->replay_activation_unresolved)return false;
+     persistence_activation_blocked(p))return false;
   return save_policy_checkpoint_now(
       &p->save_policy,persistence_write_profile_callback,p,now_ms());
 }
 
 static bool persistence_flush(Persistence*p){
   if(!p||!p->enabled||p->keep_pending_mask||
-     p->replay_activation_unresolved)return false;
+     persistence_activation_blocked(p))return false;
   if(!save_policy_dirty(&p->save_policy))return true;
   return persistence_write_profile(p);
 }
@@ -570,6 +577,7 @@ static bool persistence_recover_previous(Persistence*p){
   memset(&p->active_replay,0,sizeof(p->active_replay));
   p->capture_failed=false;
   p->replay_activation_unresolved=false;
+  p->daily_activation_unresolved=false;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
@@ -825,7 +833,7 @@ static bool persistence_apply_replay_origin(const Persistence*p,
 }
 
 static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
-  if(p && p->replay_activation_unresolved)return false;
+  if(p && persistence_activation_blocked(p))return false;
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   if(p->profile.codec_version!=SUDOKURA_PROFILE_CONTENT_VERSION){
     persistence_capture_failure(p,ui);
@@ -918,14 +926,14 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
 }
 
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
-  if(p && p->replay_activation_unresolved)return false;
+  if(p && persistence_activation_blocked(p))return false;
   if(!stage_current_session(p,game,ui))return false;
   p->last_periodic_checkpoint_ms=now_ms();
   return persistence_flush(p);
 }
 
 static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
-  if(!p||p->replay_activation_unresolved)return false;
+  if(!p||persistence_activation_blocked(p))return false;
   if(p->capture_failed &&
      (!game||!ui||!ui->session_open||
       !stage_current_session(p,game,ui)))return false;
@@ -953,7 +961,7 @@ static void persistence_begin_distinct_attempt(Persistence*p,bool daily){
 }
 
 static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
-  if(!p||!game||!ui)return;
+  if(!p||!game||!ui||persistence_activation_blocked(p))return;
   const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
   const SessionState*s=profile_slot_session(slot);
   if(!s||!session_validate_runtime(s))return;
@@ -989,7 +997,7 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
 
 static GameGenerationResult start_new_session_base(
     Persistence*p,Game*game,UI*ui,const GameGenerationControl*control){
-  if(!p||!game||!ui||p->replay_activation_unresolved)
+  if(!p||!game||!ui||persistence_activation_blocked(p))
     return GAME_GENERATION_INVALID;
   Game generated;
   GameGenerationResult result=game_generate_difficulty(
@@ -1010,7 +1018,7 @@ static GameGenerationResult start_new_session_base(
 static GameGenerationResult start_daily_session_base(
     Persistence*p,Game*game,UI*ui,int year,int month,int day,
     const GameGenerationControl*control){
-  if(!p||!game||!ui||p->replay_activation_unresolved)
+  if(!p||!game||!ui||persistence_activation_blocked(p))
     return GAME_GENERATION_INVALID;
   uint64_t seed=0;
   if(!game_daily_seed_revision(year,month,day,SUDOKURA_GENERATOR_REVISION,&seed))
@@ -1038,7 +1046,7 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
-  if(p && p->replay_activation_unresolved)return;
+  if(p && persistence_activation_blocked(p))return;
   bool retry_after_loss=ui&&ui->result==RES_LOSE;
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
