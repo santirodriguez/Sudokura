@@ -541,8 +541,7 @@ static bool games_browser_load_activation_offer(Persistence *p, UI *ui,
   AppModalRequest request={
       .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_LOAD_ACTIVATE_RETRY,
       .binding=current,.title=T_STORAGE_ERROR,
-      .body=p->load_activation_unresolved ? T_DAILY_BACK_UNCONFIRMED :
-                                          T_GAMES_ACTIVATE_RETRY_PROMPT,
+      .body=T_GAMES_ACTIVATE_RETRY_PROMPT,
       .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
   return ui_modal_open_request(gfx,ui,&request);
 }
