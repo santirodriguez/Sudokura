@@ -677,7 +677,8 @@ static void test_daily_previous_recovery_confirmation(void) {
 
 static void test_load_save_stages(void) {
   const AppModalAction actions[]={APP_MODAL_LOAD_CHECKPOINT,
-      APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY};
+      APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY,
+      APP_MODAL_LOAD_ACTIVATE_RETRY};
   for (unsigned i=0;i<sizeof(actions)/sizeof(actions[0]);++i) {
     AppState state=playing();
     state.screen=APP_SCREEN_GAMES;

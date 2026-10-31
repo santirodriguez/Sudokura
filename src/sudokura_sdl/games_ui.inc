@@ -514,40 +514,93 @@ static bool games_browser_daily_flush_verified(Persistence *p) {
   return status == STORE_OK;
 }
 
+/* One frozen profile activation; only recognized bytes may be rolled back.
+   The previous live board is never published from an unacknowledged write. */
+typedef struct {
+  bool prepared, daily, discard_failed_save;
+  AppModalBinding binding;
+  ProfileData previous_disk, previous_live, candidate;
+} GamesLoadActivation;
+static GamesLoadActivation games_load_activation;
+
+static bool games_browser_load_restore(Persistence *p) {
+  if (!p || !games_load_activation.prepared) return false;
+  StoreStatus status=profile_restore_runtime_activation(p->profile_path,
+      &games_load_activation.previous_disk,&games_load_activation.candidate);
+  p->load_activation_unresolved=status!=STORE_OK;
+  return status==STORE_OK;
+}
+
+static bool games_browser_load_activation_offer(Persistence *p, UI *ui,
+                                                 Gfx *gfx) {
+  AppModalBinding current;
+  if (!p || !ui || !gfx || !games_load_activation.prepared ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(current,games_load_activation.binding))
+    return false;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_LOAD_ACTIVATE_RETRY,
+      .binding=current,.title=T_STORAGE_ERROR,
+      .body=p->load_activation_unresolved ? T_DAILY_BACK_UNCONFIRMED :
+                                          T_GAMES_ACTIVATE_RETRY_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
 static bool games_browser_commit_profile(Persistence *p, Game *game,
                                          UI *ui, Gfx *gfx, bool daily,
                                          const ProfileData *candidate,
-                                         bool restore_on_back) {
-  if (!p || !p->enabled || !candidate ||
-      persistence_activation_blocked(p)) return false;
-  for (;;) {
-    if (profile_save_runtime_verified(
-            p->profile_path, p->profile_backup_path, candidate) == STORE_OK)
-      return true;
-    /* Even a post-rename directory-sync failure leaves the old live game
-       intact. Keep its dirty authority until a confirmed write or recovery. */
-    uint64_t failed_at = now_ms();
-    save_policy_mark(&p->save_policy,
-                     daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL, failed_at);
-    save_policy_record_result(&p->save_policy, STORE_IO_ERROR, failed_at);
-    if (!confirm_box(gfx, game, ui, tr(ui->language, T_STORAGE_ERROR),
-                     tr(ui->language, T_GAMES_ACTIVATE_RETRY_PROMPT),
-                     tr(ui->language, T_RETRY_SAVE),
-                     tr(ui->language, T_BACK))) {
-      if (restore_on_back) {
-        StoreStatus restored = profile_restore_runtime_activation(
-            p->profile_path, &p->profile, candidate);
-        if (restored == STORE_OK)
-          save_policy_init(&p->save_policy);
-        else
-          (void)show_simple_message_box(
-              gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-              tr(ui->language, T_STORAGE_ERROR),
-              tr(ui->language, T_DAILY_BACK_UNCONFIRMED));
-      }
-      return false;
+                                         bool discard_failed_save) {
+  (void)game;
+  AppModalBinding binding;
+  if (!p || !p->enabled || !candidate || !ui || !gfx ||
+      persistence_activation_blocked(p) ||
+      !games_browser_modal_binding(p,ui,&binding) ||
+      !profile_validate(candidate)) return false;
+  const ProfileSlot *selected=daily ? &candidate->daily : &candidate->normal;
+  if (!selected->present || selected->attempt_id.high!=binding.key_hi ||
+      selected->attempt_id.low!=binding.key_lo ||
+      selected->revision!=binding.revision) return false;
+  games_load_activation=(GamesLoadActivation){
+      .prepared=true,.daily=daily,.discard_failed_save=discard_failed_save,
+      .binding=binding,.previous_live=p->profile,.previous_disk=p->profile,
+      .candidate=*candidate};
+  ProfileData disk;
+  StoreStatus read_status=profile_load_file(p->profile_path,&disk);
+  bool known_previous=false;
+  if (read_status==STORE_OK) {
+    ProfileData comparable=disk;
+    /* Only explicit failed-save Discard may replace the unacknowledged
+       departing domain. Other slots/preferences/results must match. */
+    if (discard_failed_save) {
+      const ProfileSlot *departing=daily ? &p->profile.daily : &p->profile.normal;
+      GameAttemptId target_id={binding.key_hi,binding.key_lo};
+      bool active=departing->present && !departing->retained &&
+          departing->value.session.status==SESSION_ACTIVE &&
+          !game_attempt_id_equal(departing->attempt_id,target_id);
+      if (save_policy_replacement_discard_allowed(&p->save_policy,daily,
+              active,p->capture_failed,p->keep_pending_mask))
+        *(daily ? &comparable.daily : &comparable.normal)=*departing;
     }
+    known_previous=profile_encoded_equal(&comparable,&p->profile);
+    if (known_previous) games_load_activation.previous_disk=disk;
   }
+  if (known_previous && profile_save_runtime_verified(
+          p->profile_path,p->profile_backup_path,candidate)==STORE_OK) {
+    games_load_activation.prepared=false;
+    p->load_activation_unresolved=false;
+    return true;
+  }
+  /* Restore before pumping lifecycle/Back/other saves. An unknown primary
+     is left untouched and blocks unrelated profile writes until reconciled. */
+  (void)games_browser_load_restore(p);
+  uint64_t failed_at=now_ms();
+  save_policy_mark(&p->save_policy,daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL,
+                    failed_at);
+  save_policy_record_result(&p->save_policy,STORE_IO_ERROR,failed_at);
+  if (!games_browser_load_activation_offer(p,ui,gfx))
+    show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+  return false;
 }
 
 /* Preserve a departing Daily before selecting a different original. */
@@ -779,7 +832,7 @@ static void games_browser_operation_error(Gfx *gfx, Game *game, UI *ui);
 static bool games_browser_recover_selected(Persistence *p, Game *game,
                                            UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
-      p->daily_activation_unresolved) return false;
+      (p->daily_activation_unresolved || p->load_activation_unresolved)) return false;
   AppModalBinding binding;
   if (!games_browser_modal_binding(p, ui, &binding)) return false;
   const GamesRow *row=&games_browser.rows[games_browser.selected];
@@ -907,7 +960,8 @@ static bool games_browser_load_source_valid(const Persistence *p,
 
 static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
                                          Gfx *gfx, AppModalBinding expected,
-                                         bool preflight_ready) {
+                                         bool preflight_ready,
+                                         bool discard_failed_save) {
   if (games_browser.scanning || games_browser.selected >= games_browser.count ||
       !p || !p->enabled)
     return false;
@@ -1031,7 +1085,7 @@ static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
   candidate.preferences = p->preferences;
   /* The old board remains visible until the new hot pointer is durable. */
   if (!games_browser_commit_profile(
-          p, game, ui, gfx, daily, &candidate, false))
+          p, game, ui, gfx, daily, &candidate, discard_failed_save))
     return false;
   p->profile = candidate;
   p->game_cache[daily ? 1 : 0].valid = false;
@@ -1063,7 +1117,14 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
   AppModalBinding binding;
   if (!games_browser_modal_binding(p,ui,&binding)) return false;
   games_load_gate=(GamesLoadGate){0};
-  return games_browser_activate_bound(p,game,ui,gfx,binding,false);
+  if (p->load_activation_unresolved && games_load_activation.prepared &&
+      binding.key_hi==games_load_activation.binding.key_hi &&
+      binding.key_lo==games_load_activation.binding.key_lo &&
+      binding.revision==games_load_activation.binding.revision) {
+    games_load_activation.binding=binding;
+    return games_browser_load_activation_offer(p,ui,gfx);
+  }
+  return games_browser_activate_bound(p,game,ui,gfx,binding,false,false);
 }
 
 /* One accepted choice owns exactly one attempt; stale source or departing
@@ -1092,32 +1153,78 @@ static bool games_browser_load_chosen(Persistence *p, Game *game, UI *ui,
     if (choice->button==2) {
       if (!games_browser_load_discard_allowed(p,gate.daily,gate.binding))
         return false;
-      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,true);
     }
     if (choice->button!=1) return false;
     (void)persistence_retry_current(p,game,ui);
-    return games_browser_activate_bound(p,game,ui,gfx,gate.binding,false);
+    return games_browser_activate_bound(p,game,ui,gfx,gate.binding,false,false);
   }
   if (gate.action==APP_MODAL_LOAD_KEEP) {
     if (!slot->present || slot->retained ||
         !session_has_meaningful_progress_runtime(&slot->value.session))
       return false;
     if (choice->button==2)
-      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,false);
     if (choice->button!=1) return false;
     if (games_browser_save_hot(p,gate.daily))
-      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,false);
   } else {
     if (choice->button!=1) return false;
     if (persistence_retry_current(p,game,ui) && slot->present && slot->retained &&
         !p->capture_failed && !p->keep_pending_mask &&
         !save_policy_dirty(&p->save_policy))
-      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,false);
   }
   if (!games_browser_load_offer(p,ui,gfx,gate.binding,gate.daily,
                                  APP_MODAL_LOAD_RETAIN_RETRY))
     show_toast(ui,tr(ui->language,T_SAVE_FAILED));
   return false;
+}
+
+/* Reconciliation is independent of source validity; publishing a new
+   board still needs the exact selected record and unchanged departing state. */
+static void games_browser_load_activation_dispatch(
+    Persistence *p, Game *game, UI *ui, Gfx *gfx,
+    const AppModalResult *choice) {
+  if (!choice || choice->action!=APP_MODAL_LOAD_ACTIVATE_RETRY ||
+      choice->resolution!=APP_MODAL_CHOSEN || choice->button!=1 ||
+      !games_load_activation.prepared) return;
+  AppModalBinding current;
+  if (!p || !game || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(choice->binding,current) ||
+      !app_modal_binding_equal(current,games_load_activation.binding)) return;
+  if (p->load_activation_unresolved && !games_browser_load_restore(p)) {
+    (void)games_browser_load_activation_offer(p,ui,gfx);
+    return;
+  }
+  GamesLoadGate source={.binding=current,.daily=games_load_activation.daily,
+      .hot_only=games_browser.rows[games_browser.selected].hot_only};
+  if (!profile_encoded_equal(&p->profile,&games_load_activation.previous_live) ||
+      !games_browser_load_source_valid(p,&source)) {
+    games_load_activation.prepared=false;
+    (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
+    return;
+  }
+  GameLibraryRecord record;
+  GameAttemptId id={current.key_hi,current.key_lo};
+  if (game_library_load(p->profile_directory,id,&record)!=STORE_OK) {
+    games_load_activation.prepared=false;
+    (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
+    return;
+  }
+  ProfileData observed=games_load_activation.candidate;
+  ProfileSlot *selected=games_load_activation.daily ? &observed.daily :
+                                                     &observed.normal;
+  selected->value=record.exact;selected->retained=record.retained;
+  if (!profile_encoded_equal(&observed,&games_load_activation.candidate)) {
+    games_load_activation.prepared=false;
+    (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
+    return;
+  }
+  bool discard=games_load_activation.discard_failed_save;
+  games_load_activation.prepared=false;
+  (void)games_browser_activate_bound(p,game,ui,gfx,current,true,discard);
 }
 
 /* The intent is a tiny durable operation marker, not a collection index.
@@ -1243,7 +1350,8 @@ static bool games_browser_replay_confirmed(Persistence *p, Game *game,
                                            AppModalBinding expected,
                                            bool preflight_ready) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
-      p->daily_activation_unresolved || games_browser.scanning ||
+      p->daily_activation_unresolved || p->load_activation_unresolved ||
+      games_browser.scanning ||
       games_browser.selected >= games_browser.count)
     return false;
   AppModalBinding current;
@@ -1598,7 +1706,7 @@ static bool games_browser_replay_gate_chosen(
 static bool games_browser_replay_selected(Persistence *p, Game *game,
                                           UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
-      p->daily_activation_unresolved) return false;
+      (p->daily_activation_unresolved || p->load_activation_unresolved)) return false;
   AppModalBinding binding;
   if (!games_browser_modal_binding(p,ui,&binding)) return false;
   const GamesRow *row=&games_browser.rows[games_browser.selected];
@@ -1703,7 +1811,7 @@ static bool games_browser_delete_confirmed(Persistence *p,Game *game,
 static bool games_browser_delete_selected(Persistence *p,Game *game,
                                           UI *ui,Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx ||
-      p->daily_activation_unresolved) return false;
+      (p->daily_activation_unresolved || p->load_activation_unresolved)) return false;
   AppModalBinding binding;
   if (!games_browser_modal_binding(p,ui,&binding)) return false;
   AppModalRequest request = {

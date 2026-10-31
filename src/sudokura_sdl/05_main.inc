@@ -143,6 +143,9 @@ static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
       .title = T_UNSAVED_TITLE, .body = T_UNSAVED_EXIT,
       .buttons = {T_BACK, T_RETRY_SAVE, T_DISCARD}, .button_count = 3,
       .destructive_buttons = 4u};
+  if (p->load_activation_unresolved) {
+    request.button_count=2;request.destructive_buttons=0;
+  }
   ui_pointer_cancel();
   ui_touch_cancel();
   return ui_modal_open_request(gfx, ui, &request);
@@ -2839,6 +2842,8 @@ int main(int argc, char **argv) {
       {
         GamesBrowser saved_browser=games_browser;
         GamesLoadGate saved_gate=games_load_gate;
+        GamesLoadActivation saved_activation=games_load_activation;
+        bool saved_load_guard=settings_persistence.load_activation_unresolved;
         ProfileSlot saved_normal=settings_persistence.profile.normal;
         SavePolicy saved_policy=settings_persistence.save_policy;
         bool saved_enabled=settings_persistence.enabled;
@@ -2948,6 +2953,54 @@ int main(int argc, char **argv) {
             app_shutdown(&g);return 1;
           }
         }
+        (void)games_browser_modal_binding(&settings_persistence,&ui,&selected);
+        games_load_activation=(GamesLoadActivation){.prepared=true,.binding=selected};
+        if (!games_browser_load_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Load activation modal setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+          fprintf(stderr,"Load activation safe Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_browser_load_activation_offer(&settings_persistence,&ui,&g)) {
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult activation_choice={0};
+        if (!ui_modal_take_result(&activation_choice) ||
+            activation_choice.action!=APP_MODAL_LOAD_ACTIVATE_RETRY ||
+            activation_choice.button!=1 || ui_modal_has_pending()) {
+          fprintf(stderr,"Load activation explicit Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_invalidate();
+        games_browser_load_activation_dispatch(&settings_persistence,&game,
+                                                 &ui,&g,&activation_choice);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+          fprintf(stderr,"Load activation stale generation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.load_activation_unresolved=true;
+        games_load_activation.prepared=false; /* Retry must not touch storage. */
+        if (persistence_flush(&settings_persistence) ||
+            persistence_retry_current(&settings_persistence,&game,&ui) ||
+            games_browser_save_hot(&settings_persistence,false) ||
+            games_browser_daily_flush_verified(&settings_persistence) ||
+            new_game_discard_allowed(&settings_persistence) ||
+            !ui_modal_open_exit(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=2 ||
+            ui_modal.request.destructive_buttons!=0) {
+          fprintf(stderr,"Load unresolved activation write/Discard regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        games_load_activation=saved_activation;
+        settings_persistence.load_activation_unresolved=saved_load_guard;
         free(games_browser.rows);games_browser=saved_browser;
         games_load_gate=saved_gate;
         settings_persistence.profile.normal=saved_normal;
@@ -4941,6 +4994,7 @@ int main(int argc, char **argv) {
         (void)games_browser_delete_confirmed(&persistence, &game, &ui,
                                              &g, modal_result.binding);
       (void)games_browser_load_chosen(&persistence,&game,&ui,&g,&modal_result);
+      games_browser_load_activation_dispatch(&persistence,&game,&ui,&g,&modal_result);
       restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
       new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);

@@ -201,17 +201,19 @@ typedef struct {
   bool replay_activation_unresolved;
   /* Failed Daily rollback blocks every unrelated checkpoint. */
   bool daily_activation_unresolved;
+  bool load_activation_unresolved;
   Preferences replay_activation_expected_preferences;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
 static bool persistence_activation_blocked(const Persistence *p) {
   return p && (p->replay_activation_unresolved ||
-               p->daily_activation_unresolved);
+               p->daily_activation_unresolved || p->load_activation_unresolved);
 }
 
 /* Defined later in games_ui.inc; also used by the global Retry action. */
 static bool games_browser_save_hot(Persistence *p, bool daily);
+static bool games_browser_load_restore(Persistence *p);
 
 /* Home Daily scan runs incrementally. Rendering reads only this state. */
 static bool daily_lookup_scanning = false;
@@ -578,6 +580,7 @@ static bool persistence_recover_previous(Persistence*p){
   p->capture_failed=false;
   p->replay_activation_unresolved=false;
   p->daily_activation_unresolved=false;
+  p->load_activation_unresolved=false;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
@@ -933,7 +936,9 @@ static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
 }
 
 static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
-  if(!p||persistence_activation_blocked(p))return false;
+  if(!p)return false;
+  if(p->load_activation_unresolved && !games_browser_load_restore(p))return false;
+  if(persistence_activation_blocked(p))return false;
   if(p->capture_failed &&
      (!game||!ui||!ui->session_open||
       !stage_current_session(p,game,ui)))return false;
