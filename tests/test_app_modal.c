@@ -675,7 +675,57 @@ static void test_daily_previous_recovery_confirmation(void) {
   assert(state.pause_reasons==(APP_PAUSE_HOME|APP_PAUSE_FOCUS));
 }
 
+static void test_load_save_stages(void) {
+  const AppModalAction actions[]={APP_MODAL_LOAD_CHECKPOINT,
+      APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY};
+  for (unsigned i=0;i<sizeof(actions)/sizeof(actions[0]);++i) {
+    AppState state=playing();
+    state.screen=APP_SCREEN_GAMES;
+    state.pause_reasons=APP_PAUSE_MODAL|APP_PAUSE_FOCUS;
+    AppModalRequest request={
+        .kind=APP_MODAL_RECOVERY,.action=actions[i],
+        .binding={APP_SCREEN_GAMES,53,61,62,8},
+        .title=T_STORAGE_ERROR,.body=T_GAMES_RETRY_SAVE_PROMPT,
+        .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+    if (actions[i]==APP_MODAL_LOAD_KEEP) {
+      request.buttons[0]=T_CANCEL;request.buttons[1]=T_GAMES_SAVE_CONTINUE;
+      request.buttons[2]=T_DISCARD;request.button_count=3;
+      request.destructive_buttons=4u;
+    }
+    assert(app_modal_request_valid(&request));
+    AppModalRequest invalid=request;invalid.binding.screen=APP_SCREEN_HOME;
+    assert(!app_modal_request_valid(&invalid));
+    invalid=request;invalid.binding.key_hi=invalid.binding.key_lo=0;
+    assert(!app_modal_request_valid(&invalid));
+    invalid=request;invalid.kind=APP_MODAL_CONFIRM;
+    assert(!app_modal_request_valid(&invalid));
+    invalid=request;invalid.destructive_buttons=2u;
+    assert(!app_modal_request_valid(&invalid));
+    AppModal modal={0};AppModalResult result={0};
+    assert(app_modal_begin(&modal,&state,&request,100));
+    assert(modal.focus==0 && !modal.owns_pause);
+    assert(app_modal_choose(&modal,modal.serial,&request.binding,0,200,&result));
+    assert(result.resolution==APP_MODAL_CANCELLED);
+    assert(app_modal_begin(&modal,&state,&request,300));
+    AppModalBinding stale=request.binding;++stale.revision;
+    assert(app_modal_choose(&modal,modal.serial,&stale,1,400,&result));
+    assert(result.resolution==APP_MODAL_STALE);
+    assert(app_modal_begin(&modal,&state,&request,500));
+    uint64_t serial=modal.serial;
+    assert(app_modal_choose(&modal,serial,&request.binding,1,600,&result));
+    assert(result.resolution==APP_MODAL_CHOSEN && result.action==actions[i]);
+    assert(!app_modal_choose(&modal,serial,&request.binding,1,700,&result));
+    assert(state.pause_reasons==(APP_PAUSE_MODAL|APP_PAUSE_FOCUS));
+    if (actions[i]==APP_MODAL_LOAD_CHECKPOINT) {
+      request.buttons[2]=T_DISCARD;request.button_count=3;
+      request.destructive_buttons=4u;
+      assert(app_modal_request_valid(&request));
+    }
+  }
+}
+
 int main(void) {
+  test_load_save_stages();
   test_daily_activation_retry();
   test_daily_previous_recovery_confirmation();
   test_daily_choice_and_checkpoint_modal();

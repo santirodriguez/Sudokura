@@ -2834,6 +2834,131 @@ int main(int argc, char **argv) {
         games_daily_activation=saved_activation;
         ui.screen=old_screen;ui.pause_reasons=old_pauses;
       }
+      /* Load gates use actual SDL dispatch with synthetic rows. No saved
+         record is modified by these identity/cancellation checks. */
+      {
+        GamesBrowser saved_browser=games_browser;
+        GamesLoadGate saved_gate=games_load_gate;
+        ProfileSlot saved_normal=settings_persistence.profile.normal;
+        SavePolicy saved_policy=settings_persistence.save_policy;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_capture=settings_persistence.capture_failed;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        bool saved_daily=settings_persistence.daily_activation_unresolved;
+        unsigned saved_keep=settings_persistence.keep_pending_mask;
+        Screen saved_screen=ui.screen;unsigned saved_pauses=ui.pause_reasons;
+        games_browser=(GamesBrowser){0};
+        games_browser.rows=calloc(2,sizeof(*games_browser.rows));
+        if (!games_browser.rows) { app_shutdown(&g);return 1; }
+        games_browser.count=games_browser.capacity=2;
+        for (size_t i=0;i<2;++i) {
+          games_browser.rows[i].entry.id=(GameAttemptId){61,62+i};
+          games_browser.rows[i].entry.revision=8;
+          games_browser.rows[i].entry.status=STORE_OK;
+          games_browser.rows[i].entry.kind=GAME_RECORD_EXACT;
+          games_browser.rows[i].entry.result.status=SESSION_ACTIVE;
+        }
+        ui.screen=APP_SCREEN_GAMES;ui.pause_reasons=PAUSE_MODAL|PAUSE_FOCUS;
+        settings_persistence.enabled=true;
+        settings_persistence.capture_failed=false;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.daily_activation_unresolved=false;
+        settings_persistence.keep_pending_mask=0;
+        ProfileSlot *departing=&settings_persistence.profile.normal;
+        *departing=(ProfileSlot){0};departing->present=true;
+        departing->attempt_id=(GameAttemptId){71,72};departing->revision=7;
+        departing->value.session.status=SESSION_ACTIVE;
+        save_policy_init(&settings_persistence.save_policy);
+        save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_NORMAL,now_ms());
+        save_policy_record_result(&settings_persistence.save_policy,STORE_IO_ERROR,now_ms());
+        AppModalBinding selected;
+        if (!games_browser_modal_binding(&settings_persistence,&ui,&selected) ||
+            !games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load scoped Discard setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        departing->attempt_id=(GameAttemptId){selected.key_hi,selected.key_lo};
+        if (games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load same-attempt Discard accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        departing->attempt_id=(GameAttemptId){71,72};
+        save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
+        if (games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load unrelated dirty domain discarded\n");
+          app_shutdown(&g);return 1;
+        }
+        const AppModalAction stages[]={APP_MODAL_LOAD_CHECKPOINT,
+            APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY};
+        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        for (size_t i=0;i<sizeof(stages)/sizeof(stages[0]);++i) {
+          (void)games_browser_modal_binding(&settings_persistence,&ui,&selected);
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            fprintf(stderr,"Load modal stage setup regression\n");
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          if (ui_modal.active || ui_modal_has_pending() ||
+              ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+            fprintf(stderr,"Load safe default cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          AppModalResult choice={0};
+          if (!ui_modal_take_result(&choice) || choice.action!=stages[i] ||
+              choice.button!=1 || ui_modal_take_result(&choice)) {
+            fprintf(stderr,"Load explicit one-shot selection regression\n");
+            app_shutdown(&g);return 1;
+          }
+          ++departing->revision;
+          if (games_browser_load_chosen(&settings_persistence,&game,&ui,&g,&choice) ||
+              games_load_gate.action!=APP_MODAL_ACTION_NONE) {
+            fprintf(stderr,"Load stale departing revision accepted\n");
+            app_shutdown(&g);return 1;
+          }
+          --departing->revision;
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          games_browser.selected=1;
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          if (ui_modal.active || ui_modal_has_pending()) {
+            fprintf(stderr,"Load changed selected record accepted\n");
+            app_shutdown(&g);return 1;
+          }
+          games_browser.selected=0;
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          ui_modal_invalidate();
+          if (ui_modal.active || ui_modal_has_pending() ||
+              ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+            fprintf(stderr,"Load queued focus cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        free(games_browser.rows);games_browser=saved_browser;
+        games_load_gate=saved_gate;
+        settings_persistence.profile.normal=saved_normal;
+        settings_persistence.save_policy=saved_policy;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.capture_failed=saved_capture;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        settings_persistence.daily_activation_unresolved=saved_daily;
+        settings_persistence.keep_pending_mask=saved_keep;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
       ui.screen = SCR_PLAY;
@@ -3370,9 +3495,8 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay uncertain-profile checkpoint regression\n");
         app_shutdown(&g); return 1;
       }
-      if (games_browser_checkpoint_gate(&settings_persistence,&game,&ui,
-              &g,false,true,false,T_GAMES_RETRY_SAVE_PROMPT) !=
-              GAMES_CHECKPOINT_BACK || !ui_modal.active) {
+      if (games_browser_activate(&settings_persistence,&game,&ui,&g) ||
+          !ui_modal.active) {
         fprintf(stderr,"Replay uncertain-profile Discard gate regression\n");
         app_shutdown(&g); return 1;
       }
@@ -4816,6 +4940,7 @@ int main(int argc, char **argv) {
           app_modal_binding_equal(modal_result.binding, current))
         (void)games_browser_delete_confirmed(&persistence, &game, &ui,
                                              &g, modal_result.binding);
+      (void)games_browser_load_chosen(&persistence,&game,&ui,&g,&modal_result);
       restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
       new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
       home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);

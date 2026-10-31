@@ -42,6 +42,9 @@ typedef enum {
   APP_MODAL_DAILY_RECOVER_PREVIOUS,
   APP_MODAL_DAILY_ROLLOVER_RETRY,
   APP_MODAL_DAILY_ACTIVATE_RETRY,
+  APP_MODAL_LOAD_CHECKPOINT,
+  APP_MODAL_LOAD_KEEP,
+  APP_MODAL_LOAD_RETAIN_RETRY,
   APP_MODAL_ACTION_COUNT
 } AppModalAction;
 
@@ -125,6 +128,19 @@ static inline bool app_modal_request_valid(const AppModalRequest *request) {
       request->action == APP_MODAL_DELETE ||
       request->action == APP_MODAL_RECOVER_RECORD) {
     if (!(request->binding.key_hi | request->binding.key_lo)) return false;
+  }
+  if (request->action == APP_MODAL_LOAD_CHECKPOINT ||
+      request->action == APP_MODAL_LOAD_KEEP ||
+      request->action == APP_MODAL_LOAD_RETAIN_RETRY) {
+    if (request->kind != APP_MODAL_RECOVERY ||
+        request->binding.screen != APP_SCREEN_GAMES ||
+        !(request->binding.key_hi | request->binding.key_lo)) return false;
+    if (request->action == APP_MODAL_LOAD_KEEP)
+      return request->button_count == 3 && request->destructive_buttons == 4u;
+    if (request->action == APP_MODAL_LOAD_RETAIN_RETRY)
+      return request->button_count == 2 && request->destructive_buttons == 0;
+    return (request->button_count == 2 && request->destructive_buttons == 0) ||
+           (request->button_count == 3 && request->destructive_buttons == 4u);
   }
   if ((request->action == APP_MODAL_DELETE ||
        request->action == APP_MODAL_REPLAY_CONFLICT) &&

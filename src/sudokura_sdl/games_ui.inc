@@ -46,6 +46,15 @@ typedef struct {
 
 static GamesReplayGate games_replay_gate;
 
+typedef struct {
+  AppModalAction action;
+  AppModalBinding binding;
+  GameAttemptId departing_id;
+  uint64_t departing_revision;
+  bool daily, hot_only, departing_present, departing_retained;
+} GamesLoadGate;
+static GamesLoadGate games_load_gate;
+
 
 /* A library modal binds the selected record, not its position in a list. */
 static bool games_browser_modal_binding(Persistence *p, UI *ui,
@@ -302,6 +311,7 @@ static void games_browser_ensure_visible(const Gfx *gfx) {
 static void games_browser_close(Persistence *p, Game *game, UI *ui) {
   games_replay_conflict = (GamesReplayConflict){0};
   games_replay_gate = (GamesReplayGate){0};
+  games_load_gate = (GamesLoadGate){0};
   game_library_scan_close(&games_browser.scanner);
   bool resume = games_browser.modal_owned &&
                 ui->prev_screen == SCR_PLAY;
@@ -319,6 +329,7 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
 static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
   games_replay_conflict = (GamesReplayConflict){0};
   games_replay_gate = (GamesReplayGate){0};
+  games_load_gate = (GamesLoadGate){0};
   game_library_scan_close(&games_browser.scanner);
   games_browser.scanning = false;
   games_browser.incomplete = games_browser.scan_status != STORE_OK;
@@ -367,6 +378,7 @@ static bool games_browser_open(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   memset(&games_browser, 0, sizeof(games_browser));
   games_replay_conflict = (GamesReplayConflict){0};
   games_replay_gate = (GamesReplayGate){0};
+  games_load_gate = (GamesLoadGate){0};
   games_browser.modal_owned = modal_owned;
   games_browser_window = gfx;
   clear_hint_preview(ui);
@@ -502,68 +514,6 @@ static bool games_browser_daily_flush_verified(Persistence *p) {
   return status == STORE_OK;
 }
 
-typedef enum {
-  GAMES_CHECKPOINT_BACK = 0,
-  GAMES_CHECKPOINT_READY,
-  GAMES_CHECKPOINT_DISCARD
-} GamesCheckpointGate;
-
-static GamesCheckpointGate games_browser_checkpoint_gate(
-    Persistence *p, Game *game, UI *ui, Gfx *gfx,
-    bool daily, bool allow_discard, bool verified_daily,
-    TextKey retry_prompt) {
-  if (!p || !p->enabled || !game || !ui || !gfx)
-    return GAMES_CHECKPOINT_BACK;
-  if (persistence_activation_blocked(p)) {
-    /* A Discard of another hot slot cannot abandon an uncertain Replay
-       profile commit or rotate the previous valid backup. */
-    if (!ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED))
-      show_toast(ui,tr(ui->language,T_GAMES_ACTION_FAILED));
-    return GAMES_CHECKPOINT_BACK;
-  }
-  bool flushed = verified_daily
-      ? games_browser_daily_flush_verified(p) : persistence_flush(p);
-  if (flushed && !p->capture_failed &&
-      p->keep_pending_mask == 0 && !save_policy_dirty(&p->save_policy))
-    return GAMES_CHECKPOINT_READY;
-  for (;;) {
-    const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
-    bool unretained_active = slot->present && !slot->retained &&
-                              slot->value.session.status == SESSION_ACTIVE;
-    bool can_discard = allow_discard &&
-        save_policy_replacement_discard_allowed(
-            &p->save_policy, daily, unretained_active,
-            p->capture_failed, p->keep_pending_mask);
-    int choice = can_discard
-        ? choice_box(gfx, game, ui,
-                     tr(ui->language, T_UNSAVED_TITLE),
-                     tr(ui->language, T_GAMES_SAFE_DISCARD_PROMPT),
-                     tr(ui->language, T_BACK),
-                     tr(ui->language, T_RETRY_SAVE),
-                     tr(ui->language, T_DISCARD))
-        : (confirm_box(gfx, game, ui,
-                       tr(ui->language, T_UNSAVED_TITLE),
-                       tr(ui->language, retry_prompt),
-                       tr(ui->language, T_RETRY_SAVE),
-                       tr(ui->language, T_BACK)) ? 1 : 0);
-    if (choice == 0) return GAMES_CHECKPOINT_BACK;
-    if (choice == 2) {
-      if (can_discard && save_policy_replacement_discard_allowed(
-              &p->save_policy, daily, unretained_active,
-              p->capture_failed, p->keep_pending_mask))
-        return GAMES_CHECKPOINT_DISCARD;
-      return GAMES_CHECKPOINT_BACK;
-    }
-    bool retried = verified_daily && !p->capture_failed &&
-                   p->keep_pending_mask == 0
-        ? games_browser_daily_flush_verified(p)
-        : persistence_retry_current(p, game, ui);
-    if (retried && !p->capture_failed && p->keep_pending_mask == 0 &&
-        !save_policy_dirty(&p->save_policy))
-      return GAMES_CHECKPOINT_READY;
-  }
-}
-
 static bool games_browser_commit_profile(Persistence *p, Game *game,
                                          UI *ui, Gfx *gfx, bool daily,
                                          const ProfileData *candidate,
@@ -598,41 +548,6 @@ static bool games_browser_commit_profile(Persistence *p, Game *game,
       return false;
     }
   }
-}
-
-static bool games_browser_gate_replacement(Persistence *p, Game *game,
-                                           UI *ui, Gfx *gfx, bool daily) {
-  GamesCheckpointGate gate = games_browser_checkpoint_gate(
-      p, game, ui, gfx, daily, true, false, T_GAMES_RETRY_SAVE_PROMPT);
-  if (gate == GAMES_CHECKPOINT_BACK) return false;
-  if (gate == GAMES_CHECKPOINT_DISCARD) return true;
-  const ProfileSlot *departing = daily ? &p->profile.daily : &p->profile.normal;
-  if (departing->present && !departing->retained &&
-      session_has_meaningful_progress_runtime(&departing->value.session)) {
-    int choice = choice_box(gfx, game, ui,
-                            tr(ui->language, T_GAMES_KEEP_TITLE),
-                            tr(ui->language, T_GAMES_KEEP_PROMPT),
-                            tr(ui->language, T_CANCEL),
-                            tr(ui->language, T_GAMES_SAVE_CONTINUE),
-                            tr(ui->language, T_DISCARD));
-    if (choice == 0) return false;
-    if (choice == 1 && !games_browser_save_hot(p, daily)) {
-      /* Retention may have written a record before its profile link failed.
-         Retry the same Save; never turn this into a silent Discard. */
-      for (;;) {
-        if (!confirm_box(gfx, game, ui,
-                         tr(ui->language, T_STORAGE_ERROR),
-                         tr(ui->language, T_GAMES_RETRY_SAVE_PROMPT),
-                         tr(ui->language, T_RETRY_SAVE),
-                         tr(ui->language, T_BACK)))
-          return false;
-        if (persistence_retry_current(p, game, ui) &&
-            (daily ? p->profile.daily.retained : p->profile.normal.retained))
-          break;
-      }
-    }
-  }
-  return true;
 }
 
 /* Preserve a departing Daily before selecting a different original. */
@@ -920,18 +835,95 @@ static bool games_browser_recover_confirmed(Persistence *p, Game *game,
   return true;
 }
 
-static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
-                                   Gfx *gfx) {
+static bool games_browser_load_discard_allowed(
+    const Persistence *p, bool daily, AppModalBinding target) {
+  if (!p || persistence_activation_blocked(p)) return false;
+  const ProfileSlot *slot=daily ? &p->profile.daily : &p->profile.normal;
+  GameAttemptId target_id={target.key_hi,target.key_lo};
+  bool unretained_active=slot->present && !slot->retained &&
+      slot->value.session.status==SESSION_ACTIVE &&
+      !game_attempt_id_equal(slot->attempt_id,target_id);
+  return save_policy_replacement_discard_allowed(
+      &p->save_policy,daily,unretained_active,
+      p->capture_failed,p->keep_pending_mask);
+}
+
+static bool games_browser_load_offer(Persistence *p, UI *ui, Gfx *gfx,
+                                      AppModalBinding expected, bool daily,
+                                      AppModalAction action) {
+  AppModalBinding current;
+  if (!p || !p->enabled || !ui || !gfx || persistence_activation_blocked(p) ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(expected,current)) return false;
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=action,.binding=expected,
+      .title=T_UNSAVED_TITLE,.body=T_GAMES_RETRY_SAVE_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  if (action==APP_MODAL_LOAD_CHECKPOINT) {
+    if (games_browser_load_discard_allowed(p,daily,expected)) {
+      request.body=T_GAMES_SAFE_DISCARD_PROMPT;
+      request.buttons[2]=T_DISCARD;request.button_count=3;
+      request.destructive_buttons=4u;
+    }
+  } else if (action==APP_MODAL_LOAD_KEEP) {
+    request.title=T_GAMES_KEEP_TITLE;request.body=T_GAMES_KEEP_PROMPT;
+    request.buttons[0]=T_CANCEL;request.buttons[1]=T_GAMES_SAVE_CONTINUE;
+    request.buttons[2]=T_DISCARD;request.button_count=3;
+    request.destructive_buttons=4u;
+  } else if (action!=APP_MODAL_LOAD_RETAIN_RETRY) {
+    return false;
+  }
+  if (!ui_modal_open_request(gfx,ui,&request)) return false;
+  const ProfileSlot *slot=daily ? &p->profile.daily : &p->profile.normal;
+  games_load_gate=(GamesLoadGate){
+      .action=action,.binding=expected,.daily=daily,
+      .hot_only=games_browser.rows[games_browser.selected].hot_only,
+      .departing_id=slot->attempt_id,.departing_revision=slot->revision,
+      .departing_present=slot->present,.departing_retained=slot->retained};
+  return true;
+}
+
+/* Re-read the source before any deferred choice can write another slot. */
+static bool games_browser_load_source_valid(const Persistence *p,
+                                             const GamesLoadGate *gate) {
+  const GamesRow *row=&games_browser.rows[games_browser.selected];
+  if (row->hot_only!=gate->hot_only || row->entry.status!=STORE_OK ||
+      row->entry.kind!=GAME_RECORD_EXACT ||
+      row->entry.result.status!=SESSION_ACTIVE) return false;
+  if (row->hot_only) {
+    const ProfileSlot *slot=gate->daily ? &p->profile.daily : &p->profile.normal;
+    return slot->present && slot->revision==gate->binding.revision &&
+        slot->attempt_id.high==gate->binding.key_hi &&
+        slot->attempt_id.low==gate->binding.key_lo &&
+        session_can_continue_runtime(&slot->value.session);
+  }
+  GameLibraryRecord target;
+  return game_library_load(p->profile_directory,row->entry.id,&target)==STORE_OK &&
+      target.kind==GAME_RECORD_EXACT &&
+      target.revision==gate->binding.revision &&
+      target.exact.session.status==SESSION_ACTIVE &&
+      target.exact.session.is_daily==gate->daily;
+}
+
+static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
+                                         Gfx *gfx, AppModalBinding expected,
+                                         bool preflight_ready) {
   if (games_browser.scanning || games_browser.selected >= games_browser.count ||
       !p || !p->enabled)
     return false;
+  AppModalBinding actual;
+  if (!game || !ui || !gfx ||
+      !games_browser_modal_binding(p,ui,&actual) ||
+      !app_modal_binding_equal(expected,actual)) return false;
+  if (persistence_activation_blocked(p)) {
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
+    return false;
+  }
   GamesRow row = games_browser.rows[games_browser.selected];
   if (row.entry.status != STORE_OK) {
     if (!row.hot_only && game_library_entry_recoverable(&row.entry))
       return games_browser_recover_selected(p, game, ui, gfx);
-    (void)show_simple_message_box(
-        gfx, game, ui, SDL_MESSAGEBOX_WARNING, tr(ui->language, T_GAMES),
-        tr(ui->language, T_GAMES_UNAVAILABLE));
+    (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
     return false;
   }
   if (row.entry.result.status != SESSION_ACTIVE) {
@@ -939,9 +931,7 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
        Legacy summaries are explicitly metadata-only and remain viewable. */
     if (row.entry.kind == GAME_RECORD_EXACT &&
         !games_browser.preview_valid) {
-      (void)show_simple_message_box(
-          gfx,game,ui,SDL_MESSAGEBOX_WARNING,
-          tr(ui->language,T_GAMES),tr(ui->language,T_GAMES_UNAVAILABLE));
+      (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
       return false;
     }
     games_browser.detail_open = true;
@@ -971,10 +961,9 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
     if (valid) target_retained = target.retained;
   }
   if (!valid || target.kind != GAME_RECORD_EXACT ||
+      target.revision != row.entry.revision ||
       target.exact.session.status != SESSION_ACTIVE) {
-    (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-                                  tr(ui->language, T_GAMES),
-                                  tr(ui->language, T_GAMES_UNAVAILABLE));
+    (void)ui_modal_message(gfx,ui,T_GAMES,T_GAMES_UNAVAILABLE);
     return false;
   }
   bool daily = target.exact.session.is_daily;
@@ -998,30 +987,38 @@ static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
     if (!play_current) restore_saved_session(p, game, ui, daily);
     return true;
   }
-  /* Reconcile newer disk state without ever offering Discard of this same
-     attempt. After Retry, resolve again in case the live slot advanced. */
-  if (same_attempt) {
-    if (games_browser_checkpoint_gate(
-            p, game, ui, gfx, daily, false, false,
-            T_GAMES_RETRY_SAVE_PROMPT) != GAMES_CHECKPOINT_READY)
+  /* A save gate executes once and yields to the native event owner. */
+  if (!preflight_ready) {
+    bool saved=persistence_flush(p);
+    if (!saved || p->capture_failed || p->keep_pending_mask ||
+        save_policy_dirty(&p->save_policy)) {
+      (void)games_browser_load_offer(p,ui,gfx,expected,daily,
+                                    APP_MODAL_LOAD_CHECKPOINT);
       return false;
-    if (game_library_load(p->profile_directory, target.id, &target) != STORE_OK ||
-        game_library_resolve_hot_record(
-            daily ? &p->profile.daily : &p->profile.normal,
-            &target, &prefer_record) != STORE_OK) {
-      games_browser_operation_error(gfx, game, ui);
+    }
+    if (!same_attempt && departing->present && !departing->retained &&
+        session_has_meaningful_progress_runtime(&departing->value.session)) {
+      (void)games_browser_load_offer(p,ui,gfx,expected,daily,
+                                    APP_MODAL_LOAD_KEEP);
+      return false;
+    }
+  }
+  /* A newer record of this same attempt is reconciled without Discard. */
+  if (same_attempt) {
+    if (game_library_load(p->profile_directory,target.id,&target)!=STORE_OK ||
+        target.revision!=expected.revision ||
+        game_library_resolve_hot_record(departing,&target,&prefer_record)!=STORE_OK) {
+      games_browser_operation_error(gfx,game,ui);
       return false;
     }
     if (!prefer_record) {
-      bool play_current = ui->prev_screen == SCR_PLAY && ui->session_open &&
-                          ui->is_daily == daily &&
-                          game_attempt_id_equal(p->active_attempt_id, target.id);
-      games_browser_close(p, game, ui);
-      if (!play_current) restore_saved_session(p, game, ui, daily);
+      bool play_current=ui->prev_screen==SCR_PLAY && ui->session_open &&
+          ui->is_daily==daily &&
+          game_attempt_id_equal(p->active_attempt_id,target.id);
+      games_browser_close(p,game,ui);
+      if (!play_current) restore_saved_session(p,game,ui,daily);
       return true;
     }
-  } else if (!games_browser_gate_replacement(p, game, ui, gfx, daily)) {
-    return false;
   }
   ProfileData candidate = p->profile;
   ProfileSlot *slot = daily ? &candidate.daily : &candidate.normal;
@@ -1057,9 +1054,70 @@ static void games_browser_select(Persistence *p, Gfx *gfx, size_t index) {
 
 static void games_browser_operation_error(Gfx *gfx, Game *game,
                                           UI *ui) {
-  (void)show_simple_message_box(gfx,game,ui,SDL_MESSAGEBOX_WARNING,
-                                tr(ui->language,T_STORAGE_ERROR),
-                                tr(ui->language,T_GAMES_ACTION_FAILED));
+  (void)game;
+  (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_GAMES_ACTION_FAILED);
+}
+
+static bool games_browser_activate(Persistence *p, Game *game, UI *ui,
+                                   Gfx *gfx) {
+  AppModalBinding binding;
+  if (!games_browser_modal_binding(p,ui,&binding)) return false;
+  games_load_gate=(GamesLoadGate){0};
+  return games_browser_activate_bound(p,game,ui,gfx,binding,false);
+}
+
+/* One accepted choice owns exactly one attempt; stale source or departing
+   identity cancels before retry, retention or replacement can write. */
+static bool games_browser_load_chosen(Persistence *p, Game *game, UI *ui,
+                                      Gfx *gfx, const AppModalResult *choice) {
+  if (!choice || (choice->action!=APP_MODAL_LOAD_CHECKPOINT &&
+      choice->action!=APP_MODAL_LOAD_KEEP &&
+      choice->action!=APP_MODAL_LOAD_RETAIN_RETRY)) return false;
+  GamesLoadGate gate=games_load_gate;
+  games_load_gate=(GamesLoadGate){0};
+  AppModalBinding current;
+  if (!p || !p->enabled || !game || !ui || !gfx ||
+      persistence_activation_blocked(p) ||
+      choice->resolution!=APP_MODAL_CHOSEN || choice->action!=gate.action ||
+      !app_modal_binding_equal(choice->binding,gate.binding) ||
+      !games_browser_modal_binding(p,ui,&current) ||
+      !app_modal_binding_equal(current,gate.binding)) return false;
+  const ProfileSlot *slot=gate.daily ? &p->profile.daily : &p->profile.normal;
+  if (slot->present!=gate.departing_present ||
+      slot->retained!=gate.departing_retained ||
+      slot->revision!=gate.departing_revision ||
+      !game_attempt_id_equal(slot->attempt_id,gate.departing_id) ||
+      !games_browser_load_source_valid(p,&gate)) return false;
+  if (gate.action==APP_MODAL_LOAD_CHECKPOINT) {
+    if (choice->button==2) {
+      if (!games_browser_load_discard_allowed(p,gate.daily,gate.binding))
+        return false;
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+    }
+    if (choice->button!=1) return false;
+    (void)persistence_retry_current(p,game,ui);
+    return games_browser_activate_bound(p,game,ui,gfx,gate.binding,false);
+  }
+  if (gate.action==APP_MODAL_LOAD_KEEP) {
+    if (!slot->present || slot->retained ||
+        !session_has_meaningful_progress_runtime(&slot->value.session))
+      return false;
+    if (choice->button==2)
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+    if (choice->button!=1) return false;
+    if (games_browser_save_hot(p,gate.daily))
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+  } else {
+    if (choice->button!=1) return false;
+    if (persistence_retry_current(p,game,ui) && slot->present && slot->retained &&
+        !p->capture_failed && !p->keep_pending_mask &&
+        !save_policy_dirty(&p->save_policy))
+      return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true);
+  }
+  if (!games_browser_load_offer(p,ui,gfx,gate.binding,gate.daily,
+                                 APP_MODAL_LOAD_RETAIN_RETRY))
+    show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+  return false;
 }
 
 /* The intent is a tiny durable operation marker, not a collection index.

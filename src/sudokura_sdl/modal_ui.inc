@@ -228,7 +228,9 @@ static AppModalBinding ui_modal_dispatch_binding(Persistence *p, UI *ui,
       action == APP_MODAL_NEW_KEEP_RETRY ||
       action == APP_MODAL_NEW_GENERATE_RETRY)
     return ui_modal_new_game_binding(p, ui);
-  if (action == APP_MODAL_DELETE || action == APP_MODAL_REPLAY ||
+  if (action == APP_MODAL_LOAD_CHECKPOINT || action == APP_MODAL_LOAD_KEEP ||
+      action == APP_MODAL_LOAD_RETAIN_RETRY ||
+      action == APP_MODAL_DELETE || action == APP_MODAL_REPLAY ||
       action == APP_MODAL_REPLAY_CONFLICT ||
       action == APP_MODAL_REPLAY_CHECKPOINT ||
       action == APP_MODAL_REPLAY_KEEP ||
