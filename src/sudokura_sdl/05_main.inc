@@ -237,6 +237,56 @@ typedef struct {
   unsigned rendered_attempt;
 } GenerationUiContext;
 
+/* Inspect, do not consume, events owned by the main loop. A bounded full
+   snapshot cancels conservatively rather than drawing past a hidden event. */
+static bool generation_context_interrupted(const Gfx *gfx) {
+  if (!gfx || !gfx->renderer_ready || !gfx->win || app_suspended ||
+      SDL_HasEvent(SDL_RENDER_DEVICE_RESET) ||
+      SDL_HasEvent(SDL_RENDER_TARGETS_RESET)) return true;
+  SDL_Event pending[32];
+  int count=SDL_PeepEvents(pending,32,SDL_PEEKEVENT,
+                            SDL_WINDOWEVENT,SDL_WINDOWEVENT);
+  if (count<0 || count==32) return true;
+  Uint32 window_id=SDL_GetWindowID(gfx->win);
+  for (int i=0;i<count;++i) {
+    if (pending[i].window.windowID!=window_id) continue;
+    switch (pending[i].window.event) {
+      case SDL_WINDOWEVENT_FOCUS_LOST:
+      case SDL_WINDOWEVENT_HIDDEN:
+      case SDL_WINDOWEVENT_MINIMIZED:
+      case SDL_WINDOWEVENT_SIZE_CHANGED:
+      case SDL_WINDOWEVENT_RESIZED:
+      case SDL_WINDOWEVENT_MOVED:
+      case SDL_WINDOWEVENT_MAXIMIZED:
+      case SDL_WINDOWEVENT_RESTORED:
+      case SDL_WINDOWEVENT_DISPLAY_CHANGED:
+        return true;
+      default: break;
+    }
+  }
+  return false;
+}
+
+static bool generation_back_pending(void) {
+  SDL_Event pending[32];
+  int count=SDL_PeepEvents(pending,32,SDL_PEEKEVENT,SDL_KEYDOWN,SDL_KEYDOWN);
+  if (count<0 || count==32) return true;
+  for (int i=0;i<count;++i)
+    if (!pending[i].key.repeat &&
+        (pending[i].key.keysym.sym==SDLK_ESCAPE ||
+         pending[i].key.keysym.sym==SDLK_AC_BACK)) return true;
+  return false;
+}
+
+static bool generation_cancel_context(bool lost_context) {
+  ui_modal_invalidate();
+  ui_pointer_cancel();ui_touch_cancel();ui_audio_control_cancel_interaction();
+  if (lost_context) audio_set_focus_paused(true);
+  /* Leave focus pause/checkpoint/renderer changes to the queued event's
+     existing owner; pre-acquiring its pause would skip its checked save. */
+  return false;
+}
+
 static bool generation_ui_continue(void *userdata, unsigned attempt,
                                    unsigned max_attempts) {
   GenerationUiContext *context = (GenerationUiContext *)userdata;
@@ -249,15 +299,24 @@ static bool generation_ui_continue(void *userdata, unsigned attempt,
   while ((count = SDL_PeepEvents(pending_app, 8, SDL_GETEVENT,
                                  SDL_APP_TERMINATING,
                                  SDL_APP_DIDENTERFOREGROUND)) > 0) {
-    for (int i = 0; i < count; ++i)
+    bool interrupted=false;
+    for (int i = 0; i < count; ++i) {
       (void)ui_handle_android_lifecycle_event(&pending_app[i]);
-    if (app_suspended) return false;
+      interrupted=interrupted || app_suspended ||
+          pending_app[i].type==SDL_APP_TERMINATING;
+    }
+    /* Process the complete fetched batch, but never continue a candidate
+       after background even if foreground followed in that same batch. */
+    if (interrupted) return generation_cancel_context(true);
   }
-  if (count < 0 || app_suspended) return false;
+  if (count < 0 || app_suspended) return generation_cancel_context(true);
 #endif
-  if (SDL_HasEvent(SDL_QUIT)) return false;
+  if (generation_context_interrupted(context->gfx))
+    return generation_cancel_context(true);
+  if (SDL_HasEvent(SDL_QUIT) || generation_back_pending())
+    return generation_cancel_context(false);
   const Uint8 *keys = SDL_GetKeyboardState(NULL);
-  if (keys && keys[SDL_SCANCODE_ESCAPE]) return false;
+  if (keys && keys[SDL_SCANCODE_ESCAPE]) return generation_cancel_context(false);
 
   unsigned shown_attempt = attempt + 1u;
   if (context->rendered_attempt != shown_attempt) {
@@ -278,7 +337,7 @@ static GameGenerationResult generate_normal_with_ui(
   ui->generation_attempt = 1;
   ui->generation_max_attempts =
       game_generation_attempt_budget(p->preferences.difficulty);
-  app_frame(g, game, ui);
+  /* The first generation callback handles queued context loss before draw. */
   GameGenerationResult result = start_new_session(p, game, ui, &control);
   if (result == GAME_GENERATION_CANCELLED &&
       !SDL_HasEvent(SDL_QUIT))
@@ -299,7 +358,7 @@ static GameGenerationResult generate_daily_with_ui(
   ui->generation_attempt = 1;
   ui->generation_max_attempts =
       game_generation_attempt_budget(DIFFICULTY_MEDIUM);
-  app_frame(g, game, ui);
+  /* The first generation callback handles queued context loss before draw. */
   GameGenerationResult result =
       start_daily_session(p, game, ui, year, month, day, &control);
   if (result == GAME_GENERATION_CANCELLED &&
@@ -3207,6 +3266,83 @@ int main(int argc, char **argv) {
         settings_persistence.profile_status=saved_status;
         settings_persistence.lock_status=saved_lock;
         ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Generation peeks context events without swallowing the main owner's
+         focus/checkpoint/renderer work. All events here are synthetic. */
+      {
+        UI saved_ui=ui;
+        Game previous=game;
+        GameAttemptId saved_attempt=settings_persistence.active_attempt_id;
+        uint64_t normal_revision=settings_persistence.profile.normal.revision;
+        uint64_t daily_revision=settings_persistence.profile.daily.revision;
+        ui.screen=SCR_PLAY;ui.session_open=true;ui.result=RES_NONE;
+        ui.pause_reasons=PAUSE_MANUAL;ui.generation_attempt=7;
+        SDL_FlushEvent(SDL_WINDOWEVENT); /* Isolated smoke setup noise. */
+        SDL_FlushEvents(SDL_KEYDOWN,SDL_KEYUP);
+        const Uint8 changes[]={SDL_WINDOWEVENT_FOCUS_LOST,SDL_WINDOWEVENT_HIDDEN,
+            SDL_WINDOWEVENT_MINIMIZED,SDL_WINDOWEVENT_SIZE_CHANGED,
+            SDL_WINDOWEVENT_DISPLAY_CHANGED};
+        for (size_t i=0;i<sizeof(changes)/sizeof(changes[0]);++i) {
+          SDL_Event queued={0};queued.type=SDL_WINDOWEVENT;
+          queued.window.type=SDL_WINDOWEVENT;
+          queued.window.windowID=SDL_GetWindowID(g.win);
+          queued.window.event=changes[i];queued.window.data1=140;
+          GenerationUiContext context={&g,&game,&ui,0};
+          if (SDL_PushEvent(&queued)!=1 || generation_ui_continue(&context,0,4) ||
+              context.rendered_attempt!=0 || ui.generation_attempt!=7 ||
+              ui.pause_reasons!=PAUSE_MANUAL || memcmp(&game,&previous,sizeof(game))) {
+            fprintf(stderr,"Generation queued context cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+          SDL_Event retained={0};
+          if (SDL_PeepEvents(&retained,1,SDL_GETEVENT,SDL_WINDOWEVENT,
+                              SDL_WINDOWEVENT)!=1 ||
+              retained.window.event!=changes[i] || retained.window.data1!=140) {
+            fprintf(stderr,"Generation swallowed owner window event\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        const Uint32 resets[]={SDL_RENDER_DEVICE_RESET,SDL_RENDER_TARGETS_RESET};
+        for (size_t i=0;i<sizeof(resets)/sizeof(resets[0]);++i) {
+          SDL_Event queued={0};queued.type=resets[i];
+          GenerationUiContext context={&g,&game,&ui,0};
+          if (SDL_PushEvent(&queued)!=1 || generation_ui_continue(&context,0,4) ||
+              context.rendered_attempt || !g.renderer_ready) {
+            fprintf(stderr,"Generation rendered across queued renderer reset\n");
+            app_shutdown(&g);return 1;
+          }
+          if (SDL_PeepEvents(&queued,1,SDL_GETEVENT,resets[i],resets[i])!=1) {
+            fprintf(stderr,"Generation consumed renderer reset\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        SDL_Event back={0};back.type=SDL_KEYDOWN;back.key.type=SDL_KEYDOWN;
+        back.key.keysym.sym=SDLK_AC_BACK;
+        GenerationUiContext context={&g,&game,&ui,0};
+        if (SDL_PushEvent(&back)!=1 || generation_ui_continue(&context,0,4) ||
+            context.rendered_attempt ||
+            SDL_PeepEvents(&back,1,SDL_GETEVENT,SDL_KEYDOWN,SDL_KEYDOWN)!=1) {
+          fprintf(stderr,"Generation queued Back cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event other={0};other.type=SDL_WINDOWEVENT;other.window.type=SDL_WINDOWEVENT;
+        other.window.windowID=SDL_GetWindowID(g.win)+1;
+        other.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+        context=(GenerationUiContext){&g,&game,&ui,1};
+        if (SDL_PushEvent(&other)!=1 || !generation_ui_continue(&context,0,4) ||
+            SDL_PeepEvents(&other,1,SDL_GETEVENT,SDL_WINDOWEVENT,SDL_WINDOWEVENT)!=1) {
+          fprintf(stderr,"Generation unrelated window cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!game_attempt_id_equal(saved_attempt,settings_persistence.active_attempt_id) ||
+            normal_revision!=settings_persistence.profile.normal.revision ||
+            daily_revision!=settings_persistence.profile.daily.revision ||
+            memcmp(&game,&previous,sizeof(game))) {
+          fprintf(stderr,"Generation cancellation mutated live identity or progress\n");
+          app_shutdown(&g);return 1;
+        }
+        ui=saved_ui;
+        app_tick(&g,&game,&ui);
       }
       /* Real SDL event preparation/dispatch, without writing any profile.
          Default Enter cancels; Retry and Discard need deliberate selection. */
