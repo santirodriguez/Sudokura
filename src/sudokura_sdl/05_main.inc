@@ -79,6 +79,105 @@ static void ui_android_haptic(void) {
 static void ui_android_haptic(void) {}
 #endif
 
+/* Only the native event owner reads game/persistence state. The Android UI
+   submits a one-shot command bound to the currently visible fallback. */
+static SDL_atomic_t renderer_recovery_token;
+static SDL_atomic_t renderer_recovery_command;
+static int renderer_recovery_generation;
+static bool renderer_recovery_visible;
+static bool renderer_recovery_save_failed;
+static bool renderer_recovery_published_save_failed;
+static Language renderer_recovery_language = LANG_EN;
+
+static void renderer_recovery_submit(int generation, bool exit_requested) {
+  if (generation <= 0 || generation > 0x3fffffff ||
+      SDL_AtomicGet(&renderer_recovery_token) != generation) return;
+  (void)SDL_AtomicCAS(&renderer_recovery_command, 0,
+                    generation * 2 + (exit_requested ? 1 : 0));
+}
+
+#if defined(__ANDROID__)
+JNIEXPORT void JNICALL
+Java_org_sudokura_prototype_PrototypeActivity_nativeRendererRecovery(
+    JNIEnv *env, jclass klass, jint generation, jboolean exit_requested) {
+  (void)env;
+  (void)klass;
+  renderer_recovery_submit(generation, exit_requested == JNI_TRUE);
+}
+#endif
+
+static bool renderer_recovery_publish(bool visible, Language language) {
+#if defined(__ANDROID__)
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  if (!env) return false;
+  jobject activity = (jobject)SDL_AndroidGetActivity();
+  if (!activity) return false;
+  jclass klass = (*env)->GetObjectClass(env, activity);
+  bool sent = false;
+  if (klass) {
+    jmethodID method = (*env)->GetMethodID(env, klass,
+        "showSudokuraRendererRecovery",
+        "(IZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    if (!method) {
+      if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+      (*env)->DeleteLocalRef(env, klass);
+      (*env)->DeleteLocalRef(env, activity);
+      return false;
+    }
+    char message[1024];
+    snprintf(message, sizeof(message), "%s%s%s",
+             tr(language, T_RENDERER_RECOVERY),
+             renderer_recovery_save_failed ? "\n\n" : "",
+             renderer_recovery_save_failed ? tr(language, T_SAVE_FAILED) : "");
+    jstring body = (*env)->NewStringUTF(env, message);
+    jstring retry = body ? (*env)->NewStringUTF(env, tr(language, T_RETRY)) : NULL;
+    jstring quit = retry ? (*env)->NewStringUTF(env, tr(language, T_QUIT)) : NULL;
+    if (body && retry && quit && !(*env)->ExceptionCheck(env)) {
+      (*env)->CallVoidMethod(env, activity, method,
+                            renderer_recovery_generation,
+                            visible ? JNI_TRUE : JNI_FALSE, body, retry, quit);
+      sent = !(*env)->ExceptionCheck(env);
+    }
+    if (body) (*env)->DeleteLocalRef(env, body);
+    if (retry) (*env)->DeleteLocalRef(env, retry);
+    if (quit) (*env)->DeleteLocalRef(env, quit);
+    (*env)->DeleteLocalRef(env, klass);
+  }
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  (*env)->DeleteLocalRef(env, activity);
+  return sent;
+#else
+  (void)visible;
+  (void)language;
+  return true;
+#endif
+}
+
+static void renderer_recovery_sync(const Gfx *gfx, const UI *ui, bool force) {
+  bool visible = gfx && ui && !gfx->renderer_ready && !app_suspended;
+  Language language = ui ? ui->language : LANG_EN;
+  if (!force && visible == renderer_recovery_visible &&
+      (!visible || (language == renderer_recovery_language &&
+                   renderer_recovery_save_failed ==
+                       renderer_recovery_published_save_failed))) return;
+  SDL_AtomicSet(&renderer_recovery_token, 0);
+  SDL_AtomicSet(&renderer_recovery_command, 0);
+  renderer_recovery_generation =
+      renderer_recovery_generation >= 0x3fffffff
+          ? 1 : renderer_recovery_generation + 1;
+  if (visible)
+    SDL_AtomicSet(&renderer_recovery_token, renderer_recovery_generation);
+  if (renderer_recovery_publish(visible, language)) {
+    renderer_recovery_visible = visible;
+    renderer_recovery_language = language;
+    renderer_recovery_published_save_failed = renderer_recovery_save_failed;
+    if (!visible)
+      renderer_recovery_save_failed = false;
+  } else {
+    SDL_AtomicSet(&renderer_recovery_token, 0);
+  }
+}
+
 static void ui_button_click(void) {
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (ui_touch_replayed) ui_android_haptic();
@@ -1281,13 +1380,37 @@ static bool renderer_unavailable_safe_exit(Persistence *p, const Game *game,
                                             UI *ui, Gfx *gfx) {
   if (!p || !ui || !gfx) return false;
   if (ui->session_open && game &&
-      !stage_current_session(p, game, ui)) return false;
+      !stage_current_session(p, game, ui)) {
+    renderer_recovery_save_failed = true;
+    return false;
+  }
   capture_window_preferences(p, gfx, ui);
   if (p->save_policy.dirty_mask == 0 ||
       persistence_retry_current(p, game, ui))
     return true;
   fprintf(stderr, "renderer unavailable: exit deferred; unsaved data retained\n");
+  renderer_recovery_save_failed = true;
   return false;
+}
+
+static void renderer_recovery_dispatch(Persistence *p, const Game *game,
+                                      UI *ui, Gfx *gfx, bool *running,
+                                      int *exit_status) {
+  int command = SDL_AtomicSet(&renderer_recovery_command, 0);
+  if (!command || command / 2 != SDL_AtomicGet(&renderer_recovery_token) ||
+      app_suspended || gfx->renderer_ready) return;
+  SDL_AtomicSet(&renderer_recovery_token, 0);
+  if ((command & 1) == 0) {
+    (void)app_restore_renderer_resources(gfx, ui);
+  } else if (startup_recovery_active) {
+    *running = false;
+    *exit_status = 1;
+  } else if (renderer_unavailable_safe_exit(p, game, ui, gfx)) {
+    *running = false;
+  } else {
+    renderer_recovery_save_failed = true;
+  }
+  renderer_recovery_sync(*running ? gfx : NULL, ui, true);
 }
 
 static double wall_clock_ms(void){
@@ -3917,6 +4040,57 @@ int main(int argc, char **argv) {
         fprintf(stderr,"renderer unavailable draw regression\n");
         app_shutdown(&g); return 1;
       }
+      Game recovery_game_before=game;
+      bool recovery_running=true;
+      int recovery_exit_status=0;
+      renderer_recovery_sync(&g,&ui,true);
+      int first_token=SDL_AtomicGet(&renderer_recovery_token);
+      renderer_recovery_submit(first_token+1,true);
+      if (!first_token || SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback stale-action regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(first_token,false);
+      renderer_recovery_submit(first_token,true); /* First choice wins. */
+      g.ren=NULL;
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      g.ren=saved_renderer;
+      int retry_token=SDL_AtomicGet(&renderer_recovery_token);
+      if (!recovery_running || g.renderer_ready || retry_token==first_token ||
+          !retry_token || SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback failed-retry regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(retry_token,false);
+      app_suspended=true;
+      renderer_recovery_sync(&g,&ui,false);
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      if (g.renderer_ready || SDL_AtomicGet(&renderer_recovery_token)) {
+        fprintf(stderr,"renderer fallback background-choice regression\n");
+        app_shutdown(&g);return 1;
+      }
+      app_suspended=false;
+      renderer_recovery_sync(&g,&ui,false);
+      renderer_recovery_submit(retry_token,true); /* Old surface consent. */
+      int foreground_token=SDL_AtomicGet(&renderer_recovery_token);
+      renderer_recovery_submit(foreground_token,false);
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      if (!recovery_running || recovery_exit_status || !g.renderer_ready ||
+          SDL_AtomicGet(&renderer_recovery_token) ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0 ||
+          memcmp(&game,&recovery_game_before,sizeof(game))!=0) {
+        fprintf(stderr,"renderer fallback foreground-retry regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(foreground_token,true);
+      if (SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback recovered-action regression\n");
+        app_shutdown(&g);return 1;
+      }
+      app_mark_renderer_unavailable(&g,&ui);
       modal_event=(SDL_Event){0};
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
@@ -4443,6 +4617,7 @@ int main(int argc, char **argv) {
   int exit_status = 0;
   SDL_Event e;
   while (running) {
+    renderer_recovery_sync(&g, &ui, false);
 #if defined(__ANDROID__)
     if (app_suspended) {
       SDL_Event system_event;
@@ -5280,12 +5455,18 @@ int main(int argc, char **argv) {
       g.dirty = true;
     }
 
+    /* Drain lifecycle/reset events before accepting a native fallback choice. */
+    renderer_recovery_sync(&g, &ui, false);
+    renderer_recovery_dispatch(&persistence, &game, &ui, &g,
+                               &running, &exit_status);
+    if (!running) break;
     if (!startup_recovery_poll(&persistence,&ui,&g)) {
       exit_status=1;running=false;break;
     }
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */
 #endif
+    renderer_recovery_sync(&g, &ui, false);
     if (!g.renderer_ready) {
       g.dirty = false; /* Suspended rendering must not hot-loop or scan. */
       continue;
@@ -5320,6 +5501,7 @@ int main(int argc, char **argv) {
   }
 
   home_daily_cancel();
+  renderer_recovery_sync(NULL, &ui, true);
   game_library_scan_close(&games_browser.scanner);
   free(games_browser.rows);
   app_shutdown(&g);

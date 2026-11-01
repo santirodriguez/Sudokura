@@ -13,11 +13,77 @@ import android.view.DisplayCutout;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
+import android.view.ViewGroup;
+import android.view.Gravity;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import org.libsdl.app.SDLActivity;
 
-/** SDL remains the game owner. Java only supplies current Android surface metrics. */
+/** SDL owns the game and persistence; Java supplies Android surface and system UI. */
 public final class PrototypeActivity extends SDLActivity {
     private Object backCallback;
+    private ScrollView rendererRecovery;
+    private volatile int recoveryGeneration;
+
+    private static native void nativeRendererRecovery(int generation, boolean exit);
+
+    /* A bounded fallback when SDL cannot draw. Buttons enqueue commands; the
+       SDL owner still validates the generation and owns retry/save/exit. */
+    public void showSudokuraRendererRecovery(int generation, boolean visible,
+            String message, String retryLabel, String exitLabel) {
+        recoveryGeneration = generation;
+        runOnUiThread(() -> {
+            if (generation != recoveryGeneration || isFinishing() || isDestroyed()) return;
+            if (rendererRecovery != null && mLayout != null) {
+                mLayout.removeView(rendererRecovery);
+                rendererRecovery = null;
+            }
+            if (!visible || mLayout == null) return;
+            final int padding = Math.round(24 * getResources().getDisplayMetrics().density);
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setGravity(Gravity.CENTER);
+            content.setPadding(padding, padding, padding, padding);
+            TextView text = new TextView(this);
+            text.setText(message);
+            text.setTextSize(20);
+            text.setTextColor(0xffeeeeee);
+            text.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            content.addView(text);
+            Button retry = new Button(this);
+            Button exit = new Button(this);
+            retry.setText(retryLabel);
+            exit.setText(exitLabel);
+            int minimum = Math.round(48 * getResources().getDisplayMetrics().density);
+            for (Button button : new Button[] {retry, exit}) {
+                button.setMinHeight(minimum);
+                content.addView(button, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            retry.setOnClickListener(view -> {
+                if (recoveryGeneration != generation) return;
+                retry.setEnabled(false);
+                exit.setEnabled(false);
+                nativeRendererRecovery(generation, false);
+            });
+            exit.setOnClickListener(view -> {
+                if (recoveryGeneration != generation) return;
+                retry.setEnabled(false);
+                exit.setEnabled(false);
+                nativeRendererRecovery(generation, true);
+            });
+            rendererRecovery = new ScrollView(this);
+            rendererRecovery.setBackgroundColor(0xff181818);
+            rendererRecovery.setFillViewport(true);
+            rendererRecovery.setClickable(true);
+            rendererRecovery.addView(content);
+            mLayout.addView(rendererRecovery, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            retry.requestFocus();
+        });
+    }
 
     private void sendBackToNative() {
         if (mBrokenLibraries || mSDLThread == null) return;
@@ -58,6 +124,11 @@ public final class PrototypeActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        recoveryGeneration = 0;
+        if (rendererRecovery != null && mLayout != null) {
+            mLayout.removeView(rendererRecovery);
+            rendererRecovery = null;
+        }
         if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
             BackApi33.remove(this, backCallback);
             backCallback = null;
