@@ -529,6 +529,10 @@ int main(void) {
     }
   }
 
+  for (int language=0;language<LANG_COUNT;++language)
+    assert(wrapped_fits(font,tr((Language)language,T_ROTATE_PORTRAIT),22,13,
+                        336,120));
+
   TTF_Quit();
   puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Settings labels and all responsive tiers");
   return 0;

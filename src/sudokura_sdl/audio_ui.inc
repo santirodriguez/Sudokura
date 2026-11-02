@@ -247,10 +247,11 @@ static void app_frame(Gfx *gfx, Game *game, UI *ui) {
     SDL_SetRenderDrawColor(gfx->ren, theme.bg.r, theme.bg.g, theme.bg.b, 255);
     SDL_RenderClear(gfx->ren);
     if (ui && gfx->width > 48 && gfx->height > 48) {
-      SDL_Rect hint = {12, gfx->height / 2 - 30,
-                       gfx->width - 24, 60};
-      (void)draw_fitted_text(gfx, tr(ui->language, T_ROTATE_PORTRAIT),
-                             theme.btnfg, hint, 22, 12);
+      int message_h=gfx->height-24;
+      if (message_h>120) message_h=120;
+      SDL_Rect hint = {12,(gfx->height-message_h)/2,gfx->width-24,message_h};
+      (void)polish_draw_wrapped_fit(gfx,tr(ui->language,T_ROTATE_PORTRAIT),
+                                    theme.btnfg,hint,22,13,true);
     }
     SDL_RenderPresent(gfx->ren);
     gfx->dirty = false;
