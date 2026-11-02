@@ -135,6 +135,10 @@ bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *out
 /* Mobile-only composition; never relaxes desktop window-size validation. */
 bool geometry_compute_mobile(int width_dp, int height_dp, GeometryMode mode,
                              AppGeometry *out);
+/* Gameplay-only landscape composer. Secondary-screen fields remain zero;
+   compose those screens before routing the complete Android shell here. */
+bool geometry_mobile_landscape_play(int width_dp, int height_dp,
+                                    GeometryMode mode, AppGeometry *out);
 bool geometry_window_size_supported(int width, int height);
 bool geometry_normalize_window_size(int requested_width, int requested_height,
                                     int *normalized_width, int *normalized_height);

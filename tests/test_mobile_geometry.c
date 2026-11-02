@@ -77,6 +77,45 @@ static void check(int w, int h, GeometryMode mode) {
   }
 }
 
+static void check_landscape(int w,int h,GeometryMode mode) {
+  AppGeometry g;
+  assert(geometry_mobile_landscape_play(w,h,mode,&g));
+  assert(g.play_compact && g.board.w>=270 && g.board.w%9==0);
+  assert(g.board.w==g.board.h && geometry_rect_in_bounds(g.board,w,h));
+  assert(!overlap(g.board,g.sidebar));
+  assert(g.screen_language.w==0 && g.home_logo.w==0);
+  GeoRect targets[GEOMETRY_PALETTE_COUNT+10];
+  int count=0;
+  for (int i=PLAY_CONTROL_MENU;i<=PLAY_CONTROL_NOTES;++i)
+    targets[count++]=g.play_controls[i];
+  targets[count++]=g.hud[4];
+  targets[count++]=geometry_audio_control(w,h,&g,true).button;
+  for (int i=0;i<GEOMETRY_PALETTE_COUNT;++i) targets[count++]=g.palette[i];
+  assert(count==19);
+  for (int i=0;i<count;++i) {
+    assert(targets[i].w>=48 && targets[i].h>=48);
+    assert(geometry_rect_in_bounds(targets[i],w,h));
+    assert(!overlap(targets[i],g.board));
+    for (int j=0;j<i;++j) assert(!overlap(targets[i],targets[j]));
+    assert(!overlap(targets[i],g.progress) && !overlap(targets[i],g.status));
+  }
+  for (int i=0;i<g.hud_count;++i) {
+    assert(geometry_rect_in_bounds(g.hud[i],w,h));
+    assert(!overlap(g.hud[i],g.board));
+    for (int j=0;j<i;++j) assert(!overlap(g.hud[i],g.hud[j]));
+    if (i!=4) for (int j=0;j<count;++j)
+      assert(!overlap(g.hud[i],targets[j]));
+  }
+  assert(!overlap(g.progress,g.status));
+  assert(geometry_rect_in_bounds(g.progress,w,h));
+  assert(geometry_rect_in_bounds(g.status,w,h));
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i) {
+    assert(g.more_items[i].w>=48 && g.more_items[i].h>=48);
+    assert(geometry_rect_in_bounds(g.more_items[i],w,h));
+    for (int j=0;j<i;++j) assert(!overlap(g.more_items[i],g.more_items[j]));
+  }
+}
+
 int main(void) {
   for (int w = 360; w <= 639; w += 27) {
     for (int h = 600; h <= 920; h += 40)
@@ -95,9 +134,19 @@ int main(void) {
   assert(!geometry_compute_mobile(359, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(360, 599, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(780, 430, GEOMETRY_MODE_CLASSIC, &g));
+  for (int w=600;w<=1200;w+=25)
+    for (int h=360;h<=599 && h<w;h+=19)
+      for (int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode)
+        check_landscape(w,h,(GeometryMode)mode);
+  check_landscape(600,360,GEOMETRY_MODE_CLASSIC);
+  check_landscape(800,480,GEOMETRY_MODE_TIME);
+  assert(!geometry_mobile_landscape_play(599,360,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_mobile_landscape_play(600,359,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_mobile_landscape_play(600,600,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_mobile_landscape_play(600,360,(GeometryMode)-1,&g));
   assert(!geometry_window_size_supported(360, 600));
   assert(!geometry_compute(360, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(geometry_compute(360, 640, GEOMETRY_MODE_CLASSIC, &g));
-  puts("Android 360x600dp layout, 48dp controls and desktop bounds passed");
+  puts("Android portrait and staged landscape play geometry, 48dp targets and desktop bounds passed");
   return 0;
 }

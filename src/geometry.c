@@ -1048,6 +1048,74 @@ static void geometry_mobile_home(int width, int height, AppGeometry *g) {
 
 /* Android's physical surface has already had system insets removed by Java.
    Compose in dp here, keeping desktop's 360x640 minimum untouched. */
+bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
+                                    AppGeometry *out) {
+  if (!out || width < 600 || height < 360 || height >= width ||
+      mode < GEOMETRY_MODE_CLASSIC || mode > GEOMETRY_MODE_TIME) return false;
+  AppGeometry g;
+  memset(&g,0,sizeof(g));
+  const int margin=6,gap=6;
+  int board=min_i(height-2*margin,width-312);
+  board-=board%9;
+  if (board<270) return false;
+  const int x=margin+board+12,w=width-x-margin;
+  const int y=(height-346)/2;
+  g.play_compact=true;
+  g.hud_count=mode==GEOMETRY_MODE_CLASSIC ? 5 : 6;
+  g.board=(GeoRect){margin,(height-board)/2,board,board};
+  g.sidebar=(GeoRect){x,y,w,346};
+  g.play_title=(GeoRect){x,y,w,20};
+  g.play_language=(GeoRect){margin,1,1,1};
+  GeoRect top[5],edit[5],fields[6];
+  geometry_final_split((GeoRect){x,y+24,w,48},5,gap,top);
+  g.play_controls[PLAY_CONTROL_MENU]=top[0];
+  g.play_controls[PLAY_CONTROL_PAUSE]=top[1];
+  g.play_controls[PLAY_CONTROL_SAVE]=top[2];
+  g.play_controls[PLAY_CONTROL_MORE]=top[3];
+  geometry_final_grid(fields,0,6,x,y+78,w,22,3,2);
+  for (int i=0;i<4;++i) g.hud[i]=fields[i];
+  g.hud[5]=fields[4];
+  geometry_final_split((GeoRect){x,y+130,w,48},5,gap,edit);
+  g.play_controls[PLAY_CONTROL_UNDO]=edit[0];
+  g.play_controls[PLAY_CONTROL_REDO]=edit[1];
+  g.play_controls[PLAY_CONTROL_CLEAR]=edit[2];
+  g.play_controls[PLAY_CONTROL_NOTES]=edit[3];
+  /* Strict/Free is actionable, so give it a full touch target rather than
+     the small informational HUD row used for time/mode/difficulty. */
+  g.hud[4]=edit[4];
+  g.palette_label=(GeoRect){x,y+183,w,1};
+  int key_w=(w-4*gap)/5;
+  for (int i=0;i<5;++i)
+    g.palette[i]=(GeoRect){x+i*(key_w+gap),y+184,key_w,48};
+  int second_x=x+(w-(4*key_w+3*gap))/2;
+  for (int i=5;i<GEOMETRY_PALETTE_COUNT;++i)
+    g.palette[i]=(GeoRect){second_x+(i-5)*(key_w+gap),y+238,key_w,48};
+  g.progress=(GeoRect){x,y+292,w,24};
+  g.status=(GeoRect){x,y+322,w,24};
+  int panel_w=min_i(width-24,460);
+  g.more_panel=(GeoRect){(width-panel_w)/2,(height-252)/2,panel_w,252};
+  int item_w=(panel_w-24-gap)/2;
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i)
+    g.more_items[i]=(GeoRect){g.more_panel.x+12+(i%2)*(item_w+gap),
+        g.more_panel.y+56+(i/2)*56,item_w,48};
+  const int more_controls[GEOMETRY_MORE_COUNT]={PLAY_CONTROL_RESTART,
+      PLAY_CONTROL_HINT,PLAY_CONTROL_VERIFY,PLAY_CONTROL_SETTINGS,
+      PLAY_CONTROL_HELP,PLAY_CONTROL_ABOUT};
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i)
+    g.play_controls[more_controls[i]]=g.more_items[i];
+  g.actions[PLAY_ACTION_MENU]=top[0];
+  g.actions[PLAY_ACTION_PAUSE]=top[1];
+  g.actions[PLAY_ACTION_RESTART]=g.more_items[MORE_RESTART];
+  g.actions[PLAY_ACTION_HINT]=g.more_items[MORE_HINT];
+  g.actions[PLAY_ACTION_NOTES]=edit[3];
+  g.actions[PLAY_ACTION_VERIFY]=g.more_items[MORE_VERIFY];
+  g.actions[PLAY_ACTION_AUDIO]=top[4];
+  g.actions[PLAY_ACTION_HELP]=g.more_items[MORE_HELP];
+  g.actions[PLAY_ACTION_ABOUT]=g.more_items[MORE_ABOUT];
+  *out=g;
+  return true;
+}
+
 bool geometry_compute_mobile(int width, int height, GeometryMode mode,
                              AppGeometry *g) {
   if (!g || width < 360 || height < 600) return false;
