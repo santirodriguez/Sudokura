@@ -94,7 +94,8 @@ bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
   int list_w=columns ? (w-12)*44/100 : w;
   int detail_h=columns ? content_h : (height>=720 ? 160 : 120);
   int list_available=columns ? content_h-54 : content_h-detail_h-66;
-  g.row_height=56;
+  /* Two label lines (26 + 21) and their inset must not overlap. */
+  g.row_height=60;
   g.visible=list_available/g.row_height;
   if (g.visible<1) return false;
   g.list=(GeoRect){x,top,list_w,g.visible*g.row_height};
