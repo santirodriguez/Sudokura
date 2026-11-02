@@ -31,6 +31,7 @@ This document describes the project's maintained technical, gameplay, and releas
 - Persistence formats are versioned and validated. Do not serialize raw C structs as an interchange format.
 - Saved Games uses a bounded v1.3.7 profile (16 KiB maximum), separate exact or legacy-summary game records (8 KiB maximum each), stable attempt IDs, and durable latest-progress Save. A repeat Save updates the same attempt; New and Replay create distinct identities. The 128-entry limit applies to recent-result summaries, not the permanent finished-game library.
 - Migration to v1.3.7 preserves the immutable pre-upgrade profile and resumable intent; do not overwrite recoverable copies, silently downgrade an unknown format to corrupt, or import the same history twice. A deleted game's durable receipt must prevent reappearance from backups, old profiles, or migration sources.
+- Startup loads, upgrades and reconciles on separate main-loop turns. Controlled migration callbacks only inspect pending context between checked operations; they never dispatch input or enter another writer. On cancellation, reload the primary before resuming the immutable intent. Keep Home and unrelated saves gated until the complete profile and pending lifecycle events are reconciled. Individual file operations remain synchronous; this does not guarantee a latency bound for stalled storage.
 - Timer accounting must remain monotonic and respect independent manual, focus, modal, Home, and result pause reasons.
 
 ## Audio

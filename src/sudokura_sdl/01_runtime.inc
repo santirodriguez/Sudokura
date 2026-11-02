@@ -172,8 +172,16 @@ typedef struct {
   uint8_t month, day;
 } GameReplayOrigin;
 
+typedef enum {
+  PERSISTENCE_STARTUP_DONE = 0,
+  PERSISTENCE_STARTUP_LOAD,
+  PERSISTENCE_STARTUP_UPGRADE,
+  PERSISTENCE_STARTUP_RECONCILE
+} PersistenceStartupStage;
+
 typedef struct {
   bool enabled;
+  PersistenceStartupStage startup_stage;
   Preferences preferences;
   SessionState saved;
   ProfileData profile;
@@ -219,6 +227,7 @@ static bool games_browser_load_restore(Persistence *p);
 static bool daily_lookup_scanning = false;
 /* Startup recovery owns Home until explicit consent or Quit. */
 static bool startup_recovery_active = false;
+static bool startup_loading_active = false;
 
 /* Native message boxes can enqueue transient focus events. The SDL shell
    advances this guard after each modal so those older events cannot pause a
@@ -665,45 +674,72 @@ static void persistence_init_base(Persistence*p){
     SDL_free(base);
     return;
   }
-
-  /* Collection evidence means missing hot copies are not a fresh install. */
-  if(!store_file_exists(p->profile_path) &&
-     !store_file_exists(p->profile_backup_path) &&
-     game_migration_has_artifacts(base)){
-    p->profile_status=STORE_IO_ERROR;
-    SDL_free(base);
-    return;
-  }
-
-  ProfileLegacyPaths legacy={
-    .session_path=p->session_path,
-    .preferences_path=p->preferences_path,
-    .audio_levels_path=p->audio_levels_path,
-    .session_backup_path=p->session_v12_backup_path,
-    .preferences_backup_path=p->preferences_v12_backup_path,
-    .audio_levels_backup_path=p->audio_v12_backup_path
-  };
-  bool migrated=false;
-  p->profile_status=profile_load_or_migrate_v12(
-      p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated);
-  if(p->profile_status==STORE_OK){
-    bool upgraded=false;
-    p->profile_status=game_migration_upgrade(
-        base,p->profile_path,p->profile_backup_path,&p->profile,&upgraded);
-    if(p->profile_status==STORE_OK)
-      p->profile_status=game_migration_reconcile(
-          base,p->profile_path,p->profile_backup_path,&p->profile);
-    (void)upgraded;
-  }
-  (void)migrated;
+  p->startup_stage=PERSISTENCE_STARTUP_LOAD;
   SDL_free(base);
-  if(p->profile_status!=STORE_OK)return;
+}
 
-  p->enabled=true;
+/* One phase per main-loop turn. Cancellation leaves completed checkpoints
+   intact; reload them before retrying rather than trusting a stale hot copy. */
+static bool persistence_startup_step(Persistence *p, StoreContinue proceed,
+                                     void *context) {
+  if (!p || p->startup_stage==PERSISTENCE_STARTUP_DONE) return true;
+  if (proceed && !proceed(context)) return false;
+  StoreStatus status=STORE_IO_ERROR;
+  if (p->startup_stage==PERSISTENCE_STARTUP_LOAD) {
+
+    /* Collection evidence means missing hot copies are not a fresh install. */
+    if(!store_file_exists(p->profile_path) &&
+       !store_file_exists(p->profile_backup_path) &&
+       game_migration_has_artifacts(p->profile_directory)){
+      p->profile_status=STORE_IO_ERROR;
+      p->startup_stage=PERSISTENCE_STARTUP_DONE;
+      return true;
+    }
+
+    ProfileLegacyPaths legacy={
+      .session_path=p->session_path,
+      .preferences_path=p->preferences_path,
+      .audio_levels_path=p->audio_levels_path,
+      .session_backup_path=p->session_v12_backup_path,
+      .preferences_backup_path=p->preferences_v12_backup_path,
+      .audio_levels_backup_path=p->audio_v12_backup_path
+    };
+    bool migrated=false;
+    status=profile_load_or_migrate_v12_controlled(
+        p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated,
+        proceed,context);
+    (void)migrated;
+  } else if (p->startup_stage==PERSISTENCE_STARTUP_UPGRADE) {
+    bool upgraded=false;
+    status=game_migration_upgrade_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &p->profile,&upgraded,proceed,context);
+    (void)upgraded;
+  } else if (p->startup_stage==PERSISTENCE_STARTUP_RECONCILE) {
+    status=game_migration_reconcile_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &p->profile,proceed,context);
+  }
+  if (status==STORE_CANCELLED) {
+    p->startup_stage=PERSISTENCE_STARTUP_LOAD;
+    return false;
+  }
+  p->profile_status=status;
+  if (status!=STORE_OK) {
+    p->startup_stage=PERSISTENCE_STARTUP_DONE;
+    return true;
+  }
+  if (p->startup_stage!=PERSISTENCE_STARTUP_RECONCILE) {
+    p->startup_stage=(PersistenceStartupStage)(p->startup_stage+1);
+    return false;
+  }
+
+  p->startup_stage=PERSISTENCE_STARTUP_DONE;
   p->preferences=p->profile.preferences;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
+  return true;
 }
 
 static void persistence_stage_preferences(Persistence*p){

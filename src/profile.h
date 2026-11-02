@@ -136,5 +136,9 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
                                         const ProfileLegacyPaths *legacy,
                                         ProfileData *profile,
                                         bool *migrated);
+StoreStatus profile_load_or_migrate_v12_controlled(
+    const char *profile_path, const char *profile_backup_path,
+    const ProfileLegacyPaths *legacy, ProfileData *profile, bool *migrated,
+    StoreContinue proceed, void *context);
 
 #endif

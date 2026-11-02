@@ -1402,7 +1402,7 @@ static void renderer_recovery_dispatch(Persistence *p, const Game *game,
   SDL_AtomicSet(&renderer_recovery_token, 0);
   if ((command & 1) == 0) {
     (void)app_restore_renderer_resources(gfx, ui);
-  } else if (startup_recovery_active) {
+  } else if (startup_recovery_active || startup_loading_active) {
     *running = false;
     *exit_status = 1;
   } else if (renderer_unavailable_safe_exit(p, game, ui, gfx)) {
@@ -1798,7 +1798,7 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
 }
 
 static void app_render_startup_splash(Gfx *gfx, Language language) {
-  if (!gfx || !gfx->ren) return;
+  if (!gfx || !gfx->ren || !gfx->renderer_ready || app_suspended) return;
   SDL_SetRenderDrawColor(gfx->ren,16,19,30,255);
   SDL_RenderClear(gfx->ren);
   int width=gfx->width<640?gfx->width-36:520;
@@ -2150,6 +2150,16 @@ typedef struct {
   ProfileData backup;
 } StartupRecovery;
 static StartupRecovery startup_recovery;
+
+/* Observe pending context only. The outer main pump consumes it before any
+   retry; no nested dispatcher or writer is entered by a storage callback. */
+static bool startup_storage_continue(void *context) {
+  Gfx *gfx=(Gfx *)context;
+  SDL_PumpEvents();
+  return !generation_context_interrupted(gfx) && !generation_back_pending() &&
+      !SDL_HasEvent(SDL_QUIT) &&
+      !SDL_HasEvents(SDL_APP_TERMINATING,SDL_APP_DIDENTERFOREGROUND);
+}
 
 static void startup_apply_ready_preferences(Persistence *p, UI *ui, Gfx *gfx) {
   ui->language=p->preferences.language;
@@ -3322,6 +3332,7 @@ int main(int argc, char **argv) {
       {
         StartupRecovery saved_startup=startup_recovery;
         bool saved_active=startup_recovery_active;
+        bool saved_loading=startup_loading_active;
         bool saved_enabled=settings_persistence.enabled;
         StoreStatus saved_status=settings_persistence.profile_status;
         StoreLockStatus saved_lock=settings_persistence.lock_status;
@@ -3330,6 +3341,45 @@ int main(int argc, char **argv) {
         settings_persistence.enabled=false;
         settings_persistence.profile_status=STORE_IO_ERROR;
         settings_persistence.lock_status=STORE_LOCK_BUSY;
+        startup_loading_active=true;
+        SDL_Event loading_key={0};
+        loading_key.type=SDL_KEYDOWN;loading_key.key.type=SDL_KEYDOWN;
+        loading_key.key.keysym.sym=SDLK_n;
+        if (ui_prepare_event(&loading_key)) {
+          fprintf(stderr,"Startup loading input leakage regression\n");
+          app_shutdown(&g);return 1;
+        }
+        loading_key.key.keysym.sym=SDLK_ESCAPE;
+        if (!ui_prepare_event(&loading_key)) {
+          fprintf(stderr,"Startup loading safe Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_FlushEvent(SDL_WINDOWEVENT);SDL_FlushEvent(SDL_KEYDOWN);
+        SDL_Event loading_window={0};
+        loading_window.type=SDL_WINDOWEVENT;
+        loading_window.window.windowID=SDL_GetWindowID(g.win);
+        loading_window.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+        Persistence loading_probe={0};
+        loading_probe.startup_stage=PERSISTENCE_STARTUP_LOAD;
+        if (SDL_PushEvent(&loading_window)!=1 ||
+            persistence_startup_step(&loading_probe,startup_storage_continue,&g) ||
+            loading_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD ||
+            loading_probe.enabled || !SDL_HasEvent(SDL_WINDOWEVENT)) {
+          fprintf(stderr,"Startup loading queued-context cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (SDL_PeepEvents(&loading_window,1,SDL_GETEVENT,
+                          SDL_WINDOWEVENT,SDL_WINDOWEVENT)!=1) {
+          app_shutdown(&g);return 1;
+        }
+        app_suspended=true;
+        if (persistence_startup_step(&loading_probe,startup_storage_continue,&g) ||
+            loading_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD) {
+          fprintf(stderr,"Startup loading background work regression\n");
+          app_shutdown(&g);return 1;
+        }
+        app_suspended=false;
+        startup_loading_active=saved_loading;
         startup_recovery_begin(&settings_persistence,&ui,&g);
         if (!startup_recovery_active || !startup_recovery.fatal ||
             !ui_modal.active || ui_modal.focus!=0) {
@@ -4599,18 +4649,9 @@ int main(int argc, char **argv) {
   double profile_start_ms=wall_clock_ms();
   Persistence persistence;
   persistence_init(&persistence);
-  double profile_end_ms=wall_clock_ms();
-  ui.language = persistence.preferences.language;
-  startup_apply_ready_preferences(&persistence,&ui,&g);
   audio_gfx=&g;audio_game=&game;audio_ui=&ui;
-  startup_recovery_begin(&persistence,&ui,&g);
-  if (startup_timings) {
-    double ready_ms=wall_clock_ms();
-    fprintf(stderr,
-        "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
-        initialized_at_ms-process_start_ms,
-        profile_end_ms-profile_start_ms,ready_ms-process_start_ms);
-  }
+  startup_loading_active=true;
+  audio_set_focus_paused(true);
   window_focus_guard_reset();
 
   bool running = true;
@@ -4624,7 +4665,7 @@ int main(int argc, char **argv) {
       if (SDL_WaitEventTimeout(&system_event, 250)) {
         if (system_event.type == SDL_QUIT) {
           running=false;
-          if (startup_recovery_active) exit_status=1;
+          if (startup_recovery_active || startup_loading_active) exit_status=1;
         }
         else (void)ui_prepare_event(&system_event);
       }
@@ -4633,7 +4674,8 @@ int main(int argc, char **argv) {
 #endif
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     ui_pointer_reconcile();
-    int wait_ms=(g.dirty || (!ui_modal.active &&
+    int wait_ms=(g.dirty || (startup_loading_active && g.renderer_ready) ||
+                            (!ui_modal.active &&
                             ((ui.screen == APP_SCREEN_GAMES &&
                                games_browser.scanning) || home_daily_scan.active)))
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
@@ -4649,7 +4691,7 @@ int main(int argc, char **argv) {
         ui_pointer_cancel();
         continue;
       }
-      if (startup_recovery_active &&
+      if ((startup_recovery_active || startup_loading_active) &&
           (e.type==SDL_QUIT || (e.type==SDL_KEYDOWN &&
                                e.key.keysym.sym==SDLK_ESCAPE))) {
         running=false;exit_status=1;continue;
@@ -5460,6 +5502,37 @@ int main(int argc, char **argv) {
     renderer_recovery_dispatch(&persistence, &game, &ui, &g,
                                &running, &exit_status);
     if (!running) break;
+    if (startup_loading_active) {
+      if (app_suspended || !g.renderer_ready) {
+        g.dirty=false;
+        continue;
+      }
+      bool finished=persistence_startup_step(
+          &persistence,startup_storage_continue,&g);
+      bool context_ready=startup_storage_continue(&g);
+      if (!finished || !context_ready) {
+        if (context_ready && g.dirty)
+          app_render_startup_splash(&g,ui.language);
+        g.dirty=false;
+        continue;
+      }
+      startup_loading_active=false;
+      /* Publish writable state only after pending lifecycle/context has been
+         handled, so default startup UI cannot rewrite loaded preferences. */
+      persistence.enabled=persistence.lock_status==STORE_LOCK_ACQUIRED &&
+                          persistence.profile_status==STORE_OK;
+      audio_apply_preferences(&persistence);
+      startup_apply_ready_preferences(&persistence,&ui,&g);
+      startup_recovery_begin(&persistence,&ui,&g);
+      g.dirty=true;
+      if (startup_timings) {
+        double ready_ms=wall_clock_ms();
+        fprintf(stderr,
+            "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
+            initialized_at_ms-process_start_ms,
+            ready_ms-profile_start_ms,ready_ms-process_start_ms);
+      }
+    }
     if (!startup_recovery_poll(&persistence,&ui,&g)) {
       exit_status=1;running=false;break;
     }

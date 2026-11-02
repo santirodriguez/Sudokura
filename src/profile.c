@@ -1086,8 +1086,17 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
                                         const ProfileLegacyPaths *legacy,
                                         ProfileData *profile,
                                         bool *migrated) {
+  return profile_load_or_migrate_v12_controlled(
+      profile_path, profile_backup_path, legacy, profile, migrated, NULL, NULL);
+}
+
+StoreStatus profile_load_or_migrate_v12_controlled(
+    const char *profile_path, const char *profile_backup_path,
+    const ProfileLegacyPaths *legacy, ProfileData *profile, bool *migrated,
+    StoreContinue proceed, void *context) {
   if (!profile_path || !profile) return STORE_IO_ERROR;
   if (migrated) *migrated = false;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
 
   StoreStatus status = profile_load_file(profile_path, profile);
   if (status != STORE_NOT_FOUND) return status;
@@ -1106,12 +1115,15 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
   bool imported_any = false;
 
   if (legacy) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     status = backup_legacy_file(legacy->session_path,
                                 legacy->session_backup_path);
     if (status != STORE_OK) return status;
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     status = backup_legacy_file(legacy->preferences_path,
                                 legacy->preferences_backup_path);
     if (status != STORE_OK) return status;
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     status = backup_legacy_file(legacy->audio_levels_path,
                                 legacy->audio_levels_backup_path);
     if (status != STORE_OK) return status;
@@ -1123,6 +1135,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
           ? legacy->preferences_backup_path
           : legacy ? legacy->preferences_path : NULL;
   if (preferences_source && store_file_exists(preferences_source)) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     Preferences preferences;
     preferences_defaults(&preferences);
     status = preferences_load_file(preferences_source, &preferences);
@@ -1137,6 +1150,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
           ? legacy->audio_levels_backup_path
           : legacy ? legacy->audio_levels_path : NULL;
   if (audio_source && store_file_exists(audio_source)) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     uint8_t music = candidate.preferences.music_volume;
     uint8_t fx = candidate.preferences.fx_volume;
     if (!parse_legacy_audio_levels(audio_source, &music, &fx))
@@ -1152,6 +1166,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
           ? legacy->session_backup_path
           : legacy ? legacy->session_path : NULL;
   if (session_source && store_file_exists(session_source)) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     SessionState session;
     memset(&session, 0, sizeof(session));
     status = session_load_file(session_source, &session);
@@ -1168,6 +1183,7 @@ StoreStatus profile_load_or_migrate_v12(const char *profile_path,
 
   if (!profile_validate(&candidate)) return STORE_CORRUPT;
 
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   status = profile_save_file(profile_path, profile_backup_path, &candidate);
   if (status != STORE_OK) return status;
 

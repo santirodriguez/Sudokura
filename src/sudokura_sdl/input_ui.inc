@@ -929,14 +929,16 @@ static bool ui_prepare_event(SDL_Event *event) {
     (void)ui_modal_handle_event(event);
     return false;
   }
-  if (startup_recovery_active && !ui_modal.active &&
+  if (startup_loading_active && event->type==SDL_KEYDOWN &&
+      !event->key.repeat && event->key.keysym.sym==SDLK_ESCAPE) return true;
+  if ((startup_recovery_active || startup_loading_active) && !ui_modal.active &&
       event->type!=SDL_QUIT && event->type!=SDL_WINDOWEVENT &&
       event->type!=SDL_RENDER_DEVICE_RESET && event->type!=SDL_RENDER_TARGETS_RESET &&
       event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)
     return false;
   if (!ui_touch_prepare(event)) return false;
   if (ui_modal_handle_event(event)) return false;
-  if (startup_recovery_active && event->type!=SDL_QUIT &&
+  if ((startup_recovery_active || startup_loading_active) && event->type!=SDL_QUIT &&
       event->type!=SDL_WINDOWEVENT && event->type!=SDL_RENDER_DEVICE_RESET &&
       event->type!=SDL_RENDER_TARGETS_RESET &&
       event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)

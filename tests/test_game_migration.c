@@ -1225,6 +1225,94 @@ static void test_collection_without_valid_primary_refuses_defaults(void) {
   }
 }
 
+typedef struct { unsigned calls, cancel_at; } CancellationProbe;
+
+static bool migration_continue(void *context) {
+  CancellationProbe *probe=(CancellationProbe *)context;
+  return ++probe->calls!=probe->cancel_at;
+}
+
+static void test_cancelled_upgrade_reloads_durable_intent(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData baseline;
+  assert(profile_load_file(primary,&baseline)==STORE_OK);
+  CancellationProbe count={0};
+  assert(game_migration_upgrade_controlled(root,primary,backup,&baseline,NULL,
+      migration_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    prepare();
+    write_legacy_profile();
+    ProfileData live,before,stable_intent;
+    assert(profile_load_file(primary,&live)==STORE_OK);
+    before=live;
+    unsigned char original[16384],preserved[16384];
+    size_t original_size=0,preserved_size=0;
+    assert(store_read_file(primary,original,sizeof(original),&original_size)==STORE_OK);
+    CancellationProbe cancel={0,stop};
+    bool upgraded=true;
+    assert(game_migration_upgrade_controlled(root,primary,backup,&live,&upgraded,
+        migration_continue,&cancel)==STORE_CANCELLED);
+    assert(!upgraded && profile_encoded_equal(&live,&before));
+    bool has_intent=profile_load_file(intent,&stable_intent)==STORE_OK;
+    if (store_file_exists(source)) {
+      assert(store_read_file(source,preserved,sizeof(preserved),&preserved_size)==STORE_OK);
+      assert(original_size==preserved_size &&
+             memcmp(original,preserved,original_size)==0);
+    }
+    /* A cancellation may follow a durable pending-hot write. Reload it,
+       exactly as startup does, before resuming the canonical migration. */
+    assert(profile_load_file(primary,&live)==STORE_OK);
+    assert(game_migration_upgrade(root,primary,backup,&live,&upgraded)==STORE_OK);
+    assert_upgraded(&live);
+    if (has_intent) {
+      assert(game_attempt_id_equal(live.normal.attempt_id,stable_intent.normal.attempt_id));
+      assert(game_attempt_id_equal(live.daily.attempt_id,stable_intent.daily.attempt_id));
+      assert(game_attempt_id_equal(live.results[1].attempt_id,stable_intent.results[1].attempt_id));
+    }
+    MigrationRecordCount records={0};
+    assert(game_library_scan(root,count_migrated_record,&records)==STORE_OK);
+    assert(records.count==3);
+  }
+  cleanup();
+}
+
+static ProfileData prepare_newer_record(void) {
+  prepare();write_legacy_profile();
+  ProfileData live;
+  assert(profile_load_file(primary,&live)==STORE_OK);
+  assert(game_migration_upgrade(root,primary,backup,&live,NULL)==STORE_OK);
+  ProfileSession newer=live.normal.value;
+  newer.session.elapsed_ms+=777;
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record,live.normal.attempt_id,
+      live.normal.revision+1,&newer,true));
+  assert(game_library_save(root,&record)==STORE_OK);
+  return live;
+}
+
+static void test_cancelled_reconcile_preserves_hot_profile(void) {
+  ProfileData live=prepare_newer_record();
+  CancellationProbe count={0};
+  assert(game_migration_reconcile_controlled(root,primary,backup,&live,
+      migration_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    live=prepare_newer_record();
+    ProfileData before=live,disk;
+    CancellationProbe cancel={0,stop};
+    assert(game_migration_reconcile_controlled(root,primary,backup,&live,
+        migration_continue,&cancel)==STORE_CANCELLED);
+    assert(profile_encoded_equal(&live,&before));
+    assert(profile_load_file(primary,&disk)==STORE_OK);
+    assert(profile_encoded_equal(&disk,&before));
+    assert(game_migration_reconcile(root,primary,backup,&live)==STORE_OK);
+    assert(live.normal.revision==before.normal.revision+1);
+    assert(live.normal.value.session.elapsed_ms==before.normal.value.session.elapsed_ms+777);
+    assert(game_attempt_id_equal(live.normal.attempt_id,before.normal.attempt_id));
+  }
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -1248,6 +1336,8 @@ int main(void) {
   test_terminal_reconcile_after_unacknowledged_profile_replace();
   test_orphan_profile_artifacts_prevent_fresh_initialization();
   test_collection_without_valid_primary_refuses_defaults();
+  test_cancelled_upgrade_reloads_durable_intent();
+  test_cancelled_reconcile_preserves_hot_profile();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

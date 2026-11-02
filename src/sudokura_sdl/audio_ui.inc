@@ -224,7 +224,7 @@ static void app_tick(Gfx *gfx, Game *game, UI *ui) {
   audio_gfx = gfx;
   audio_game = game;
   audio_ui = ui;
-  if (startup_recovery_active) {
+  if (startup_recovery_active || startup_loading_active) {
     audio_set_focus_paused(true);
     return;
   }
