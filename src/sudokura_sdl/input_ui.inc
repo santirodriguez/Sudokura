@@ -680,7 +680,7 @@ static bool ui_touch_prepare(SDL_Event *event) {
     return false;
   }
 
-  SDL_Event mapped = {0};
+  SDL_Event mapped; SDL_zero(mapped);
   ui_touch_replayed = true;
   if (phase == TOUCH_INPUT_MOTION) {
     mapped.type = SDL_MOUSEMOTION;

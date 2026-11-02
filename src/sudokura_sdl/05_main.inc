@@ -1827,7 +1827,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   bool saved_more = ui_more_open, saved_more_owner = ui_more_modal_owned;
   int saved_more_focus = ui_more_focus;
   bool passed = false;
-  SDL_Event event = {0};
+  SDL_Event event; SDL_zero(event);
   settings_open = false;
   audio_control_popup_open = false;
   ui->screen = SCR_TITLE;
@@ -1840,7 +1840,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   SDL_Rect first = sdl_rect(geo.home_primary[0]);
   SDL_Rect second = sdl_rect(geo.home_primary[1]);
 #define PRESS_AT(rect) do { \
-  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN; \
+  SDL_zero(event); event.type = SDL_MOUSEBUTTONDOWN; \
   event.button.button = SDL_BUTTON_LEFT; \
   event.button.x = (rect).x + (rect).w / 2; \
   event.button.y = (rect).y + (rect).h / 2; \
@@ -1858,7 +1858,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   event.button.y = second.y + second.h / 2;
   RELEASE_OK(false);
   PRESS_AT(first);
-  SDL_Event motion = {0};
+  SDL_Event motion; SDL_zero(motion);
   motion.type = SDL_MOUSEMOTION;
   motion.motion.state = SDL_BUTTON_LMASK;
   motion.motion.x = -10; motion.motion.y = -10;
@@ -1873,7 +1873,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
       SDL_WINDOWEVENT_SIZE_CHANGED, SDL_WINDOWEVENT_LEAVE};
   for (size_t i = 0; i < sizeof(cancellations); ++i) {
     PRESS_AT(first);
-    SDL_Event window = {0};
+    SDL_Event window; SDL_zero(window);
     window.type = SDL_WINDOWEVENT; window.window.event = cancellations[i];
     (void)ui_pointer_prepare(&window);
     RELEASE_OK(false);
@@ -1901,7 +1901,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   RELEASE_OK(false);
   ui->result = RES_NONE;
   Layout board_layout = compute_layout(gfx, ui->mode);
-  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN;
+  SDL_zero(event); event.type = SDL_MOUSEBUTTONDOWN;
   event.button.button = SDL_BUTTON_LEFT;
   event.button.x = board_layout.board.x + board_layout.board.w / 2;
   event.button.y = board_layout.board.y + board_layout.board.h / 2;
@@ -1986,7 +1986,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
     RELEASE_OK(true);
-    SDL_Event key = {0};
+    SDL_Event key; SDL_zero(key);
     key.type = SDL_KEYDOWN;
     key.key.keysym.sym = SDLK_TAB;
     key.key.keysym.mod = KMOD_NONE; /* Unmodified Tab must move forward. */
@@ -2036,7 +2036,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     ui_more_open_panel(ui);
     if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
-    SDL_Event window = {0};
+    SDL_Event window; SDL_zero(window);
     window.type = SDL_WINDOWEVENT;
     window.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
     (void)ui_prepare_event(&window);
@@ -2054,20 +2054,20 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   if (!touch_window) UI_SMOKE_FAIL();
   float touch_x = (first.x + first.w / 2.0f) / gfx->width;
   float touch_y = (first.y + first.h / 2.0f) / gfx->height;
-  SDL_Event finger = {0};
+  SDL_Event finger; SDL_zero(finger);
   finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
       ui_pointer_prepare(&finger) || !ui_pointer_capture.active) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONUP ||
       !ui_pointer_prepare(&finger) || ui_pointer_capture.active) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_MOUSEBUTTONUP;
+  SDL_zero(finger); finger.type = SDL_MOUSEBUTTONUP;
   finger.button.which = SDL_TOUCH_MOUSEID;
   if (ui_touch_prepare(&finger)) UI_SMOKE_FAIL();
 
@@ -2076,21 +2076,21 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   if (!get_geometry(gfx, ui, &geo)) UI_SMOKE_FAIL();
   SDL_Rect body = sdl_rect(geo.info_body);
   int sx = body.x + body.w / 2, sy = body.y + body.h / 2;
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  SDL_zero(finger); finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)sy / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
       ui_scroll_kind != UI_SCROLL_HELP) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERMOTION;
+  SDL_zero(finger); finger.type = SDL_FINGERMOTION;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)(sy - 20) / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
       !ui_scroll_gesture.dragging) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
@@ -2105,13 +2105,13 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   Layout touch_board = compute_layout(gfx, ui->mode);
   int bx = touch_board.board.x + touch_board.board.w / 2;
   int by = touch_board.board.y + touch_board.board.h / 2;
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  SDL_zero(finger); finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
   finger.tfinger.x = (float)bx / gfx->width;
   finger.tfinger.y = (float)by / gfx->height;
   if (ui_touch_prepare(&finger) || !ui_touch_board_pending) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
   finger.tfinger.x = (float)bx / gfx->width;
@@ -2599,7 +2599,7 @@ int main(int argc, char **argv) {
         settings_persistence.replay_activation_unresolved=false;
         save_policy_init(&settings_persistence.save_policy);
         save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_NORMAL,100);
-        SDL_Event restart_event={0};
+        SDL_Event restart_event; SDL_zero(restart_event);
         restart_event.type=SDL_KEYDOWN;
         restart_event.key.type=SDL_KEYDOWN;
         restart_event.key.keysym.sym=SDLK_RETURN;
@@ -2729,7 +2729,7 @@ int main(int argc, char **argv) {
         settings_persistence.capture_failed=false;
         settings_persistence.replay_activation_unresolved=false;
         save_policy_init(&settings_persistence.save_policy);
-        SDL_Event new_key={0};
+        SDL_Event new_key; SDL_zero(new_key);
         new_key.type=SDL_KEYDOWN;new_key.key.type=SDL_KEYDOWN;
         new_key.key.keysym.sym=SDLK_RETURN;
         if (!new_game_open_keep(&settings_persistence,&ui,&g) ||
@@ -2848,7 +2848,7 @@ int main(int argc, char **argv) {
             .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
             .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
             .button_count=3};
-        SDL_Event event={0};
+        SDL_Event event; SDL_zero(event);
         event.type=SDL_KEYDOWN;event.key.type=SDL_KEYDOWN;
         event.key.keysym.sym=SDLK_RETURN;
         if (!home_daily_intent_valid(&settings_persistence,&ui) ||
@@ -2970,7 +2970,7 @@ int main(int argc, char **argv) {
             .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
             .buttons={T_CANCEL,T_RECOVER},.button_count=2,
             .destructive_buttons=2u};
-        SDL_Event key={0};
+        SDL_Event key; SDL_zero(key);
         key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
         key.key.keysym.sym=SDLK_RETURN;
         if (!home_daily_recovery_valid(&settings_persistence,&ui) ||
@@ -3088,7 +3088,7 @@ int main(int argc, char **argv) {
             .binding=ui_modal_daily_binding(&settings_persistence,&ui),
             .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
             .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
-        SDL_Event key={0};
+        SDL_Event key; SDL_zero(key);
         key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
         key.key.keysym.sym=SDLK_RETURN;
         if (!home_daily_rollover_valid(&settings_persistence,&ui) ||
@@ -3189,7 +3189,7 @@ int main(int argc, char **argv) {
           fprintf(stderr,"Daily activation modal setup regression\n");
           app_shutdown(&g);return 1;
         }
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
         key.key.keysym.sym=SDLK_RETURN;
         (void)ui_prepare_event(&key);
         if (ui_modal.active || ui_modal_has_pending() ||
@@ -3304,7 +3304,7 @@ int main(int argc, char **argv) {
         }
         const AppModalAction stages[]={APP_MODAL_LOAD_CHECKPOINT,
             APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY};
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
         for (size_t i=0;i<sizeof(stages)/sizeof(stages[0]);++i) {
           (void)games_browser_modal_binding(&settings_persistence,&ui,&selected);
           if (!games_browser_load_offer(&settings_persistence,&ui,&g,
@@ -3436,7 +3436,7 @@ int main(int argc, char **argv) {
         settings_persistence.profile_status=STORE_IO_ERROR;
         settings_persistence.lock_status=STORE_LOCK_BUSY;
         startup_loading_active=true;
-        SDL_Event loading_key={0};
+        SDL_Event loading_key; SDL_zero(loading_key);
         loading_key.type=SDL_KEYDOWN;loading_key.key.type=SDL_KEYDOWN;
         loading_key.key.keysym.sym=SDLK_n;
         if (ui_prepare_event(&loading_key)) {
@@ -3449,7 +3449,7 @@ int main(int argc, char **argv) {
           app_shutdown(&g);return 1;
         }
         SDL_FlushEvent(SDL_WINDOWEVENT);SDL_FlushEvent(SDL_KEYDOWN);
-        SDL_Event loading_window={0};
+        SDL_Event loading_window; SDL_zero(loading_window);
         loading_window.type=SDL_WINDOWEVENT;
         loading_window.window.windowID=SDL_GetWindowID(g.win);
         loading_window.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
@@ -3497,7 +3497,7 @@ int main(int argc, char **argv) {
           fprintf(stderr,"Startup locked-profile modal regression\n");
           app_shutdown(&g);return 1;
         }
-        SDL_Event key={0};key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
         key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
         if (startup_recovery_poll(&settings_persistence,&ui,&g) ||
             ui_modal.active || ui_modal_has_pending() ||
@@ -3567,7 +3567,7 @@ int main(int argc, char **argv) {
             SDL_WINDOWEVENT_MINIMIZED,SDL_WINDOWEVENT_SIZE_CHANGED,
             SDL_WINDOWEVENT_DISPLAY_CHANGED};
         for (size_t i=0;i<sizeof(changes)/sizeof(changes[0]);++i) {
-          SDL_Event queued={0};queued.type=SDL_WINDOWEVENT;
+          SDL_Event queued; SDL_zero(queued);queued.type=SDL_WINDOWEVENT;
           queued.window.type=SDL_WINDOWEVENT;
           queued.window.windowID=SDL_GetWindowID(g.win);
           queued.window.event=changes[i];queued.window.data1=140;
@@ -3578,7 +3578,7 @@ int main(int argc, char **argv) {
             fprintf(stderr,"Generation queued context cancellation regression\n");
             app_shutdown(&g);return 1;
           }
-          SDL_Event retained={0};
+          SDL_Event retained; SDL_zero(retained);
           if (SDL_PeepEvents(&retained,1,SDL_GETEVENT,SDL_WINDOWEVENT,
                               SDL_WINDOWEVENT)!=1 ||
               retained.window.event!=changes[i] || retained.window.data1!=140) {
@@ -3588,7 +3588,7 @@ int main(int argc, char **argv) {
         }
         const Uint32 resets[]={SDL_RENDER_DEVICE_RESET,SDL_RENDER_TARGETS_RESET};
         for (size_t i=0;i<sizeof(resets)/sizeof(resets[0]);++i) {
-          SDL_Event queued={0};queued.type=resets[i];
+          SDL_Event queued; SDL_zero(queued);queued.type=resets[i];
           GenerationUiContext context={&g,&game,&ui,0};
           if (SDL_PushEvent(&queued)!=1 || generation_ui_continue(&context,0,4) ||
               context.rendered_attempt || !g.renderer_ready) {
@@ -3600,7 +3600,7 @@ int main(int argc, char **argv) {
             app_shutdown(&g);return 1;
           }
         }
-        SDL_Event back={0};back.type=SDL_KEYDOWN;back.key.type=SDL_KEYDOWN;
+        SDL_Event back; SDL_zero(back);back.type=SDL_KEYDOWN;back.key.type=SDL_KEYDOWN;
         back.key.keysym.sym=SDLK_AC_BACK;
         GenerationUiContext context={&g,&game,&ui,0};
         if (SDL_PushEvent(&back)!=1 || generation_ui_continue(&context,0,4) ||
@@ -3609,7 +3609,7 @@ int main(int argc, char **argv) {
           fprintf(stderr,"Generation queued Back cancellation regression\n");
           app_shutdown(&g);return 1;
         }
-        SDL_Event other={0};other.type=SDL_WINDOWEVENT;other.window.type=SDL_WINDOWEVENT;
+        SDL_Event other; SDL_zero(other);other.type=SDL_WINDOWEVENT;other.window.type=SDL_WINDOWEVENT;
         other.window.windowID=SDL_GetWindowID(g.win)+1;
         other.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
         context=(GenerationUiContext){&g,&game,&ui,1};
@@ -3644,7 +3644,7 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       app_frame(&g, &game, &ui);
-      SDL_Event modal_event = {0};
+      SDL_Event modal_event; SDL_zero(modal_event);
       modal_event.type = SDL_KEYDOWN;
       modal_event.key.type = SDL_KEYDOWN;
       modal_event.key.keysym.sym = SDLK_RETURN;
@@ -3688,7 +3688,7 @@ int main(int argc, char **argv) {
       unsigned scroll_pause=ui.pause_reasons;
       Game scroll_game_before=game;
       ui_modal_scroll_max_px=300;
-      SDL_Event scroll_event={0};
+      SDL_Event scroll_event; SDL_zero(scroll_event);
       scroll_event.type=SDL_FINGERDOWN;
       scroll_event.tfinger.type=SDL_FINGERDOWN;
       scroll_event.tfinger.touchId=71;scroll_event.tfinger.fingerId=72;
@@ -3707,7 +3707,7 @@ int main(int argc, char **argv) {
         app_shutdown(&g);return 1;
       }
       int scrolled=ui_modal_scroll_px;
-      SDL_Event duplicate={0};
+      SDL_Event duplicate; SDL_zero(duplicate);
       duplicate.type=SDL_MOUSEBUTTONDOWN;
       duplicate.button.type=SDL_MOUSEBUTTONDOWN;
       duplicate.button.which=SDL_TOUCH_MOUSEID;
@@ -3747,7 +3747,7 @@ int main(int argc, char **argv) {
       ui_modal_scroll_max_px=0;
       int tx=modal_layout.buttons[2].x+modal_layout.buttons[2].w/2;
       int ty=modal_layout.buttons[2].y+modal_layout.buttons[2].h/2;
-      modal_event = (SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type = SDL_MOUSEBUTTONDOWN;
       modal_event.button.type = SDL_MOUSEBUTTONDOWN;
       modal_event.button.button = SDL_BUTTON_LEFT;
@@ -3771,7 +3771,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "SDL modal touch setup regression\n");
         app_shutdown(&g); return 1;
       }
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_FINGERDOWN;
       modal_event.tfinger.type=SDL_FINGERDOWN;
       modal_event.tfinger.touchId=42;
@@ -3809,7 +3809,7 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       app_frame(&g, &game, &ui);
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
       modal_event.key.keysym.sym=SDLK_ESCAPE;
@@ -3853,7 +3853,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "library recovery modal setup regression\n");
         app_shutdown(&g); return 1;
       }
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
       modal_event.key.keysym.sym=SDLK_TAB;
@@ -4042,7 +4042,7 @@ int main(int argc, char **argv) {
       UiModalLayout ml=ui_modal_layout(&g,2);
       int mx=ml.buttons[1].x+ml.buttons[1].w/2;
       int my=ml.buttons[1].y+ml.buttons[1].h/2;
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_FINGERDOWN;
       modal_event.tfinger.type=SDL_FINGERDOWN;
       modal_event.tfinger.touchId=9;
@@ -4050,7 +4050,7 @@ int main(int argc, char **argv) {
       modal_event.tfinger.x=(float)mx/g.width;
       modal_event.tfinger.y=(float)my/g.height;
       (void)ui_prepare_event(&modal_event);
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_MOUSEBUTTONUP;
       modal_event.button.type=SDL_MOUSEBUTTONUP;
       modal_event.button.button=SDL_BUTTON_LEFT;
@@ -4078,7 +4078,7 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay pending modal setup regression\n");
         app_shutdown(&g); return 1;
       }
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
       modal_event.key.keysym.sym=SDLK_RETURN;
@@ -4137,7 +4137,7 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay checkpoint gate setup regression\n");
         app_shutdown(&g); return 1;
       }
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
       modal_event.key.keysym.sym=SDLK_RETURN;
@@ -4250,7 +4250,7 @@ int main(int argc, char **argv) {
         fprintf(stderr,"renderer unavailable transition regression\n");
         app_shutdown(&g); return 1;
       }
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_MOUSEBUTTONDOWN;
       modal_event.button.type=SDL_MOUSEBUTTONDOWN;
       modal_event.button.button=SDL_BUTTON_LEFT;
@@ -4315,7 +4315,7 @@ int main(int argc, char **argv) {
         app_shutdown(&g);return 1;
       }
       app_mark_renderer_unavailable(&g,&ui);
-      modal_event=(SDL_Event){0};
+      SDL_zero(modal_event);
       modal_event.type=SDL_KEYDOWN;
       modal_event.key.type=SDL_KEYDOWN;
       modal_event.key.keysym.sym=SDLK_r;
