@@ -2,6 +2,8 @@
 
 The [main README](../README.md) introduces the game and links to the latest published downloads. This index keeps technical documentation and older release history available without crowding the front page.
 
+[Official website](https://sudokura.cajapersonal.org/) · [Support development](https://cajapersonal.org/donate/)
+
 ## Start here
 
 - [v1.3.9 release notes](RELEASE_NOTES_1.3.9.md)

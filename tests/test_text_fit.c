@@ -404,7 +404,7 @@ int main(void) {
     }
   }
 
-  const int mobile_sizes[][2]={{360,600},{390,844},{412,915},{600,360},{800,480}};
+  const int mobile_sizes[][2]={{360,600},{390,844},{412,915},{600,320},{600,360},{800,480}};
   for (unsigned s=0;s<sizeof(mobile_sizes)/sizeof(mobile_sizes[0]);++s) {
     GeometrySettings panel;
     int width=mobile_sizes[s][0],height=mobile_sizes[s][1];

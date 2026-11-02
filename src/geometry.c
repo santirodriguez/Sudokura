@@ -52,7 +52,7 @@ static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 
 bool geometry_mobile_size_supported(int width,int height) {
-  return (width>=360 && height>=600) || (width>=600 && height>=360);
+  return (width>=360 && height>=600) || (width>=600 && height>=320);
 }
 
 bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
@@ -70,7 +70,8 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   g.up=(GeoRect){x+body_w-102,footer,48,48};
   g.down=(GeoRect){x+body_w-48,footer,48,48};
   if (columns) {
-    for (int i=0;i<5;++i) g.links[i]=(GeoRect){x+body_w+12,60+i*54,192,48};
+    int top=height<360 ? 56 : 60,step=height<360 ? 52 : 54;
+    for (int i=0;i<5;++i) g.links[i]=(GeoRect){x+body_w+12,top+i*step,192,48};
   } else if (about) {
     int y=footer-162,half=(w-6)/2;
     g.links[0]=(GeoRect){x,y,w,48};
@@ -85,11 +86,12 @@ bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
   GeometryLibrary g;
   memset(&g,0,sizeof(g));
   int x=6,w=width-12;
-  g.title=(GeoRect){x,60,w,28};
-  g.subtitle=(GeoRect){x,92,w,38};
+  bool short_landscape=height<360;
+  g.title=(GeoRect){x,60,w,short_landscape ? 24 : 28};
+  g.subtitle=(GeoRect){x,short_landscape ? 88 : 92,w,short_landscape ? 28 : 38};
   bool columns=height<600;
   int action_y=height-6-(columns ? 48 : 102);
-  int top=138,content_h=action_y-top-12;
+  int top=short_landscape ? 122 : 138,content_h=action_y-top-12;
   g.side_by_side=columns;
   int list_w=columns ? (w-12)*44/100 : w;
   int detail_h=columns ? content_h : (height>=720 ? 160 : 120);
@@ -133,7 +135,7 @@ bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
 }
 
 bool geometry_mobile_settings(int width, int height, GeometrySettings *out) {
-  bool landscape=width>=600 && height>=360 && height<600;
+  bool landscape=width>=600 && height>=320 && height<600;
   if (!out || (!landscape && (width<360 || height<600))) return false;
   GeometrySettings g;
   memset(&g,0,sizeof(g));
@@ -141,7 +143,8 @@ bool geometry_mobile_settings(int width, int height, GeometrySettings *out) {
   g.card=(GeoRect){(width-w)/2,(height-h)/2,w,h};
   int x=g.card.x+12,y=g.card.y+12,inner=w-24;
   g.title=(GeoRect){x,y,inner,28};
-  y+=36;
+  bool short_landscape=landscape && height<360;
+  y+=short_landscape ? 32 : 36;
   int col=landscape ? (inner-12)/2 : inner;
   g.theme=(GeoRect){x,y,col,48};
   g.language=(GeoRect){x,y+54,col,48};
@@ -152,14 +155,14 @@ bool geometry_mobile_settings(int width, int height, GeometrySettings *out) {
   g.music_minus=(GeoRect){slider_x,slider_y+20,48,48};
   g.music_plus=(GeoRect){slider_x+col-48,slider_y+20,48,48};
   g.music_track=(GeoRect){slider_x+55,slider_y+20,col-110,48};
-  int fx_y=slider_y+74;
+  int fx_y=slider_y+(short_landscape ? 70 : 74);
   g.fx_label=(GeoRect){slider_x,fx_y,col,18};
   g.fx_minus=(GeoRect){slider_x,fx_y+20,48,48};
   g.fx_plus=(GeoRect){slider_x+col-48,fx_y+20,48,48};
   g.fx_track=(GeoRect){slider_x+55,fx_y+20,col-110,48};
-  int lower_y=fx_y+82;
+  int lower_y=fx_y+(short_landscape ? 74 : 82);
   g.reduced_motion=(GeoRect){slider_x,lower_y,col,48};
-  g.auto_notes=(GeoRect){slider_x,lower_y+54,col,48};
+  g.auto_notes=(GeoRect){slider_x,lower_y+(short_landscape ? 52 : 54),col,48};
   g.back=(GeoRect){x,g.card.y+h-60,col,48};
   *out=g;
   return true;
@@ -1166,7 +1169,7 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
    not desktop's 33dp footer. Suppress redundant group captions on the
    minimum supported height; shared geometry remains the hit-test owner. */
 bool geometry_mobile_home(int width, int height, AppGeometry *g) {
-  if (!g || width<360 || height<360) return false;
+  if (!g || width<360 || height<320) return false;
   if (height<600) {
     if (width<600) return false;
     const int margin=6,gap=6,left_w=(width-24)/2+48;
@@ -1188,6 +1191,20 @@ bool geometry_mobile_home(int width, int height, AppGeometry *g) {
     grid_gap((GeoRect){right,234,right_w,102},2,gap,footer,4);
     for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
       g->home_secondary[i]=footer[i-1];
+    if (height<360) {
+      g->home_logo.h=24;
+      g->home_mode_label.y=88;g->home_difficulty_label.y=160;
+      for (int i=0;i<3;++i) {
+        g->home_mode[i].y=108;g->home_difficulty[i].y=180;
+      }
+      g->home_primary[0].y=234;
+      g->home_primary[1]=(GeoRect){right,60,right_w,48};
+      g->home_primary[2]=(GeoRect){right,112,right_w,48};
+      g->home_secondary[0].y=164;
+      grid_gap((GeoRect){right,216,right_w,100},2,4,footer,4);
+      for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+        g->home_secondary[i]=footer[i-1];
+    }
     return true;
   }
   const int margin = 6, gap = 6, w = width - 2 * margin;
@@ -1234,7 +1251,7 @@ bool geometry_mobile_home(int width, int height, AppGeometry *g) {
    Compose in dp here, keeping desktop's 360x640 minimum untouched. */
 bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
                                     AppGeometry *out) {
-  if (!out || width < 600 || height < 360 || height >= width ||
+  if (!out || width < 600 || height < 320 || height >= width ||
       mode < GEOMETRY_MODE_CLASSIC || mode > GEOMETRY_MODE_TIME) return false;
   AppGeometry g;
   memset(&g,0,sizeof(g));
@@ -1243,20 +1260,23 @@ bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
   board-=board%9;
   if (board<270) return false;
   const int x=margin+board+12,w=width-x-margin;
-  const int y=(height-354)/2;
+  const bool short_landscape=height<360;
+  const int stack_h=short_landscape ? 308 : 354;
+  const int y=(height-stack_h)/2;
+  const int trim=short_landscape ? 20 : 0;
   g.play_compact=true;g.mobile_layout=true;
   g.hud_count=mode==GEOMETRY_MODE_CLASSIC ? 5 : 6;
   g.board=(GeoRect){margin,(height-board)/2,board,board};
-  g.sidebar=(GeoRect){x,y,w,354};
-  g.play_title=(GeoRect){x,y,w,16};
+  g.sidebar=(GeoRect){x,y,w,stack_h};
+  g.play_title=(GeoRect){x,y,w,short_landscape ? 1 : 16};
   g.play_language=(GeoRect){margin,1,1,1};
   GeoRect top[5],edit[5],fields[6];
   const int top_min[5]={54,54,66,48,48},edit_min[5]={48,48,60,48,66};
   int extra=w-294,top_x=x,edit_x=x;
   for (int i=0;i<5;++i) {
     int grow=extra/5+(i<extra%5);
-    top[i]=(GeoRect){top_x,y+20,top_min[i]+grow,48};
-    edit[i]=(GeoRect){edit_x,y+138,edit_min[i]+grow,48};
+    top[i]=(GeoRect){top_x,y+(short_landscape ? 4 : 20),top_min[i]+grow,48};
+    edit[i]=(GeoRect){edit_x,y+138-trim,edit_min[i]+grow,48};
     top_x+=top[i].w+gap;edit_x+=edit[i].w+gap;
   }
   g.play_controls[PLAY_CONTROL_MENU]=top[0];
@@ -1264,13 +1284,14 @@ bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
   g.play_controls[PLAY_CONTROL_SAVE]=top[2];
   g.play_controls[PLAY_CONTROL_MORE]=top[3];
   int half=(w-gap)/2;
-  fields[0]=(GeoRect){x,y+74,half,20};
-  fields[1]=(GeoRect){x+half+gap,y+74,w-half-gap,20};
-  fields[2]=(GeoRect){x,y+94,half,20};
-  fields[3]=mode==GEOMETRY_MODE_CLASSIC ? (GeoRect){x,y+114,w,20}
-      : (GeoRect){x+half+gap,y+94,w-half-gap,20};
+  int hud_trim=short_landscape ? 16 : 0;
+  fields[0]=(GeoRect){x,y+74-hud_trim,half,20};
+  fields[1]=(GeoRect){x+half+gap,y+74-hud_trim,w-half-gap,20};
+  fields[2]=(GeoRect){x,y+94-hud_trim,half,20};
+  fields[3]=mode==GEOMETRY_MODE_CLASSIC ? (GeoRect){x,y+114-hud_trim,w,20}
+      : (GeoRect){x+half+gap,y+94-hud_trim,w-half-gap,20};
   for (int i=0;i<4;++i) g.hud[i]=fields[i];
-  g.hud[5]=(GeoRect){x,y+114,w,20};
+  g.hud[5]=(GeoRect){x,y+114-hud_trim,w,20};
   g.play_controls[PLAY_CONTROL_UNDO]=edit[0];
   g.play_controls[PLAY_CONTROL_REDO]=edit[1];
   g.play_controls[PLAY_CONTROL_CLEAR]=edit[2];
@@ -1278,15 +1299,16 @@ bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
   /* Strict/Free is actionable, so give it a full touch target rather than
      the small informational HUD row used for time/mode/difficulty. */
   g.hud[4]=edit[4];
-  g.palette_label=(GeoRect){x,y+191,w,1};
+  g.palette_label=(GeoRect){x,y+191-trim,w,1};
   int key_w=(w-4*gap)/5;
   for (int i=0;i<5;++i)
-    g.palette[i]=(GeoRect){x+i*(key_w+gap),y+192,key_w,48};
+    g.palette[i]=(GeoRect){x+i*(key_w+gap),y+192-trim,key_w,48};
   int second_x=x+(w-(4*key_w+3*gap))/2;
   for (int i=5;i<GEOMETRY_PALETTE_COUNT;++i)
-    g.palette[i]=(GeoRect){second_x+(i-5)*(key_w+gap),y+246,key_w,48};
-  g.progress=(GeoRect){x,y+300,w,24};
-  g.status=(GeoRect){x,y+330,w,24};
+    g.palette[i]=(GeoRect){second_x+(i-5)*(key_w+gap),y+246-trim,key_w,48};
+  g.progress=(GeoRect){x,y+300-trim,w,24};
+  /* As on minimum portrait, a transient toast replaces progress. */
+  g.status=short_landscape ? g.progress : (GeoRect){x,y+330,w,24};
   int panel_w=min_i(width-24,460);
   g.more_panel=(GeoRect){(width-panel_w)/2,(height-252)/2,panel_w,252};
   int item_w=(panel_w-24-gap)/2;
@@ -1430,9 +1452,9 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   int bottom = g->status.y + g->status.h;
   g->sidebar = (GeoRect){margin, edit_y, shell_w, bottom - edit_y};
 
-  const int panel_w = shell_w - 20, panel_h = 252;
+  const int panel_w = min_i(shell_w - 20,460), panel_h = 252;
   const int panel_x = (width - panel_w) / 2;
-  const int panel_y = height - panel_h - (height >= 700 ? 24 : 10);
+  const int panel_y = (height - panel_h)/2;
   g->more_panel = (GeoRect){panel_x, panel_y, panel_w, panel_h};
   const int item_w = (panel_w - 24 - gap) / 2;
   for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)

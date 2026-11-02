@@ -313,10 +313,16 @@ static bool gfx_refresh_metrics(Gfx*g){
   logical_w = viewport.width_dp;
   logical_h = viewport.height_dp;
   ui_touch_slop = viewport.touch_slop_dp;
+  if (g->width!=logical_w || g->height!=logical_h)
+    fprintf(stderr,"Android usable surface %dx%dpx -> %dx%ddp density=%.3f\n",
+            output_w,output_h,logical_w,logical_h,(double)density);
 #endif
   DesktopMetrics next;
   if(!desktop_metrics_compute(logical_w,logical_h,output_w,output_h,&next))
     return false;
+#if defined(__ANDROID__)
+  next.scale_milli=viewport.scale_milli;
+#endif
   int old_scale=g->metrics.scale_milli;
   g->metrics=next;g->width=logical_w;g->height=logical_h;
   g->output_width=output_w;g->output_height=output_h;

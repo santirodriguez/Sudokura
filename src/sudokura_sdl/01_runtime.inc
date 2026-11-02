@@ -6,7 +6,7 @@
     - Autosave, Continue and independent pause reasons
     - Dark/Light theme and offline language selector
     - Optional SDL2_mixer music, jingles and subtle UI feedback
-    Author: santirodriguez — https://santiagorodriguez.com
+    Author: santirodriguez — https://github.com/santirodriguez
     License: GPLv3
     Build:
       install make, gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files

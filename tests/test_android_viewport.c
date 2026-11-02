@@ -24,6 +24,12 @@ int main(void) {
   size(1280, 800, 2.0f, 18, 640, 400, 9); /* Landscape needs a policy. */
   size(1080, 1800, 3.0f, 0, 360, 600, 8);
   size(1080, 1800, 3.0f, 1, 360, 600, 1);
+  /* Insets/rotation change rounded dp ratios; raster scale stays constant. */
+  AndroidViewport portrait,landscape;
+  assert(android_viewport_compute(1080,2392,2.75f,22,&portrait));
+  assert(android_viewport_compute(2392,904,2.75f,22,&landscape));
+  assert(portrait.scale_milli==2750 && landscape.scale_milli==2750);
+  assert(landscape.height_dp==329);
   AndroidViewport v = {0};
   assert(!android_viewport_compute(0, 1800, 3.0f, 8, &v));
   assert(!android_viewport_compute(1080, 0, 3.0f, 8, &v));

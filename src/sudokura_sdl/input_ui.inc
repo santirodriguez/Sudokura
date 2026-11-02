@@ -2,9 +2,9 @@
    main gameplay event loop. */
 static const char *ui_support_url(Language language) {
   static const char *const urls[LANG_COUNT] = {
-      "https://santiagorodriguez.com/donate/",
-      "https://santiagorodriguez.com/donaciones/",
-      "https://santiagorodriguez.com/donacions/",
+      "https://cajapersonal.org/donate/",
+      "https://cajapersonal.org/donaciones/",
+      "https://cajapersonal.org/donacions/",
   };
   if (language < 0 || language >= LANG_COUNT) language = LANG_EN;
   return urls[language];

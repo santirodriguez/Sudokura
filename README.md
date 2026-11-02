@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://sudokura.cajapersonal.org/">Official website</a> ·
   <a href="#download">Download</a> ·
   <a href="#play-your-way">Features</a> ·
   <a href="docs/images/README.md">Screenshots</a> ·
@@ -138,12 +139,14 @@ Found a bug or have an idea? [Open an issue](https://github.com/santirodriguez/S
 
 ## Support Sudokura
 
-Sudokura is a free, open-source game made by [Santiago Rodriguez](https://santiagorodriguez.com). If you enjoy playing it, you can support its continued development.
+Sudokura is a free, open-source game made by [Santiago Rodriguez](https://github.com/santirodriguez). If you enjoy playing it, you can support its continued development.
 
 <p align="center">
-  <a href="https://santiagorodriguez.com/donate/"><img src="docs/images/donate.svg" alt="Support Sudokura — Donate" height="46"></a>
+  <a href="https://cajapersonal.org/donate/"><img src="docs/images/donate.svg" alt="Support Sudokura — Donate" height="46"></a>
 </p>
+
+[English](https://cajapersonal.org/donate/) · [Español](https://cajapersonal.org/donaciones/) · [Català](https://cajapersonal.org/donacions/)
 
 <sub>Music: Cozy Puzzle Jingle & Result by MintoDog ([CC0](https://opengameart.org/content/cozy-puzzle-jingle-result)) · Language flags by [lipis/flag-icons](https://github.com/lipis/flag-icons) (MIT)</sub>
 
-**[GPLv3](LICENSE)** · © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)
+**[GPLv3](LICENSE)** · © 2025–2026 [Santiago Rodriguez](https://github.com/santirodriguez)

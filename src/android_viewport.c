@@ -27,8 +27,14 @@ bool android_viewport_compute(int width_px, int height_px, float density,
     if (slop < 1) slop = 1;
   }
 
+  /* Rounding the usable dp rectangle changes its px/dp ratio on rotation.
+     Font rasterization follows the stable display density, not that ratio. */
+  double scale = (double)density * 1000.0;
+  if (scale < 500.0) scale = 500.0;
+  if (scale > 8000.0) scale = 8000.0;
   *out = (AndroidViewport){.width_dp = w, .height_dp = h,
                            .touch_slop_dp = slop,
+                           .scale_milli = (int)(scale + 0.5),
                            .surface_width_px = width_px,
                            .surface_height_px = height_px,
                            .density = density};

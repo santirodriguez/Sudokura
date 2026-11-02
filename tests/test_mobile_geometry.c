@@ -106,7 +106,8 @@ static void check_landscape(int w,int h,GeometryMode mode) {
     if (i!=4) for (int j=0;j<count;++j)
       assert(!overlap(g.hud[i],targets[j]));
   }
-  assert(!overlap(g.progress,g.status));
+  if (h>=360) assert(!overlap(g.progress,g.status));
+  else assert(g.progress.x==g.status.x && g.progress.y==g.status.y);
   assert(geometry_rect_in_bounds(g.progress,w,h));
   assert(geometry_rect_in_bounds(g.status,w,h));
   for (int i=0;i<GEOMETRY_MORE_COUNT;++i) {
@@ -204,7 +205,7 @@ static void check_auxiliary(int w,int h) {
   for (int about=0;about<2;++about) {
     GeometryInfo g;
     assert(geometry_mobile_info(w,h,about!=0,&g));
-    assert(g.body.w>=180 && g.body.h>=190);
+    assert(g.body.w>=180 && g.body.h>=(h<360 ? 150 : 190));
     assert(geometry_rect_in_bounds(g.body,w,h));
     GeoRect controls[8]={g.back,g.up,g.down};
     int count=3;
@@ -235,18 +236,18 @@ int main(void) {
   for (int w=360;w<=1200;w+=29)
     for (int h=600;h<=960;h+=31) check_auxiliary(w,h);
   for (int w=600;w<=1200;w+=29)
-    for (int h=360;h<600;h+=23) check_auxiliary(w,h);
+    for (int h=320;h<600;h+=23) check_auxiliary(w,h);
   check_auxiliary(360,600);check_auxiliary(600,360);check_auxiliary(800,480);
   GeometryInfo info;
   GeometryLibrary library;
   assert(!geometry_mobile_info(599,599,true,&info));
-  assert(!geometry_mobile_info(600,359,false,&info));
+  assert(!geometry_mobile_info(600,319,false,&info));
   assert(!geometry_mobile_library(359,600,&library));
   assert(!geometry_mobile_library(599,599,&library));
   for (int w=360;w<=800;w+=23)
     for (int h=600;h<=960;h+=31) check_settings(w,h);
   for (int w=600;w<=1200;w+=29)
-    for (int h=360;h<600;h+=23) check_settings(w,h);
+    for (int h=320;h<600;h+=23) check_settings(w,h);
   check_settings(360,600);check_settings(600,360);check_settings(800,480);
   GeometrySettings settings;
   assert(!geometry_mobile_settings(359,600,&settings));
@@ -277,16 +278,17 @@ int main(void) {
   assert(!geometry_compute_mobile(359, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(360, 599, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(599,599,GEOMETRY_MODE_CLASSIC,&g));
-  assert(!geometry_compute_mobile(600,359,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_compute_mobile(600,319,GEOMETRY_MODE_CLASSIC,&g));
   assert(geometry_compute_mobile(780, 430, GEOMETRY_MODE_CLASSIC, &g));
   for (int w=600;w<=1200;w+=25)
-    for (int h=360;h<=599 && h<w;h+=19)
+    for (int h=320;h<=599 && h<w;h+=19)
       for (int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode)
         check_landscape(w,h,(GeometryMode)mode);
+  check_landscape(600,320,GEOMETRY_MODE_TIME);
   check_landscape(600,360,GEOMETRY_MODE_CLASSIC);
   check_landscape(800,480,GEOMETRY_MODE_TIME);
   assert(!geometry_mobile_landscape_play(599,360,GEOMETRY_MODE_CLASSIC,&g));
-  assert(!geometry_mobile_landscape_play(600,359,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_mobile_landscape_play(600,319,GEOMETRY_MODE_CLASSIC,&g));
   assert(!geometry_mobile_landscape_play(600,600,GEOMETRY_MODE_CLASSIC,&g));
   assert(!geometry_mobile_landscape_play(600,360,(GeometryMode)-1,&g));
   assert(!geometry_window_size_supported(360, 600));

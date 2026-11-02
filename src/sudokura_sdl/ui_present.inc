@@ -1641,30 +1641,16 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   /* The paused puzzle remains fully hidden in every game mode. */
   draw_rect(gfx->ren,0,0,gfx->width,gfx->height,theme.bg);
-#if defined(__ANDROID__)
-  /* Show only an empty Android board silhouette, never actual numbers. */
-  SDL_Rect board=sdl_rect(geo.board);
-  SDL_BlendMode old_blend=SDL_BLENDMODE_NONE;
-  (void)SDL_GetRenderDrawBlendMode(gfx->ren,&old_blend);
-  (void)SDL_SetRenderDrawBlendMode(gfx->ren,SDL_BLENDMODE_BLEND);
-  (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
-                               theme.title.b,18);
-  (void)SDL_RenderFillRect(gfx->ren,&board);
-  for(int i=0;i<=9;++i){
-    Uint8 alpha=(Uint8)(i%3==0?54:24);
-    (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
-                                 theme.title.b,alpha);
-    int x=board.x+board.w*i/9,y=board.y+board.h*i/9;
-    (void)SDL_RenderDrawLine(gfx->ren,x,board.y,x,board.y+board.h);
-    (void)SDL_RenderDrawLine(gfx->ren,board.x,y,board.x+board.w,y);
-  }
-  (void)SDL_SetRenderDrawBlendMode(gfx->ren,old_blend);
-#endif
   SDL_Rect panel=sdl_rect(geo.more_panel);
-  draw_round_rect(gfx->ren,panel,12,theme.btn);
-  SDL_Rect heading={panel.x+12,panel.y+15,panel.w-24,34};
+  SDL_Rect shadow=panel;shadow.y+=4;
+  draw_round_rect(gfx->ren,shadow,16,theme.palette_bg);
+  draw_round_rect(gfx->ren,panel,16,theme.btn);
+  SDL_Rect heading={panel.x+16,panel.y+12,panel.w-80,34};
   (void)draw_fitted_text(gfx,tr(ui->language,T_MORE),theme.btnfg,
                          heading,24,13);
+  /* The existing dismiss surface owns this full 48dp header target too. */
+  SDL_Rect close={panel.x+panel.w-60,panel.y+4,48,48};
+  (void)draw_fitted_text(gfx,"×",theme.dim,close,24,18);
   const TextKey labels[GEOMETRY_MORE_COUNT] = {
       T_RESTART,T_HINT,T_VERIFY,T_SETTINGS,T_HELP,T_ABOUT
   };

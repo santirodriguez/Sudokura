@@ -1108,7 +1108,7 @@ static const char *about_url(int index) {
   static const char *const urls[3] = {
       "https://github.com/santirodriguez",
       "https://github.com/santirodriguez/Sudokura",
-      "https://santiagorodriguez.com",
+      "https://sudokura.cajapersonal.org/",
   };
   return index >= 0 && index < 3 ? urls[index] : NULL;
 }
@@ -2390,7 +2390,7 @@ int main(int argc, char **argv) {
          host CI too; this does not emulate Android density or TalkBack. */
       UI mobile_saved_ui=ui;
       bool mobile_saved_layout=g.mobile_layout;
-      const int shell_sizes[][2]={{360,600},{600,360},{800,480}};
+      const int shell_sizes[][2]={{360,600},{600,320},{600,360},{800,480}};
       g.mobile_layout=true;
       for (unsigned size=0;size<sizeof(shell_sizes)/sizeof(shell_sizes[0]);++size) {
         SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
@@ -2512,7 +2512,7 @@ int main(int argc, char **argv) {
       }
 
       SettingsPanelLayout settings_layout = ui_settings_panel_layout(&g);
-      const int mobile_settings_sizes[][2]={{360,600},{600,360},{800,480}};
+      const int mobile_settings_sizes[][2]={{360,600},{600,320},{600,360},{800,480}};
       for (unsigned size=0;size<sizeof(mobile_settings_sizes)/sizeof(mobile_settings_sizes[0]);++size) {
         Gfx probe=g;
         probe.width=mobile_settings_sizes[size][0];
