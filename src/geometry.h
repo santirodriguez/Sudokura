@@ -139,6 +139,21 @@ bool geometry_mobile_settings(int width, int height, GeometrySettings *out);
 bool geometry_mobile_home(int width, int height, AppGeometry *out);
 
 typedef struct {
+  GeoRect heading, body, back, up, down, links[5];
+} GeometryInfo;
+
+bool geometry_mobile_info(int width, int height, bool about, GeometryInfo *out);
+
+typedef struct {
+  GeoRect title, subtitle, list, detail, primary, back, replay, remove;
+  GeoRect page_previous, page_next, page_label;
+  int row_height, visible;
+  bool side_by_side;
+} GeometryLibrary;
+
+bool geometry_mobile_library(int width, int height, GeometryLibrary *out);
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 

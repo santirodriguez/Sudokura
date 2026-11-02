@@ -204,7 +204,12 @@ static void help_scroll_set(int value){
   if(value>help_scroll_max_px)value=help_scroll_max_px;
   help_scroll_px=value;
 }
-static void help_scroll_by(int delta){help_scroll_set(help_scroll_px+delta);}
+static void help_scroll_by(int64_t delta){
+  if (delta>=(int64_t)help_scroll_max_px-help_scroll_px)
+    help_scroll_set(help_scroll_max_px);
+  else if (delta<=-(int64_t)help_scroll_px) help_scroll_set(0);
+  else help_scroll_set(help_scroll_px+(int)delta);
+}
 static GameDifficulty home_difficulty=DIFFICULTY_MEDIUM;
 static SDL_Texture*language_flags[LANG_COUNT]={NULL,NULL,NULL};
 static bool victory_animation_active=false;
@@ -276,7 +281,49 @@ typedef struct{SDL_Rect board,side;AppGeometry model;}Layout;
 typedef struct{SDL_Rect btn[9],pal[9],palette_label,progress;int count_btn,count_pal;}SidebarRects;
 static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_for_platform(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
 static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,sizeof*r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
-static SDL_Rect back_rect(const Gfx*g,const UI*ui){AppGeometry a;return get_geometry(g,ui,&a)?sdl_rect(a.back_button):(SDL_Rect){0,0,0,0};}
+static bool ui_mobile_info_layout(const Gfx *gfx,const UI *ui,GeometryInfo *out) {
+#if defined(__ANDROID__)
+  return gfx && ui && (ui->screen==SCR_HELP || ui->screen==SCR_ABOUT) &&
+      geometry_mobile_info(gfx->width,gfx->height,ui->screen==SCR_ABOUT,out);
+#else
+  (void)gfx;(void)ui;(void)out;return false;
+#endif
+}
+
+static SDL_Rect ui_info_body_rect(const Gfx *gfx,const UI *ui) {
+  GeometryInfo mobile;
+  if (ui_mobile_info_layout(gfx,ui,&mobile)) return sdl_rect(mobile.body);
+  AppGeometry g;
+  return get_geometry(gfx,ui,&g) ? sdl_rect(g.info_body) : (SDL_Rect){0,0,0,0};
+}
+
+static bool ui_info_scroll_enabled(const Gfx *gfx,const UI *ui) {
+  GeometryInfo mobile;
+  return ui && (ui->screen==SCR_HELP ||
+      (ui->screen==SCR_ABOUT && ui_mobile_info_layout(gfx,ui,&mobile)));
+}
+
+static SDL_Rect ui_info_link_rect(const Gfx *gfx,const UI *ui,int link) {
+  if (link<0 || link>=5) return (SDL_Rect){0,0,0,0};
+  GeometryInfo mobile;
+  if (ui_mobile_info_layout(gfx,ui,&mobile)) return sdl_rect(mobile.links[link]);
+  AppGeometry g;
+  if (!get_geometry(gfx,ui,&g)) return (SDL_Rect){0,0,0,0};
+  return sdl_rect(link==0 ? g.about_study_link : g.about_links[link-1]);
+}
+
+static SDL_Rect ui_info_scroll_rect(const Gfx *gfx,const UI *ui,bool down) {
+  GeometryInfo mobile;
+  if (!ui_mobile_info_layout(gfx,ui,&mobile)) return (SDL_Rect){0,0,0,0};
+  return sdl_rect(down ? mobile.down : mobile.up);
+}
+
+static SDL_Rect back_rect(const Gfx *g,const UI *ui) {
+  GeometryInfo mobile;
+  if (ui_mobile_info_layout(g,ui,&mobile)) return sdl_rect(mobile.back);
+  AppGeometry a;
+  return get_geometry(g,ui,&a) ? sdl_rect(a.back_button) : (SDL_Rect){0,0,0,0};
+}
 static void draw_back_button(Gfx*g,const UI*ui,Theme th,bool focused){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);if(focused)draw_focus_ring(g->ren,r,th.sel_outline);}
 
 static bool hint_step_has_cell(const int *cells, int count, int cell) {

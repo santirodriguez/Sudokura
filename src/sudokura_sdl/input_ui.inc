@@ -496,9 +496,11 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
     for (int i = 0; i < 2; ++i) TARGET(120 + i, sdl_rect(a.end_buttons[i]), true);
   } else if (ui->screen == SCR_HELP || ui->screen == SCR_ABOUT) {
     TARGET(130, back_rect(gfx, ui), true);
+    TARGET(136,ui_info_scroll_rect(gfx,ui,false),help_scroll_px>0);
+    TARGET(137,ui_info_scroll_rect(gfx,ui,true),help_scroll_px<help_scroll_max_px);
     if (ui->screen == SCR_ABOUT) {
-      for (int i = 0; i < 4; ++i) TARGET(131 + i, sdl_rect(a.about_links[i]), true);
-      TARGET(135, sdl_rect(a.about_study_link), true);
+      for (int i = 0; i < 4; ++i) TARGET(131 + i, ui_info_link_rect(gfx,ui,i+1), true);
+      TARGET(135, ui_info_link_rect(gfx,ui,0), true);
     }
   } else if (ui->pause_reasons) {
     if (ui->pause_reasons & PAUSE_USER_VISIBLE)
@@ -512,16 +514,14 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
   return (PointerTarget){0};
 }
 
-/* Scroll owns only the Help body or an enabled library row. Action buttons,
+/* Scroll owns only the information body or an enabled library row. Action buttons,
    Back, paging, and disabled/scanning list surfaces never start a drag. */
 static void ui_scroll_start(int x, int y) {
   if (!audio_gfx || !audio_ui || settings_open || ui_more_open ||
       audio_control_popup_open)
     return;
-  if (audio_ui->screen == SCR_HELP) {
-    AppGeometry geometry;
-    if (get_geometry(audio_gfx, audio_ui, &geometry) &&
-        point_in(sdl_rect(geometry.info_body), x, y)) {
+  if (ui_info_scroll_enabled(audio_gfx,audio_ui)) {
+    if (point_in(ui_info_body_rect(audio_gfx,audio_ui), x, y)) {
       ui_scroll_kind = UI_SCROLL_HELP;
       touch_scroll_begin(&ui_scroll_gesture, x, y);
     }
@@ -568,7 +568,7 @@ static bool ui_scroll_motion(int x, int y) {
   if (!motion.scrolling) return false;
   ui_pointer_cancel();
   if (ui_scroll_kind == UI_SCROLL_HELP) {
-    help_scroll_by(-motion.delta_y);
+    help_scroll_by(-(int64_t)motion.delta_y);
   } else if (ui_scroll_kind == UI_SCROLL_LIBRARY && audio_gfx) {
     if (!ui_scroll_started_selection) {
       games_browser.selected = ui_scroll_start_index;
@@ -981,14 +981,14 @@ static bool ui_prepare_event(SDL_Event *event) {
     int x = event->button.x, y = event->button.y;
     AppGeometry geometry;
     if (get_geometry(audio_gfx, audio_ui, &geometry)) {
-      if (point_in(sdl_rect(geometry.about_study_link), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,0), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
           info_keyboard_focus = INFO_FOCUS_STUDY;
           ui_open_url("https://doi.org/10.1002/gps.5085");
         }
         return false;
       }
-      if (point_in(sdl_rect(geometry.about_links[3]), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,4), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
           info_keyboard_focus = INFO_FOCUS_LINK_3;
           ui_open_url(ui_support_url(audio_ui->language));

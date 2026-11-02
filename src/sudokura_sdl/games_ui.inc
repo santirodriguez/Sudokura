@@ -83,6 +83,20 @@ typedef struct {
 static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
   GamesBrowserLayout layout;
   memset(&layout,0,sizeof(layout));
+#ifdef __ANDROID__
+  GeometryLibrary mobile;
+  if (geometry_mobile_library(gfx->width,gfx->height,&mobile)) {
+#define MOBILE_RECT(field) layout.field=sdl_rect(mobile.field)
+    MOBILE_RECT(title);MOBILE_RECT(subtitle);MOBILE_RECT(list);MOBILE_RECT(detail);
+    MOBILE_RECT(primary);MOBILE_RECT(back);MOBILE_RECT(replay);MOBILE_RECT(remove);
+    MOBILE_RECT(page_previous);MOBILE_RECT(page_next);MOBILE_RECT(page_label);
+#undef MOBILE_RECT
+    layout.row_height=mobile.row_height;layout.visible=mobile.visible;
+    layout.side_by_side=mobile.side_by_side;
+    return layout;
+  }
+#endif
+
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin*2;
   int max_width = gfx->width >= 1600 ? 1480 : 1240;
@@ -1912,7 +1926,14 @@ static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
                        primary ? theme.bg : color;
   SDL_Rect face=polish_button_face(gfx,theme,rect,background,
                                     pressed,!enabled);
-  ui_draw_icon_label(gfx,face,text,glyph,foreground,17);
+#ifdef __ANDROID__
+  GeometryLibrary mobile;
+  if (geometry_mobile_library(gfx->width,gfx->height,&mobile)) {
+    SDL_Rect label=face;label.x+=6;label.w-=12;
+    (void)polish_draw_wrapped_fit(gfx,text,foreground,label,17,13,true);
+  } else
+#endif
+    ui_draw_icon_label(gfx,face,text,glyph,foreground,17);
   if (focused&&enabled)draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
@@ -2095,7 +2116,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     const ProfileResult *result=&row->entry.result;
     const Game *board=games_browser.preview_valid
         ?&games_browser.preview.game:NULL;
-    bool spacious=lay.side_by_side;
+    bool spacious=lay.side_by_side && lay.detail.h>=320;
     SDL_Rect preview;
     SDL_Rect summary;
     if(spacious) {
@@ -2110,7 +2131,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                          lay.detail.y+44,side,side};
       summary=(SDL_Rect){lay.detail.x+18,preview.y+side+16,
                           lay.detail.w-36,lay.detail.h-side-68};
-    } else if(lay.detail.h>=118 && lay.detail.w>=300) {
+    } else if(lay.detail.h>=125 && lay.detail.w>=300) {
       int side=lay.detail.h-53;
       if(side>118)side=118;
       preview=(SDL_Rect){lay.detail.x+12,lay.detail.y+38,side,side};
@@ -2121,6 +2142,8 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
       summary=(SDL_Rect){lay.detail.x+15,lay.detail.y+37,
                           lay.detail.w-30,lay.detail.h-43};
     }
+    /* Keep the incomplete-scan warning out of progress/summary copy. */
+    if (games_browser.incomplete && summary.h>=53) summary.h-=24;
     if(board && preview.w>=72)
       games_browser_draw_saved_board(gfx,theme,board,preview);
     else if(!board && preview.w>=72)

@@ -502,7 +502,58 @@ static void polish_draw_smiley(Gfx *gfx, Theme theme, SDL_Rect box) {
             face.x + size * 2 / 3, mouth_y, theme.title);
 }
 
+/* Mobile copy keeps a fixed readable size and scrolls inside its own viewport. */
+static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
+  Theme theme=ui->dark_theme ? theme_dark() : theme_light();
+  SDL_SetRenderDrawColor(gfx->ren,theme.bg.r,theme.bg.g,theme.bg.b,255);
+  SDL_RenderClear(gfx->ren);
+  draw_wordmark(gfx,sdl_rect(layout.heading));
+  const char *sections[]={SUDOKURA_NAME_VERSION,tr(ui->language,T_ABOUT_BODY),
+      tr(ui->language,T_ABOUT_FACT_TITLE),tr(ui->language,T_ABOUT_FACT),
+      tr(ui->language,T_ABOUT_STUDY_TITLE),tr(ui->language,T_ABOUT_STUDY),
+      tr(ui->language,T_ABOUT_SEEDS),tr(ui->language,T_ABOUT_STACK)};
+  SDL_Texture *textures[8]={0};
+  int widths[8]={0},heights[8]={0},offsets[8]={0},total=0;
+  SDL_Rect body=sdl_rect(layout.body);
+  for (int i=0;i<8;++i) {
+    offsets[i]=total;
+    textures[i]=render_text_wrapped(gfx,cached_font(gfx,18),sections[i],
+        (i==0 || i==2 || i==4) ? theme.title : theme.dim,
+        body.w-12,&widths[i],&heights[i]);
+    total+=heights[i]+12;
+  }
+  help_scroll_max_px=total>body.h ? total-body.h : 0;
+  help_scroll_set(help_scroll_px);
+  SDL_Rect previous;
+  SDL_RenderGetClipRect(gfx->ren,&previous);
+  SDL_RenderSetClipRect(gfx->ren,&body);
+  for (int i=0;i<8;++i)
+    help_draw_scrolled_texture(gfx,textures[i],body,offsets[i],widths[i],
+                               heights[i],help_scroll_px);
+  SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
+  const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT};
+  int mx=0,my=0;
+  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  for (int i=0;i<5;++i) {
+    SDL_Rect r=sdl_rect(layout.links[i]);
+    bool hover=point_in(r,mx,my);
+    SDL_Rect face=polish_button_face(gfx,theme,r,hover ? theme.hover : theme.btn,
+        hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+    face.x+=6;face.w-=12;
+    (void)polish_draw_wrapped_fit(gfx,tr(ui->language,keys[i]),theme.btnfg,
+                                  face,17,13,true);
+    int focus=i ? INFO_FOCUS_LINK_0+i-1 : INFO_FOCUS_STUDY;
+    if (info_keyboard_focus==focus) draw_focus_ring(gfx->ren,r,theme.sel_outline);
+  }
+  draw_info_scroll_controls(gfx,ui,theme);
+  draw_back_button(gfx,ui,theme,info_keyboard_focus==INFO_FOCUS_BACK);
+}
+
 static void polish_render_about(Gfx *gfx, UI *ui) {
+  GeometryInfo mobile;
+  if (ui_mobile_info_layout(gfx,ui,&mobile)) {
+    polish_render_mobile_about(gfx,ui,mobile);return;
+  }
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   SDL_SetRenderDrawColor(gfx->ren, theme.bg.r, theme.bg.g, theme.bg.b, 255);
   SDL_RenderClear(gfx->ren);

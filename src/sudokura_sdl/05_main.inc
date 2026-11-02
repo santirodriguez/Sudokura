@@ -3680,6 +3680,12 @@ int main(int argc, char **argv) {
         fprintf(stderr,"modal scroll canceled release regression\n");
         app_shutdown(&g);return 1;
       }
+      help_scroll_max_px=200;help_scroll_set(70);
+      help_scroll_by(INT64_MAX);
+      if (help_scroll_px!=200) {app_shutdown(&g);return 1;}
+      help_scroll_by(INT64_MIN);
+      if (help_scroll_px!=0) {app_shutdown(&g);return 1;}
+      help_scroll_reset();
       ui_modal_scroll_by(INT64_MAX);
       if (ui_modal_scroll_px!=ui_modal_scroll_max_px) {
         app_shutdown(&g);return 1;
@@ -4994,7 +5000,7 @@ int main(int argc, char **argv) {
           if (k == SDLK_ESCAPE) {
             ui_button_click();
             return_from_info(&persistence, &game, &ui);
-          } else if (ui.screen == SCR_HELP &&
+          } else if (ui_info_scroll_enabled(&g,&ui) &&
                      (k == SDLK_UP || k == SDLK_DOWN ||
                       k == SDLK_PAGEUP || k == SDLK_PAGEDOWN ||
                       k == SDLK_HOME || k == SDLK_END)) {
@@ -5178,8 +5184,8 @@ int main(int argc, char **argv) {
         games_browser_wheel(&persistence, &g, direction);
         continue;
       }
-      if (e.type == SDL_MOUSEWHEEL && ui.screen == SCR_HELP) {
-        int wheel=e.wheel.y;
+      if (e.type == SDL_MOUSEWHEEL && ui_info_scroll_enabled(&g,&ui)) {
+        int64_t wheel=e.wheel.y;
         if(e.wheel.direction==SDL_MOUSEWHEEL_FLIPPED)wheel=-wheel;
         help_scroll_by(-wheel*48);
         continue;
@@ -5334,10 +5340,16 @@ int main(int argc, char **argv) {
           if (!left) continue;
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
+          if (point_in(ui_info_scroll_rect(&g,&ui,false),x,y)) {
+            help_scroll_by(-180);continue;
+          }
+          if (point_in(ui_info_scroll_rect(&g,&ui,true),x,y)) {
+            help_scroll_by(180);continue;
+          }
           if (ui.screen == SCR_ABOUT) {
             bool opened = false;
             for (int i = 0; i < 3; ++i) {
-              if (point_in(sdl_rect(a.about_links[i]), x, y)) {
+              if (point_in(ui_info_link_rect(&g,&ui,i+1), x, y)) {
                 info_keyboard_focus=INFO_FOCUS_LINK_0+i;
                 open_about_url(&g, &game, &ui, i);
                 opened = true;

@@ -27,15 +27,30 @@ static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
   SDL_RenderCopy(g->ren,texture,&source,&dest);
 }
 
+static void draw_info_scroll_controls(Gfx *g,UI *ui,Theme th) {
+  if (help_scroll_max_px<=0) return;
+  for (int i=0;i<2;++i) {
+    SDL_Rect r=ui_info_scroll_rect(g,ui,i!=0);
+    if (r.w<=0 || r.h<=0) continue;
+    bool enabled=i ? help_scroll_px<help_scroll_max_px : help_scroll_px>0;
+    draw_round_rect(g->ren,r,7,enabled ? th.btn : th.palette_bg);
+    (void)draw_fitted_text(g,i ? "v" : "^",enabled ? th.btnfg : th.dim,r,22,18);
+  }
+}
+
 static void render_help(Gfx*g,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
   SDL_RenderClear(g->ren);
   AppGeometry a;
   if(!get_geometry(g,ui,&a))return;
-  SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
+  SDL_Rect heading=sdl_rect(a.info_heading),body=ui_info_body_rect(g,ui);
+  GeometryInfo mobile;
+  bool mobile_layout=ui_mobile_info_layout(g,ui,&mobile);
+  if (mobile_layout) heading=sdl_rect(mobile.heading);
   int tw=0,thh=0;
-  SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);
+  SDL_Texture*T=render_text(g,mobile_layout ? cached_font(g,28) : g->font_big,
+                            tr(ui->language,T_HELP),th.title,&tw,&thh);
   if(T){
     SDL_Rect d={heading.x,heading.y,tw,thh};
     SDL_RenderCopy(g->ren,T,NULL,&d);
@@ -107,6 +122,7 @@ static void render_help(Gfx*g,UI*ui){
     draw_round_rect(g->ren,(SDL_Rect){rail.x,thumb_y,rail.w,thumb_h},2,
                     th.sel_outline);
   }
+  draw_info_scroll_controls(g,ui,th);
   draw_back_button(g,ui,th,info_keyboard_focus==INFO_FOCUS_BACK);
 }
 

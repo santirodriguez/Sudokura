@@ -51,6 +51,66 @@ static void grid_gap(GeoRect area, int columns, int gap, GeoRect *items,
 static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 
+static bool mobile_surface_supported(int width,int height) {
+  return (width>=360 && height>=600) || (width>=600 && height>=360);
+}
+
+bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
+  if (!out || !mobile_surface_supported(width,height)) return false;
+  GeometryInfo g;
+  memset(&g,0,sizeof(g));
+  int x=6,w=width-12,footer=height-54;
+  bool columns=about && height<600;
+  int body_w=columns ? w-204 : w;
+  g.heading=(GeoRect){x,60,body_w,40};
+  int body_bottom=footer-6;
+  if (about && !columns) body_bottom-=162;
+  g.body=(GeoRect){x,110,body_w,body_bottom-110};
+  g.back=(GeoRect){x,footer,body_w-108,48};
+  g.up=(GeoRect){x+body_w-102,footer,48,48};
+  g.down=(GeoRect){x+body_w-48,footer,48,48};
+  if (columns) {
+    for (int i=0;i<5;++i) g.links[i]=(GeoRect){x+body_w+12,60+i*54,192,48};
+  } else if (about) {
+    int y=footer-162,half=(w-6)/2;
+    g.links[0]=(GeoRect){x,y,w,48};
+    for (int i=1;i<5;++i)
+      g.links[i]=(GeoRect){x+((i-1)%2)*(half+6),y+54+((i-1)/2)*54,half,48};
+  }
+  *out=g;return true;
+}
+
+bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
+  if (!out || !mobile_surface_supported(width,height)) return false;
+  GeometryLibrary g;
+  memset(&g,0,sizeof(g));
+  int x=6,w=width-12;
+  g.title=(GeoRect){x,60,w,28};
+  g.subtitle=(GeoRect){x,92,w,38};
+  bool columns=height<600;
+  int action_y=height-6-(columns ? 48 : 102);
+  int top=138,content_h=action_y-top-12;
+  g.side_by_side=columns;
+  int list_w=columns ? (w-12)*44/100 : w;
+  int detail_h=columns ? content_h : (height>=720 ? 160 : 120);
+  int list_available=columns ? content_h-54 : content_h-detail_h-66;
+  g.row_height=56;
+  g.visible=list_available/g.row_height;
+  if (g.visible<1) return false;
+  g.list=(GeoRect){x,top,list_w,g.visible*g.row_height};
+  g.detail=columns ? (GeoRect){x+list_w+12,top,w-list_w-12,detail_h}
+      : (GeoRect){x,top+content_h-detail_h,w,detail_h};
+  int pager_y=g.list.y+g.list.h+6,label_w=80,pager_w=(list_w-label_w-12)/2;
+  g.page_previous=(GeoRect){x,pager_y,pager_w,48};
+  g.page_label=(GeoRect){x+pager_w+6,pager_y,label_w,48};
+  g.page_next=(GeoRect){x+pager_w+label_w+12,pager_y,
+                         list_w-pager_w-label_w-12,48};
+  GeoRect actions[4];
+  grid_gap((GeoRect){x,action_y,w,columns ? 48 : 102},columns ? 4 : 2,6,actions,4);
+  g.back=actions[0];g.primary=actions[1];g.replay=actions[2];g.remove=actions[3];
+  *out=g;return true;
+}
+
 bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
   if (!out || !count || count>3 || width<264 || height<264) return false;
   GeometryModal g;

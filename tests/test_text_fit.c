@@ -438,6 +438,27 @@ int main(void) {
         assert(fits(font,label,15,13,audio_labels[i].w,audio_labels[i].h));
       }
       assert(wrapped_fits(font,tr(lang,T_BACK),15,13,panel.back.w,panel.back.h));
+      GeometryInfo info;
+      GeometryLibrary library;
+      assert(geometry_mobile_info(width,height,true,&info));
+      assert(geometry_mobile_library(width,height,&library));
+      const TextKey info_keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT};
+      for (unsigned i=0;i<5;++i)
+        assert(wrapped_fits(font,tr(lang,info_keys[i]),17,13,
+                            info.links[i].w-12,info.links[i].h));
+      assert(fits(font,tr(lang,T_BACK),20,13,info.back.w,info.back.h));
+      const TextKey page_keys[]={T_GAMES_PREVIOUS_PAGE,T_GAMES_NEXT_PAGE};
+      const GeoRect page_rects[]={library.page_previous,library.page_next};
+      for (unsigned i=0;i<2;++i)
+        assert(wrapped_fits(font,tr(lang,page_keys[i]),17,13,
+                            page_rects[i].w-12,page_rects[i].h));
+      const TextKey action_keys[]={T_BACK,T_RECOVER,T_GAMES_LOAD,T_GAMES_VIEW,
+                                   T_GAMES_REPLAY,T_GAMES_DELETE};
+      const GeoRect action_rects[]={library.back,library.primary,library.primary,
+                                    library.primary,library.replay,library.remove};
+      for (unsigned i=0;i<sizeof(action_keys)/sizeof(action_keys[0]);++i)
+        assert(wrapped_fits(font,tr(lang,action_keys[i]),17,13,
+                            action_rects[i].w-12,action_rects[i].h));
       if (height<600) {
         AppGeometry home={0};
         assert(geometry_mobile_home(width,height,&home));

@@ -174,7 +174,49 @@ static void check_modal(int w,int h,unsigned count) {
   }
 }
 
+static void check_auxiliary(int w,int h) {
+  for (int about=0;about<2;++about) {
+    GeometryInfo g;
+    assert(geometry_mobile_info(w,h,about!=0,&g));
+    assert(g.body.w>=180 && g.body.h>=190);
+    assert(geometry_rect_in_bounds(g.body,w,h));
+    GeoRect controls[8]={g.back,g.up,g.down};
+    int count=3;
+    if (about) for (int i=0;i<5;++i) controls[count++]=g.links[i];
+    for (int i=0;i<count;++i) {
+      assert(controls[i].w>=48 && controls[i].h>=48);
+      assert(geometry_rect_in_bounds(controls[i],w,h));
+      assert(!overlap(controls[i],g.body) && !overlap(controls[i],g.heading));
+      for (int j=0;j<i;++j) assert(!overlap(controls[i],controls[j]));
+    }
+  }
+  GeometryLibrary g;
+  assert(geometry_mobile_library(w,h,&g));
+  assert(g.visible>=1 && g.list.h==g.visible*g.row_height && g.row_height>=48);
+  assert(geometry_rect_in_bounds(g.list,w,h));
+  assert(geometry_rect_in_bounds(g.detail,w,h));
+  assert(g.detail.h>=120 && !overlap(g.detail,g.list));
+  GeoRect controls[]={g.back,g.primary,g.replay,g.remove,g.page_previous,g.page_next};
+  for (unsigned i=0;i<sizeof(controls)/sizeof(controls[0]);++i) {
+    assert(controls[i].w>=48 && controls[i].h>=48);
+    assert(geometry_rect_in_bounds(controls[i],w,h));
+    assert(!overlap(controls[i],g.list) && !overlap(controls[i],g.detail));
+    for (unsigned j=0;j<i;++j) assert(!overlap(controls[i],controls[j]));
+  }
+}
+
 int main(void) {
+  for (int w=360;w<=1200;w+=29)
+    for (int h=600;h<=960;h+=31) check_auxiliary(w,h);
+  for (int w=600;w<=1200;w+=29)
+    for (int h=360;h<600;h+=23) check_auxiliary(w,h);
+  check_auxiliary(360,600);check_auxiliary(600,360);check_auxiliary(800,480);
+  GeometryInfo info;
+  GeometryLibrary library;
+  assert(!geometry_mobile_info(599,599,true,&info));
+  assert(!geometry_mobile_info(600,359,false,&info));
+  assert(!geometry_mobile_library(359,600,&library));
+  assert(!geometry_mobile_library(599,599,&library));
   for (int w=360;w<=800;w+=23)
     for (int h=600;h<=960;h+=31) check_settings(w,h);
   for (int w=600;w<=1200;w+=29)
