@@ -1205,6 +1205,17 @@ bool geometry_mobile_home(int width, int height, AppGeometry *g) {
       for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
         g->home_secondary[i]=footer[i-1];
     }
+    /* Center the complete action groups in taller landscape surfaces. */
+    int offset=height>360 ? (height-360)/2 : 0;
+    g->home_logo.y+=offset;g->home_new_label.y+=offset;
+    g->home_mode_label.y+=offset;g->home_difficulty_label.y+=offset;
+    g->home_continue_label.y+=offset;
+    for(int i=0;i<3;++i) {
+      g->home_mode[i].y+=offset;g->home_difficulty[i].y+=offset;
+      g->home_primary[i].y+=offset;
+    }
+    for(int i=0;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+      g->home_secondary[i].y+=offset;
     return true;
   }
   const int margin = 6, gap = 6, w = width - 2 * margin;
@@ -1347,6 +1358,7 @@ static void mobile_result_pause(int width,int height,AppGeometry *g) {
     g->end_summary=(GeoRect){x,194,w,144};
     grid_gap((GeoRect){x,height-114,w,102},1,6,g->end_buttons,2);
   }
+  w=min_i(width-24,460);x=(width-w)/2;
   int top=max_i(66,(height-230)/2);
   g->pause_logo=(GeoRect){x,top,w,60};
   g->pause_heading=(GeoRect){x,top+68,w,40};

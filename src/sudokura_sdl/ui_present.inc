@@ -304,6 +304,16 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
     draw_round_rect(gfx->ren, card, 14, theme.palette_bg);
   }
 
+  if(gfx->mobile_layout && gfx->height<600) {
+    SDL_Rect setup=sdl_rect(geometry.home_logo);
+    setup.x-=4;setup.y-=4;setup.w+=8;
+    setup.h=geometry.home_primary[0].y+geometry.home_primary[0].h-setup.y+4;
+    SDL_Rect resume=sdl_rect(geometry.home_primary[1]);
+    resume.x-=4;resume.y-=4;resume.w+=8;
+    resume.h=polish_home_bottom(&geometry)-resume.y+4;
+    draw_round_rect(gfx->ren,setup,14,theme.palette_bg);
+    draw_round_rect(gfx->ren,resume,14,theme.palette_bg);
+  }
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
   bool show_group_captions = !gfx->mobile_layout || geometry.home_new_label.h>=18;
   if (show_group_captions)

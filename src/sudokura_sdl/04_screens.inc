@@ -56,14 +56,21 @@ static void render_help(Gfx*g,UI*ui){
     SDL_RenderCopy(g->ren,T,NULL,&d);
   }
 
-  const TextKey titles[]={
+  TextKey titles[]={
     T_HELP_GOAL_TITLE,T_HELP_MODES_TITLE,T_HELP_CONTROLS_TITLE,
     T_HELP_HINTS_TITLE,T_HELP_SHORTCUTS_TITLE
   };
-  const TextKey bodies[]={
+  TextKey bodies[]={
     T_HELP_GOAL_BODY,T_HELP_MODES_BODY,T_HELP_CONTROLS_BODY,
     T_HELP_HINTS_BODY,T_HELP_SHORTCUTS_BODY
   };
+  if (mobile_layout) {
+    titles[0]=T_HELP_TOUCH_TITLE;bodies[0]=T_HELP_TOUCH_BODY;
+    titles[1]=T_HELP_GOAL_TITLE;bodies[1]=T_HELP_GOAL_BODY;
+    titles[2]=T_HELP_MODES_TITLE;bodies[2]=T_HELP_MODES_BODY;
+    bodies[3]=T_HELP_TOUCH_HINTS;
+    titles[4]=T_HELP_TOUCH_SETTINGS_TITLE;bodies[4]=T_HELP_TOUCH_SETTINGS;
+  }
   enum{HELP_SECTION_COUNT=5};
   SDL_Texture*title_texture[HELP_SECTION_COUNT]={0};
   SDL_Texture*body_texture[HELP_SECTION_COUNT]={0};
@@ -83,13 +90,13 @@ static void render_help(Gfx*g,UI*ui){
   for(int i=0;i<HELP_SECTION_COUNT;i++){
     section_y[i]=content_h;
     title_texture[i]=render_text_wrapped(
-        g,g->font_body,tr(ui->language,titles[i]),th.title,text_w,
+        g,mobile_layout ? cached_font(g,20) : g->font_body,tr(ui->language,titles[i]),th.title,text_w,
         &title_w[i],&title_h[i]);
-    const char*body_text=i==HELP_SECTION_COUNT-1
+    const char*body_text=!mobile_layout && i==HELP_SECTION_COUNT-1
                               ?shortcut_text
                               :tr(ui->language,bodies[i]);
     body_texture[i]=render_text_wrapped(
-        g,g->font_body,body_text,th.dim,text_w,&body_w[i],&body_h[i]);
+        g,mobile_layout ? cached_font(g,18) : g->font_body,body_text,th.dim,text_w,&body_w[i],&body_h[i]);
     content_h+=title_h[i]+title_gap+body_h[i];
     if(i+1<HELP_SECTION_COUNT)content_h+=section_gap;
   }
@@ -134,6 +141,7 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
   AppGeometry a;
   if(!get_geometry(g,ui,&a))return;
   GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
+  if(g->mobile_layout) draw_round_rect(g->ren,sdl_rect(a.end_summary),14,th.palette_bg);
   draw_wordmark(g,sdl_rect(a.end_logo));
   SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
   const char*title=tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);
