@@ -128,6 +128,17 @@ bool geometry_modal(int width, int height, unsigned button_count,
                     GeometryModal *out);
 
 typedef struct {
+  GeoRect card, title, theme, language, sound;
+  GeoRect music_label, music_minus, music_track, music_plus;
+  GeoRect fx_label, fx_minus, fx_track, fx_plus;
+  GeoRect reduced_motion, auto_notes, back;
+} GeometrySettings;
+
+bool geometry_mobile_settings(int width, int height, GeometrySettings *out);
+/* Compose Home fields in-place, preserving gameplay and other screens. */
+bool geometry_mobile_home(int width, int height, AppGeometry *out);
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 

@@ -404,6 +404,52 @@ int main(void) {
     }
   }
 
+  const int mobile_sizes[][2]={{360,600},{390,844},{412,915},{600,360},{800,480}};
+  for (unsigned s=0;s<sizeof(mobile_sizes)/sizeof(mobile_sizes[0]);++s) {
+    GeometrySettings panel;
+    int width=mobile_sizes[s][0],height=mobile_sizes[s][1];
+    assert(geometry_mobile_settings(width,height,&panel));
+    for (int language=0;language<LANG_COUNT;++language) {
+      Language lang=(Language)language;
+      const TextKey keys[]={T_THEME,T_LANGUAGE,T_SOUND,T_REDUCED_MOTION,T_AUTO_NOTES};
+      const GeoRect rects[]={panel.theme,panel.language,panel.sound,
+                             panel.reduced_motion,panel.auto_notes};
+      for (int state=0;state<2;++state) {
+        const char *values[]={tr(lang,state ? T_DARK : T_LIGHT),
+            language_name((Language)((language+state)%LANG_COUNT)),
+            tr(lang,state ? T_ENABLED : T_MUTED),
+            tr(lang,state ? T_ENABLED : T_DISABLED),
+            tr(lang,state ? T_ENABLED : T_DISABLED)};
+        for (unsigned i=0;i<sizeof(keys)/sizeof(keys[0]);++i) {
+          char label[180];
+          snprintf(label,sizeof(label),"%s: %s",tr(lang,keys[i]),values[i]);
+          assert(wrapped_fits(font,label,15,13,rects[i].w,rects[i].h));
+        }
+      }
+      char label[180];
+      snprintf(label,sizeof(label),"%s: %s · %s",tr(lang,T_SOUND),
+               tr(lang,T_ENABLED),tr(lang,T_UNAVAILABLE));
+      assert(wrapped_fits(font,label,15,13,panel.sound.w,panel.sound.h));
+      const TextKey audio_keys[]={T_MUSIC,T_FX};
+      const GeoRect audio_labels[]={panel.music_label,panel.fx_label};
+      for (unsigned i=0;i<2;++i) {
+        snprintf(label,sizeof(label),"%s 100%% · %s",tr(lang,audio_keys[i]),
+                 tr(lang,T_UNAVAILABLE));
+        assert(fits(font,label,15,13,audio_labels[i].w,audio_labels[i].h));
+      }
+      assert(wrapped_fits(font,tr(lang,T_BACK),15,13,panel.back.w,panel.back.h));
+      if (height<600) {
+        AppGeometry home={0};
+        assert(geometry_mobile_home(width,height,&home));
+        for (int i=0;i<GEOMETRY_HOME_SEGMENT_COUNT;++i) {
+          assert(fits(font,tr(lang,modes[i]),15,12,home.home_mode[i].w,home.home_mode[i].h));
+          assert(fits(font,tr(lang,difficulties[i]),15,12,
+                      home.home_difficulty[i].w,home.home_difficulty[i].h));
+        }
+      }
+    }
+  }
+
   TTF_Quit();
   puts("SDL_ttf text-fit tests passed for hierarchical gameplay, readable About copy, Settings labels and all responsive tiers");
   return 0;

@@ -114,6 +114,45 @@ static void check_landscape(int w,int h,GeometryMode mode) {
     assert(geometry_rect_in_bounds(g.more_items[i],w,h));
     for (int j=0;j<i;++j) assert(!overlap(g.more_items[i],g.more_items[j]));
   }
+  AppGeometry play_before=g;
+  assert(geometry_mobile_home(w,h,&g));
+  assert(g.board.x==play_before.board.x && g.board.y==play_before.board.y &&
+         g.board.w==play_before.board.w && g.board.h==play_before.board.h);
+  GeoRect home[16];int n=0;
+  for (int i=0;i<GEOMETRY_HOME_SEGMENT_COUNT;++i) {
+    home[n++]=g.home_mode[i];home[n++]=g.home_difficulty[i];
+  }
+  for (int i=0;i<GEOMETRY_HOME_PRIMARY_COUNT;++i) home[n++]=g.home_primary[i];
+  for (int i=0;i<GEOMETRY_HOME_SECONDARY_COUNT;++i) home[n++]=g.home_secondary[i];
+  home[n++]=g.screen_language;
+  home[n++]=geometry_audio_control(w,h,&g,false).button;
+  assert(n==16);
+  for (int i=0;i<n;++i) {
+    assert(home[i].w>=48 && home[i].h>=48 && geometry_rect_in_bounds(home[i],w,h));
+    assert(!overlap(home[i],g.home_logo));
+    for (int j=0;j<i;++j) assert(!overlap(home[i],home[j]));
+  }
+}
+
+static void check_settings(int w,int h) {
+  GeometrySettings g;
+  assert(geometry_mobile_settings(w,h,&g));
+  assert(geometry_rect_in_bounds(g.card,w,h));
+  const GeoRect targets[]={g.theme,g.language,g.sound,g.music_minus,
+      g.music_track,g.music_plus,g.fx_minus,g.fx_track,g.fx_plus,
+      g.reduced_motion,g.auto_notes,g.back};
+  const GeoRect labels[]={g.title,g.music_label,g.fx_label};
+  for (unsigned i=0;i<sizeof(targets)/sizeof(targets[0]);++i) {
+    GeoRect r=targets[i];
+    assert(r.w>=48 && r.h>=48 && geometry_rect_in_bounds(r,w,h));
+    assert(r.x>=g.card.x && r.y>=g.card.y &&
+           r.x+r.w<=g.card.x+g.card.w && r.y+r.h<=g.card.y+g.card.h);
+    for (unsigned j=0;j<i;++j) assert(!overlap(r,targets[j]));
+    for (unsigned j=0;j<sizeof(labels)/sizeof(labels[0]);++j)
+      assert(!overlap(r,labels[j]));
+  }
+  for (unsigned i=0;i<sizeof(labels)/sizeof(labels[0]);++i)
+    assert(geometry_rect_in_bounds(labels[i],w,h));
 }
 
 static void check_modal(int w,int h,unsigned count) {
@@ -136,6 +175,14 @@ static void check_modal(int w,int h,unsigned count) {
 }
 
 int main(void) {
+  for (int w=360;w<=800;w+=23)
+    for (int h=600;h<=960;h+=31) check_settings(w,h);
+  for (int w=600;w<=1200;w+=29)
+    for (int h=360;h<600;h+=23) check_settings(w,h);
+  check_settings(360,600);check_settings(600,360);check_settings(800,480);
+  GeometrySettings settings;
+  assert(!geometry_mobile_settings(359,600,&settings));
+  assert(!geometry_mobile_settings(599,599,&settings));
   for (int w=264;w<=1000;w+=37)
     for (int h=264;h<=920;h+=41)
       for (unsigned count=1;count<=3;++count) check_modal(w,h,count);

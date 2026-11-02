@@ -2460,6 +2460,22 @@ int main(int argc, char **argv) {
       }
 
       SettingsPanelLayout settings_layout = ui_settings_panel_layout(&g);
+      const int mobile_settings_sizes[][2]={{360,600},{600,360},{800,480}};
+      for (unsigned size=0;size<sizeof(mobile_settings_sizes)/sizeof(mobile_settings_sizes[0]);++size) {
+        Gfx probe=g;
+        probe.width=mobile_settings_sizes[size][0];
+        probe.height=mobile_settings_sizes[size][1];
+        SettingsPanelLayout mobile=ui_mobile_settings_layout(&probe);
+        if (!mobile.card.w) {app_shutdown(&g);return 1;}
+        for (int focus=SETTINGS_FOCUS_THEME;focus<SETTINGS_FOCUS_COUNT;++focus) {
+          SDL_Rect r=ui_settings_focus_rect(mobile,(SettingsKeyboardFocus)focus);
+          if (r.w<48 || r.h<48 ||
+              !geometry_rect_in_bounds((GeoRect){r.x,r.y,r.w,r.h},probe.width,probe.height)) {
+            fprintf(stderr,"mobile settings SDL focus bounds regression\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+      }
       SDL_Rect focus_rect =
           ui_settings_focus_rect(settings_layout, settings_keyboard_focus);
       if (focus_rect.x != settings_layout.auto_notes.x ||

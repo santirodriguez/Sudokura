@@ -307,7 +307,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
   bool show_group_captions = true;
 #if defined(__ANDROID__)
-  show_group_captions = gfx->width >= 640;
+  show_group_captions = geometry.home_new_label.h >= 18;
 #endif
   if (show_group_captions)
     (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
@@ -883,9 +883,30 @@ static SDL_Rect ui_settings_focus_rect(SettingsPanelLayout layout,
   }
 }
 
+static SettingsPanelLayout ui_mobile_settings_layout(const Gfx *gfx) {
+  SettingsPanelLayout layout;
+  memset(&layout, 0, sizeof(layout));
+  GeometrySettings mobile;
+  if (gfx && geometry_mobile_settings(gfx->width,gfx->height,&mobile)) {
+#define SETTINGS_RECT(field) layout.field=sdl_rect(mobile.field)
+    SETTINGS_RECT(card);SETTINGS_RECT(title);SETTINGS_RECT(theme);
+    SETTINGS_RECT(language);SETTINGS_RECT(sound);SETTINGS_RECT(music_label);
+    SETTINGS_RECT(music_minus);SETTINGS_RECT(music_track);SETTINGS_RECT(music_plus);
+    SETTINGS_RECT(fx_label);SETTINGS_RECT(fx_minus);SETTINGS_RECT(fx_track);
+    SETTINGS_RECT(fx_plus);SETTINGS_RECT(reduced_motion);
+    SETTINGS_RECT(auto_notes);SETTINGS_RECT(back);
+#undef SETTINGS_RECT
+  }
+  return layout;
+}
+
 static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   SettingsPanelLayout layout;
   memset(&layout, 0, sizeof(layout));
+#if defined(__ANDROID__)
+  layout=ui_mobile_settings_layout(gfx);
+  if (layout.card.w) return layout;
+#endif
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin * 2;
   if (width > 540) width = 540;
@@ -985,7 +1006,11 @@ static void rc2_settings_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   SDL_Color bg = active ? theme.title : (hover ? theme.hover : theme.btn);
   SDL_Color fg = active ? theme.bg : theme.btnfg;
   SDL_Rect face = polish_button_face(gfx, theme, rect, bg, pressed, false);
+#if defined(__ANDROID__)
+  (void)polish_draw_wrapped_fit(gfx,label,fg,face,preferred,13,true);
+#else
   (void)draw_fitted_text(gfx, label, fg, face, preferred, 9);
+#endif
 }
 
 static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {

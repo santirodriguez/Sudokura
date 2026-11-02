@@ -71,6 +71,39 @@ bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
   return true;
 }
 
+bool geometry_mobile_settings(int width, int height, GeometrySettings *out) {
+  bool landscape=width>=600 && height>=360 && height<600;
+  if (!out || (!landscape && (width<360 || height<600))) return false;
+  GeometrySettings g;
+  memset(&g,0,sizeof(g));
+  int w=min_i(width-24,landscape ? 720 : 540),h=min_i(height-24,600);
+  g.card=(GeoRect){(width-w)/2,(height-h)/2,w,h};
+  int x=g.card.x+12,y=g.card.y+12,inner=w-24;
+  g.title=(GeoRect){x,y,inner,28};
+  y+=36;
+  int col=landscape ? (inner-12)/2 : inner;
+  g.theme=(GeoRect){x,y,col,48};
+  g.language=(GeoRect){x,y+54,col,48};
+  g.sound=(GeoRect){x,y+108,col,48};
+  int slider_x=landscape ? x+col+12 : x;
+  int slider_y=landscape ? y : y+162;
+  g.music_label=(GeoRect){slider_x,slider_y,col,18};
+  g.music_minus=(GeoRect){slider_x,slider_y+20,48,48};
+  g.music_plus=(GeoRect){slider_x+col-48,slider_y+20,48,48};
+  g.music_track=(GeoRect){slider_x+55,slider_y+20,col-110,48};
+  int fx_y=slider_y+74;
+  g.fx_label=(GeoRect){slider_x,fx_y,col,18};
+  g.fx_minus=(GeoRect){slider_x,fx_y+20,48,48};
+  g.fx_plus=(GeoRect){slider_x+col-48,fx_y+20,48,48};
+  g.fx_track=(GeoRect){slider_x+55,fx_y+20,col-110,48};
+  int lower_y=fx_y+82;
+  g.reduced_motion=(GeoRect){slider_x,lower_y,col,48};
+  g.auto_notes=(GeoRect){slider_x,lower_y+54,col,48};
+  g.back=(GeoRect){x,g.card.y+h-60,col,48};
+  *out=g;
+  return true;
+}
+
 static void common_screens(int width, int height, bool portrait, AppGeometry *g) {
   bool xl = !portrait && width >= 1600 && height >= 900;
   bool short_desktop = !portrait && height < 600;
@@ -1026,7 +1059,30 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
 /* Mobile Home: use the unused vertical room for real 48dp touch targets,
    not desktop's 33dp footer. Suppress redundant group captions on the
    minimum supported height; shared geometry remains the hit-test owner. */
-static void geometry_mobile_home(int width, int height, AppGeometry *g) {
+bool geometry_mobile_home(int width, int height, AppGeometry *g) {
+  if (!g || width<360 || height<360) return false;
+  if (height<600) {
+    if (width<600) return false;
+    const int margin=6,gap=6,col=(width-24)/2;
+    int left=margin,right=left+col+12;
+    g->screen_language=(GeoRect){margin,6,width-64,48};
+    g->home_logo=(GeoRect){left,60,col,40};
+    g->home_new_label=(GeoRect){left,102,col,1};
+    g->home_mode_label=(GeoRect){left,104,col,18};
+    grid_gap((GeoRect){left,126,col,48},3,gap,g->home_mode,3);
+    g->home_difficulty_label=(GeoRect){left,180,col,18};
+    grid_gap((GeoRect){left,202,col,48},3,gap,g->home_difficulty,3);
+    g->home_primary[0]=(GeoRect){left,256,col,48};
+    g->home_continue_label=(GeoRect){right,58,col,1};
+    g->home_primary[1]=(GeoRect){right,60,col,54};
+    g->home_primary[2]=(GeoRect){right,120,col,54};
+    g->home_secondary[0]=(GeoRect){right,180,col,48};
+    GeoRect footer[4];
+    grid_gap((GeoRect){right,234,col,102},2,gap,footer,4);
+    for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+      g->home_secondary[i]=footer[i-1];
+    return true;
+  }
   const int margin = 6, gap = 6, w = width - 2 * margin;
   const bool roomy = height >= 700;
   const int caption_h = 1; /* Mobile action labels already name each group. */
@@ -1064,6 +1120,7 @@ static void geometry_mobile_home(int width, int height, AppGeometry *g) {
            GEOMETRY_HOME_SECONDARY_COUNT - 1);
   for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
     g->home_secondary[i] = secondary[i - 1];
+  return true;
 }
 
 /* Android's physical surface has already had system insets removed by Java.
@@ -1145,7 +1202,7 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   if (!geometry_compute(width, seed_height, mode, g)) return false;
   /* Recompose the other screens at current inset-adjusted usable height. */
   common_screens(width, height, true, g);
-  geometry_mobile_home(width, height, g);
+  if (!geometry_mobile_home(width, height, g)) return false;
 
   const int margin = 6, gap = 6, shell_w = width - 2 * margin;
   const int logo_h = height >= 720 ? 36 : height >= 660 ? 28 : 20;
