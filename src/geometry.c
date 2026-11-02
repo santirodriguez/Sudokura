@@ -51,6 +51,26 @@ static void grid_gap(GeoRect area, int columns, int gap, GeoRect *items,
 static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 
+bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
+  if (!out || !count || count>3 || width<264 || height<264) return false;
+  GeometryModal g;
+  memset(&g,0,sizeof(g));
+  int w=min_i(width-24,540),h=min_i(height-24,302);
+  g.panel=(GeoRect){(width-w)/2,(height-h)/2,w,h};
+  g.title=(GeoRect){g.panel.x+16,g.panel.y+12,w-32,36};
+  int buttons_y=g.panel.y+h-65;
+  g.body=(GeoRect){g.panel.x+18,g.panel.y+54,w-90,
+                    buttons_y-g.panel.y-66};
+  g.scroll_up=(GeoRect){g.panel.x+w-66,g.body.y,48,48};
+  g.scroll_down=(GeoRect){g.scroll_up.x,g.body.y+g.body.h-48,48,48};
+  int button_w=(w-32-(int)(count-1)*6)/(int)count;
+  for (unsigned i=0;i<count;++i)
+    g.buttons[i]=(GeoRect){g.panel.x+16+(int)i*(button_w+6),
+                            buttons_y,button_w,50};
+  *out=g;
+  return true;
+}
+
 static void common_screens(int width, int height, bool portrait, AppGeometry *g) {
   bool xl = !portrait && width >= 1600 && height >= 900;
   bool short_desktop = !portrait && height < 600;

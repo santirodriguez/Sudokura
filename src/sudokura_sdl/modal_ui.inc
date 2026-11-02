@@ -16,8 +16,10 @@ static SDL_FingerID ui_modal_finger_id;
 static int ui_modal_scroll_px, ui_modal_scroll_max_px;
 
 typedef struct {
-  SDL_Rect panel, title, body, buttons[3];
+  SDL_Rect panel, title, body, buttons[3], scroll_up, scroll_down;
 } UiModalLayout;
+
+enum { UI_MODAL_SCROLL_UP=3, UI_MODAL_SCROLL_DOWN=4 };
 
 static AppModalBinding ui_modal_current_binding(const Persistence *p,
                                                  const UI *ui) {
@@ -101,25 +103,26 @@ static void ui_modal_invalidate(void) {
 
 static UiModalLayout ui_modal_layout(const Gfx *gfx, unsigned count) {
   UiModalLayout layout = {0};
-  if (!gfx || count == 0 || count > 3) return layout;
-  int width = gfx->width, height = gfx->height;
-  int panel_w = width - 24;
-  if (panel_w > 540) panel_w = 540;
-  int panel_h = height - 24;
-  if (panel_h > 302) panel_h = 302;
-  if (panel_w < 240 || panel_h < 180) return layout;
-  layout.panel = (SDL_Rect){(width-panel_w)/2,(height-panel_h)/2,
-                             panel_w,panel_h};
-  layout.title = (SDL_Rect){layout.panel.x+16,layout.panel.y+12,
-                             panel_w-32,36};
-  int buttons_y = layout.panel.y + panel_h - 65;
-  layout.body = (SDL_Rect){layout.panel.x+18,layout.panel.y+54,
-                            panel_w-36,buttons_y-layout.panel.y-66};
-  int gap = 6, button_w = (panel_w-32-(int)(count-1)*gap)/(int)count;
-  for (unsigned i = 0; i < count; ++i)
-    layout.buttons[i] = (SDL_Rect){
-        layout.panel.x+16+(int)i*(button_w+gap),buttons_y,button_w,50};
+  GeometryModal model;
+  if (!gfx || !geometry_modal(gfx->width,gfx->height,count,&model)) return layout;
+  layout.panel=sdl_rect(model.panel);
+  layout.title=sdl_rect(model.title);
+  layout.body=sdl_rect(model.body);
+  layout.scroll_up=sdl_rect(model.scroll_up);
+  layout.scroll_down=sdl_rect(model.scroll_down);
+  for (unsigned i=0;i<count;++i) layout.buttons[i]=sdl_rect(model.buttons[i]);
   return layout;
+}
+
+static void ui_modal_scroll_by(int64_t delta) {
+  int maximum=ui_modal_scroll_max_px>0 ? ui_modal_scroll_max_px : 0;
+  int current=ui_modal_scroll_px;
+  if (current<0) current=0;
+  if (current>maximum) current=maximum;
+  if (delta>=(int64_t)maximum-current) ui_modal_scroll_px=maximum;
+  else if (delta<=-(int64_t)current) ui_modal_scroll_px=0;
+  else ui_modal_scroll_px=current+(int)delta;
+  if (audio_gfx) audio_gfx->dirty=true;
 }
 
 static void ui_modal_render(Gfx *gfx, UI *ui) {
@@ -168,6 +171,15 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
   }
   SDL_RenderSetClipRect(gfx->ren,
       old_clip.w || old_clip.h ? &old_clip : NULL);
+  const SDL_Rect scroll_buttons[2]={layout.scroll_up,layout.scroll_down};
+  const char *scroll_labels[2]={"↑","↓"};
+  for (int i=0;ui_modal_scroll_max_px>0 && i<2;++i) {
+    bool enabled=i==0 ? ui_modal_scroll_px>0 :
+                        ui_modal_scroll_px<ui_modal_scroll_max_px;
+    draw_round_rect(gfx->ren,scroll_buttons[i],7,theme.btn);
+    (void)draw_fitted_text(gfx,scroll_labels[i],enabled ? theme.title : theme.dim,
+                           scroll_buttons[i],24,16);
+  }
   for (unsigned i=0;i<ui_modal.request.button_count;++i) {
     SDL_Rect rect=layout.buttons[i];
     bool focused=ui_modal.focus==i;
@@ -180,6 +192,10 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
 
 static int ui_modal_button_at(const Gfx *gfx, int x, int y) {
   UiModalLayout layout=ui_modal_layout(gfx,ui_modal.request.button_count);
+  if (ui_modal_scroll_px>0 && point_in(layout.scroll_up,x,y))
+    return UI_MODAL_SCROLL_UP;
+  if (ui_modal_scroll_px<ui_modal_scroll_max_px && point_in(layout.scroll_down,x,y))
+    return UI_MODAL_SCROLL_DOWN;
   for(unsigned i=0;i<ui_modal.request.button_count;++i)
     if (point_in(layout.buttons[i],x,y)) return (int)i;
   return -1;
@@ -260,10 +276,25 @@ static void ui_modal_select(unsigned button) {
   if (audio_gfx) audio_gfx->dirty=true;
 }
 
+static void ui_modal_activate_hit(int hit) {
+  if (hit==UI_MODAL_SCROLL_UP || hit==UI_MODAL_SCROLL_DOWN) {
+    UiModalLayout layout=ui_modal_layout(audio_gfx,ui_modal.request.button_count);
+    int page=layout.body.h-24;
+    if (page<48) page=48;
+    ui_modal_scroll_by(hit==UI_MODAL_SCROLL_UP ? -page : page);
+  } else if (hit>=0 && (unsigned)hit<ui_modal.request.button_count) {
+    ui_modal_select((unsigned)hit);
+  }
+}
+
 /* Called after Android lifecycle normalization and touch translation, before
    any underlying pointer/focus/audio/board handler can consume the event. */
 static bool ui_modal_handle_event(const SDL_Event *event) {
   if (!ui_modal.active || !event) return false;
+  if ((event->type==SDL_MOUSEBUTTONDOWN || event->type==SDL_MOUSEBUTTONUP) &&
+      event->button.which==SDL_TOUCH_MOUSEID) return true;
+  if (event->type==SDL_MOUSEMOTION && event->motion.which==SDL_TOUCH_MOUSEID)
+    return true;
   if (event->type==SDL_WINDOWEVENT) return false;
   if (event->type==SDL_QUIT) {
     ui_modal_cancel_current();
@@ -283,10 +314,7 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
     } else if (key==SDLK_PAGEUP || key==SDLK_PAGEDOWN ||
                key==SDLK_UP || key==SDLK_DOWN) {
       int delta=(key==SDLK_PAGEUP||key==SDLK_UP)?-60:60;
-      int next=ui_modal_scroll_px+delta;
-      if (next<0) next=0;
-      if (next>ui_modal_scroll_max_px) next=ui_modal_scroll_max_px;
-      ui_modal_scroll_px=next;
+      ui_modal_scroll_by(delta);
     } else if (input_activation_key(key)) {
       ui_modal_select(ui_modal.focus);
     }
@@ -311,7 +339,7 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
         ui_modal_touch_id=finger->touchId;
         ui_modal_finger_id=finger->fingerId;
         ui_modal_pressed=hit;
-        if (hit>=0)
+        if (hit>=0 && (unsigned)hit<ui_modal.request.button_count)
           (void)app_modal_focus(&ui_modal,ui_modal.serial,(unsigned)hit);
       }
     } else if (ui_modal_touch_active &&
@@ -322,7 +350,7 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
       if (event->type==SDL_FINGERUP) {
         if (!ui_modal_mouse_active && ui_modal_pressed>=0 &&
             hit==ui_modal_pressed)
-          ui_modal_select((unsigned)hit);
+          ui_modal_activate_hit(hit);
         ui_modal_touch_active=false;
         ui_modal_pressed=-1;
       }
@@ -338,7 +366,8 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
       int hit=ui_modal_button_at(audio_gfx,event->button.x,event->button.y);
       if (hit>=0) {
         ui_modal_pressed=hit;
-        (void)app_modal_focus(&ui_modal,ui_modal.serial,(unsigned)hit);
+        if ((unsigned)hit<ui_modal.request.button_count)
+          (void)app_modal_focus(&ui_modal,ui_modal.serial,(unsigned)hit);
       }
     }
     if (audio_gfx) audio_gfx->dirty=true;
@@ -349,19 +378,15 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
         ui_modal_button_at(audio_gfx,event->button.x,event->button.y):-1;
     if (ui_modal_mouse_active && ui_modal_pressed>=0 &&
         hit==ui_modal_pressed)
-      ui_modal_select((unsigned)hit);
+      ui_modal_activate_hit(hit);
     ui_modal_mouse_active=false;
     ui_modal_pressed=-1;
     return true;
   }
   if (event->type==SDL_MOUSEWHEEL) {
-    int dy=event->wheel.y;
+    int64_t dy=event->wheel.y;
     if (event->wheel.direction==SDL_MOUSEWHEEL_FLIPPED) dy=-dy;
-    int next=ui_modal_scroll_px-dy*40;
-    if (next<0) next=0;
-    if (next>ui_modal_scroll_max_px) next=ui_modal_scroll_max_px;
-    ui_modal_scroll_px=next;
-    if (audio_gfx) audio_gfx->dirty=true;
+    ui_modal_scroll_by(-dy*40);
     return true;
   }
   return event->type==SDL_KEYUP || event->type==SDL_MOUSEMOTION ||

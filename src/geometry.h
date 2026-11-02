@@ -121,6 +121,13 @@ typedef struct {
 } GeometryHintPanel;
 
 typedef struct {
+  GeoRect panel, title, body, buttons[3], scroll_up, scroll_down;
+} GeometryModal;
+
+bool geometry_modal(int width, int height, unsigned button_count,
+                    GeometryModal *out);
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 

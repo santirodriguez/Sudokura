@@ -3614,6 +3614,63 @@ int main(int argc, char **argv) {
         app_shutdown(&g); return 1;
       }
       UiModalLayout modal_layout = ui_modal_layout(&g,3);
+      /* Scroll controls must not choose an action, steal decision focus,
+         release the modal pause or mutate the underlying game. */
+      unsigned scroll_focus=ui_modal.focus;
+      unsigned scroll_pause=ui.pause_reasons;
+      Game scroll_game_before=game;
+      ui_modal_scroll_max_px=300;
+      SDL_Event scroll_event={0};
+      scroll_event.type=SDL_FINGERDOWN;
+      scroll_event.tfinger.type=SDL_FINGERDOWN;
+      scroll_event.tfinger.touchId=71;scroll_event.tfinger.fingerId=72;
+      scroll_event.tfinger.x=(float)(modal_layout.scroll_down.x+24)/g.width;
+      scroll_event.tfinger.y=(float)(modal_layout.scroll_down.y+24)/g.height;
+      if (ui_prepare_event(&scroll_event) || ui_modal_scroll_px!=0) {
+        fprintf(stderr,"modal scroll press activation regression\n");
+        app_shutdown(&g);return 1;
+      }
+      scroll_event.type=SDL_FINGERUP;scroll_event.tfinger.type=SDL_FINGERUP;
+      if (ui_prepare_event(&scroll_event) || ui_modal_scroll_px<=0 ||
+          !ui_modal.active || ui_modal_has_pending() ||
+          ui_modal.focus!=scroll_focus || ui.pause_reasons!=scroll_pause ||
+          memcmp(&game,&scroll_game_before,sizeof(game))!=0) {
+        fprintf(stderr,"modal touch scrolling changed decision/game regression\n");
+        app_shutdown(&g);return 1;
+      }
+      int scrolled=ui_modal_scroll_px;
+      SDL_Event duplicate={0};
+      duplicate.type=SDL_MOUSEBUTTONDOWN;
+      duplicate.button.type=SDL_MOUSEBUTTONDOWN;
+      duplicate.button.which=SDL_TOUCH_MOUSEID;
+      duplicate.button.button=SDL_BUTTON_LEFT;
+      duplicate.button.x=modal_layout.scroll_down.x+24;
+      duplicate.button.y=modal_layout.scroll_down.y+24;
+      (void)ui_prepare_event(&duplicate);
+      duplicate.type=SDL_MOUSEBUTTONUP;duplicate.button.type=SDL_MOUSEBUTTONUP;
+      (void)ui_prepare_event(&duplicate);
+      if (ui_modal_scroll_px!=scrolled || !ui_modal.active || ui_modal_has_pending()) {
+        fprintf(stderr,"modal synthetic mouse scroll duplication regression\n");
+        app_shutdown(&g);return 1;
+      }
+      scroll_event.type=SDL_FINGERDOWN;scroll_event.tfinger.type=SDL_FINGERDOWN;
+      (void)ui_prepare_event(&scroll_event);
+      scroll_event.type=SDL_FINGERMOTION;scroll_event.tfinger.type=SDL_FINGERMOTION;
+      scroll_event.tfinger.x=0.0f;scroll_event.tfinger.y=0.0f;
+      (void)ui_prepare_event(&scroll_event);
+      scroll_event.type=SDL_FINGERUP;scroll_event.tfinger.type=SDL_FINGERUP;
+      (void)ui_prepare_event(&scroll_event);
+      if (ui_modal_scroll_px!=scrolled || ui_modal_has_pending()) {
+        fprintf(stderr,"modal scroll canceled release regression\n");
+        app_shutdown(&g);return 1;
+      }
+      ui_modal_scroll_by(INT64_MAX);
+      if (ui_modal_scroll_px!=ui_modal_scroll_max_px) {
+        app_shutdown(&g);return 1;
+      }
+      ui_modal_scroll_by(INT64_MIN);
+      if (ui_modal_scroll_px!=0) {app_shutdown(&g);return 1;}
+      ui_modal_scroll_max_px=0;
       int tx=modal_layout.buttons[2].x+modal_layout.buttons[2].w/2;
       int ty=modal_layout.buttons[2].y+modal_layout.buttons[2].h/2;
       modal_event = (SDL_Event){0};

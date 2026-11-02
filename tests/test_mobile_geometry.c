@@ -116,7 +116,35 @@ static void check_landscape(int w,int h,GeometryMode mode) {
   }
 }
 
+static void check_modal(int w,int h,unsigned count) {
+  GeometryModal g;
+  assert(geometry_modal(w,h,count,&g));
+  assert(geometry_rect_in_bounds(g.panel,w,h));
+  assert(geometry_rect_in_bounds(g.title,w,h));
+  assert(geometry_rect_in_bounds(g.body,w,h));
+  assert(g.body.w>=150 && g.body.h>=102);
+  GeoRect targets[5]={g.scroll_up,g.scroll_down};
+  for (unsigned i=0;i<count;++i) targets[i+2]=g.buttons[i];
+  for (unsigned i=0;i<count+2;++i) {
+    GeoRect r=targets[i];
+    assert(r.w>=48 && r.h>=48 && geometry_rect_in_bounds(r,w,h));
+    assert(r.x>=g.panel.x && r.y>=g.panel.y &&
+           r.x+r.w<=g.panel.x+g.panel.w && r.y+r.h<=g.panel.y+g.panel.h);
+    assert(!overlap(r,g.body) && !overlap(r,g.title));
+    for (unsigned j=0;j<i;++j) assert(!overlap(r,targets[j]));
+  }
+}
+
 int main(void) {
+  for (int w=264;w<=1000;w+=37)
+    for (int h=264;h<=920;h+=41)
+      for (unsigned count=1;count<=3;++count) check_modal(w,h,count);
+  check_modal(360,600,3);check_modal(600,360,3);check_modal(800,480,2);
+  GeometryModal modal;
+  assert(!geometry_modal(263,360,1,&modal));
+  assert(!geometry_modal(360,263,1,&modal));
+  assert(!geometry_modal(360,600,0,&modal));
+  assert(!geometry_modal(360,600,4,&modal));
   for (int w = 360; w <= 639; w += 27) {
     for (int h = 600; h <= 920; h += 40)
       for (int mode = GEOMETRY_MODE_CLASSIC;
