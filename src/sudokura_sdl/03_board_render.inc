@@ -151,16 +151,13 @@ static SDL_Texture*render_text_wrapped(Gfx*g,TTF_Font*f,const char*txt,SDL_Color
 }
 static bool point_in(SDL_Rect r,int x,int y){return x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h;}
 static GeometryMode geometry_mode(Mode mode){return(GeometryMode)mode;}
-static bool geometry_for_platform(int w, int h, GeometryMode mode,
-                                  AppGeometry *out) {
-#if defined(__ANDROID__)
-  return geometry_compute_mobile(w, h, mode, out);
-#else
-  return geometry_compute(w, h, mode, out);
-#endif
+static bool geometry_for_platform(const Gfx *gfx,GeometryMode mode,AppGeometry *out) {
+  if (!gfx) return false;
+  return gfx->mobile_layout ? geometry_compute_mobile(gfx->width,gfx->height,mode,out)
+      : geometry_compute(gfx->width,gfx->height,mode,out);
 }
 static bool get_geometry(const Gfx*g,const UI*ui,AppGeometry*out){
-  return geometry_for_platform(g->width,g->height,geometry_mode(ui->mode),out);
+  return ui && geometry_for_platform(g,geometry_mode(ui->mode),out);
 }
 static SDL_Rect sdl_rect(GeoRect r){return(SDL_Rect){r.x,r.y,r.w,r.h};}
 static TTF_Font*cached_font(Gfx*g,int requested){int best=0;for(int i=1;i<FONT_CACHE_COUNT;i++)if(abs(font_cache_sizes[i]-requested)<abs(font_cache_sizes[best]-requested))best=i;return g->fonts[best];}
@@ -279,15 +276,12 @@ static void draw_wordmark(Gfx*g,SDL_Rect box){
 
 typedef struct{SDL_Rect board,side;AppGeometry model;}Layout;
 typedef struct{SDL_Rect btn[9],pal[9],palette_label,progress;int count_btn,count_pal;}SidebarRects;
-static Layout compute_layout(int W,int H,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_for_platform(W,H,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
+static Layout compute_layout(const Gfx *gfx,Mode mode){Layout l;memset(&l,0,sizeof l);if(geometry_for_platform(gfx,geometry_mode(mode),&l.model)){l.board=sdl_rect(l.model.board);l.side=sdl_rect(l.model.sidebar);}return l;}
 static void compute_sidebar_rects(const Layout*l,SidebarRects*r){memset(r,0,sizeof*r);r->count_btn=r->count_pal=9;r->palette_label=sdl_rect(l->model.palette_label);r->progress=sdl_rect(l->model.progress);for(int i=0;i<9;i++){r->btn[i]=sdl_rect(l->model.actions[i]);r->pal[i]=sdl_rect(l->model.palette[i]);}}
 static bool ui_mobile_info_layout(const Gfx *gfx,const UI *ui,GeometryInfo *out) {
-#if defined(__ANDROID__)
-  return gfx && ui && (ui->screen==SCR_HELP || ui->screen==SCR_ABOUT) &&
+  return gfx && gfx->mobile_layout && ui &&
+      (ui->screen==SCR_HELP || ui->screen==SCR_ABOUT) &&
       geometry_mobile_info(gfx->width,gfx->height,ui->screen==SCR_ABOUT,out);
-#else
-  (void)gfx;(void)ui;(void)out;return false;
-#endif
 }
 
 static SDL_Rect ui_info_body_rect(const Gfx *gfx,const UI *ui) {
@@ -419,7 +413,7 @@ static void draw_grid_bar(SDL_Renderer *renderer, int x, int y, int w, int h,
 static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);SDL_RenderClear(g->ren);
   if(app_pause_hides_play(ui)){render_pause_overlay(g,ui);return;}
-  Layout L=compute_layout(g->width,g->height,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);GeometryStyle style=geometry_style(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
+  Layout L=compute_layout(g,ui->mode);GeometryFonts fonts=geometry_font_sizes(&L.model,g->width,g->height);GeometryStyle style=geometry_style(&L.model,g->width,g->height);int gx=L.board.x,gy=L.board.y,side=L.board.w,cs=side/9;if(side<=0||cs<=0)return;
   draw_round_rect(g->ren,(SDL_Rect){gx-6,gy-6,side+12,side+12},10,th.shadow);
   draw_round_rect(g->ren,(SDL_Rect){L.side.x-6,L.side.y-6,L.side.w+12,L.side.h+12},10,th.shadow);
   draw_round_rect(g->ren,L.side,8,th.btn);draw_rect(g->ren,gx,gy,side,side,th.board);
@@ -467,7 +461,8 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   char hud[GEOMETRY_HUD_COUNT][80] = {{0}};
   double el = elapsed_time(ui);
   const char *mode_name = tr(ui->language, mode_key(ui->mode));
-  bool desktop_hud = g->width >= 640;
+  bool landscape_hud = L.model.mobile_layout && g->height<600;
+  bool desktop_hud = g->width >= 640 && !landscape_hud;
   if (desktop_hud) {
     snprintf(hud[0], sizeof hud[0], "%s · %s",
              ui->is_daily ? tr(ui->language, T_DAILY_SHORT) : mode_name,
@@ -509,11 +504,19 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
     snprintf(hud[5], sizeof hud[5], "%s: %d/%d",
              tr(ui->language, T_STRIKES_LEFT), left, ui->strikes_max);
   }
+  if (landscape_hud) {
+    snprintf(hud[0],sizeof hud[0],"%s",ui->is_daily ? tr(ui->language,T_DAILY_SHORT) : mode_name);
+    snprintf(hud[1],sizeof hud[1],"%s",difficulty_name(ui->language,game->difficulty));
+  }
   SDL_GetMouseState(&mx, &my);
   for (int i = 0; i < L.model.hud_count; ++i) {
     SDL_Rect hr = sdl_rect(L.model.hud[i]);
     bool strict_chip = i == 4;
     bool hover = strict_chip && point_in(hr, mx, my);
+    if (landscape_hud && !strict_chip) {
+      (void)draw_fitted_text(g,hud[i],i==2 ? th.btnfg : th.dim,hr,13,13);
+      continue;
+    }
     if (desktop_hud && i == 1) continue;
     if (desktop_hud && i == 0) {
       SDL_Rect heading = sdl_rect(
@@ -538,7 +541,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
                    (hover ? th.hover : th.palette_bg);
     SDL_Color fg = strict_chip && ui->strict_mode ? th.bg : th.dim;
     draw_round_rect(g->ren, hr, hr.h / 2, bg);
-    (void)draw_fitted_text(g, hud[i], fg, hr, fonts.hud, 10);
+    (void)draw_fitted_text(g, hud[i], fg, hr, landscape_hud ? 13 : fonts.hud, landscape_hud ? 13 : 10);
   }
 
   int progress=game_mode_reveals_correctness(ui->mode)?game_progress_percent(game):game_fill_percent(game);

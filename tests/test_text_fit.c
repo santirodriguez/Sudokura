@@ -459,6 +459,59 @@ int main(void) {
       for (unsigned i=0;i<sizeof(action_keys)/sizeof(action_keys[0]);++i)
         assert(wrapped_fits(font,tr(lang,action_keys[i]),17,13,
                             action_rects[i].w-12,action_rects[i].h));
+      for (int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode) {
+        AppGeometry shell;
+        assert(geometry_compute_mobile(width,height,(GeometryMode)mode,&shell));
+        GeometryHintPanel hint;
+        assert(geometry_hint_panel(&shell,width,height,&hint));
+        const TextKey hint_keys[]={T_APPLY,T_VERIFY,T_REVEAL_CELL,T_CANCEL};
+        const GeoRect hint_actions[]={hint.primary,hint.verify,hint.reveal,hint.cancel};
+        for (unsigned i=0;i<4;++i)
+          assert(wrapped_fits(font,tr(lang,hint_keys[i]),16,13,
+                              hint_actions[i].w,hint_actions[i].h));
+        char message[320];
+        snprintf(message,sizeof message,tr(lang,T_HINT_CHAIN_FMT),
+                 tr(lang,T_TECH_LOCKED_CANDIDATE),9,9,9);
+        size_t used=strlen(message);
+        snprintf(message+used,sizeof(message)-used,"\n%s",tr(lang,T_HINT_MARKER_LEGEND));
+        assert(wrapped_fits(font,message,15,13,hint.body.w,hint.body.h));
+        const TextKey hint_messages[]={T_HINT_CONTRADICTION,T_HINT_STALLED,T_HINT_NEEDS_VERIFY};
+        for (unsigned i=0;i<3;++i)
+          assert(wrapped_fits(font,tr(lang,hint_messages[i]),15,13,hint.body.w,hint.body.h));
+        const TextKey result_keys[]={T_ANOTHER_NORMAL,T_ANOTHER_GAME,T_RETRY_SAME,T_HOME};
+        for (unsigned i=0;i<4;++i) {
+          GeoRect r=shell.end_buttons[i==3 ? 1 : 0];
+          assert(fits(font,tr(lang,result_keys[i]),17,13,r.w,r.h-2));
+        }
+        assert(fits(font,tr(lang,T_RESUME),17,13,shell.pause_buttons[0].w,
+                    shell.pause_buttons[0].h-2));
+        if (height<600) {
+          char hud[6][100]={{0}};
+          snprintf(hud[0],sizeof hud[0],"%s",tr(lang,modes[mode]));
+          snprintf(hud[1],sizeof hud[1],"%s",tr(lang,T_HARD));
+          snprintf(hud[2],sizeof hud[2],"%s: 99:59",tr(lang,T_TIME));
+          if (mode==GEOMETRY_MODE_CLASSIC)
+            snprintf(hud[3],sizeof hud[3],"%s: 99 · %s",tr(lang,T_HINTS),tr(lang,T_ASSISTED));
+          else snprintf(hud[3],sizeof hud[3],"%s: 999",tr(lang,T_ERRORS));
+          snprintf(hud[4],sizeof hud[4],"%s",tr(lang,T_STRICT));
+          snprintf(hud[5],sizeof hud[5],"%s: %s",
+                   tr(lang,mode==GEOMETRY_MODE_TIME ? T_TARGET : T_STRIKES_LEFT),
+                   mode==GEOMETRY_MODE_TIME ? "99:59" : "3/3");
+          for (int i=0;i<shell.hud_count;++i) {
+            GeoRect r=shell.hud[i];
+            if (!fits(font,hud[i],13,13,r.w,r.h-2))
+              fprintf(stderr,"mobile HUD fit failure %dx%d language=%d mode=%d field=%d: %s\n",
+                      width,height,language,mode,i,hud[i]);
+            assert(fits(font,hud[i],13,13,r.w,r.h-2));
+          }
+          const TextKey play_keys[]={T_HOME_COMPACT,T_PAUSE,T_SAVE,T_MORE,T_UNDO,T_REDO,T_CLEAR,T_NOTES};
+          for (int i=PLAY_CONTROL_MENU;i<=PLAY_CONTROL_NOTES;++i) {
+            GeoRect r=shell.play_controls[i];
+            const char *label=i==PLAY_CONTROL_UNDO ? "↶" : i==PLAY_CONTROL_REDO ? "↷" : tr(lang,play_keys[i]);
+            assert(fits(font,label,i==PLAY_CONTROL_UNDO || i==PLAY_CONTROL_REDO ? 24 : 15,13,r.w,r.h-2));
+          }
+        }
+      }
       if (height<600) {
         AppGeometry home={0};
         assert(geometry_mobile_home(width,height,&home));

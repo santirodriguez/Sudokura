@@ -114,6 +114,32 @@ static void check_landscape(int w,int h,GeometryMode mode) {
     assert(geometry_rect_in_bounds(g.more_items[i],w,h));
     for (int j=0;j<i;++j) assert(!overlap(g.more_items[i],g.more_items[j]));
   }
+  AppGeometry shell;
+  assert(geometry_compute_mobile(w,h,mode,&shell));
+  assert(shell.mobile_layout && geometry_play_valid(&shell,w,h));
+  GeoRect result[]={shell.screen_language,shell.end_logo,shell.end_heading,
+      shell.end_summary,shell.end_buttons[0],shell.end_buttons[1]};
+  GeoRect paused[]={shell.screen_language,shell.pause_logo,shell.pause_heading,
+      shell.pause_buttons[0],shell.pause_buttons[1]};
+  for (unsigned i=0;i<sizeof(result)/sizeof(result[0]);++i) {
+    assert(geometry_rect_in_bounds(result[i],w,h));
+    for (unsigned j=0;j<i;++j) assert(!overlap(result[i],result[j]));
+  }
+  for (unsigned i=0;i<sizeof(paused)/sizeof(paused[0]);++i) {
+    assert(geometry_rect_in_bounds(paused[i],w,h));
+    for (unsigned j=0;j<i;++j) assert(!overlap(paused[i],paused[j]));
+  }
+  GeometryHintPanel hint;
+  assert(geometry_hint_panel(&shell,w,h,&hint));
+  GeoRect hint_controls[]={hint.primary,hint.reveal,hint.cancel};
+  assert(geometry_rect_in_bounds(hint.body,w,h));
+  for (unsigned i=0;i<3;++i) {
+    assert(hint_controls[i].w>=48 && hint_controls[i].h>=48);
+    assert(geometry_rect_in_bounds(hint_controls[i],w,h));
+    assert(!overlap(hint_controls[i],hint.body));
+    assert(!overlap(hint_controls[i],hint.title));
+    for (unsigned j=0;j<i;++j) assert(!overlap(hint_controls[i],hint_controls[j]));
+  }
   AppGeometry play_before=g;
   assert(geometry_mobile_home(w,h,&g));
   assert(g.board.x==play_before.board.x && g.board.y==play_before.board.y &&
@@ -250,7 +276,9 @@ int main(void) {
   AppGeometry g;
   assert(!geometry_compute_mobile(359, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(!geometry_compute_mobile(360, 599, GEOMETRY_MODE_CLASSIC, &g));
-  assert(!geometry_compute_mobile(780, 430, GEOMETRY_MODE_CLASSIC, &g));
+  assert(!geometry_compute_mobile(599,599,GEOMETRY_MODE_CLASSIC,&g));
+  assert(!geometry_compute_mobile(600,359,GEOMETRY_MODE_CLASSIC,&g));
+  assert(geometry_compute_mobile(780, 430, GEOMETRY_MODE_CLASSIC, &g));
   for (int w=600;w<=1200;w+=25)
     for (int h=360;h<=599 && h<w;h+=19)
       for (int mode=GEOMETRY_MODE_CLASSIC;mode<=GEOMETRY_MODE_TIME;++mode)
@@ -264,6 +292,6 @@ int main(void) {
   assert(!geometry_window_size_supported(360, 600));
   assert(!geometry_compute(360, 600, GEOMETRY_MODE_CLASSIC, &g));
   assert(geometry_compute(360, 640, GEOMETRY_MODE_CLASSIC, &g));
-  puts("Android portrait and staged landscape play geometry, 48dp targets and desktop bounds passed");
+  puts("Android portrait and complete landscape shell geometry, 48dp targets and desktop bounds passed");
   return 0;
 }

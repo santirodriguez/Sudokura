@@ -61,6 +61,7 @@ typedef struct {
   /* One semantic hit-box map for painting, focus, and pointer capture. */
   GeoRect play_controls[PLAY_CONTROL_COUNT];
   bool play_compact;
+  bool mobile_layout;
   GeoRect more_panel;
   GeoRect more_items[GEOMETRY_MORE_COUNT];
   GeoRect palette_label;
@@ -166,6 +167,7 @@ typedef struct {
 
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *out);
 /* Mobile-only composition; never relaxes desktop window-size validation. */
+bool geometry_mobile_size_supported(int width_dp, int height_dp);
 bool geometry_compute_mobile(int width_dp, int height_dp, GeometryMode mode,
                              AppGeometry *out);
 /* Gameplay-only landscape composer. Secondary-screen fields remain zero;

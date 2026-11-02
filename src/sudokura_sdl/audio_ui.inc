@@ -238,9 +238,9 @@ static void app_frame(Gfx *gfx, Game *game, UI *ui) {
   }
   if (app_suspended) return; /* No rendering on a suspended surface. */
 #if defined(__ANDROID__)
-  if (gfx->width < 360 || gfx->height < 600) {
-    /* A short rotated surface cannot contain a 270dp board and 48dp
-       controls. Retain the game and use the existing safe Android Back. */
+  if (!geometry_mobile_size_supported(gfx->width,gfx->height)) {
+    /* Below either supported usable-dp composition, preserve the attempt
+       behind a paused minimum-size message and retain safe Android Back. */
     if (ui && ui->session_open) (void)clock_pause(ui, PAUSE_FOCUS);
     audio_set_focus_paused(true);
     Theme theme = ui && ui->dark_theme ? theme_dark() : theme_light();

@@ -3,7 +3,7 @@ static SDL_Rect pressed_paint_rect(SDL_Rect r,bool pressed){if(pressed&&r.h>4){r
 static void render_pause_overlay(Gfx*g,const UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();draw_rect(g->ren,0,0,g->width,g->height,th.bg);AppGeometry a;if(!get_geometry(g,ui,&a))return;GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
   draw_wordmark(g,sdl_rect(a.pause_logo));(void)draw_fitted_text(g,tr(ui->language,T_PAUSED),th.title,sdl_rect(a.pause_heading),fonts.heading,16);
-  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=ui_pointer_pressed(resume),menu_pressed=ui_pointer_pressed(menu);SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
+  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=ui_pointer_pressed(resume),menu_pressed=ui_pointer_pressed(menu);SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,g->mobile_layout?13:10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,g->mobile_layout?13:10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
 }
 
 static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
@@ -186,7 +186,7 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
   for(int i=0;i<4;i++){
     SDL_Rect row={summary.x,summary.y+i*row_h,summary.w,
                   i==3?summary.h-i*row_h:row_h};
-    (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,9);
+    (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,g->mobile_layout?13:9);
   }
 
   SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
@@ -198,10 +198,10 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
                       ?(ui->is_daily?T_ANOTHER_NORMAL:T_ANOTHER_GAME)
                       :T_RETRY_SAME;
   (void)draw_fitted_text(g,tr(ui->language,primary),th.bg,b1p,
-                         fonts.control+2,9);
+                         fonts.control+2,g->mobile_layout?13:9);
   draw_round_rect(g->ren,b2p,7,p2?th.sel:th.btn);
   (void)draw_fitted_text(g,tr(ui->language,T_HOME),th.btnfg,b2p,
-                         fonts.control,9);
+                         fonts.control,g->mobile_layout?13:9);
   draw_focus_ring(g->ren,result_keyboard_focus==0?b1:b2,th.sel_outline);
 }
 
@@ -393,6 +393,9 @@ static void app_shutdown_base(Gfx*g){
 static bool app_init_base(Gfx*g,const char*font_cli){
   memset(g,0,sizeof(*g));g->width=SUDOKURA_DEFAULT_WINDOW_WIDTH;
   g->height=SUDOKURA_DEFAULT_WINDOW_HEIGHT;g->dirty=true;
+#if defined(__ANDROID__)
+  g->mobile_layout=true;
+#endif
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");
   SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
   SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");

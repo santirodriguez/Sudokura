@@ -371,7 +371,7 @@ static void ui_pointer_reconcile(void) {
   if (!audio_ui || !audio_gfx) { ui_pointer_cancel(); return; }
   if (ui_more_open && (audio_ui->screen != SCR_PLAY ||
                        audio_ui->result != RES_NONE ||
-                       audio_gfx->width >= 640))
+                       !ui_compact_play_layout(audio_gfx,audio_ui)))
     ui_more_close(audio_ui);
   uint64_t context[] = {
       audio_ui->screen, audio_ui->pause_reasons, audio_ui->result,
@@ -601,8 +601,7 @@ static bool ui_touch_board_cell(int x, int y, int *row, int *column) {
       !app_play_interactions_allowed(audio_ui) ||
       hint_panel_blocks_point(audio_gfx, audio_ui, x, y))
     return false;
-  Layout layout = compute_layout(audio_gfx->width, audio_gfx->height,
-                                 audio_ui->mode);
+  Layout layout = compute_layout(audio_gfx, audio_ui->mode);
   if (!point_in(layout.board, x, y)) return false;
   int side = layout.board.w;
   int cell = side / 9;
@@ -762,7 +761,7 @@ static bool ui_pointer_prepare(SDL_Event *event) {
     if (!settings_open && !audio_control_popup_open &&
         audio_ui->screen == SCR_PLAY && app_play_interactions_allowed(audio_ui) &&
         !hint_panel_blocks_point(audio_gfx, audio_ui, x, y)) {
-      Layout a = compute_layout(audio_gfx->width, audio_gfx->height, audio_ui->mode);
+      Layout a = compute_layout(audio_gfx, audio_ui->mode);
       return point_in(a.board, x, y);
     }
     return false;

@@ -99,6 +99,7 @@ typedef struct {
   int output_width, output_height;
   DesktopMetrics metrics;
   bool software_renderer;
+  bool mobile_layout;
   bool renderer_ready;
   bool dirty;
   char font_path[PATH_MAX];

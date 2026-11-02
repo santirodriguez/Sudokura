@@ -297,7 +297,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   const bool show_home_keyboard_focus = true;
 #endif
 
-  if (gfx->width >= 640) {
+  if (gfx->width >= 640 && !gfx->mobile_layout) {
     SDL_Rect card = {geometry.home_logo.x - 18, geometry.home_logo.y - 16,
                      geometry.home_logo.w + 36,
                      polish_home_bottom(&geometry) - geometry.home_logo.y + 32};
@@ -305,10 +305,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   }
 
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
-  bool show_group_captions = true;
-#if defined(__ANDROID__)
-  show_group_captions = geometry.home_new_label.h >= 18;
-#endif
+  bool show_group_captions = !gfx->mobile_layout || geometry.home_new_label.h>=18;
   if (show_group_captions)
     (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
                          sdl_rect(geometry.home_new_label), fonts.help, 10);
@@ -439,7 +436,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
 static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   if (!game || app_pause_hides_play(ui)) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   SidebarRects controls;
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
@@ -768,8 +765,7 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
   bool play_surface = ui && ui->screen == SCR_PLAY;
   if (play_surface && get_geometry(gfx, ui, &geometry)) {
     layout.banner = sdl_rect(geometry.status);
-#if defined(__ANDROID__)
-    if (geometry.play_compact && layout.banner.h < 48) {
+    if (gfx->mobile_layout && geometry.play_compact && layout.banner.h < 48) {
       /* Save-failure Retry must remain an actual touch-sized action even
          on a 360x600dp screen; this banner is temporary and overlays
          the top of the board only while a checked save error exists. */
@@ -777,7 +773,6 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
                                  geometry.board.y + 6,
                                  geometry.board.w - 12, 60};
     }
-#endif
     int inset = layout.banner.h <= 28 ? 2 : 4;
     int retry_w = layout.banner.w < 300 ? 88 : 118;
     layout.retry = (SDL_Rect){
@@ -954,10 +949,10 @@ static SettingsPanelLayout ui_mobile_settings_layout(const Gfx *gfx) {
 static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   SettingsPanelLayout layout;
   memset(&layout, 0, sizeof(layout));
-#if defined(__ANDROID__)
-  layout=ui_mobile_settings_layout(gfx);
-  if (layout.card.w) return layout;
-#endif
+  if (gfx->mobile_layout) {
+    layout=ui_mobile_settings_layout(gfx);
+    if (layout.card.w) return layout;
+  }
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin * 2;
   if (width > 540) width = 540;
@@ -1161,7 +1156,7 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
   HintPanelLayout panel;
   memset(&panel, 0, sizeof(panel));
   if (!gfx || !ui) return panel;
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   GeometryHintPanel geo;
   if (!geometry_hint_panel(&layout.model, gfx->width, gfx->height, &geo))
     return panel;
@@ -1212,7 +1207,7 @@ static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
 
 static bool hint_panel_blocks_point(const Gfx *gfx, const UI *ui, int x, int y) {
   if (!hint_panel_interactive(ui) || !gfx) return false;
-  if (gfx->width < 640)
+  if (gfx->mobile_layout || gfx->width < 640)
     return x >= 0 && y >= 0 && x < gfx->width && y < gfx->height;
   HintPanelLayout panel = hint_panel_layout(gfx, ui);
   return point_in(panel.card, x, y);
@@ -1285,7 +1280,10 @@ static void hint_panel_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   SDL_Color foreground = primary ? theme.bg : theme.btnfg;
   SDL_Rect face =
       polish_button_face(gfx, theme, rect, background, pressed, false);
-  (void)draw_fitted_text(gfx, label, foreground, face, 16, 9);
+  if (gfx->mobile_layout)
+    (void)polish_draw_wrapped_fit(gfx,label,foreground,face,16,13,true);
+  else
+    (void)draw_fitted_text(gfx, label, foreground, face, 16, 9);
 }
 
 static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
@@ -1298,11 +1296,11 @@ static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
   SDL_RenderDrawRect(gfx->ren, &panel.card);
 
   (void)draw_fitted_text(gfx, tr(ui->language, T_HINT_PREVIEW), theme.title,
-                         panel.title, 20, 10);
+                         panel.title, 20, gfx->mobile_layout ? 16 : 10);
   char message[320];
   hint_preview_text(ui, message, sizeof(message));
   if (panel.body.h > 8)
-    (void)polish_draw_wrapped_fit(gfx, message, theme.btnfg, panel.body, 15, 9,
+    (void)polish_draw_wrapped_fit(gfx, message, theme.btnfg, panel.body, 15, gfx->mobile_layout ? 13 : 9,
                                   false);
 
   if (ui->hint_preview.status == HUMAN_HINT_LOGICAL)
@@ -1372,9 +1370,13 @@ typedef enum{
   PLAY_FOCUS_COUNT
 }PlayKeyboardFocus;
 static int play_keyboard_focus=-1;
+static bool ui_compact_play_layout(const Gfx *gfx,const UI *ui) {
+  AppGeometry geometry;
+  return get_geometry(gfx,ui,&geometry) && geometry.play_compact;
+}
 static bool play_focus_enabled(const Game*game,const UI*ui,int focus){
   if(!game||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return false;
-  bool compact = audio_gfx && audio_gfx->width < 640;
+  bool compact = ui_compact_play_layout(audio_gfx,ui);
   if (compact && (focus == PLAY_FOCUS_RESTART ||
                   focus == PLAY_FOCUS_HINT || focus == PLAY_FOCUS_VERIFY ||
                   focus == PLAY_FOCUS_SETTINGS || focus == PLAY_FOCUS_HELP))
@@ -1449,7 +1451,7 @@ static void ui_more_close(UI *ui) {
 static void ui_more_open_panel(UI *ui) {
   if (!ui || ui_more_open || ui->screen != SCR_PLAY ||
       !ui->session_open || ui->result != RES_NONE ||
-      !audio_gfx || audio_gfx->width >= 640) return;
+      !ui_compact_play_layout(audio_gfx,ui)) return;
   ui_more_modal_owned = clock_pause(ui, PAUSE_MODAL);
   ui_more_open = true;
   ui_more_focus = 0;
@@ -1465,7 +1467,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   if (!gfx || !game || !play_surface || app_pause_hides_play(ui))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   SidebarRects controls;
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
@@ -1501,8 +1503,12 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
           ? theme.bg : enabled ? theme.btnfg : theme.dim;
       SDL_Rect face = polish_quiet_face(gfx, theme, rect, background,
                                          pressed, !enabled);
-      (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
-                             foreground,face,fonts.control,10);
+      bool landscape=gfx->mobile_layout && gfx->height<600;
+      const char *label=tr(ui->language,gfx->mobile_layout && i==0 ? T_HOME_COMPACT : labels[i]);
+      if (landscape && (focus_keys[i]==PLAY_FOCUS_UNDO || focus_keys[i]==PLAY_FOCUS_REDO))
+        label=focus_keys[i]==PLAY_FOCUS_UNDO ? "↶" : "↷";
+      (void)draw_fitted_text(gfx,label,foreground,face,
+          landscape && i>=4 && i<=5 ? 24 : fonts.control,landscape ? 13 : 10);
       bool show_focus = true;
 #if defined(__ANDROID__)
       show_focus = ui_keyboard_focus_visible;
@@ -1671,7 +1677,7 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
                        hover?theme.hover:theme.palette_bg,
                        ui_pointer_pressed(rect),false);
     (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
-                           theme.btnfg,face,17,10);
+                           theme.btnfg,face,17,gfx->mobile_layout ? 13 : 10);
     bool show_focus=true;
 #if defined(__ANDROID__)
     show_focus=ui_keyboard_focus_visible;

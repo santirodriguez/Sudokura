@@ -83,9 +83,8 @@ typedef struct {
 static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
   GamesBrowserLayout layout;
   memset(&layout,0,sizeof(layout));
-#ifdef __ANDROID__
   GeometryLibrary mobile;
-  if (geometry_mobile_library(gfx->width,gfx->height,&mobile)) {
+  if (gfx->mobile_layout && geometry_mobile_library(gfx->width,gfx->height,&mobile)) {
 #define MOBILE_RECT(field) layout.field=sdl_rect(mobile.field)
     MOBILE_RECT(title);MOBILE_RECT(subtitle);MOBILE_RECT(list);MOBILE_RECT(detail);
     MOBILE_RECT(primary);MOBILE_RECT(back);MOBILE_RECT(replay);MOBILE_RECT(remove);
@@ -95,7 +94,6 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
     layout.side_by_side=mobile.side_by_side;
     return layout;
   }
-#endif
 
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin*2;
@@ -1926,13 +1924,10 @@ static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
                        primary ? theme.bg : color;
   SDL_Rect face=polish_button_face(gfx,theme,rect,background,
                                     pressed,!enabled);
-#ifdef __ANDROID__
-  GeometryLibrary mobile;
-  if (geometry_mobile_library(gfx->width,gfx->height,&mobile)) {
+  if (gfx->mobile_layout) {
     SDL_Rect label=face;label.x+=6;label.w-=12;
     (void)polish_draw_wrapped_fit(gfx,text,foreground,label,17,13,true);
   } else
-#endif
     ui_draw_icon_label(gfx,face,text,glyph,foreground,17);
   if (focused&&enabled)draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }

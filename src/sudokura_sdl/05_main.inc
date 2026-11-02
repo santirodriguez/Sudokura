@@ -1900,7 +1900,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->result = RES_WIN;
   RELEASE_OK(false);
   ui->result = RES_NONE;
-  Layout board_layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout board_layout = compute_layout(gfx, ui->mode);
   event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN;
   event.button.button = SDL_BUTTON_LEFT;
   event.button.x = board_layout.board.x + board_layout.board.w / 2;
@@ -1969,7 +1969,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   games_browser.scanning = false;
 
   /* Exercise More through the real routing gate without invoking dialogs. */
-  if (gfx->width < 640) {
+  if (gfx->mobile_layout || gfx->width < 640) {
     ui->screen = SCR_PLAY;
     ui->result = RES_NONE;
     ui->pause_reasons = 0;
@@ -2102,7 +2102,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->screen = SCR_PLAY; ui->session_open = true;
   ui->result = RES_NONE; ui->pause_reasons = 0;
   ui_pointer_reconcile();
-  Layout touch_board = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout touch_board = compute_layout(gfx, ui->mode);
   int bx = touch_board.board.x + touch_board.board.w / 2;
   int by = touch_board.board.y + touch_board.board.h / 2;
   finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
@@ -2386,6 +2386,58 @@ int main(int argc, char **argv) {
         app_shutdown(&g);
         return 1;
       }
+      /* Run the actual mobile layout adapters, renderer and SDL capture on
+         host CI too; this does not emulate Android density or TalkBack. */
+      UI mobile_saved_ui=ui;
+      bool mobile_saved_layout=g.mobile_layout;
+      const int shell_sizes[][2]={{360,600},{600,360},{800,480}};
+      g.mobile_layout=true;
+      for (unsigned size=0;size<sizeof(shell_sizes)/sizeof(shell_sizes[0]);++size) {
+        SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
+        SDL_PumpEvents();
+        if (!gfx_refresh_metrics(&g)) {app_shutdown(&g);return 1;}
+        for (int mode=MODE_CLASSIC;mode<=MODE_TIME;++mode) {
+          ui.mode=(Mode)mode;ui.session_open=true;ui.has_session=true;
+          ui.pause_reasons=0;ui.result=RES_NONE;
+          if (!ui_pointer_smoke_check(&g,&ui)) {
+            fprintf(stderr,"mobile shell pointer regression at %dx%d mode=%d\n",g.width,g.height,mode);
+            app_shutdown(&g);return 1;
+          }
+          for (int language=0;language<LANG_COUNT;++language)
+            for (int dark=0;dark<2;++dark) {
+              ui.language=(Language)language;ui.dark_theme=dark!=0;
+              const int screens[]={SCR_TITLE,SCR_PLAY,SCR_HELP,SCR_ABOUT,
+                                    APP_SCREEN_SETTINGS,APP_SCREEN_GAMES,SCR_END};
+              for (unsigned screen=0;screen<sizeof(screens)/sizeof(screens[0]);++screen) {
+                ui.screen=screens[screen];ui.pause_reasons=0;
+                settings_open=ui.screen==APP_SCREEN_SETTINGS;
+                ui.result=ui.screen==SCR_END ? RES_WIN : RES_NONE;
+                if (ui.screen==SCR_HELP || ui.screen==SCR_ABOUT) help_scroll_reset();
+                app_render_ui(&g,&game,&ui);
+                if (ui.screen==SCR_HELP || ui.screen==SCR_ABOUT) {
+                  GeometryInfo info;
+                  if (!geometry_mobile_info(g.width,g.height,ui.screen==SCR_ABOUT,&info)) {
+                    app_shutdown(&g);return 1;
+                  }
+                  if (help_scroll_max_px>0 && help_scroll_px==0) {
+                    PointerTarget target=ui_pointer_resolve(info.down.x+24,info.down.y+24);
+                    if (target.action!=137) {app_shutdown(&g);return 1;}
+                  }
+                }
+                SDL_RenderPresent(g.ren);
+              }
+              ui.screen=SCR_PLAY;ui.result=RES_NONE;ui.pause_reasons=PAUSE_FOCUS;
+              app_render_ui(&g,&game,&ui);
+              ui.pause_reasons=0;ui.hint_preview_active=true;
+              ui.hint_preview.status=HUMAN_HINT_STALLED;
+              app_render_ui(&g,&game,&ui);
+              SDL_RenderPresent(g.ren);
+              ui.hint_preview_active=false;
+            }
+        }
+      }
+      ui=mobile_saved_ui;g.mobile_layout=mobile_saved_layout;settings_open=false;
+      help_scroll_reset();ui_pointer_cancel();ui_touch_cancel();
       SDL_SetWindowSize(g.win, original_w, original_h);
       SDL_SetWindowMinimumSize(g.win, min_w, min_h);
       SDL_PumpEvents();
@@ -5058,7 +5110,7 @@ int main(int argc, char **argv) {
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
         int r = ui.sel_r, c = ui.sel_c;
-        InputPlayShortcut play_shortcut = g.width < 640 &&
+        InputPlayShortcut play_shortcut = (g.mobile_layout || g.width < 640) &&
                 hint_panel_interactive(&ui) ? INPUT_PLAY_NONE :
                 input_play_shortcut(k, mod);
         if (play_shortcut == INPUT_PLAY_UNDO ||
@@ -5107,7 +5159,7 @@ int main(int argc, char **argv) {
             continue;
           }
         }
-        if (g.width < 640 && hint_panel_interactive(&ui)) continue;
+        if ((g.mobile_layout || g.width < 640) && hint_panel_interactive(&ui)) continue;
         if (k == SDLK_TAB) {
           play_move_focus(&game, &ui, shifted ? -1 : 1);
           continue;
@@ -5384,7 +5436,7 @@ int main(int argc, char **argv) {
           continue;
         }
 
-        Layout layout = compute_layout(g.width, g.height, ui.mode);
+        Layout layout = compute_layout(&g, ui.mode);
         int gx = layout.board.x, gy = layout.board.y, side = layout.board.w;
         int cell = side / 9;
         if (side <= 0 || cell <= 0) continue;
