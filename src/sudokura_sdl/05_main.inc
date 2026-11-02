@@ -2142,7 +2142,7 @@ done:
 #undef UI_SMOKE_FAIL
 
 typedef struct {
-  bool previous, fatal, failed, attempted, opened;
+  bool previous, fatal, failed, attempted, opened, routing;
   StoreStatus primary_status;
   GameMigrationRecoveryRoute route;
   TextKey error;
@@ -2178,7 +2178,7 @@ static void startup_apply_ready_preferences(Persistence *p, UI *ui, Gfx *gfx) {
 
 static bool startup_recovery_open(Persistence *p, UI *ui, Gfx *gfx) {
   if (!startup_recovery_active || !p || !ui || !gfx || app_suspended ||
-      !gfx->renderer_ready) return false;
+      !gfx->renderer_ready || startup_recovery.routing) return false;
   TextKey body=startup_recovery.previous ? T_PROFILE_RECOVER_PROMPT :
       (startup_recovery.route==GAME_MIGRATION_RECOVERY_IMPORT ?
        T_PROFILE_RECOVER_IMPORT_PROMPT : T_PROFILE_RECOVER_COLLECTION_PROMPT);
@@ -2207,7 +2207,9 @@ static void startup_recovery_begin(Persistence *p, UI *ui, Gfx *gfx) {
     startup_recovery.previous=true;
     startup_recovery.primary_status=p->profile_status;
     startup_recovery_active=true;
-  } else if (persistence_missing_hot_recovery_available(p,&startup_recovery.route)) {
+  } else if (p->lock_status==STORE_LOCK_ACQUIRED && !p->enabled &&
+             p->profile_status==STORE_IO_ERROR) {
+    startup_recovery.routing=true;
     startup_recovery_active=true;
   } else {
     startup_recovery.error=persistence_startup_error_key(p);
@@ -2234,9 +2236,9 @@ static bool startup_recovery_target_valid(const Persistence *p) {
         (startup_recovery.attempted && status==STORE_OK &&
          profile_encoded_equal(&primary,&startup_recovery.backup));
   }
-  GameMigrationRecoveryRoute route=GAME_MIGRATION_RECOVERY_NONE;
-  return persistence_missing_hot_recovery_available(p,&route) &&
-         route==startup_recovery.route;
+  /* The action revalidates the current route with cancellation enabled. */
+  return startup_recovery.route==GAME_MIGRATION_RECOVERY_IMPORT ||
+         startup_recovery.route==GAME_MIGRATION_RECOVERY_COLLECTION;
 }
 
 static void startup_recovery_dispatch(Persistence *p, UI *ui, Gfx *gfx,
@@ -2249,17 +2251,30 @@ static void startup_recovery_dispatch(Persistence *p, UI *ui, Gfx *gfx,
       !app_modal_binding_equal(choice->binding,startup_recovery.binding) ||
       !app_modal_binding_equal(choice->binding,ui_modal_current_binding(p,ui)))
     return;
-  bool recovered=false;
-  if (startup_recovery_target_valid(p)) {
-    startup_recovery.attempted=true;
-    recovered=startup_recovery.previous ? persistence_recover_previous(p) :
-        persistence_recover_missing_hot(p,startup_recovery.route);
+  if (!startup_storage_continue(gfx)) {
+    ui_modal_invalidate();
+    startup_recovery.opened=false;
+    return;
   }
-  if (recovered) {
+  StoreStatus status=STORE_IO_ERROR;
+  if (startup_recovery_target_valid(p)) {
+    if (!startup_storage_continue(gfx)) {
+      status=STORE_CANCELLED;
+    } else {
+      startup_recovery.attempted=true;
+      status=startup_recovery.previous ? persistence_restore_previous(p) :
+          persistence_restore_missing_hot(p,startup_recovery.route,
+                                          startup_storage_continue,gfx);
+    }
+  }
+  if (status==STORE_OK) {
     startup_recovery_active=false;
     startup_recovery=(StartupRecovery){0};
-    audio_apply_preferences(p);
-    startup_apply_ready_preferences(p,ui,gfx);
+    startup_loading_active=true;
+    audio_set_focus_paused(true);
+  } else if (status==STORE_CANCELLED) {
+    ui_modal_invalidate();
+    startup_recovery.opened=false;
   } else {
     startup_recovery.failed=true;
     startup_recovery.opened=false;
@@ -2273,6 +2288,17 @@ static void startup_recovery_dispatch(Persistence *p, UI *ui, Gfx *gfx,
 static bool startup_recovery_poll(Persistence *p, UI *ui, Gfx *gfx) {
   if (!startup_recovery_active || ui_modal.active || ui_modal_has_pending())
     return true;
+  if (!startup_storage_continue(gfx)) return true;
+  if (startup_recovery.routing) {
+    StoreStatus status=persistence_missing_hot_recovery_route(
+        p,&startup_recovery.route,startup_storage_continue,gfx);
+    if (status==STORE_CANCELLED) return true;
+    startup_recovery.routing=false;
+    if (status!=STORE_OK) {
+      startup_recovery.error=persistence_startup_error_key(p);
+      startup_recovery.fatal=true;
+    }
+  }
   if (startup_recovery.opened &&
       startup_recovery.binding.generation==ui_modal_generation) return false;
   startup_recovery.opened=false;
@@ -3380,6 +3406,23 @@ int main(int argc, char **argv) {
         }
         app_suspended=false;
         startup_loading_active=saved_loading;
+        Persistence restore_probe={0};
+        ProfileData restore_snapshot;
+        profile_defaults(&restore_snapshot);
+        restore_snapshot.preferences.language=LANG_CA;
+        restore_probe.enabled=true; /* Queueing must revoke write access. */
+        restore_probe.active_attempt_id=(GameAttemptId){1,2};
+        restore_probe.load_activation_unresolved=true;
+        persistence_queue_restored(&restore_probe,&restore_snapshot);
+        if (restore_probe.enabled ||
+            restore_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD ||
+            restore_probe.profile_status!=STORE_OK ||
+            game_attempt_id_valid(restore_probe.active_attempt_id) ||
+            restore_probe.load_activation_unresolved ||
+            !profile_encoded_equal(&restore_probe.profile,&restore_snapshot)) {
+          fprintf(stderr,"Startup restored profile publication gate regression\n");
+          app_shutdown(&g);return 1;
+        }
         startup_recovery_begin(&settings_persistence,&ui,&g);
         if (!startup_recovery_active || !startup_recovery.fatal ||
             !ui_modal.active || ui_modal.focus!=0) {
@@ -4674,7 +4717,8 @@ int main(int argc, char **argv) {
 #endif
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     ui_pointer_reconcile();
-    int wait_ms=(g.dirty || (startup_loading_active && g.renderer_ready) ||
+    int wait_ms=(g.dirty || ((startup_loading_active || startup_recovery.routing) &&
+                            g.renderer_ready) ||
                             (!ui_modal.active &&
                             ((ui.screen == APP_SCREEN_GAMES &&
                                games_browser.scanning) || home_daily_scan.active)))
@@ -5535,6 +5579,12 @@ int main(int argc, char **argv) {
     }
     if (!startup_recovery_poll(&persistence,&ui,&g)) {
       exit_status=1;running=false;break;
+    }
+    if (startup_recovery.routing) {
+      if (g.dirty && startup_storage_continue(&g))
+        app_render_startup_splash(&g,ui.language);
+      g.dirty=false;
+      continue;
     }
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */

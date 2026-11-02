@@ -569,79 +569,68 @@ static bool persistence_has_save_error(const Persistence*p){
   return p&&save_policy_has_error(&p->save_policy);
 }
 
-static bool persistence_recover_previous(Persistence*p){
-  if(!p||p->lock_status!=STORE_LOCK_ACQUIRED)return false;
-  ProfileData recovered;
-  StoreStatus status=profile_recover_previous(
-      p->profile_path,p->profile_backup_path,&recovered);
-  if(status==STORE_OK)
-    status=game_migration_upgrade(
-        p->profile_directory,p->profile_path,p->profile_backup_path,
-        &recovered,NULL);
-  if(status==STORE_OK)
-    status=game_migration_reconcile(
-        p->profile_directory,p->profile_path,p->profile_backup_path,
-        &recovered);
-  p->profile_status=status;
-  if(status!=STORE_OK)return false;
-  p->profile=recovered;
-  p->preferences=recovered.preferences;
+/* A checked restore is the start of startup continuation, never permission
+   to expose a partially migrated profile or enable unrelated writes. */
+static void persistence_queue_restored(Persistence *p, const ProfileData *restored) {
+  p->profile=*restored;
+  p->profile_status=STORE_OK;
+  p->enabled=false;
+  p->startup_stage=PERSISTENCE_STARTUP_LOAD;
   p->active_attempt_id=(GameAttemptId){0,0};
   memset(&p->active_replay,0,sizeof(p->active_replay));
   p->capture_failed=false;
   p->replay_activation_unresolved=false;
   p->daily_activation_unresolved=false;
   p->load_activation_unresolved=false;
-  persistence_refresh_normal(p);
-  save_policy_init(&p->save_policy);
-  p->last_periodic_checkpoint_ms=now_ms();
-  p->enabled=true;
-  return true;
 }
 
-/* Do not treat lost primary+backup as a new installation when durable
-   collection or migration evidence is still present. Offer an explicit
-   locked-writer recovery action; never silently create default profiles. */
-static bool persistence_missing_hot_recovery_available(
-    const Persistence *p, GameMigrationRecoveryRoute *route) {
-  if (!p || !route || p->lock_status != STORE_LOCK_ACQUIRED ||
-      p->enabled || p->profile_status != STORE_IO_ERROR)
-    return false;
-  return game_migration_missing_hot_route(
-      p->profile_directory, p->profile_path, p->profile_backup_path,
-      route) == STORE_OK;
+static StoreStatus persistence_restore_previous(Persistence *p) {
+  if (!p || p->enabled || p->lock_status!=STORE_LOCK_ACQUIRED)
+    return STORE_IO_ERROR;
+  ProfileData restored;
+  StoreStatus status=profile_recover_previous(
+      p->profile_path,p->profile_backup_path,&restored);
+  p->profile_status=status;
+  if (status==STORE_OK) persistence_queue_restored(p,&restored);
+  return status;
 }
 
-static bool persistence_recover_missing_hot(
-    Persistence *p, GameMigrationRecoveryRoute requested) {
-  GameMigrationRecoveryRoute current = GAME_MIGRATION_RECOVERY_NONE;
-  if (!persistence_missing_hot_recovery_available(p, &current) ||
-      current != requested)
-    return false;
-  ProfileData recovered;
-  StoreStatus status = STORE_IO_ERROR;
-  if (requested == GAME_MIGRATION_RECOVERY_IMPORT) {
-    status = game_migration_recover_intent(
-        p->profile_directory, p->profile_path, p->profile_backup_path,
-        &recovered);
-  } else if (requested == GAME_MIGRATION_RECOVERY_COLLECTION) {
-    GameMigrationRecoverySummary summary = {0};
-    status = game_migration_recover_collection(
-        p->profile_directory, p->profile_path, p->profile_backup_path,
-        &recovered, &summary);
+/* Missing copies must never be treated as a new installation when durable
+   collection or migration evidence exists. Routing is read-only/cancelable. */
+static StoreStatus persistence_missing_hot_recovery_route(
+    const Persistence *p, GameMigrationRecoveryRoute *route,
+    StoreContinue proceed, void *context) {
+  if (!p || !route || p->lock_status!=STORE_LOCK_ACQUIRED ||
+      p->enabled || p->profile_status!=STORE_IO_ERROR) return STORE_IO_ERROR;
+  return game_migration_missing_hot_route_controlled(
+      p->profile_directory,p->profile_path,p->profile_backup_path,
+      route,proceed,context);
+}
+
+static StoreStatus persistence_restore_missing_hot(
+    Persistence *p, GameMigrationRecoveryRoute requested,
+    StoreContinue proceed, void *context) {
+  GameMigrationRecoveryRoute current=GAME_MIGRATION_RECOVERY_NONE;
+  StoreStatus status=persistence_missing_hot_recovery_route(
+      p,&current,proceed,context);
+  if (status!=STORE_OK) return status;
+  if (current!=requested) return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
+  ProfileData restored;
+  status=STORE_IO_ERROR;
+  if (requested==GAME_MIGRATION_RECOVERY_IMPORT) {
+    status=game_migration_restore_intent(
+        p->profile_directory,p->profile_path,p->profile_backup_path,&restored);
+  } else if (requested==GAME_MIGRATION_RECOVERY_COLLECTION) {
+    GameMigrationRecoverySummary summary={0};
+    status=game_migration_recover_collection_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &restored,&summary,proceed,context);
   }
-  p->profile_status = status;
-  if (status != STORE_OK) return false;
-  p->profile = recovered;
-  p->preferences = recovered.preferences;
-  p->active_attempt_id = (GameAttemptId){0, 0};
-  memset(&p->active_replay, 0, sizeof(p->active_replay));
-  p->capture_failed = false;
-  persistence_refresh_normal(p);
-  save_policy_init(&p->save_policy);
-  p->last_periodic_checkpoint_ms = now_ms();
-  p->enabled = true;
-  return true;
+  if (status==STORE_CANCELLED) return status;
+  p->profile_status=status;
+  if (status==STORE_OK) persistence_queue_restored(p,&restored);
+  return status;
 }
 
 static void persistence_init_base(Persistence*p){
