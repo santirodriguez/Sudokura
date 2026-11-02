@@ -1063,22 +1063,23 @@ bool geometry_mobile_home(int width, int height, AppGeometry *g) {
   if (!g || width<360 || height<360) return false;
   if (height<600) {
     if (width<600) return false;
-    const int margin=6,gap=6,col=(width-24)/2;
-    int left=margin,right=left+col+12;
+    const int margin=6,gap=6,left_w=(width-24)/2+48;
+    const int right_w=width-24-left_w;
+    int left=margin,right=left+left_w+12;
     g->screen_language=(GeoRect){margin,6,width-64,48};
-    g->home_logo=(GeoRect){left,60,col,40};
-    g->home_new_label=(GeoRect){left,102,col,1};
-    g->home_mode_label=(GeoRect){left,104,col,18};
-    grid_gap((GeoRect){left,126,col,48},3,gap,g->home_mode,3);
-    g->home_difficulty_label=(GeoRect){left,180,col,18};
-    grid_gap((GeoRect){left,202,col,48},3,gap,g->home_difficulty,3);
-    g->home_primary[0]=(GeoRect){left,256,col,48};
-    g->home_continue_label=(GeoRect){right,58,col,1};
-    g->home_primary[1]=(GeoRect){right,60,col,54};
-    g->home_primary[2]=(GeoRect){right,120,col,54};
-    g->home_secondary[0]=(GeoRect){right,180,col,48};
+    g->home_logo=(GeoRect){left,60,left_w,40};
+    g->home_new_label=(GeoRect){left,102,left_w,1};
+    g->home_mode_label=(GeoRect){left,104,left_w,18};
+    grid_gap((GeoRect){left,126,left_w,48},3,gap,g->home_mode,3);
+    g->home_difficulty_label=(GeoRect){left,180,left_w,18};
+    grid_gap((GeoRect){left,202,left_w,48},3,gap,g->home_difficulty,3);
+    g->home_primary[0]=(GeoRect){left,256,left_w,48};
+    g->home_continue_label=(GeoRect){right,58,right_w,1};
+    g->home_primary[1]=(GeoRect){right,60,right_w,54};
+    g->home_primary[2]=(GeoRect){right,120,right_w,54};
+    g->home_secondary[0]=(GeoRect){right,180,right_w,48};
     GeoRect footer[4];
-    grid_gap((GeoRect){right,234,col,102},2,gap,footer,4);
+    grid_gap((GeoRect){right,234,right_w,102},2,gap,footer,4);
     for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
       g->home_secondary[i]=footer[i-1];
     return true;

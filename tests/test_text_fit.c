@@ -442,7 +442,12 @@ int main(void) {
         AppGeometry home={0};
         assert(geometry_mobile_home(width,height,&home));
         for (int i=0;i<GEOMETRY_HOME_SEGMENT_COUNT;++i) {
-          assert(fits(font,tr(lang,modes[i]),15,12,home.home_mode[i].w,home.home_mode[i].h));
+          int mode_fit=fits(font,tr(lang,modes[i]),15,12,
+                            home.home_mode[i].w,home.home_mode[i].h);
+          if (!mode_fit)
+            fprintf(stderr,"mobile Home mode text does not fit: %dx%d lang=%d mode=%d box=%dx%d\n",
+                    width,height,language,i,home.home_mode[i].w,home.home_mode[i].h);
+          assert(mode_fit);
           assert(fits(font,tr(lang,difficulties[i]),15,12,
                       home.home_difficulty[i].w,home.home_difficulty[i].h));
         }
