@@ -3,6 +3,14 @@
 
 static const char *const text[LANG_COUNT][T_COUNT] = {
     [LANG_EN] = {
+        [T_A11Y_CELL_FMT] = "Row %d, column %d",
+        [T_A11Y_GIVEN] = "Given",
+        [T_A11Y_ENTERED] = "Entered",
+        [T_A11Y_EMPTY] = "Empty",
+        [T_A11Y_SELECTED] = "Selected",
+        [T_A11Y_SCROLL_UP] = "Scroll up",
+        [T_A11Y_SCROLL_DOWN] = "Scroll down",
+
         [T_LANGUAGE] = "Language",
         [T_CLASSIC] = "Classic",
         [T_STRIKES] = "Strikes",
@@ -224,6 +232,14 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_ROTATE_PORTRAIT] = "Enlarge the window or rotate your phone to continue. Use Back to leave.",
     },
     [LANG_ES] = {
+        [T_A11Y_CELL_FMT] = "Fila %d, columna %d",
+        [T_A11Y_GIVEN] = "Número fijo",
+        [T_A11Y_ENTERED] = "Ingresado",
+        [T_A11Y_EMPTY] = "Vacía",
+        [T_A11Y_SELECTED] = "Seleccionada",
+        [T_A11Y_SCROLL_UP] = "Subir",
+        [T_A11Y_SCROLL_DOWN] = "Bajar",
+
         [T_LANGUAGE] = "Idioma",
         [T_CLASSIC] = "Clásico",
         [T_STRIKES] = "Errores",
@@ -445,6 +461,14 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_ROTATE_PORTRAIT] = "Ampliá la ventana o girá el teléfono para seguir. Usá Atrás para volver.",
     },
     [LANG_CA] = {
+        [T_A11Y_CELL_FMT] = "Fila %d, columna %d",
+        [T_A11Y_GIVEN] = "Número fix",
+        [T_A11Y_ENTERED] = "Introduït",
+        [T_A11Y_EMPTY] = "Buida",
+        [T_A11Y_SELECTED] = "Seleccionada",
+        [T_A11Y_SCROLL_UP] = "Amunt",
+        [T_A11Y_SCROLL_DOWN] = "Avall",
+
         [T_LANGUAGE] = "Llengua",
         [T_CLASSIC] = "Clàssic",
         [T_STRIKES] = "Errors",

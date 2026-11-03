@@ -2342,6 +2342,8 @@ static bool startup_recovery_poll(Persistence *p, UI *ui, Gfx *gfx) {
   return startup_recovery_open(p,ui,gfx);
 }
 
+#include "accessibility_ui.inc"
+
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
   const char *font_cli = NULL;
@@ -2450,7 +2452,8 @@ int main(int argc, char **argv) {
         for (int mode=MODE_CLASSIC;mode<=MODE_TIME;++mode) {
           ui.mode=(Mode)mode;ui.session_open=true;ui.has_session=true;
           ui.pause_reasons=0;ui.result=RES_NONE;
-          if (!ui_pointer_smoke_check(&g,&ui)) {
+          if (!ui_pointer_smoke_check(&g,&ui) ||
+              !ui_a11y_smoke(&settings_persistence,&game,&ui,&g)) {
             fprintf(stderr,"mobile shell pointer regression at %dx%d mode=%d\n",g.width,g.height,mode);
             app_shutdown(&g);return 1;
           }
@@ -4884,6 +4887,7 @@ int main(int argc, char **argv) {
   SDL_Event e;
   while (running) {
     renderer_recovery_sync(&g, &ui, false);
+    ui_a11y_refresh(&persistence,&game,&ui,&g);
 #if defined(__ANDROID__)
     if (app_suspended) {
       SDL_Event system_event;
@@ -5659,6 +5663,11 @@ int main(int argc, char **argv) {
       }
     }
 
+    /* Semantic commands wait behind queued lifecycle, resize and pointer
+       events, then revalidate against the current native screen/attempt. */
+    (void)ui_a11y_dispatch(&persistence,&game,&ui,&g,&running);
+    if (!running) break;
+
     /* Consume one modal choice only after queued lifecycle/window events. */
     AppModalResult modal_result;
     if (ui_modal_take_result(&modal_result)) {
@@ -5812,6 +5821,7 @@ int main(int argc, char **argv) {
     if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);
     else app_tick(&g,&game,&ui);
+    ui_a11y_refresh(&persistence,&game,&ui,&g);
   }
 
   home_daily_cancel();

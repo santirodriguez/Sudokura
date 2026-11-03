@@ -41,6 +41,7 @@ This document describes the project's maintained technical, gameplay, and releas
 - Android font scale follows display density, independently of rounded usable-dp bounds. A rotation at unchanged density must not reopen all fonts because of sub-dp rounding.
 - The official project site is https://sudokura.cajapersonal.org/ . Donation actions use https://cajapersonal.org/donate/ (EN), /donaciones/ (ES), and /donacions/ (CA), through the exact URL allowlist.
 - Clear synthetic `SDL_Event` unions with `SDL_zero` before setting their event type and fields. C11 `{0}` initializes the first union member, not every event variant; unused keyboard repeat/mouse metadata must not depend on compiler-specific union padding initialization. Keep real SDL dispatch and focus assertions enabled across compiler/platform builds.
+- Android semantics use bounded immutable snapshots and one pending semantic command. Only SDL's owner rebuilds nodes and revalidates screen generation, attempt, current enabled state, layout and record identities before calling the existing actions. Java owns traversal/hover focus only. Paused, suspended, unavailable-renderer and covered boards publish no cells; cell labels use visible entries, givens, notes and visible conflicts, never hidden solutions. Material changes publish once; a generation-only rebind does not announce timer updates. Host semantic smoke is not TalkBack/device acceptance.
 - Timer accounting must remain monotonic and respect independent manual, focus, modal, Home, and result pause reasons.
 
 ## Audio

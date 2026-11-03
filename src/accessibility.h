@@ -8,7 +8,7 @@
 
 /* Published values only. This contract has no solution, persistence or SDL
    pointers. The owner builds a complete snapshot before handing it to Java. */
-enum { ACCESSIBILITY_NODE_LIMIT=192, ACCESSIBILITY_LABEL_LIMIT=384 };
+enum { ACCESSIBILITY_NODE_LIMIT=192, ACCESSIBILITY_LABEL_LIMIT=512 };
 enum { ACCESSIBILITY_ACTIVATE=1u, ACCESSIBILITY_SCROLL_FORWARD=2u,
        ACCESSIBILITY_SCROLL_BACKWARD=4u };
 typedef struct {

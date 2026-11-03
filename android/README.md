@@ -16,7 +16,7 @@ This is an isolated, **debug-only** host for the existing C11/SDL2 game. It is n
 
 ## Clean CI build
 
-The [Android preview workflow](../.github/workflows/android-preview.yml) prepares a clean Ubuntu runner, verifies source/Gradle downloads **before** unpacking them, generates shared art using the existing Go script, assembles the debug APK, audits native/manifest/assets and attaches the APK and checksum/metadata receipt as *Actions artifacts only*. No release/tag, signing key, store, or package publication is created. The debug APK uses the runner's ephemeral standard debug identity; not a stable signing identity.
+The [Android preview workflow](../.github/workflows/android-preview.yml) runs as a reusable job inside [CI](../.github/workflows/ci.yml) for relevant source/build changes on the prototype release branches. Its APK and receipts appear in that same CI run, alongside the desktop artifacts; a push no longer starts a second Android workflow. It can still be dispatched manually for an Android-only preview. The job prepares a clean Ubuntu runner, verifies source/Gradle downloads **before** unpacking them, generates shared art using the existing Go script, assembles the debug APK, audits native/manifest/assets and attaches the APK and checksum/metadata receipt as *Actions artifacts only*. No release/tag, signing key, store, or package publication is created. The debug APK uses the runner's ephemeral standard debug identity; not a stable signing identity.
 
 For an already equipped Android development environment (no local installation is requested by this project):
 

@@ -38,6 +38,26 @@ static void draw_info_scroll_controls(Gfx *g,UI *ui,Theme th) {
   }
 }
 
+/* The mobile reader and its semantic nodes share the painted paragraph
+   bounds. A stale render cache is withheld until the new layout is painted. */
+typedef struct { const char *text; SDL_Rect rect; int id; } UiInfoSemanticSpan;
+static UiInfoSemanticSpan ui_info_semantic_spans[16];
+static unsigned ui_info_semantic_count;
+static int ui_info_semantic_width,ui_info_semantic_height,ui_info_semantic_scroll;
+static Screen ui_info_semantic_screen;
+static Language ui_info_semantic_language;
+static void ui_info_semantic_begin(const Gfx *g,const UI *ui) {
+  ui_info_semantic_count=0;ui_info_semantic_width=g->width;
+  ui_info_semantic_height=g->height;ui_info_semantic_scroll=help_scroll_px;
+  ui_info_semantic_screen=ui->screen;ui_info_semantic_language=ui->language;
+}
+static void ui_info_semantic_add(SDL_Rect body,int offset,int height,
+                                  const char *text,int id) {
+  SDL_Rect rect={body.x,body.y+offset-help_scroll_px,body.w,height},clipped;
+  if (ui_info_semantic_count<16 && SDL_IntersectRect(&rect,&body,&clipped))
+    ui_info_semantic_spans[ui_info_semantic_count++]=(UiInfoSemanticSpan){text,clipped,id};
+}
+
 static void render_help(Gfx*g,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
@@ -106,11 +126,14 @@ static void render_help(Gfx*g,UI*ui){
   SDL_Rect previous;
   SDL_RenderGetClipRect(g->ren,&previous);
   SDL_RenderSetClipRect(g->ren,&body);
+  if (mobile_layout) ui_info_semantic_begin(g,ui);
   for(int i=0;i<HELP_SECTION_COUNT;i++){
     int y=section_y[i];
+    if (mobile_layout) ui_info_semantic_add(body,y,title_h[i],tr(ui->language,titles[i]),i*2);
     help_draw_scrolled_texture(g,title_texture[i],body,y,title_w[i],
                                title_h[i],help_scroll_px);
     y+=title_h[i]+title_gap;
+    if (mobile_layout) ui_info_semantic_add(body,y,body_h[i],tr(ui->language,bodies[i]),i*2+1);
     help_draw_scrolled_texture(g,body_texture[i],body,y,body_w[i],
                                body_h[i],help_scroll_px);
   }

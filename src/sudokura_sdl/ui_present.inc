@@ -534,9 +534,12 @@ static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
   SDL_Rect previous;
   SDL_RenderGetClipRect(gfx->ren,&previous);
   SDL_RenderSetClipRect(gfx->ren,&body);
-  for (int i=0;i<8;++i)
+  ui_info_semantic_begin(gfx,ui);
+  for (int i=0;i<8;++i) {
+    ui_info_semantic_add(body,offsets[i],heights[i],sections[i],i);
     help_draw_scrolled_texture(gfx,textures[i],body,offsets[i],widths[i],
                                heights[i],help_scroll_px);
+  }
   SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
   const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT};
   int mx=0,my=0;

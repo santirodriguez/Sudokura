@@ -26,6 +26,72 @@ public final class PrototypeActivity extends SDLActivity {
     private Object backCallback;
     private ScrollView rendererRecovery;
     private volatile int recoveryGeneration;
+    private SudokuraAccessibilityView accessibilityView;
+    private final Object accessibilityPublicationLock = new Object();
+    private SudokuraAccessibilityView.Snapshot pendingAccessibility;
+    private boolean accessibilityPublicationPosted;
+    private boolean accessibilityDestroyed;
+    private boolean accessibilityResumed;
+
+    private static native boolean nativeAccessibilityCommand(long generation,
+            long attemptHi, long attemptLo, int screen, int nodeId, int action);
+
+    boolean submitAccessibilityCommand(long generation, long attemptHi, long attemptLo,
+            int screen, int nodeId, int action) {
+        return !mBrokenLibraries && !accessibilityDestroyed && accessibilityResumed &&
+                rendererRecovery == null && nativeAccessibilityCommand(generation,
+                        attemptHi, attemptLo, screen, nodeId, action);
+    }
+
+    /* One pending immutable publication and one UI runnable, even if native
+       produces multiple changes while the UI thread is occupied. */
+    public void publishSudokuraAccessibility(long generation, long attemptHi,
+            long attemptLo, int screen, int logicalWidth, int logicalHeight,
+            int[] nodes, String[] labels, String announcement) {
+        SudokuraAccessibilityView.Snapshot publication = SudokuraAccessibilityView.Snapshot.copy(
+                generation, attemptHi, attemptLo, screen, logicalWidth, logicalHeight,
+                nodes, labels, announcement);
+        if (publication == null) return;
+        synchronized (accessibilityPublicationLock) {
+            if (accessibilityDestroyed || (pendingAccessibility != null &&
+                    generation <= pendingAccessibility.generation)) return;
+            pendingAccessibility = publication;
+            if (accessibilityPublicationPosted) return;
+            accessibilityPublicationPosted = true;
+        }
+        runOnUiThread(this::drainAccessibilityPublication);
+    }
+
+    private void drainAccessibilityPublication() {
+        SudokuraAccessibilityView.Snapshot publication;
+        synchronized (accessibilityPublicationLock) {
+            publication = pendingAccessibility;
+            pendingAccessibility = null;
+            accessibilityPublicationPosted = false;
+            if (accessibilityDestroyed) return;
+        }
+        if (accessibilityView != null && publication != null)
+            accessibilityView.publish(publication);
+    }
+
+    private void updateAccessibilityAvailability() {
+        if (accessibilityView != null)
+            accessibilityView.setAvailable(accessibilityResumed && rendererRecovery == null);
+    }
+
+    @Override
+    protected void onPause() {
+        accessibilityResumed = false;
+        updateAccessibilityAvailability();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        accessibilityResumed = true;
+        updateAccessibilityAvailability();
+    }
 
     private static native void nativeRendererRecovery(int generation, boolean exit);
 
@@ -40,6 +106,7 @@ public final class PrototypeActivity extends SDLActivity {
                 mLayout.removeView(rendererRecovery);
                 rendererRecovery = null;
             }
+            updateAccessibilityAvailability();
             if (!visible || mLayout == null) return;
             final int padding = Math.round(24 * getResources().getDisplayMetrics().density);
             LinearLayout content = new LinearLayout(this);
@@ -79,6 +146,7 @@ public final class PrototypeActivity extends SDLActivity {
             rendererRecovery.setFillViewport(true);
             rendererRecovery.setClickable(true);
             rendererRecovery.addView(content);
+            updateAccessibilityAvailability();
             mLayout.addView(rendererRecovery, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             retry.requestFocus();
@@ -125,6 +193,15 @@ public final class PrototypeActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         recoveryGeneration = 0;
+        synchronized (accessibilityPublicationLock) {
+            accessibilityDestroyed = true;
+            pendingAccessibility = null;
+        }
+        if (accessibilityView != null) {
+            accessibilityView.dispose();
+            if (mLayout != null) mLayout.removeView(accessibilityView);
+            accessibilityView = null;
+        }
         if (rendererRecovery != null && mLayout != null) {
             mLayout.removeView(rendererRecovery);
             rendererRecovery = null;
@@ -174,6 +251,12 @@ public final class PrototypeActivity extends SDLActivity {
         super.onCreate(state);
         if (mBrokenLibraries || mLayout == null) return;
         publishDensityAndSlop();
+        if (mSurface != null) mSurface.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        accessibilityView = new SudokuraAccessibilityView(this);
+        mLayout.addView(accessibilityView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        updateAccessibilityAvailability();
 
         /* SDL sees only its padded usable SurfaceView: never subtract these
            insets again when computing native board and pointer coordinates. */
