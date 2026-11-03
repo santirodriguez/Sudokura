@@ -4475,15 +4475,17 @@ int main(int argc, char **argv) {
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
         REVIEW_GAMES_RECOVER, REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
         REVIEW_HOME_DAILY_LOADING, REVIEW_HOME_DAILY_OLDER,
-        REVIEW_HOME_DAILY_FINISHED, REVIEW_STATE_COUNT
+        REVIEW_HOME_DAILY_FINISHED, REVIEW_JOURNEY_EMPTY, REVIEW_RETRY_EMPTY,
+        REVIEW_LEAVE_DIALOG, REVIEW_STATE_COUNT
       };
-      const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
+      const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080},{412,892}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
         "result-save-error","pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
         "games-recover","games-finished","games-detail",
-        "home-daily-loading","home-daily-older","home-daily-finished"
+        "home-daily-loading","home-daily-older","home-daily-finished",
+        "journey-empty","retry-empty","leave-dialog"
       };
       if(!make_directory(screenshot_dir)){
         fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
@@ -4513,6 +4515,9 @@ int main(int argc, char **argv) {
             fclose(manifest);app_shutdown(&g);return 1;
           }
 
+          g.mobile_layout=n==5;
+          ui_modal_cancel_current();
+          ui_modal_pending=(AppModalResult){0};
           game=review_base;app_state_init(&ui);set_mode_params(&ui);
           ui.session_open=true;ui.has_session=false;
           ui.language=(Language)((n+state)%LANG_COUNT);
@@ -4564,8 +4569,23 @@ int main(int argc, char **argv) {
                 ui.daily_resume.today=state==REVIEW_HOME_DAILY_FINISHED;
               }
               break;
+            case REVIEW_LEAVE_DIALOG:{
+              ui.screen=SCR_TITLE;
+              AppModalRequest request={.kind=APP_MODAL_CONFIRM,
+                  .action=APP_MODAL_NEW_KEEP,.binding=ui_modal_new_game_binding(&review_persistence,&ui),
+                  .title=T_GAMES_KEEP_TITLE,.body=T_GAMES_NEW_PROMPT,
+                  .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},
+                  .button_count=3,.destructive_buttons=4};
+              if(!ui_modal_open_request(&g,&ui,&request)) { fclose(manifest);app_shutdown(&g);return 1; }
+              (void)app_modal_focus(&ui_modal,ui_modal.serial,2);
+              focus="abandon";focus_rect=ui_modal_layout(&g,3).buttons[2];break;
+            }
+            case REVIEW_JOURNEY_EMPTY:
+            case REVIEW_RETRY_EMPTY:
             case REVIEW_GAMES_EMPTY:{
               ui.screen=APP_SCREEN_GAMES;
+              games_browser.view=state==REVIEW_JOURNEY_EMPTY?JOURNEY_WON:
+                  state==REVIEW_RETRY_EMPTY?JOURNEY_RETRY:GAMES_SAVED;
               games_browser.focus=2;
               GamesBrowserLayout lay=games_browser_layout(&g);
               focus="games-back";focus_rect=lay.back;break;
@@ -4718,6 +4738,7 @@ int main(int argc, char **argv) {
         }
       }
 
+      ui_modal_cancel_current();g.mobile_layout=false;
       daily_lookup_scanning=false;
       free(games_browser.rows);
       memset(&games_browser,0,sizeof(games_browser));

@@ -256,6 +256,15 @@ int main(void) {
     for (int h=264;h<=920;h+=41)
       for (unsigned count=1;count<=3;++count) check_modal(w,h,count);
   check_modal(360,600,3);check_modal(600,360,3);check_modal(800,480,2);
+  for(int width=360;width<=432;width+=24) {
+    GeometryModal phone;
+    assert(geometry_modal(width,892,3,&phone));
+    for(unsigned i=0;i<3;++i) {
+      assert(phone.buttons[i].w>=width-64);
+      if(i) assert(phone.buttons[i].y>=phone.buttons[i-1].y+phone.buttons[i-1].h+6);
+    }
+  }
+  check_auxiliary(412,892);
   GeometryModal modal;
   assert(!geometry_modal(263,360,1,&modal));
   assert(!geometry_modal(360,263,1,&modal));

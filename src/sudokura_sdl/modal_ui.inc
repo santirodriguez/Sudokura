@@ -137,7 +137,7 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
             (SDL_Color){0,0,0,170});
   (void)SDL_SetRenderDrawBlendMode(gfx->ren,previous_blend);
   draw_round_rect(gfx->ren,layout.panel,12,theme.bg);
-  draw_round_rect(gfx->ren,layout.title,5,theme.btn);
+  /* Plain heading and a single surface keep the decision hierarchy clear. */
   (void)draw_fitted_text(gfx,
       tr(ui->language,ui_modal.request.title),theme.title,layout.title,25,14);
 
@@ -183,10 +183,18 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
   for (unsigned i=0;i<ui_modal.request.button_count;++i) {
     SDL_Rect rect=layout.buttons[i];
     bool focused=ui_modal.focus==i;
-    draw_round_rect(gfx->ren,rect,7,focused?theme.title:theme.btn);
-    (void)draw_fitted_text(gfx,tr(ui->language,ui_modal.request.buttons[i]),
-        focused?theme.bg:theme.btnfg,rect,19,12);
-    if (focused) draw_focus_ring(gfx->ren,rect,theme.sel_outline);
+    bool destructive=(ui_modal.request.destructive_buttons & (1u<<i))!=0;
+    SDL_Color accent=destructive
+        ? (ui->dark_theme ? (SDL_Color){255,174,166,255} : (SDL_Color){154,43,39,255})
+        : theme.title;
+    SDL_Color fill=destructive
+        ? (ui->dark_theme ? (SDL_Color){62,35,42,255} : (SDL_Color){253,232,229,255})
+        : i==1 ? theme.title : theme.btn;
+    draw_round_rect(gfx->ren,rect,10,fill);
+    SDL_Rect label={rect.x+10,rect.y+4,rect.w-20,rect.h-8};
+    (void)polish_draw_wrapped_fit(gfx,tr(ui->language,ui_modal.request.buttons[i]),
+        destructive?accent:i==1?theme.bg:theme.btnfg,label,18,12,true);
+    if (focused) draw_focus_ring(gfx->ren,rect,accent);
   }
 }
 

@@ -211,7 +211,7 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
     if (!texture) continue;
     bool fits = tw <= rect.w - 4 && th <= rect.h - 2;
     if (fits) {
-      SDL_Rect dst = {rect.x + 4,
+      SDL_Rect dst = {centered ? rect.x + (rect.w - tw) / 2 : rect.x + 4,
                       centered ? rect.y + (rect.h - th) / 2 : rect.y + 1,
                       tw, th};
       SDL_RenderCopy(gfx->ren, texture, NULL, &dst);

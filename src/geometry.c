@@ -85,12 +85,12 @@ bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
   if (!out || !geometry_mobile_size_supported(width,height)) return false;
   GeometryLibrary g;
   memset(&g,0,sizeof(g));
-  int x=6,w=width-12;
+  int x=12,w=width-24;
   bool short_landscape=height<360;
   g.title=(GeoRect){x,60,w,short_landscape ? 24 : 28};
   g.subtitle=(GeoRect){x,short_landscape ? 88 : 92,w,short_landscape ? 28 : 38};
   bool columns=height<600;
-  int action_y=height-6-(columns ? 48 : 102);
+  int action_y=height-12-(columns ? 48 : 108);
   int top=short_landscape ? 122 : 138,content_h=action_y-top-12;
   g.side_by_side=columns;
   int list_w=columns ? (w-12)*44/100 : w;
@@ -109,7 +109,7 @@ bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
   g.page_next=(GeoRect){x+pager_w+label_w+12,pager_y,
                          list_w-pager_w-label_w-12,48};
   GeoRect actions[4];
-  grid_gap((GeoRect){x,action_y,w,columns ? 48 : 102},columns ? 4 : 2,6,actions,4);
+  grid_gap((GeoRect){x,action_y,w,columns ? 48 : 108},columns ? 4 : 2,12,actions,4);
   g.back=actions[0];g.primary=actions[1];g.replay=actions[2];g.remove=actions[3];
   *out=g;return true;
 }
@@ -118,18 +118,19 @@ bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
   if (!out || !count || count>3 || width<264 || height<264) return false;
   GeometryModal g;
   memset(&g,0,sizeof(g));
-  int w=min_i(width-24,540),h=min_i(height-24,302);
+  bool stacked=count==3 && width<600 && height>=440;
+  int w=min_i(width-24,540),h=min_i(height-24,stacked ? 386 : 302);
   g.panel=(GeoRect){(width-w)/2,(height-h)/2,w,h};
   g.title=(GeoRect){g.panel.x+16,g.panel.y+12,w-32,36};
-  int buttons_y=g.panel.y+h-65;
+  int buttons_y=g.panel.y+h-(stacked ? 182 : 68);
   g.body=(GeoRect){g.panel.x+18,g.panel.y+54,w-90,
                     buttons_y-g.panel.y-66};
   g.scroll_up=(GeoRect){g.panel.x+w-66,g.body.y,48,48};
   g.scroll_down=(GeoRect){g.scroll_up.x,g.body.y+g.body.h-48,48,48};
-  int button_w=(w-32-(int)(count-1)*6)/(int)count;
+  int button_w=stacked ? w-32 : (w-32-(int)(count-1)*10)/(int)count;
   for (unsigned i=0;i<count;++i)
-    g.buttons[i]=(GeoRect){g.panel.x+16+(int)i*(button_w+6),
-                            buttons_y,button_w,50};
+    g.buttons[i]=(GeoRect){g.panel.x+16+(stacked ? 0 : (int)i*(button_w+10)),
+                            buttons_y+(stacked ? (int)i*56 : 0),button_w,50};
   *out=g;
   return true;
 }

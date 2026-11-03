@@ -26,10 +26,24 @@ static void draw_line(SDL_Renderer*r,int x1,int y1,int x2,int y2,SDL_Color c){
   SDL_RenderDrawLine(r,x1,y1,x2,y2);
 }
 static void draw_focus_ring(SDL_Renderer*r,SDL_Rect rc,SDL_Color c){
-  for(int inset=0;inset<2;inset++){
-    int x1=rc.x-inset,y1=rc.y-inset,x2=rc.x+rc.w-1+inset,y2=rc.y+rc.h-1+inset;
-    draw_line(r,x1,y1,x2,y1,c);draw_line(r,x2,y1,x2,y2,c);
-    draw_line(r,x2,y2,x1,y2,c);draw_line(r,x1,y2,x1,y1,c);
+  /* An inset rounded outline never crowds adjacent touch targets. */
+  int radius=8;
+  for(int inset=1;inset<=2;++inset) {
+    SDL_Rect b={rc.x+inset,rc.y+inset,rc.w-2*inset,rc.h-2*inset};
+    int k=radius-inset;
+    draw_line(r,b.x+k,b.y,b.x+b.w-k-1,b.y,c);
+    draw_line(r,b.x+k,b.y+b.h-1,b.x+b.w-k-1,b.y+b.h-1,c);
+    draw_line(r,b.x,b.y+k,b.x,b.y+b.h-k-1,c);
+    draw_line(r,b.x+b.w-1,b.y+k,b.x+b.w-1,b.y+b.h-k-1,c);
+    for(int y=0;y<k;++y)for(int x=0;x<k;++x) {
+      int d=(x-k)*(x-k)+(y-k)*(y-k);
+      if(d<=k*k && d>=(k-1)*(k-1)) {
+        draw_rect(r,b.x+x,b.y+y,1,1,c);
+        draw_rect(r,b.x+b.w-1-x,b.y+y,1,1,c);
+        draw_rect(r,b.x+x,b.y+b.h-1-y,1,1,c);
+        draw_rect(r,b.x+b.w-1-x,b.y+b.h-1-y,1,1,c);
+      }
+    }
   }
 }
 enum { TEXT_CACHE_CAPACITY=128, TEXT_CACHE_TEXT_MAX=2048 };

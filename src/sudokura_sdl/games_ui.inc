@@ -2162,7 +2162,11 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     draw_round_rect(gfx->ren,lay.tabs[i],7,selected_tab?theme.btn:theme.palette_bg);
     SDL_Rect label=lay.tabs[i];label.x+=4;label.w-=8;
     (void)polish_draw_wrapped_fit(gfx,tr(ui->language,tabs[i]),color,label,16,10,true);
-    if(selected_tab || games_browser.focus==7+i)draw_focus_ring(gfx->ren,lay.tabs[i],color);
+    if(selected_tab) {
+      SDL_Rect marker={lay.tabs[i].x+12,lay.tabs[i].y+lay.tabs[i].h-4,lay.tabs[i].w-24,3};
+      draw_round_rect(gfx->ren,marker,1,color);
+    }
+    if(games_browser.focus==7+i)draw_focus_ring(gfx->ren,lay.tabs[i],color);
   }
 
   if (games_browser.detail_open) {
@@ -2213,8 +2217,26 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     return;
   }
 
-  draw_round_rect(gfx->ren,lay.list,11,theme.palette_bg);
-  draw_round_rect(gfx->ren,lay.detail,11,theme.palette_bg);
+  if(!games_browser.count && !games_browser.scanning) {
+    SDL_Rect empty={lay.list.x,lay.list.y,lay.title.w,lay.detail.y+lay.detail.h-lay.list.y};
+    int card_h=empty.h<220?empty.h:220;
+    empty.y+=(empty.h-card_h)/2;empty.h=card_h;
+    draw_round_rect(gfx->ren,empty,16,theme.palette_bg);
+    SDL_Color accent=games_browser.view==JOURNEY_WON
+        ?(ui->dark_theme?(SDL_Color){245,202,107,255}:(SDL_Color){142,91,13,255}):theme.title;
+    SDL_Rect badge={empty.x+(empty.w-48)/2,empty.y+22,48,48};
+    ui_draw_glyph(gfx->ren,badge,games_browser.view==GAMES_SAVED?UI_GLYPH_FOLDER:
+        games_browser.view==JOURNEY_RETRY?UI_GLYPH_REPLAY:UI_GLYPH_TROPHY,accent);
+    SDL_Rect message={empty.x+20,badge.y+badge.h+16,empty.w-40,empty.y+empty.h-badge.y-badge.h-28};
+    (void)polish_draw_wrapped_fit(gfx,tr(ui->language,
+        games_browser.view==GAMES_SAVED?T_GAMES_EMPTY:
+        games_browser.view==JOURNEY_RETRY?T_JOURNEY_RETRY_EMPTY:T_JOURNEY_WON_EMPTY),
+        theme.dim,message,18,13,true);
+    games_browser_draw_button(gfx,theme,lay.back,tr(ui->language,T_BACK),
+        games_browser.focus==2,true,theme.btnfg,UI_GLYPH_BACK,false);
+    return;
+  }
+  draw_round_rect(gfx->ren,lay.detail,12,theme.palette_bg);
 
   size_t last=games_browser.scroll+(size_t)lay.visible;
   if(last>games_browser.count)last=games_browser.count;
@@ -2226,7 +2248,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     bool selected=index==games_browser.selected;
     bool pressed=ui_pointer_pressed(hit);
     draw_round_rect(gfx->ren,rect,8,
-                    pressed?theme.sel:selected?theme.hover:theme.palette_bg);
+                    pressed?theme.sel:selected?theme.hover:theme.btn);
     if(selected)
       draw_round_rect(gfx->ren,(SDL_Rect){rect.x,rect.y,4,rect.h},
                       2,theme.title);
@@ -2285,7 +2307,8 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
 
   SDL_Rect detail_header={lay.detail.x+12,lay.detail.y+8,
                           lay.detail.w-24,27};
-  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES_PREVIEW),
+  (void)draw_fitted_text(gfx,tr(ui->language,games_browser.view==GAMES_SAVED?T_GAMES_PREVIEW:
+      games_browser.view==JOURNEY_WON?T_JOURNEY_WON:games_browser.view==JOURNEY_RETRY?T_JOURNEY_RETRY:T_JOURNEY_ATTEMPTS),
                          theme.btnfg,detail_header,17,11);
   if(games_browser.selected<games_browser.count) {
     const GamesRow *row=&games_browser.rows[games_browser.selected];

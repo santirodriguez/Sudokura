@@ -3,13 +3,14 @@
 from pathlib import Path
 import argparse,csv,hashlib,struct
 
-SIZES={(640,480),(1024,768),(1366,768),(360,640),(1920,1080)}
+SIZES={(640,480),(1024,768),(1366,768),(360,640),(1920,1080),(412,892)}
 HELP_AUDIT_SIZES={(360,640),(640,480),(1024,768)}
 STATES={"home-empty","home-save","notes","conflict","hint","save-error",
         "result-save-error","pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
         "games-finished","games-detail","games-recover",
-        "home-daily-loading","home-daily-older","home-daily-finished"}
+        "home-daily-loading","home-daily-older","home-daily-finished",
+        "journey-empty","retry-empty","leave-dialog"}
 LANGS={"English","Español","Català"}
 THEMES={"dark","light"}
 
@@ -34,16 +35,16 @@ p=argparse.ArgumentParser();p.add_argument("directory",type=Path);args=p.parse_a
 manifest=args.directory/"MANIFEST.tsv";assert manifest.exists(),manifest
 with manifest.open(encoding="utf-8",newline="") as f:
     rows=list(csv.DictReader(f,delimiter="\t"))
-assert len(rows)==182,f"expected 182 manifest rows, found {len(rows)}"
+assert len(rows)==222,f"expected 222 manifest rows, found {len(rows)}"
 files=sorted(args.directory.glob("*.bmp"))
-assert len(files)==182,f"expected 182 BMPs, found {len(files)}"
+assert len(files)==222,f"expected 222 BMPs, found {len(files)}"
 by_name={p.name:p for p in files}
-assert len(by_name)==182
+assert len(by_name)==222
 assert len({r["file"] for r in rows})==len(rows),"duplicate manifest filename"
 assert {r["file"] for r in rows}==set(by_name),"manifest/BMP mismatch"
 matrix=[r for r in rows if not r["file"].startswith("audit-")]
 audit=[r for r in rows if r["file"].startswith("audit-")]
-assert len(matrix)==110 and len(audit)==72,(len(matrix),len(audit))
+assert len(matrix)==150 and len(audit)==72,(len(matrix),len(audit))
 matrix_keys=[(int(r["width"]),int(r["height"]),r["state"]) for r in matrix]
 assert len(set(matrix_keys))==len(matrix_keys),"duplicate matrix scene"
 assert set(matrix_keys)=={(w,h,state) for w,h in SIZES for state in STATES}, "matrix coverage mismatch"
@@ -113,6 +114,9 @@ for r in rows:
     audio_popup=int(r["audio_popup"])
     audio_pressed=int(r["audio_pressed"])
     assert audio_visible in (0,1) and audio_popup in (0,1) and audio_pressed in (0,1),r["file"]
+    if r["state"]=="leave-dialog":
+        assert r["focus"]=="abandon"
+        assert len(crop_colors(by_name[r["file"]],fx+12,fy+8,fw-24,fh-16))>=4,(r["file"],"Abandon label missing")
     if r["state"]=="more":
         assert audio_popup==0 and audio_pressed==0 and audio_visible==0
         assert fw>=60 and fh>=36,(r["file"],"More focused action too small")
@@ -185,6 +189,9 @@ for r in rows:
             detail_x=panel_x
             detail_y=content_y+list_height+10
             detail_width=panel_width
+        if (w,h)==(412,892):
+            detail_x,detail_y,detail_width,detail_height=12,600,388,160
+            split=False
         assert detail_y+detail_height<=h,(r["file"],"invalid Games detail bounds")
         heading=crop_colors(by_name[r["file"]],detail_x+12,detail_y+8,
                             detail_width-24,27)
@@ -218,7 +225,7 @@ for r in rows:
                         third,third)
                     assert len(glyph)>=2,(r["file"],"Saved pencil note missing",
                                           note_row,note_col)
-    if r["state"]=="home-empty":
+    if r["state"]=="home-empty" and (w,h)!=(412,892):
         # New Game is the focused full-width primary button. Saved Games
         # occupies its own readable full-width row below the Continue cards.
         portrait=w<640
@@ -257,7 +264,7 @@ for r in rows:
         # must remain readable in both desktop and compact two-row layout.
         panel_width=min(w-2*(12 if w<640 else 24),
                         1480 if w>=1600 else 1240)
-        delete_x=fx+fw+(6 if panel_width<640 else 10)
+        delete_x=fx+fw+(12 if (w,h)==(412,892) else 6 if panel_width<640 else 10)
         assert delete_x+fw<=w,(r["file"],"Delete action clipped")
         delete_colors=crop_colors(by_name[r["file"]],
                                   delete_x+8,fy+8,fw-16,fh-16)
@@ -268,6 +275,8 @@ for r in rows:
         content_y=(51 if h<520 else 69)+83
         action_space=96 if panel_width<760 else 44
         buttons_y=h-margin-action_space
+        if (w,h)==(412,892):
+            panel_width,panel_x,content_y,buttons_y=388,12,138,772
         surface_height=buttons_y-content_y-12
         max_side=560 if w>=2200 else 480 if w>=1500 else 420
         if panel_width>=520 and surface_height<300:
@@ -314,4 +323,4 @@ for r in rows:
         colors=crop_colors(by_name[r["file"]],crop_left,crop_y,
                            crop_right-crop_left,crop_height)
         assert len(colors)>=4,(r["file"],"save warning has no visible text")
-print("validated 182 diagnostic BMPs, including 30 distinct Games scenes (five recovery states) and 15 Daily loading/older/finished Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
+print("validated 222 diagnostic BMPs, including tall-phone mobile layout, Abandon labels, journey empty states and Daily Home states, covered-audio-control and native-dialog repaint policy, H41/H42 compact Help top/bottom, semantic states, viewports, EN/ES/CA and both themes")
