@@ -70,6 +70,14 @@ For Play, propose enrolling the original app-signing identity and using the sepa
 
 Pin and validate the signing toolchain against the F-Droid signature-copy/rebuild process before signing the first public APK. Preserve the same app certificate for future direct updates. Do not select a different compiler/NDK merely to copy another application's signing configuration.
 
+## Internal combined candidate
+
+The trusted release-branch CI signs and verifies the APK, then emits `artifact-manifest-android.json`, `SHA256SUMS-android.txt` and `build-provenance-android.txt`. These bind source/version, application ID, app certificate, APK bytes and signed audit receipts. They do not certify device, reproducibility, store or 16 KiB runtime acceptance.
+
+When that same CI run builds Android, its final internal bundle includes the signed APK alongside the four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
+
+The tag/draft publishing workflow remains desktop-only. Before an authorized public Android release, wire its exact accepted APK into the publishing handoff and validate seven release assets with `--include-android`; never assume the internal combined bundle publishes Android automatically. Signing access remains restricted to the trusted release branch, with no new credential access on tags or pull requests.
+
 ## Before public distribution
 
 The full [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) retain the physical lifecycle/storage, ARM64 parity, 16 KiB runtime, accessibility, performance, stable upgrade/Obtainium and screenshot/public-copy gates. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.

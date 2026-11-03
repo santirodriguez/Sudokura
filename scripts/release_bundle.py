@@ -19,9 +19,9 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def contract(version):
+def contract(version, include_android=False):
     build_info = f"Sudokura-{version}-Build-Info.json"
-    return [
+    entries = [
         {
             "name": f"Sudokura-{version}-Windows-x64-Setup.exe",
             "label": "Windows — Installer (x64)",
@@ -66,10 +66,18 @@ def contract(version):
         },
     ]
 
+    if include_android:
+        entries.insert(4, {
+            "name": f"Sudokura-{version}-Android-arm64.apk",
+            "label": "Android — APK (arm64)", "role": "application",
+            "platform": "android", "architecture": "arm64",
+            "manifest": "artifact-manifest-android.json",
+        })
+    return entries
 
-def manifest_specs(version):
-    by_name = {entry["name"]: entry for entry in contract(version)}
-    return [
+
+def manifest_specs(version, include_android=False):
+    specs = [
         {
             "key": "linux",
             "file": "artifact-manifest-linux.json",
@@ -98,6 +106,15 @@ def manifest_specs(version):
             "expected": {f"Sudokura-{version}-macOS-arm64.dmg"},
         },
     ]
+
+    if include_android:
+        specs.append({
+            "key": "android", "file": "artifact-manifest-android.json",
+            "checksums": "SHA256SUMS-android.txt", "platform": "android",
+            "architecture": "arm64",
+            "expected": {f"Sudokura-{version}-Android-arm64.apk"},
+        })
+    return specs
 
 
 def parse_checksums(path):
@@ -146,7 +163,7 @@ def build(args):
     if not root.is_dir():
         raise SystemExit(f"missing artifacts directory: {root}")
 
-    release_contract = contract(args.version)
+    release_contract = contract(args.version, args.include_android)
     application_contract = {
         entry["name"]: entry for entry in release_contract if entry["role"] == "application"
     }
@@ -155,7 +172,7 @@ def build(args):
     seen_names = set()
     artifact_kinds = set()
 
-    for spec in manifest_specs(args.version):
+    for spec in manifest_specs(args.version, args.include_android):
         manifest_path = root / spec["file"]
         checksum_path = root / spec["checksums"]
         if not manifest_path.is_file():
@@ -165,6 +182,14 @@ def build(args):
 
         document = json.loads(manifest_path.read_text(encoding="utf-8"))
         validate_identity(document, spec, args.version, args.source_commit)
+        if spec["platform"] == "android":
+            major, minor, patch = map(int, args.version.split("."))
+            if (document.get("application_id") != "org.cajapersonal.sudokura"
+                    or document.get("version_code") != major*10000+minor*100+patch
+                    or document.get("signing_receipt_verified") is not True
+                    or document.get("signing_certificate_sha256") !=
+                    "fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d"):
+                raise SystemExit("Android identity/signing receipt mismatch")
         artifact_kinds.add(document.get("artifact_kind"))
 
         manifest_artifacts = document.get("artifacts")
@@ -274,7 +299,7 @@ def build(args):
 def labels(args):
     if not VERSION_RE.fullmatch(args.version):
         raise SystemExit(f"invalid version: {args.version}")
-    for entry in contract(args.version):
+    for entry in contract(args.version, args.include_android):
         print(f"{entry['name']}\t{entry['label']}")
 
 
@@ -287,7 +312,7 @@ def validate_assets(args):
     if not isinstance(payload, list):
         raise SystemExit("release assets JSON must be a list")
 
-    expected = {entry["name"]: entry for entry in contract(args.version)}
+    expected = {entry["name"]: entry for entry in contract(args.version, args.include_android)}
     actual = {}
     for asset in payload:
         name = asset.get("name")
@@ -329,15 +354,18 @@ def parser():
     build_parser = sub.add_parser("build")
     build_parser.add_argument("--artifacts-dir", required=True)
     build_parser.add_argument("--version", required=True)
+    build_parser.add_argument("--include-android", action="store_true", help="Include the verified signed Android APK; no publication implied.")
     build_parser.add_argument("--source-commit", required=True)
     build_parser.set_defaults(func=build)
 
     label_parser = sub.add_parser("labels")
     label_parser.add_argument("--version", required=True)
+    label_parser.add_argument("--include-android", action="store_true", help="Include the verified signed Android APK; no publication implied.")
     label_parser.set_defaults(func=labels)
 
     validate_parser = sub.add_parser("validate-assets")
     validate_parser.add_argument("--version", required=True)
+    validate_parser.add_argument("--include-android", action="store_true", help="Include the verified signed Android APK; no publication implied.")
     validate_parser.add_argument("--assets-json", required=True)
     validate_parser.add_argument(
         "--published",

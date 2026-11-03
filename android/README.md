@@ -1,6 +1,6 @@
 # Sudokura Android build
 
-Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. Production signing, device/publicability acceptance and store availability remain pending. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
+Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. Internal APK signing is verified; device/publicability acceptance and store availability remain pending. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
 
 ## Pinned shared-engine host
 
@@ -16,7 +16,7 @@ Sudokura 1.4.0 is planned as the **first public Android release**, following the
 
 `prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 10400. Production is unsigned; no key is injected or generated. The other flavor/build combinations are disabled.
 
-The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts. The AAB currently receives preliminary container checks, not official bundletool or Console acceptance. These are internal candidates, not a public release.
+The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts. The AAB passes official bundletool validation; Console acceptance remains separate. These are internal candidates, not a public release.
 
 For an already equipped environment (no local tool installation requested):
 

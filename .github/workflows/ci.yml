@@ -314,7 +314,15 @@ jobs:
           retention-days: 7
 
   release-bundle:
-    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos]
+    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos, android]
+    if: >-
+      always() && !cancelled() &&
+      needs.linux.result == 'success' && needs['linux-ubuntu24'].result == 'success' &&
+      needs['linux-fedora44'].result == 'success' && needs.windows.result == 'success' &&
+      needs.macos.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped')
+    env:
+      INCLUDE_ANDROID: ${{ needs.android.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -332,14 +340,22 @@ jobs:
         with:
           name: phase7-macos-arm64
           path: artifacts
-      - name: Validate public release bundle
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: env.INCLUDE_ANDROID == 'true'
+        with:
+          name: sudokura-android-signed-github
+          path: artifacts
+      - name: Validate internal release candidate bundle
         run: |
           python3 tests/test_release_bundle.py
+          python3 tests/test_android_release_manifest.py
+          extra=()
+          if [ "$INCLUDE_ANDROID" = true ]; then extra+=(--include-android); fi
           version=$(./scripts/version.sh)
           python3 scripts/release_bundle.py build \
             --artifacts-dir artifacts \
             --version "$version" \
-            --source-commit "$GITHUB_SHA"
+            --source-commit "$GITHUB_SHA" "${extra[@]}"
           cat artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -349,6 +365,7 @@ jobs:
             artifacts/Sudokura-*-Windows-x64-Portable.exe
             artifacts/Sudokura-*-Linux-x64.AppImage
             artifacts/Sudokura-*-macOS-arm64.dmg
+            artifacts/Sudokura-*-Android-arm64.apk
             artifacts/SHA256SUMS.txt
             artifacts/Sudokura-*-Build-Info.json
             artifacts/artifact-manifest-*.json
