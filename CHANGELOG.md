@@ -2,10 +2,16 @@
 
 ## [1.4.0] — Unreleased
 
+### Your journey
+- Added a colored Home entry with Achieved and Try again views, per-attempt statistics and linked replay history. A later win celebrates the puzzle without erasing previous attempts.
+- Separated explicit Saved Games and the current global autosave from terminal history. In-app leave/replacement offers Save, Abandon, or Cancel; OS backgrounding only checkpoints.
+- Persisted a real-play marker across Undo and restart, so viewing or noting an untouched board does not create a failed attempt. Added compatible profile/session/record readers and archive coverage beyond the 128-result cache.
+
+
 - Planned first public Android release, retaining the shared project version 1.4.0 and Android code 10400; previous Android APKs were private debug prototypes.
 - Added landscape/compact screens, touch-first help and a bounded native/Android semantic bridge. Physical accessibility and other publicability gates remain open.
 - Improved event-driven confirmations, save/recovery and renderer/lifecycle handling while preserving game and retained-record identities.
-- Prepared separate prototype and unsigned production packages for the confirmed Android identity, with APK audits and preliminary Play bundle packaging. Signing and store submission are not completed.
+- Prepared separate prototype and unsigned production packages for the confirmed Android identity, with APK audits and preliminary Play bundle packaging. Internal APK signing is verified; public acceptance and store submission remain pending.
 
 ## [1.3.9]
 

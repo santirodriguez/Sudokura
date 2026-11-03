@@ -3,6 +3,9 @@
 
 static const char *const text[LANG_COUNT][T_COUNT] = {
     [LANG_EN] = {
+        [T_JOURNEY_WON_EMPTY] = "Your victories will appear here. Enjoy your next puzzle!",
+        [T_JOURNEY_RETRY_EMPTY] = "No attempts waiting. Enjoy your next puzzle!",
+
         [T_JOURNEY] = "Your journey",
         [T_JOURNEY_WON] = "Achieved",
         [T_JOURNEY_RETRY] = "Try again",
@@ -245,6 +248,9 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_ROTATE_PORTRAIT] = "Enlarge the window or rotate your phone to continue. Use Back to leave.",
     },
     [LANG_ES] = {
+        [T_JOURNEY_WON_EMPTY] = "Tus victorias van a aparecer acá. ¡A resolver el próximo sudoku!",
+        [T_JOURNEY_RETRY_EMPTY] = "No hay intentos pendientes. ¡A disfrutar el próximo sudoku!",
+
         [T_JOURNEY] = "Tu recorrido",
         [T_JOURNEY_WON] = "Logrados",
         [T_JOURNEY_RETRY] = "Para volver a intentar",
@@ -487,6 +493,9 @@ static const char *const text[LANG_COUNT][T_COUNT] = {
         [T_ROTATE_PORTRAIT] = "Ampliá la ventana o girá el teléfono para seguir. Usá Atrás para volver.",
     },
     [LANG_CA] = {
+        [T_JOURNEY_WON_EMPTY] = "Les teves victòries apareixeran aquí. Gaudeix del proper sudoku!",
+        [T_JOURNEY_RETRY_EMPTY] = "No hi ha intents pendents. Gaudeix del proper sudoku!",
+
         [T_JOURNEY] = "El teu recorregut",
         [T_JOURNEY_WON] = "Assolits",
         [T_JOURNEY_RETRY] = "Per tornar-ho a intentar",

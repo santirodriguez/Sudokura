@@ -423,20 +423,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   SDL_Rect library_face = polish_quiet_face(
       gfx,theme,library,library_hover ? theme.hover : theme.btn,
       library_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
-  SDL_Rect folder = {library_face.x + 14,
-                     library_face.y + (library_face.h-20)/2,20,20};
-  ui_draw_glyph(gfx->ren,folder,UI_GLYPH_FOLDER,theme.title);
-  int label_w = library_face.w - 105;
-  if (label_w > 250) label_w = 250;
-  if (label_w < 60) label_w = 60;
-  SDL_Rect label = {folder.x + 32,library_face.y,
-                    label_w,library_face.h};
-  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES),
-                         theme.btnfg,label,fonts.control,11);
-  int arrow_x = library_face.x+library_face.w-23;
-  int arrow_y = library_face.y+library_face.h/2;
-  draw_line(gfx->ren,arrow_x-5,arrow_y-5,arrow_x,arrow_y,theme.dim);
-  draw_line(gfx->ren,arrow_x,arrow_y,arrow_x-5,arrow_y+5,theme.dim);
+  ui_draw_icon_label(gfx,library_face,tr(ui->language,T_GAMES),UI_GLYPH_FOLDER,theme.btnfg,fonts.control);
   if (show_home_keyboard_focus && home_focus == HOME_FOCUS_GAMES)
     draw_focus_ring(gfx->ren,library,theme.sel_outline);
 

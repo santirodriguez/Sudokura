@@ -81,7 +81,7 @@ Sudokura works offline. Your games, settings, and history stay in local storage,
 - **Time Attack** — solve against the clock.
 - **Daily Puzzle** — a consistent challenge for each local calendar day.
 
-Save and resume an attempt, collect finished games in **Saved Games**, or revisit a puzzle with Replay. Use Notes, Hint, Verify, Undo/Redo, and Restart whenever you need them.
+Save and resume an attempt in **Saved Games**, celebrate wins in **Your journey**, or choose **Try again** to revisit the same puzzle. Use Notes, Hint, Verify, Undo/Redo, and Restart whenever you need them.
 
 Choose light or dark themes, reduced motion, and optional music and sound effects. Available in **English, Español, and Català**.
 
@@ -104,7 +104,7 @@ All essential actions are also available through the interface.
 
 ## Private, even when you take a break
 
-Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest state of the same attempt, while the Saved Games library lets you load, inspect, replay, or delete retained games.
+Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest state of the same attempt. Saved Games holds explicit saves and one current autosave; **Your journey** keeps wins and interrupted or lost attempts. Linked retries preserve earlier results and move into Achieved when you win. Backgrounding only autosaves; leaving a played attempt offers Save, Abandon, or Cancel.
 
 Existing compatible v1.2 and v1.3 desktop data keeps its migration and recovery safeguards. If you're moving between versions, **keep your complete game-data folder**. See [saves, recovery, and rollback](docs/REPORTING_ISSUES.md).
 
