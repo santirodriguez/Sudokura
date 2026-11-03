@@ -101,6 +101,12 @@ jobs:
           "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-production-output/zipalign.txt
           cp "$APK" "android-production-output/Sudokura-$VERSION-Android-arm64-unsigned.apk"
           cp "$AAB" "android-production-output/Sudokura-$VERSION-Android-unsigned.aab"
+          BUNDLETOOL="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+            --output "$BUNDLETOOL"
+          printf '%s  %s\n' a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29 "$BUNDLETOOL" | sha256sum --check --strict
+          java -jar "$BUNDLETOOL" validate --bundle="$AAB" | tee android-production-output/bundletool-validation.txt
           python3 - <<'PYBUNDLE'
           import json
           from pathlib import Path
@@ -114,7 +120,9 @@ jobs:
               assert not any(p.upper().startswith('META-INF/') and p.upper().endswith(('.SF', '.RSA', '.DSA', '.EC')) for p in paths)
               assert 'base/lib/arm64-v8a/libmain.so' in paths
           Path('android-production-output/bundle-readiness.json').write_text(json.dumps({
-              'container': 'PASS', 'signed': False, 'bundletool_validation': 'NOT_RUN',
+              'container': 'PASS', 'signed': False, 'bundletool_validation': 'PASS',
+              'bundletool_version': '1.18.3',
+              'bundletool_sha256': 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
               'play_upload': 'NOT_RUN', 'store_acceptance': 'NOT_RUN'
           }, indent=2) + '\n')
           PYBUNDLE

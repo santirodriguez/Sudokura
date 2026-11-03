@@ -20,7 +20,7 @@ The existing reusable Android job, called by CI, builds only `prototypeDebug` an
 - `sudokura-android-debug-prototype`: the installable debug APK and structural receipts.
 - `sudokura-android-unsigned-production`: the unsigned production APK, unsigned Play AAB, source/version/checksum receipts and APK/native/alignment audits.
 
-The production APK is not installable until signed. AAB container checks are preliminary: official bundletool validation, upload signing and Console acceptance remain open. This preparation does not request secrets, create keys, use production signing, register an app, upload a bundle, create a tag or publish a release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
+The production APK is not installable until signed. CI validates the AAB with official bundletool 1.18.3, downloaded from its release with SHA-256 verification, and retains the validation output and tool identity. This structural validation does not establish upload signing or Console acceptance; both remain open. This preparation does not request secrets, create keys, use production signing, register an app, upload a bundle, create a tag or publish a release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
 
 From an already equipped environment, build the pinned sources/assets and run:
 
@@ -42,6 +42,27 @@ Use **new, independent Sudokura keys**, following the same separation of roles u
 | PEPK transfer archive | Provider-generated encrypted transfer plus original public certificate | Only if separately enrolling the original app key in Play App Signing | Not generated |
 
 Before key creation/signing, agree the secure operator procedure and recoverable custody. Keep private material outside the repository and chat. Use labelled private groups `01-app-signing/`, `02-play-upload/`, and, when applicable, `03-play-transfer/`. Keep passwords separately protected. Verify an independent encrypted/offline recovery copy and match the restored public certificate fingerprint; a second copy on the same disk is not independent recovery.
+
+### Local custody procedure
+
+The planned operator root is `/home/smrp/Desktop/Work/Sudokura/signing`, matching the existing application custody convention. Private material stays on the operator's machine; cloud CI must not generate the long-lived keys. Preparation of these instructions is not key creation authority.
+
+After explicit authorization to create the keys, use an already available trusted JDK `keytool` interactively. Do not install a local toolchain merely to enable CI. Set `umask 077`; create the root and the `01-app-signing`, `02-play-upload` and `public` directories with mode 0700. Stop if either planned keystore already exists: inspect its public certificate and recover its known credentials rather than overwriting or regenerating it.
+
+Run each command in its corresponding private directory, without shell tracing, recording, password arguments or password environment variables:
+
+```sh
+# In 01-app-signing (only after confirming the file does not exist):
+keytool -genkeypair -storetype JKS -keystore sudokura-release.jks -alias sudokura -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -dname 'CN=Sudokura'
+# In 02-play-upload (only after confirming the file does not exist):
+keytool -genkeypair -storetype JKS -keystore sudokura-play-upload.jks -alias sudokura-play-upload -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -dname 'CN=Sudokura Play Upload'
+```
+
+Enter independently generated strong passwords at the protected prompts and save them in the password manager, including any separate key-entry password. Keep both JKS files mode 0600. Export only the public certificates with `keytool -exportcert -rfc`, using the correct keystore/alias and distinct filenames under `public/`; inspect each with `keytool -printcert -file`. Confirm their SHA-256 fingerprints differ. Retain those public fingerprints with the role, alias and creation date; do not confuse the file checksum with the certificate fingerprint.
+
+Before first signing, create an independent encrypted/offline backup of both JKS files and the separate password records. Restore into an isolated private directory, open each restored keystore with its recorded password and alias, and compare exported certificate fingerprints to the originals. Mark recovery VERIFIED only after that exercise. Do not delete originals as part of the exercise.
+
+Repository secret configuration is a later separately authorized step. Configure only the Sudokura repository using its official secrets interface, from the operator machine; never paste values into chat or Issues. The signing workflow must first define the exact app-signing versus upload secret contract and be reviewed before any values are entered. No secret names or successful configuration are implied by this procedure. PEPK enrollment/transfer is a further explicit step after the live Play Console identifies its required transfer parameters.
 
 Record public certificate SHA-256 fingerprints and non-secret package/source receipts after actual key creation. A filename or alias does not establish signing identity. Never silently regenerate a missing keystore: restore the exact backup and verify its certificate. Do not put JKS, passwords, base64 keystores or private transfer material into source, Issues, logs or ordinary artifacts. No Actions secrets have been created/configured by this preparation.
 
