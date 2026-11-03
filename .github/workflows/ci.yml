@@ -376,6 +376,7 @@ jobs:
           ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
           python3 tests/test_screenshot_validator.py ui-review
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
         with:
           name: phase5-ui-review
           path: ui-review

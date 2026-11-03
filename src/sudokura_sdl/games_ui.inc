@@ -2276,8 +2276,13 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     int label_x=rect.x+38;
     SDL_Rect main_label={label_x,rect.y+2,rect.w-48,26};
     SDL_Rect sub_label={label_x,rect.y+rect.h-25,rect.w-48,21};
-    (void)draw_fitted_text(gfx,caption,theme.btnfg,main_label,17,10);
-    (void)draw_fitted_text(gfx,status,theme.dim,sub_label,13,10);
+    if(entry->status!=STORE_OK) {
+      SDL_Rect warning={label_x,rect.y+6,rect.w-48,rect.h-12};
+      (void)polish_draw_wrapped_fit(gfx,caption,theme.dim,warning,14,12,true);
+    } else {
+      (void)draw_fitted_text(gfx,caption,theme.btnfg,main_label,17,10);
+      (void)draw_fitted_text(gfx,status,theme.dim,sub_label,13,10);
+    }
     if(selected&&games_browser.focus==0&&(!gfx->mobile_layout||ui_keyboard_focus_visible))
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
