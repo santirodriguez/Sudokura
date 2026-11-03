@@ -56,7 +56,7 @@ final class SudokuraAccessibilityView extends View {
                         nodes[p + 3] <= 0 || nodes[p + 4] <= 0 ||
                         (long)nodes[p + 1] + nodes[p + 3] > width ||
                         (long)nodes[p + 2] + nodes[p + 4] > height ||
-                        (nodes[p + 5] & ~7) != 0 ||
+                        (nodes[p + 5] & ~15) != 0 ||
                         (nodes[p + 6] != 0 && nodes[p + 6] != 1) ||
                         (nodes[p + 7] != 0 && nodes[p + 7] != 1) ||
                         labels[i] == null || labels[i].isEmpty() ||
@@ -251,6 +251,10 @@ final class SudokuraAccessibilityView extends View {
                     info.setClickable(true);
                     info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
                 }
+                if ((actions & 8) != 0) {
+                    info.setLongClickable(true);
+                    info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+                }
                 if ((actions & 2) != 0) info.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
                 if ((actions & 4) != 0) info.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
                 info.setScrollable((actions & 6) != 0);
@@ -297,7 +301,8 @@ final class SudokuraAccessibilityView extends View {
             }
             int semantic = action == AccessibilityNodeInfo.ACTION_CLICK ? 1 :
                     action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ? 2 :
-                    action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD ? 4 : 0;
+                    action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD ? 4 :
+                    action == AccessibilityNodeInfo.ACTION_LONG_CLICK ? 8 : 0;
             int p = i * STRIDE;
             if (semantic == 0 || snapshot.nodes[p + 6] == 0 ||
                     (snapshot.nodes[p + 5] & semantic) == 0) return false;

@@ -24,6 +24,11 @@ int main(void) {
   assert(!accessibility_snapshot_equal(&published,&live));
   live=published;command.action=ACCESSIBILITY_SCROLL_FORWARD;
   assert(!accessibility_resolve(&live,command));
+  command.action=ACCESSIBILITY_LONG_ACTIVATE;
+  assert(!accessibility_resolve(&live,command));
+  live.nodes[0].actions|=ACCESSIBILITY_LONG_ACTIVATE;
+  assert(accessibility_resolve(&live,command));
+  command.action=16;assert(!accessibility_resolve(&live,command));
   command.action=3;assert(!accessibility_resolve(&live,command));
   command.action=0;assert(!accessibility_resolve(&live,command));
   assert(!accessibility_add(&live,&node));assert(!live.valid);

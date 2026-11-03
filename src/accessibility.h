@@ -10,7 +10,7 @@
    pointers. The owner builds a complete snapshot before handing it to Java. */
 enum { ACCESSIBILITY_NODE_LIMIT=192, ACCESSIBILITY_LABEL_LIMIT=512 };
 enum { ACCESSIBILITY_ACTIVATE=1u, ACCESSIBILITY_SCROLL_FORWARD=2u,
-       ACCESSIBILITY_SCROLL_BACKWARD=4u };
+       ACCESSIBILITY_SCROLL_BACKWARD=4u, ACCESSIBILITY_LONG_ACTIVATE=8u };
 typedef struct {
   uint64_t generation, attempt_hi, attempt_lo;
   int screen;
@@ -47,7 +47,7 @@ static inline bool accessibility_add(AccessibilitySnapshot *s,
   if (!s || !s->valid) return false;
   if (!n || n->id<=0 || n->w<=0 || n->h<=0 || n->x<0 || n->y<0 ||
       !n->label[0] || !memchr(n->label,0,sizeof(n->label)) ||
-      (n->actions & ~7u) || s->count>=ACCESSIBILITY_NODE_LIMIT) {
+      (n->actions & ~15u) || s->count>=ACCESSIBILITY_NODE_LIMIT) {
     s->valid=false;return false;
   }
   for (size_t i=0;i<s->count;++i) if (s->nodes[i].id==n->id) {

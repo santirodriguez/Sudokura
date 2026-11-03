@@ -9,7 +9,8 @@ enum {
   A11Y_INFO_UP=480, A11Y_INFO_DOWN=481, A11Y_MODAL=500,
   A11Y_MODAL_BODY=1100, A11Y_SETTINGS=520, A11Y_MUSIC_MINUS=540,
   A11Y_MUSIC_PLUS=541, A11Y_FX_MINUS=542, A11Y_FX_PLUS=543,
-  A11Y_HINT=550, A11Y_LIBRARY=570, A11Y_ROW=600, A11Y_STATUS=900, A11Y_HEADING=901
+  A11Y_HINT=550, A11Y_LIBRARY=570, A11Y_ROW=600, A11Y_STATUS=900, A11Y_HEADING=901,
+  A11Y_PREVIEW_CELL=700, A11Y_AUDIO=800, A11Y_AUDIO_MUSIC=801, A11Y_AUDIO_FX=802
 };
 static AccessibilitySnapshot ui_a11y_live;
 static SDL_SpinLock ui_a11y_lock;
@@ -73,15 +74,51 @@ static void ui_a11y_text(AccessibilitySnapshot *s,const Gfx *g,int id,
                          SDL_Rect rect,const char *text,unsigned actions) {
   ui_a11y_add(s,g,id,rect,text,actions,true,false);
 }
+static void ui_a11y_audio(AccessibilitySnapshot *s,const UI *ui,const Gfx *g) {
+  AudioControlGeometry geo=ui_audio_control_geometry(g,ui);
+  char label[128];
+  snprintf(label,sizeof(label),"%s: %s",tr(ui->language,T_SOUND),
+      tr(ui->language,audio_is_enabled()?T_ON:T_OFF));
+  ui_a11y_add(s,g,A11Y_AUDIO,sdl_rect(geo.button),label,
+      ACCESSIBILITY_ACTIVATE|ACCESSIBILITY_LONG_ACTIVATE,true,audio_is_enabled());
+  if (!audio_control_popup_open) return;
+  const SDL_Rect rects[]={sdl_rect(geo.music),sdl_rect(geo.fx)};
+  for (int i=0;i<2;++i) {
+    bool muted=i?audio_fx_muted():audio_music_muted();
+    snprintf(label,sizeof(label),"%s: %s",tr(ui->language,i?T_FX:T_MUSIC),
+        tr(ui->language,muted?T_MUTED:T_ENABLED));
+    ui_a11y_add(s,g,A11Y_AUDIO_MUSIC+i,rects[i],label,ACCESSIBILITY_ACTIVATE,true,!muted);
+  }
+}
+static void ui_a11y_saved_preview(AccessibilitySnapshot *s,const UI *ui,const Gfx *g) {
+  if (!games_browser.preview_valid || !games_browser_semantic_board.valid ||
+      games_browser.scanning || games_browser.selected>=games_browser.count ||
+      games_browser_semantic_board.width!=g->width || games_browser_semantic_board.height!=g->height ||
+      games_browser_semantic_board.detail!=games_browser.detail_open) return;
+  const GameLibraryEntry *entry=&games_browser.rows[games_browser.selected].entry;
+  if (!game_attempt_id_equal(entry->id,games_browser_semantic_board.id) ||
+      entry->revision!=games_browser_semantic_board.revision) return;
+  SDL_Rect board=games_browser_semantic_board.rect;
+  int cell=board.w/9;
+  const Game *view=&games_browser.preview.game;
+  for (int i=0;i<81;++i) {
+    char label[ACCESSIBILITY_LABEL_LIMIT];
+    accessibility_cell_label(label,ui->language,i/9,i%9,view->puzzle[i],view->fixed[i]!=0,
+        cell>=18?view->notes[i]:0,false,false);
+    ui_a11y_add(s,g,A11Y_PREVIEW_CELL+i,
+        (SDL_Rect){board.x+i%9*cell,board.y+i/9*cell,cell,cell},label,0,true,false);
+  }
+}
 static int ui_a11y_screen(const UI *ui) {
   if (ui_modal.active) return 100+(int)ui->screen;
   if (settings_open) return 200+(int)ui->screen;
   if (ui_more_open) return 300+(int)ui->screen;
+  if (audio_control_popup_open && ui_audio_control_available(ui)) return 600+(int)ui->screen;
   if (hint_panel_interactive(ui)) return 400+(int)ui->screen;
   if (ui->screen==SCR_PLAY && ui->pause_reasons) return 500+(int)ui->screen;
   return (int)ui->screen;
 }
-static void ui_a11y_build(AccessibilitySnapshot *s,const Persistence *p,
+static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
                          const Game *game,const UI *ui,const Gfx *g) {
   AccessibilityBinding binding={ui_a11y_live.binding.generation
       ? ui_a11y_live.binding.generation : 1,
@@ -143,6 +180,9 @@ static void ui_a11y_build(AccessibilitySnapshot *s,const Persistence *p,
     SDL_Rect panel=sdl_rect(geo.more_panel);
     ADD(A11Y_MORE_CLOSE,((SDL_Rect){panel.x+panel.w-60,panel.y+4,48,48}),T_BACK,true,false);
     return;
+  }
+  if (audio_control_popup_open && ui_audio_control_available(ui)) {
+    ui_a11y_audio(s,ui,g);return;
   }
   if (ui->screen==SCR_TITLE) {
     ui_a11y_add(s,g,A11Y_HEADING,sdl_rect(geo.home_logo),tr(ui->language,T_HOME),0,true,false);
@@ -220,6 +260,7 @@ static void ui_a11y_build(AccessibilitySnapshot *s,const Persistence *p,
             ACCESSIBILITY_ACTIVATE,true,index==games_browser.selected);
       }
     }
+    ui_a11y_saved_preview(s,ui,g);
     return;
   } else if (ui->screen==SCR_PLAY) {
     if (ui->pause_reasons) {
@@ -267,6 +308,14 @@ static void ui_a11y_build(AccessibilitySnapshot *s,const Persistence *p,
       ui_a11y_add(s,g,A11Y_LANGUAGE+i,language_segment(g,ui,i),language_name((Language)i),
           ACCESSIBILITY_ACTIVATE,true,ui->language==(Language)i);
 #undef ADD
+}
+
+static void ui_a11y_build(AccessibilitySnapshot *s,const Persistence *p,
+                         const Game *game,const UI *ui,const Gfx *g) {
+  ui_a11y_build_body(s,p,game,ui,g);
+  if (s->valid && s->count && !ui_modal.active && !ui_more_open &&
+      !audio_control_popup_open && ui_audio_control_available(ui))
+    ui_a11y_audio(s,ui,g);
 }
 
 static bool ui_a11y_publish(const AccessibilitySnapshot *s,const Gfx *g) {
@@ -317,7 +366,7 @@ static void ui_a11y_current_context(uint64_t out[256],const Persistence *p,const
   memset(out,0,256*sizeof(*out));
   size_t n=0;
   out[n++]=ui_modal_generation;out[n++]=ui->pause_reasons;
-  out[n++]=ui_modal.serial;
+  out[n++]=ui_modal.serial;out[n++]=audio_control_popup_open;
   if (ui_modal.active) {
     const AppModalBinding *binding=&ui_modal.request.binding;
     out[n++]=ui_modal.request.kind;out[n++]=ui_modal.request.action;
@@ -374,6 +423,13 @@ static bool ui_a11y_dispatch(Persistence *p,Game *game,UI *ui,Gfx *g,bool *runni
       ui_modal_select((unsigned)(id-A11Y_MODAL));
     else if (id>=A11Y_MODAL_BODY && id<A11Y_MODAL_BODY+12)
       ui_modal_scroll_by(command.action==ACCESSIBILITY_SCROLL_FORWARD?180:-180);
+  } else if (id>=A11Y_AUDIO && id<=A11Y_AUDIO_FX) {
+    if (id==A11Y_AUDIO) {
+      if (command.action==ACCESSIBILITY_LONG_ACTIVATE)
+        audio_control_popup_open=!audio_control_popup_open;
+      else {audio_control_popup_open=false;audio_toggle(p);}
+    } else if (id==A11Y_AUDIO_MUSIC) audio_toggle_music_mute(p);
+    else audio_toggle_fx_mute(p);
   } else if (id>=A11Y_CELL && id<A11Y_CELL+81 && app_play_interactions_allowed(ui)) {
     int cell=id-A11Y_CELL;ui->sel_r=cell/9;ui->sel_c=cell%9;
     play_keyboard_focus=-1; /* Focus alone never reaches this action. */
@@ -423,7 +479,83 @@ static bool ui_a11y_dispatch(Persistence *p,Game *game,UI *ui,Gfx *g,bool *runni
   g->dirty=true;return true;
 }
 
+static bool ui_a11y_extended_smoke(Persistence *p,Game *game,UI *ui,Gfx *g) {
+  UI saved_ui=*ui;
+  GamesBrowser saved_browser=games_browser;
+  Persistence sandbox=*p;sandbox.enabled=false; /* No fixture disk writes. */
+  bool saved_popup=audio_control_popup_open;
+  bool saved_settings=settings_open,saved_more=ui_more_open;
+  bool enabled=audio_is_enabled(),music=audio_music_muted(),fx=audio_fx_muted();
+  bool running=true,ok=false;
+  settings_open=false;ui_more_open=false;audio_control_popup_open=false;
+  ui->screen=SCR_TITLE;ui->pause_reasons=0;ui->hint_preview_active=false;
+  ui_a11y_refresh(&sandbox,game,ui,g);
+  AccessibilityCommand command={ui_a11y_live.binding,A11Y_AUDIO,ACCESSIBILITY_LONG_ACTIVATE};
+  if (!ui_a11y_submit(command) || !ui_a11y_dispatch(&sandbox,game,ui,g,&running) ||
+      !audio_control_popup_open) goto done;
+  ui_a11y_refresh(&sandbox,game,ui,g);
+  if (!ui_a11y_live.valid || ui_a11y_live.count!=3) goto done;
+  command=(AccessibilityCommand){ui_a11y_live.binding,A11Y_AUDIO_MUSIC,ACCESSIBILITY_ACTIVATE};
+  if (!ui_a11y_submit(command) || !ui_a11y_dispatch(&sandbox,game,ui,g,&running) ||
+      audio_music_muted()==music) goto done;
+  ui_a11y_refresh(&sandbox,game,ui,g);
+  command=(AccessibilityCommand){ui_a11y_live.binding,A11Y_AUDIO_FX,ACCESSIBILITY_ACTIVATE};
+  if (!ui_a11y_submit(command) || !ui_a11y_dispatch(&sandbox,game,ui,g,&running) ||
+      audio_fx_muted()==fx) goto done;
+  ui_a11y_refresh(&sandbox,game,ui,g);
+  command=(AccessibilityCommand){ui_a11y_live.binding,A11Y_AUDIO,ACCESSIBILITY_ACTIVATE};
+  audio_control_popup_open=false; /* Dismissed before the queued action. */
+  if (!ui_a11y_submit(command) || ui_a11y_dispatch(&sandbox,game,ui,g,&running) ||
+      audio_is_enabled()!=enabled) goto done;
+
+  GamesRow fixture={0};
+  fixture.entry.id=(GameAttemptId){501,502};fixture.entry.revision=7;
+  fixture.entry.status=STORE_OK;fixture.entry.kind=GAME_RECORD_EXACT;
+  fixture.entry.result.status=SESSION_WON;
+  fixture.entry.result.mode=MODE_CLASSIC;
+  fixture.entry.result.difficulty=DIFFICULTY_MEDIUM;
+  memset(&games_browser,0,sizeof(games_browser));
+  games_browser.rows=&fixture;games_browser.count=games_browser.capacity=1;
+  games_browser.preview.game=*game;games_browser.preview_valid=true;
+  ui->screen=APP_SCREEN_GAMES;
+  for (int detail=0;detail<2;++detail) {
+    games_browser.detail_open=detail!=0;
+    app_render_ui(g,game,ui);ui_a11y_refresh(&sandbox,game,ui,g);
+    if (!ui_a11y_live.valid) goto done;
+    unsigned cells=0;
+    for (size_t i=0;i<ui_a11y_live.count;++i) {
+      const AccessibilityNode *node=&ui_a11y_live.nodes[i];
+      if (node->id>=A11Y_PREVIEW_CELL && node->id<A11Y_PREVIEW_CELL+81) {
+        ++cells;if (node->actions || node->selected) goto done;
+      }
+    }
+    if (games_browser_semantic_board.valid && cells!=81) goto done;
+    if (detail && cells!=81) goto done;
+    AccessibilitySnapshot before=ui_a11y_live,poisoned;
+    for (int i=0;i<81;++i)
+      games_browser.preview.game.solution[i]=(games_browser.preview.game.solution[i]%9)+1;
+    ui_a11y_build(&poisoned,&sandbox,game,ui,g);
+    if (!accessibility_snapshot_equal(&before,&poisoned)) goto done;
+    command=(AccessibilityCommand){ui_a11y_live.binding,A11Y_PREVIEW_CELL,ACCESSIBILITY_ACTIVATE};
+    if (!ui_a11y_submit(command) || ui_a11y_dispatch(&sandbox,game,ui,g,&running) ||
+        games_browser.selected!=0 || games_browser.detail_open!=(detail!=0)) goto done;
+    /* Changed record metadata cannot reuse the old painted preview bounds. */
+    ++fixture.entry.revision;ui_a11y_refresh(&sandbox,game,ui,g);
+    for (size_t i=0;i<ui_a11y_live.count;++i)
+      if (ui_a11y_live.nodes[i].id>=A11Y_PREVIEW_CELL &&
+          ui_a11y_live.nodes[i].id<A11Y_PREVIEW_CELL+81) goto done;
+  }
+  ok=true;
+done:
+  audio_set_enabled(enabled);audio_set_music_muted(music);audio_set_fx_muted(fx);
+  audio_control_popup_open=saved_popup;settings_open=saved_settings;ui_more_open=saved_more;
+  games_browser=saved_browser;games_browser_semantic_board.valid=false;*ui=saved_ui;
+  if (!ok) fprintf(stderr,"semantic audio/readonly-preview regression at %dx%d\n",g->width,g->height);
+  return ok;
+}
+
 static bool ui_a11y_smoke(Persistence *p,Game *game,UI *ui,Gfx *g) {
+  if (!ui_a11y_extended_smoke(p,game,ui,g)) return false;
   UI saved=*ui;
   Game original=*game;
   bool saved_settings=settings_open,saved_more=ui_more_open;

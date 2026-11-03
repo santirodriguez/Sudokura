@@ -1831,6 +1831,15 @@ static bool games_browser_delete_selected(Persistence *p,Game *game,
   return ui_modal_open_request(gfx,ui,&request);
 }
 
+/* Painted bounds only; semantics never reconstruct a second preview layout. */
+static struct {
+  SDL_Rect rect;
+  GameAttemptId id;
+  uint64_t revision;
+  int width,height;
+  bool valid,detail;
+} games_browser_semantic_board;
+
 /* Record previews show only visible saved digits and notes, never the
    hidden solution. The entered digits use the established accent color. */
 static void games_browser_draw_saved_board(Gfx *gfx, Theme theme,
@@ -1842,6 +1851,16 @@ static void games_browser_draw_saved_board(Gfx *gfx, Theme theme,
   side = cell*9;
   int x = area.x + (area.w-side)/2;
   int y = area.y + (area.h-side)/2;
+  if (games_browser.selected<games_browser.count) {
+    const GameLibraryEntry *entry=&games_browser.rows[games_browser.selected].entry;
+    games_browser_semantic_board.rect=(SDL_Rect){x,y,side,side};
+    games_browser_semantic_board.id=entry->id;
+    games_browser_semantic_board.revision=entry->revision;
+    games_browser_semantic_board.width=gfx->width;
+    games_browser_semantic_board.height=gfx->height;
+    games_browser_semantic_board.detail=games_browser.detail_open;
+    games_browser_semantic_board.valid=true;
+  }
   draw_round_rect(gfx->ren,(SDL_Rect){x-3,y-3,side+6,side+6},5,theme.btn);
   for (int index = 0; index < 81; ++index) {
     int col = index%9, row = index/9;
@@ -1934,6 +1953,7 @@ static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
 
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   (void)game;
+  games_browser_semantic_board.valid=false;
   Theme theme=ui->dark_theme?theme_dark():theme_light();
   GamesBrowserLayout lay=games_browser_layout(gfx);
   SDL_Rect heading=lay.title;
