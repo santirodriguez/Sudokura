@@ -2,6 +2,11 @@ name: Android package preview
 
 on:
   workflow_call:
+    secrets:
+      SUDOKURA_APP_KEYSTORE_BASE64:
+        required: false
+      SUDOKURA_APP_KEYSTORE_PASSWORD:
+        required: false
   workflow_dispatch:
 
 permissions:
@@ -128,6 +133,54 @@ jobs:
           PYBUNDLE
           sha256sum android-production-output/*.apk android-production-output/*.aab > android-production-output/SHA256SUMS.txt
           printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$GITHUB_SHA" "$VERSION" > android-production-output/build-info.txt
+      - name: Sign production APK with the Sudokura app key
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0'
+        shell: bash
+        env:
+          SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
+          SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SUDOKURA_APP_KEYSTORE_BASE64:?Missing repository secret SUDOKURA_APP_KEYSTORE_BASE64}"
+          : "${SUDOKURA_APP_KEYSTORE_PASSWORD:?Missing repository secret SUDOKURA_APP_KEYSTORE_PASSWORD}"
+          APK=android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
+          KEYSTORE="$RUNNER_TEMP/sudokura-release.jks"
+          SIGNED=android-production-output/Sudokura-$(sh scripts/version.sh)-Android-arm64.apk
+          trap 'rm -f "$KEYSTORE"' EXIT
+          python3 - "$KEYSTORE" <<'PYKEY'
+          import base64
+          import os
+          import sys
+          from pathlib import Path
+          data = base64.b64decode(os.environ['SUDOKURA_APP_KEYSTORE_BASE64'], validate=True)
+          if not data:
+              raise SystemExit('Decoded signing keystore is empty')
+          path = Path(sys.argv[1])
+          path.write_bytes(data)
+          path.chmod(0o600)
+          PYKEY
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type JKS \
+            --ks-key-alias sudokura \
+            --ks-pass env:SUDOKURA_APP_KEYSTORE_PASSWORD \
+            --key-pass env:SUDOKURA_APP_KEYSTORE_PASSWORD \
+            --out "$SIGNED" "$APK"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee android-production-output/apk-signature.txt
+          grep -Eqi 'fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d' android-production-output/apk-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$SIGNED" > android-production-output/signed-zipalign.txt
+          python3 android/scripts/audit_apk.py "$ANDROID_HOME/build-tools/35.0.0/aapt" "$SIGNED" --variant release > android-production-output/signed-apk-audit.json
+          sha256sum "$SIGNED" > android-production-output/signed-SHA256SUMS.txt
+          printf 'signing=PASS\nsigning_alias=sudokura\nsigning_certificate_sha256=FDE951E3D2EF42E41C7186EE965944AECA549D590AD080711DD3D875F82DF66D\n' >> android-production-output/build-info.txt
+          mkdir -p android-signed-output
+          cp "$SIGNED" android-signed-output/
+          cp android-production-output/signed-apk-audit.json android-production-output/signed-SHA256SUMS.txt android-production-output/apk-signature.txt android-production-output/signed-zipalign.txt android-signed-output/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0'
+        with:
+          name: sudokura-android-signed-github
+          path: android-signed-output/
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sudokura-android-unsigned-production
