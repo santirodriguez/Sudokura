@@ -490,6 +490,8 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
           r.data + r.pos, session_size,
           candidate.result.is_daily, &candidate.exact);
       if (status != STORE_OK) return status;
+      if (payload_version>=2u && candidate.exact.explicitly_saved!=((flags&RECORD_EXPLICIT_SAVE)!=0))
+        return STORE_CORRUPT;
     }
     r.pos += session_size;
   } else if (session_size != 0)

@@ -945,6 +945,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   slot->retained=retained||
       (state.status!=SESSION_ACTIVE&&(started||state.status==SESSION_WON)&&!keep_pending)||
       p->active_replay.practice;
+  if(state.status==SESSION_LOST && !started) { slot->retained=false;explicitly_saved=false; }
   slot->value.started=started;
   slot->value.explicitly_saved=explicitly_saved;
   slot->value.undo_count=ui->undo_count;

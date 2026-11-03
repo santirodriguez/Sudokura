@@ -2451,6 +2451,7 @@ int main(int argc, char **argv) {
     ui.screen = SCR_PLAY;
     app_frame(&g, &game, &ui);
     if (smoke_test) {
+      if(!journey_browser_smoke()) { fprintf(stderr,"Journey family/filter regression\n");app_shutdown(&g);return 1; }
       Persistence settings_persistence;
       memset(&settings_persistence, 0, sizeof(settings_persistence));
       settings_persistence.enabled = true;
@@ -4592,10 +4593,12 @@ int main(int argc, char **argv) {
               entry.result.elapsed_ms=754000;
               entry.result.practice=state==REVIEW_GAMES_DETAIL;
               entry.result.assisted=finished;
+              games_browser.view=finished?JOURNEY_WON:GAMES_SAVED;
               entry.finished_utc=finished?UINT64_C(1791916200):0;
               if(!games_browser_push(&entry,false)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
+              if(finished) { games_browser.rows[0].attempts=3;games_browser.rows[0].setbacks=2; }
               games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE &&
                   state!=REVIEW_GAMES_RECOVER;
               games_browser.preview.game=game;

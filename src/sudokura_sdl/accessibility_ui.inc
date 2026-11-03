@@ -260,7 +260,7 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
             difficulty_name(ui->language,entry->result.difficulty),
             tr(ui->language,entry->status!=STORE_OK?T_GAMES_UNAVAILABLE:
               entry->result.status==SESSION_ACTIVE?T_GAMES_IN_PROGRESS:
-              entry->result.status==SESSION_WON?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE));
+              entry->result.status==SESSION_WON?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_JOURNEY_RETRY));
         ui_a11y_add(s,g,A11Y_ROW+row,games_browser_row_rect(lay,row),label,
             ACCESSIBILITY_ACTIVATE,true,index==games_browser.selected);
       }

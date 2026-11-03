@@ -457,6 +457,33 @@ static void games_browser_filter(void) {
   games_browser.count=out;free(entries);free(roots);
 }
 
+static bool journey_browser_smoke(void) {
+  GamesBrowser previous=games_browser;bool ok=true;
+  for(int view=0;view<4;++view) {
+    games_browser=(GamesBrowser){.view=(GamesView)view,.family_filter={1,1}};
+    games_browser.rows=calloc(5,sizeof(GamesRow));
+    if(!games_browser.rows){games_browser=previous;return false;}
+    games_browser.count=games_browser.capacity=5;
+    for(int i=0;i<5;++i) {
+      GameLibraryEntry *e=&games_browser.rows[i].entry;
+      e->status=STORE_OK;e->id=(GameAttemptId){1,(uint64_t)i+1};e->result.seed=8;
+      e->result.mode=MODE_CLASSIC;e->result.difficulty=DIFFICULTY_MEDIUM;
+      e->result.generator_revision=SUDOKURA_GENERATOR_REVISION;
+      e->result.status=i==0?SESSION_INTERRUPTED:i==1?SESSION_LOST:i==2?SESSION_WON:SESSION_ACTIVE;
+      if(i>0 && i<3)e->parent=(GameAttemptId){1,(uint64_t)i};
+      if(i==3)e->explicitly_saved=true;
+      if(i==4)games_browser.rows[i].hot_only=true;
+    }
+    games_browser_filter();
+    if(view==GAMES_SAVED)ok=ok&&games_browser.count==2;
+    if(view==JOURNEY_WON)ok=ok&&games_browser.count==1&&games_browser.rows[0].attempts==3&&games_browser.rows[0].setbacks==2;
+    if(view==JOURNEY_RETRY)ok=ok&&games_browser.count==0;
+    if(view==JOURNEY_ATTEMPTS)ok=ok&&games_browser.count==3;
+    free(games_browser.rows);
+  }
+  games_browser=previous;return ok;
+}
+
 static void games_browser_change_view(Persistence *p, Gfx *gfx, GamesView view) {
   ui_modal_invalidate();
   game_library_scan_close(&games_browser.scanner);
@@ -2095,7 +2122,7 @@ static void games_browser_result_description(const GamesRow *row, Language langu
   const ProfileResult *r=&row->entry.result;
   unsigned long long seconds=r->elapsed_ms/1000u;
   int n=snprintf(text,capacity,"%s · %s · %s\n%02llu:%02llu · %s: %u · %s: %u\n%s%s%s",
-      tr(language,r->status==SESSION_WON?T_YOU_WIN:r->status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE),
+      tr(language,r->status==SESSION_WON?T_YOU_WIN:r->status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_JOURNEY_RETRY),
       tr(language,mode_key(r->mode)),difficulty_name(language,r->difficulty),
       seconds/60u,seconds%60u,tr(language,T_ERRORS),r->mistakes,
       tr(language,T_GAMES_STRIKES),r->strikes,
@@ -2130,14 +2157,16 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                          theme.btnfg,heading,30,15);
   const TextKey tabs[3]={T_GAMES,T_JOURNEY_WON,T_JOURNEY_RETRY};
   for (int i=0;i<3;++i) {
-    SDL_Color color=i==1?(SDL_Color){72,174,122,255}:i==2?(SDL_Color){77,145,218,255}:theme.title;
-    games_browser_draw_button(gfx,theme,lay.tabs[i],tr(ui->language,tabs[i]),
-        games_browser.focus==7+i,true,color,UI_GLYPH_FOLDER,games_browser.view==(GamesView)i);
+    SDL_Color color=i==1?(ui->dark_theme?(SDL_Color){103,211,153,255}:(SDL_Color){16,101,57,255}):i==2?(ui->dark_theme?(SDL_Color){130,186,255,255}:(SDL_Color){34,82,146,255}):theme.title;
+    bool selected_tab=games_browser.view==(GamesView)i;
+    draw_round_rect(gfx->ren,lay.tabs[i],7,selected_tab?theme.btn:theme.palette_bg);
+    SDL_Rect label=lay.tabs[i];label.x+=4;label.w-=8;
+    (void)polish_draw_wrapped_fit(gfx,tr(ui->language,tabs[i]),color,label,16,10,true);
+    if(selected_tab || games_browser.focus==7+i)draw_focus_ring(gfx->ren,lay.tabs[i],color);
   }
 
   if (games_browser.detail_open) {
     const GamesRow *row=&games_browser.rows[games_browser.selected];
-    const ProfileResult *result=&row->entry.result;
     SDL_Rect surface={lay.title.x,lay.list.y,lay.title.w,
                        lay.back.y-lay.list.y-12};
     draw_round_rect(gfx->ren,surface,11,theme.palette_bg);
@@ -2214,7 +2243,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
             ?(row->hot_only?tr(ui->language,T_GAMES_AUTOSAVE)
                             :tr(ui->language,T_GAMES_IN_PROGRESS))
             :tr(ui->language,entry->result.status==SESSION_WON
-                                  ?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE);
+                                  ?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_JOURNEY_RETRY);
     if(entry->status==STORE_OK)
       (void)snprintf(caption,sizeof(caption),"%s · %s",
            tr(ui->language,mode_key(entry->result.mode)),
