@@ -1,0 +1,1 @@
+First public Android release of Sudokura. Version1.4.0 brings the shared offline Sudoku engine to Android with touch controls, portrait/landscape layouts and local saved games. Earlier Android builds were private debug prototypes.

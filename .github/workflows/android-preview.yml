@@ -1,4 +1,4 @@
-name: Android debug prototype preview
+name: Android package preview
 
 on:
   workflow_call:
@@ -47,18 +47,18 @@ jobs:
         run: python3 android/scripts/prepare_sources.py
       - name: Generate existing shared C assets
         run: make assets
-      - name: Build exact-head arm64 debug APK
+      - name: Build exact-head prototype and unsigned production packages
         run: |
           java -version
           go version
-          bash android/gradlew --no-daemon :app:assembleDebug \
+          bash android/gradlew --no-daemon :app:assemblePrototypeDebug :app:assembleProductionRelease :app:bundleProductionRelease \
             -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
             -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
       - name: Audit APK identity, permissions, assets, ABI and 16 KiB alignment
         shell: bash
         run: |
           set -euo pipefail
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk
           test -s "$APK"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
@@ -74,12 +74,55 @@ jobs:
           printf 'source_sha=%s\n' "$GITHUB_SHA" | tee android-preview-output/build-info.txt
           printf 'gradle=8.13\nagp=8.11.1\njava=17\nndk=28.2.13676358\ncmake=3.22.1\nmin_sdk=28\ntarget_sdk=36\nabi=arm64-v8a\nphysical_device=NOT_RUN\n' >> android-preview-output/build-info.txt
           du -h "$APK" | tee android-preview-output/apk-size.txt
+          cp "$APK" android-preview-output/app-debug.apk
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ success() }}
         with:
           name: sudokura-android-debug-prototype
           path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
             android-preview-output/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Audit unsigned production APK and stage Play bundle readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
+          AAB=android/app/build/outputs/bundle/productionRelease/app-production-release.aab
+          test -s "$APK"
+          test -s "$AAB"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          READELF="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          VERSION=$(sh scripts/version.sh)
+          mkdir -p android-production-output
+          python3 android/scripts/audit_apk.py "$AAPT" "$APK" --variant release --require-unsigned | tee android-production-output/apk-audit.json
+          python3 android/scripts/audit_elf.py "$READELF" "$APK" | tee android-production-output/elf-audit.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-production-output/zipalign.txt
+          cp "$APK" "android-production-output/Sudokura-$VERSION-Android-arm64-unsigned.apk"
+          cp "$AAB" "android-production-output/Sudokura-$VERSION-Android-unsigned.aab"
+          python3 - <<'PYBUNDLE'
+          import json
+          from pathlib import Path
+          import zipfile
+          aab = next(Path('android-production-output').glob('*.aab'))
+          with zipfile.ZipFile(aab) as archive:
+              paths = archive.namelist()
+              assert len(paths) == len(set(paths)), 'Duplicate bundle entries'
+              assert {'BundleConfig.pb', 'base/manifest/AndroidManifest.xml'} <= set(paths)
+              assert all(not p.startswith('/') and '..' not in p.split('/') for p in paths)
+              assert not any(p.upper().startswith('META-INF/') and p.upper().endswith(('.SF', '.RSA', '.DSA', '.EC')) for p in paths)
+              assert 'base/lib/arm64-v8a/libmain.so' in paths
+          Path('android-production-output/bundle-readiness.json').write_text(json.dumps({
+              'container': 'PASS', 'signed': False, 'bundletool_validation': 'NOT_RUN',
+              'play_upload': 'NOT_RUN', 'store_acceptance': 'NOT_RUN'
+          }, indent=2) + '\n')
+          PYBUNDLE
+          sha256sum android-production-output/*.apk android-production-output/*.aab > android-production-output/SHA256SUMS.txt
+          printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$GITHUB_SHA" "$VERSION" > android-production-output/build-info.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sudokura-android-unsigned-production
+          path: android-production-output/
           retention-days: 7
           if-no-files-found: error

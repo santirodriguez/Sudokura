@@ -56,7 +56,20 @@ class IdentityTests(unittest.TestCase):
 
     def test_unsupported_variant_fails(self):
         with self.assertRaises(ValueError):
-            audit_apk.expected_identity(header(), "release")
+            audit_apk.expected_identity(header(), "unknown")
+
+    def test_production_identity_and_debuggable_refusal(self):
+        identity = audit_apk.expected_identity(header(), "release")
+        self.assertEqual(identity["application_id"], "org.cajapersonal.sudokura")
+        self.assertEqual(identity["version_name"], "1.4.0")
+        self.assertEqual(identity["version_code"], 10400)
+        production = badging("1.4.0").replace("org.sudokura.prototype.debug", "org.cajapersonal.sudokura")
+        audit_apk.audit_manifest(production, MANIFEST, identity)
+        for text, manifest in ((production + "application-debuggable\n", MANIFEST),
+                (production, MANIFEST + "android:debuggable(0x0101000f)=(type 0x12)0xffffffff\n"),
+                (badging(), MANIFEST)):
+            with self.assertRaises(ValueError):
+                audit_apk.audit_manifest(text, manifest, identity)
 
     def test_source_header_has_expected_candidate_version(self):
         identity = audit_apk.expected_identity(
@@ -95,6 +108,34 @@ class IdentityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit_apk.audit_manifest(badging().replace("icon='res/drawable/icon.xml'", "icon=''"),
                                      MANIFEST, audit_apk.expected_identity(header()))
+
+
+class UnsignedTests(unittest.TestCase):
+    def test_unsigned_and_jar_signature_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "candidate.apk"
+            for signer in (None, "META-INF/CERT.SF", "META-INF/CERT.RSA", "META-INF/CERT.EC"):
+                with zipfile.ZipFile(apk, "w") as archive:
+                    archive.writestr("AndroidManifest.xml", "fixture")
+                    if signer:
+                        archive.writestr(signer, "signature fixture")
+                if signer:
+                    with self.assertRaises(ValueError): audit_apk.audit_unsigned(apk)
+                else: audit_apk.audit_unsigned(apk)
+
+    def test_apk_signing_block_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "candidate.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("AndroidManifest.xml", "fixture")
+            data = apk.read_bytes()
+            eocd = data.rfind(b"PK\x05\x06")
+            offset = struct.unpack_from("<I", data, eocd + 16)[0]
+            block = struct.pack("<Q", 16) + b"APK Sig Block 42"
+            changed = bytearray(data[:offset] + block + data[offset:])
+            struct.pack_into("<I", changed, eocd + len(block) + 16, offset + len(block))
+            apk.write_bytes(changed)
+            with self.assertRaises(ValueError): audit_apk.audit_unsigned(apk)
 
 
 class ArchiveTests(unittest.TestCase):

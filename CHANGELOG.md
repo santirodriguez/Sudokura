@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0] — Unreleased
+
+- Planned first public Android release, retaining the shared project version 1.4.0 and Android code 10400; previous Android APKs were private debug prototypes.
+- Added landscape/compact screens, touch-first help and a bounded native/Android semantic bridge. Physical accessibility and other publicability gates remain open.
+- Improved event-driven confirmations, save/recovery and renderer/lifecycle handling while preserving game and retained-record identities.
+- Prepared separate prototype and unsigned production packages for the confirmed Android identity, with APK audits and preliminary Play bundle packaging. Signing and store submission are not completed.
+
 ## [1.3.9]
 
 ### Direct touch and safer scrolling

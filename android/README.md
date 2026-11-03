@@ -1,46 +1,39 @@
-# Sudokura Android prototype (v1.3.9)
+# Sudokura Android build
 
-This is an isolated, **debug-only** host for the existing C11/SDL2 game. It is not Android functional parity, public launch approval, or a release artifact. Keep the desktop Makefile and all desktop release assets unchanged.
+Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. Production signing, device/publicability acceptance and store availability remain pending. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
 
-## Build selection
+## Pinned shared-engine host
 
-- Java 17, Gradle 8.13, Android Gradle Plugin 8.11.1.
-- compileSdk and targetSdk 36; minSdk 28; Build Tools 35.0.0.
-- NDK r28c (28.2.13676358), CMake 3.22.1; only arm64-v8a.
-- SDL2 2.32.10, SDL2_ttf 2.24.0 (vendored FreeType, no HarfBuzz), SDL2_mixer 2.8.1 (STB Vorbis and WAV only).
-- Exact archive URLs and SHA-256 digests: [dependencies.lock.json](dependencies.lock.json).
-- Temporary application ID: `org.sudokura.prototype.debug`. VersionName and versionCode derive from `src/version.h`; currently `1.3.9-prototype` / `10309`.
-- No INTERNET or broad storage permissions; application backup and device transfer excluded. OEM behavior still requires verification on an actual phone.
-- Runtime OGGs, DejaVuSans.ttf and source/font license notices are APK assets. The four OGGs resolve as `audio/*.ogg` relative to the APK's asset root; the audit verifies bytes against the canonical OGG masters. The font must be a legitimate installed redistributable copy; never commit a downloaded binary merely to satisfy the host.
-- The launcher icon is generated at build time from `assets/branding/source/sudokura-512.png`, with a native Android adaptive mask and no new branding master. The prototype theme removes the default Android ActionBar and uses dark system chrome, independently of the saved SDL theme setting.
+- C11/SDL2 shared gameplay and persistence; the desktop Makefile remains unchanged.
+- Java 17, Gradle 8.13, AGP 8.11.1; compile/target SDK 36, minSdk 28.
+- Build Tools 35.0.0, NDK 28.2.13676358, CMake 3.22.1; arm64-v8a only.
+- SDL2 2.32.10, SDL2_ttf 2.24.0 with vendored FreeType/no HarfBuzz, SDL2_mixer 2.8.1 with STB Vorbis/WAV.
+- Exact source URLs/digests: [dependencies.lock.json](dependencies.lock.json). SDL Java/native sources use the same verified archive.
+- No INTERNET or broad storage permission; cloud backup/device transfer excluded. OEM behavior requires device evidence.
+- The canonical font, OGGs, icons and license notices are bundled and audited. Audio failure remains nonfatal.
 
-## Clean CI build
+## Variants and CI
 
-The [Android preview workflow](../.github/workflows/android-preview.yml) runs as a reusable job inside [CI](../.github/workflows/ci.yml) for relevant source/build changes on the prototype release branches. Its APK and receipts appear in that same CI run, alongside the desktop artifacts; a push no longer starts a second Android workflow. It can still be dispatched manually for an Android-only preview. The job prepares a clean Ubuntu runner, verifies source/Gradle downloads **before** unpacking them, generates shared art using the existing Go script, assembles the debug APK, audits native/manifest/assets and attaches the APK and checksum/metadata receipt as *Actions artifacts only*. No release/tag, signing key, store, or package publication is created. The debug APK uses the runner's ephemeral standard debug identity; not a stable signing identity.
+`prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 10400. Production is unsigned; no key is injected or generated. The other flavor/build combinations are disabled.
 
-For an already equipped Android development environment (no local installation is requested by this project):
+The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts. The AAB currently receives preliminary container checks, not official bundletool or Console acceptance. These are internal candidates, not a public release.
 
-1. From repository root: `python3 android/scripts/prepare_sources.py`.
-2. Run `make assets` to regenerate ignored C branding/flags using the existing Go generator.
-3. With Java 17 and Android SDK/NDK/CMake versions above already installed:
-   `sh android/gradlew --no-daemon :app:assembleDebug -PsudokuraFont=/path/to/DejaVuSans.ttf -PsudokuraFontLicense=/path/to/dejavu-copyright`.
-4. Validate with `python3 android/scripts/audit_apk.py /path/to/aapt android/app/build/outputs/apk/debug/app-debug.apk` and `sha256sum` of that exact file.
-5. Install only a concrete verified debug APK on a supported arm64 phone once the critical gameplay/lifecycle/storage integration is ready. Do not uninstall the only copy of progress to work around a different CI debug signing key.
+For an already equipped environment (no local tool installation requested):
 
-The committed `android/gradlew` is a small **shell launcher**, not a Gradle wrapper JAR. It verifies and extracts the pinned official Gradle distribution; invoke with `sh` if its file mode is non-executable. Downloaded source archives, SDKs, Gradle distribution/build trees, and generated C artifacts are ignored, not versioned. Java SDLActivity sources come from the exact same verified SDL tarball as native SDL.
+```sh
+python3 android/scripts/prepare_sources.py
+make assets
+bash android/gradlew --no-daemon :app:assemblePrototypeDebug :app:assembleProductionRelease :app:bundleProductionRelease -PsudokuraFont=/verified/path/DejaVuSans.ttf -PsudokuraFontLicense=/verified/path/font-copyright
+```
 
-On the minimum usable 360x600dp portrait viewport, gameplay uses a >=270dp board, 48dp toolbar/keyboard controls, readable HUD chips and a progress row shared with brief notifications. On too-short rotated screens, the prototype hides the board and focus-pauses the attempt with a localized return-to-portrait instruction; Android Back retains its checked navigation. This is a prototype-only limitation, not landscape parity.
+The launcher verifies/extracts pinned Gradle; it is not a committed wrapper JAR. Downloaded inputs, generated C/artwork, SDKs and build outputs are ignored. Production signing and Play upload procedures are separate from Gradle compilation.
 
-## Prototype status and limitations
+## Runtime evidence and limits
 
-The arm64 debug host, bundled resources, app-private Save/recovery, touch dispatch, Android Back/lifecycle seams and mobile layout have been implemented and compiled in the Android preview workflow. The native libraries and APK packaging passed structural 16 KiB alignment audits; execution on an actual 16 KiB device is **not verified**.
+Portrait targets 360x600 usable dp and larger; supported landscape starts at 600x320dp. Shared render/input geometry preserves 48dp action controls and a square board at least 270dp at the minimum. Board cells are necessarily smaller than 48dp on narrow phones. Smaller surfaces preserve the attempt behind a paused enlarge-or-rotate fallback. Android insets are applied once, and a bounded post-rotation repaint lets initial Home surfaces settle.
 
-A real-phone functional test round was completed with positive maintainer feedback, including gameplay/music, refreshed mobile controls, and explicit Save followed by closing/reopening the app with entered numbers, notes and progress retained. This is a user-reported functional result, not a measured or itemized test report. The exact installed APK digest, device/API/density/usable dp, fixed-seed desktop/Android equality, forced OS-process-kill recovery, full Back/rotation/cutout/Time Attack matrix, input/cold-start/CPU/memory measurements, TalkBack observations and 16 KiB runtime execution were not independently recorded. These remain prototype evidence gaps and must not be presented as completed publicability tests.
+The maintainer accepted gameplay, More styling, official/localized links and initial-Home rotation on the recorded debug APKs. The semantic bridge publishes visible controls and cells through bounded snapshots; Java focus does not edit the game and native actions reject stale context. Host automated tests and successful Android compilation do not establish a complete physical TalkBack journey.
 
-The compact portrait layout targets at least 360x600dp of usable surface, with a square board and 48dp main action controls; individual board cells are necessarily smaller than 48dp on narrow phones. Too-short rotated screens conceal and pause gameplay with an instruction to return to portrait. Landscape parity, a screen-reader semantic bridge, public signing/upgrade support, cross-device transfer and store distribution are **not** implemented or accepted.
+Exact-device/API/density provenance, ARM64 deterministic equivalence, acknowledged-save process death recovery, full lifecycle/Back/cutout matrix, measured latency/CPU/memory, 16 KiB execution, stable production signing/upgrade and final screenshots remain separate publicability gates. Structural alignment is not runtime acceptance. See the full [v1.4.0 blueprint](../docs/V1.4.0_BLUEPRINT.md).
 
-The prototype has a separate application ID and debug signing that can differ across CI runs. Android may refuse an update signed with a different key. Do not uninstall or clear an installation carrying saved progress simply to try another preview. Android backup and transfer are intentionally disabled for the prototype. Keep the existing Saved Games and recovery safeguards; do not use production user data for destructive recovery testing.
-
-Do not add this APK to the six usual Sudokura public release assets without separate authorization. v1.4.0 is the preferred Android publicability milestone and v1.5.0 the maximum horizon. The intended future channels are a release-signed APK on GitHub Releases (followable by Obtainium), an F-Droid inclusion application, and potentially Google Play later. None of these distribution channels is available for this debug prototype. Production app ID, long-term signing, cross-channel update safety, backup and device support remain separate decisions.
-
-Full requirements live in [the v1.3.9 blueprint](../docs/V1.3.9_BLUEPRINT.md) and [Android release roadmap](../docs/ANDROID_RELEASE_PLAN.md).
+Keep an existing prototype installation with progress: an ephemeral debug-signature mismatch is not a reason to uninstall or clear data. Production uses separate storage and does not promise automatic prototype migration. GitHub/Obtainium is the primary planned direct channel; F-Droid inclusion and Play submission/approval remain external work, not currently available listings.

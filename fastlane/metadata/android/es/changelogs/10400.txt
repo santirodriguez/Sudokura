@@ -1,0 +1,1 @@
+Primera versión pública de Sudokura para Android. La versión 1.4.0 incorpora el motor de sudoku sin conexión, controles táctiles, orientación vertical y horizontal y partidas guardadas localmente. Las versiones Android anteriores eran prototipos privados.

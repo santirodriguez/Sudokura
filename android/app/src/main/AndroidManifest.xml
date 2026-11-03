@@ -12,7 +12,7 @@
         android:enableOnBackInvokedCallback="true"
         android:hasCode="true">
         <activity
-            android:name=".PrototypeActivity"
+            android:name="org.sudokura.prototype.PrototypeActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|smallestScreenSize|layoutDirection|uiMode|density|fontScale">

@@ -5,19 +5,24 @@ plugins {
 def projectRoot = file('../..')
 def versionHeader = new File(projectRoot, 'src/version.h').text
 def versionComponent = { String name ->
-    def match = (versionHeader =~ /(?m)^#define\s+SUDOKURA_VERSION_${name}\s+(\d+)\s*$/)
-    if (!match.find()) {
-        throw new GradleException("Missing version component ${name}")
+    def matches = (versionHeader =~ /(?m)^#define\s+SUDOKURA_VERSION_${name}\s+(\d+)\s*$/)
+    def values = matches.collect { it[1] }
+    if (values.size() != 1) {
+        throw new GradleException("Missing or ambiguous version component ${name}")
     }
-    return Integer.parseInt(match.group(1))
+    return Long.parseLong(values[0])
 }
+
 def major = versionComponent('MAJOR')
 def minor = versionComponent('MINOR')
 def patch = versionComponent('PATCH')
 if (minor > 99 || patch > 99) {
-    throw new GradleException('Prototype versionCode requires two-digit minor/patch')
+    throw new GradleException('versionCode requires two-digit minor/patch')
 }
-def prototypeCode = major * 10000 + minor * 100 + patch
+def androidCode = major * 10000L + minor * 100L + patch
+if (androidCode <= 0 || androidCode > Integer.MAX_VALUE) {
+    throw new GradleException('versionCode must fit a positive signed 32-bit integer')
+}
 
 android {
     namespace 'org.sudokura.prototype'
@@ -26,11 +31,11 @@ android {
     ndkVersion '28.2.13676358'
 
     defaultConfig {
-        applicationId 'org.sudokura.prototype.debug'
+        applicationId 'org.cajapersonal.sudokura'
         minSdk 28
         targetSdk 36
-        versionCode prototypeCode
-        versionName "${major}.${minor}.${patch}-prototype"
+        versionCode (int) androidCode
+        versionName "${major}.${minor}.${patch}"
         ndk {
             abiFilters 'arm64-v8a'
         }
@@ -41,8 +46,21 @@ android {
         }
     }
 
+    flavorDimensions 'distribution'
+    productFlavors {
+        prototype {
+            dimension 'distribution'
+            applicationId 'org.sudokura.prototype.debug'
+            versionNameSuffix '-prototype'
+        }
+        production {
+            dimension 'distribution'
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = null
             minifyEnabled false
         }
     }
@@ -127,4 +145,12 @@ tasks.register('prepareSudokuraIcon', Copy) {
 tasks.named('preBuild') {
     dependsOn tasks.named('prepareSudokuraAssets'),
               tasks.named('prepareSudokuraIcon')
+}
+
+// Keep the existing prototype and the unsigned production candidate separate.
+// No production debug package or prototype release is a distribution channel.
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        variant.enable = variant.name in ['prototypeDebug', 'productionRelease']
+    }
 }

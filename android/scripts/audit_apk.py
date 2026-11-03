@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed structural audit of an Android debug APK (not device acceptance)."""
+"""Fail-closed structural audit of prototype/production APKs, not device acceptance."""
 import argparse
 import hashlib
 import json
@@ -32,8 +32,8 @@ AUDIO_NAMES = ("music-main.ogg", "music-fail.ogg", "jingle-win.ogg", "jingle-fai
 
 def expected_identity(version_header, variant="debug"):
     """Read the same source components as Gradle; never fall back to a version."""
-    if variant != "debug":
-        raise ValueError("Only the debug prototype variant is currently supported")
+    if variant not in ("debug", "release"):
+        raise ValueError("Unsupported APK variant")
     components = []
     for name in ("MAJOR", "MINOR", "PATCH"):
         values = re.findall(
@@ -49,9 +49,9 @@ def expected_identity(version_header, variant="debug"):
     if not 0 < code <= 2_147_483_647:
         raise ValueError("versionCode must fit a positive signed 32-bit integer")
     return {
-        "application_id": "org.sudokura.prototype.debug",
+        "application_id": "org.sudokura.prototype.debug" if variant == "debug" else "org.cajapersonal.sudokura",
         "version_code": code,
-        "version_name": f"{major}.{minor}.{patch}-prototype",
+        "version_name": f"{major}.{minor}.{patch}" + ("-prototype" if variant == "debug" else ""),
         "build_variant": variant,
     }
 
@@ -71,6 +71,10 @@ def audit_manifest(badging, manifest, identity):
                      "native-code: 'arm64-v8a'"):
         if expected not in {line.strip() for line in badging.splitlines()}:
             raise ValueError(f"APK mismatch: {expected}")
+    if identity["build_variant"] == "release" and (
+            "application-debuggable" in badging or re.search(
+                r"android:debuggable\([^)]*\)=\(type 0x12\)0xffffffff\b", manifest)):
+        raise ValueError("Production release must not be debuggable")
     if re.search(r"uses-permission", badging, flags=re.IGNORECASE):
         raise ValueError("Unexpected prototype manifest permission")
     if not re.search(r"android:icon\(", manifest):
@@ -116,12 +120,28 @@ def audit_archive(apk, source_audio):
     return sorted(native_paths)
 
 
+def audit_unsigned(apk):
+    """Refuse signature material; this is preparation, never signing approval."""
+    with zipfile.ZipFile(apk) as archive:
+        if any(re.fullmatch(r"META-INF/[^/]+\.(SF|RSA|DSA|EC)", path, re.IGNORECASE)
+               for path in archive.namelist()):
+            raise ValueError("Unsigned candidate contains JAR signature material")
+        central_directory = archive.start_dir
+    if central_directory >= 24:
+        with open(apk, "rb") as stream:
+            stream.seek(central_directory - 16)
+            if stream.read(16) == b"APK Sig Block 42":
+                raise ValueError("Unsigned candidate contains an APK signing block")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("aapt", help="Path to the Android aapt executable")
-    parser.add_argument("apk", type=Path, help="Debug APK to inspect")
+    parser.add_argument("apk", type=Path, help="APK to inspect")
     # Production identity/signing remains separate; unsupported variants fail closed.
-    parser.add_argument("--variant", choices=("debug",), default="debug")
+    parser.add_argument("--variant", choices=("debug", "release"), default="debug")
+    parser.add_argument("--require-unsigned", action="store_true",
+                        help="Refuse signing material in a production preparation APK")
     args = parser.parse_args(argv)
     try:
         if not args.apk.is_file():
@@ -136,6 +156,10 @@ def main(argv=None):
             check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
         audit_manifest(badging, manifest, identity)
         native = audit_archive(args.apk, ROOT / "assets/audio")
+        if args.require_unsigned:
+            if args.variant != "release":
+                raise ValueError("Unsigned preparation requires the release variant")
+            audit_unsigned(args.apk)
     except (ValueError, OSError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:
         raise SystemExit(f"APK audit failed: {error}") from error
     print(json.dumps({
@@ -147,6 +171,7 @@ def main(argv=None):
         "android_backup": False,
         "asset_count": len(EXPECTED_ASSETS),
         "device_test": "NOT_RUN",
+        "unsigned_preparation": args.require_unsigned,
     }, indent=2))
 
 
