@@ -90,7 +90,68 @@ def audit_manifest(badging, manifest, identity):
             raise ValueError(f"Manifest missing prototype backup exclusion reference: {attribute}")
 
 
-def audit_archive(apk, source_audio):
+def packaged_resources(resources, manifest):
+    """Resolve manifest IDs and the canonical icon through aapt's resource table.
+
+    Release resource paths may be shortened; source filenames are not ABI.
+    """
+    entries = list(re.finditer(r"(?m)^[ \t]*resource\s+(0x[0-9a-fA-F]+)\s+([^\n]*)", resources))
+    blocks = []
+    for index, entry in enumerate(entries):
+        end = entries[index + 1].start() if index + 1 < len(entries) else len(resources)
+        paths = set(re.findall(r"res/[A-Za-z0-9_./+-]+\.(?:xml|png)", resources[entry.start():end]))
+        blocks.append((entry.group(1).lower(), entry.group(2), paths))
+    resolved = {}
+    for name in ("fullBackupContent", "dataExtractionRules"):
+        ids = re.findall(r"android:" + name + r"\([^)]*\)\s*=\s*@(0x[0-9a-fA-F]+)", manifest)
+        if len(ids) != 1:
+            raise ValueError("Missing or ambiguous backup resource ID: " + name)
+        paths = set().union(*(paths for resource_id, _, paths in blocks if resource_id == ids[0].lower()))
+        if len(paths) != 1 or not next(iter(paths)).endswith(".xml"):
+            raise ValueError("Missing or ambiguous packaged XML: " + name)
+        resolved[name] = paths.pop()
+    icons = set().union(*(paths for _, name, paths in blocks
+                         if re.search(r":drawable/sudokura_icon_source(?:\s|:|$)", name)))
+    if len(icons) != 1 or not next(iter(icons)).endswith(".png"):
+        raise ValueError("Canonical launcher PNG resource is missing or ambiguous")
+    resolved["icon"] = icons.pop()
+    return resolved
+
+
+def audit_backup_xml(dump, modern=False):
+    """Check the actual compiled exclusion tree, not just a manifest pointer."""
+    roots, stack = [], []
+    for line in dump.splitlines():
+        element = re.match(r"^( *)(?:E:) ([A-Za-z0-9_-]+)(?: |$)", line)
+        if element:
+            indent = len(element.group(1))
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            node = {"tag": element.group(2), "attrs": {}, "children": []}
+            (stack[-1][1]["children"] if stack else roots).append(node)
+            stack.append((indent, node))
+        else:
+            attribute = re.match(r'^ *A: ([A-Za-z0-9_:-]+)(?:\([^)]*\))?="([^"\n]*)"', line)
+            if attribute and stack:
+                name = attribute.group(1)
+                if name in stack[-1][1]["attrs"]:
+                    raise ValueError("Duplicate compiled backup attribute")
+                stack[-1][1]["attrs"][name] = attribute.group(2)
+    expected_root = "data-extraction-rules" if modern else "full-backup-content"
+    if len(roots) != 1 or roots[0]["tag"] != expected_root:
+        raise ValueError("Unexpected compiled backup root")
+    groups = roots[0]["children"] if modern else roots
+    if modern and (len(groups) != 2 or {g["tag"] for g in groups} != {"cloud-backup", "device-transfer"}):
+        raise ValueError("Missing cloud/device transfer exclusions")
+    expected = {("root", "."), ("file", "."), ("database", "."), ("sharedpref", "."), ("external", ".")}
+    for group in groups:
+        children = group["children"]
+        exclusions = {(n["attrs"].get("domain"), n["attrs"].get("path")) for n in children}
+        if len(children) != 5 or exclusions != expected or any(n["tag"] != "exclude" or n["children"] for n in children):
+            raise ValueError("Incomplete compiled backup exclusions")
+
+
+def audit_archive(apk, source_audio, packaged=None):
     with zipfile.ZipFile(apk) as archive:
         paths = set(archive.namelist())
         native_paths = {p for p in paths if p.startswith("lib/") and p.endswith(".so")}
@@ -99,12 +160,19 @@ def audit_archive(apk, source_audio):
         actual_native = {Path(p).name for p in native_paths}
         if not EXPECTED_NATIVE.issubset(actual_native):
             raise ValueError(f"Missing native libraries: {sorted(EXPECTED_NATIVE - actual_native)}")
-        if not EXPECTED_ASSETS.issubset(paths):
-            raise ValueError(f"Missing assets/notices: {sorted(EXPECTED_ASSETS - paths)}")
-        for path in EXPECTED_ASSETS:
+        required = EXPECTED_ASSETS
+        if packaged:
+            required = (required - {"res/xml/backup_rules.xml", "res/xml/data_extraction_rules.xml"}) | {
+                packaged["fullBackupContent"], packaged["dataExtractionRules"]}
+        if not required.issubset(paths):
+            raise ValueError(f"Missing assets/notices: {sorted(required - paths)}")
+        for path in required:
             if archive.getinfo(path).file_size == 0:
                 raise ValueError(f"Empty asset: {path}")
-        icon_files = [p for p in paths if p.endswith("/sudokura_icon_source.png")]
+        if packaged:
+            icon_files = [packaged["icon"]] if packaged["icon"] in paths else []
+        else:
+            icon_files = [p for p in paths if p.endswith("/sudokura_icon_source.png")]
         if len(icon_files) != 1:
             raise ValueError(f"Expected one generated launcher icon: {icon_files}")
         icon_png = archive.read(icon_files[0])
@@ -155,7 +223,16 @@ def main(argv=None):
             [args.aapt, "dump", "xmltree", str(args.apk), "AndroidManifest.xml"],
             check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
         audit_manifest(badging, manifest, identity)
-        native = audit_archive(args.apk, ROOT / "assets/audio")
+        resources = subprocess.run(
+            [args.aapt, "dump", "--values", "resources", str(args.apk)], check=True,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+        packaged = packaged_resources(resources, manifest)
+        for name in ("fullBackupContent", "dataExtractionRules"):
+            tree = subprocess.run(
+                [args.aapt, "dump", "xmltree", str(args.apk), packaged[name]], check=True,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+            audit_backup_xml(tree, modern=name == "dataExtractionRules")
+        native = audit_archive(args.apk, ROOT / "assets/audio", packaged)
         if args.require_unsigned:
             if args.variant != "release":
                 raise ValueError("Unsigned preparation requires the release variant")

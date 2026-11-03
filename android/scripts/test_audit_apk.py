@@ -34,6 +34,48 @@ MANIFEST = ("android:icon(0x01010002)=@0x7f010000\n"
             "android:dataExtractionRules(0x0101064e)=@0x7f020001\n")
 
 
+RESOURCES = """resource 0x7f020000 org.example:xml/backup_rules:
+  (string8) "res/xml/backup_rules.xml"
+resource 0x7f020001 org.example:xml/data_extraction_rules:
+  (string8) "res/xml/data_extraction_rules.xml"
+resource 0x7f030000 org.example:drawable/sudokura_icon_source:
+  (string8) "res/drawable-nodpi-v4/sudokura_icon_source.png"
+"""
+
+
+def backup_tree(modern=False):
+    lines = ["E: data-extraction-rules (line=1)" if modern else "E: full-backup-content (line=1)"]
+    for group in (("cloud-backup", "device-transfer") if modern else (None,)):
+        if group: lines.append("  E: " + group + " (line=2)")
+        pad = "    " if group else "  "
+        for domain in ("root", "file", "database", "sharedpref", "external"):
+            lines += [pad + "E: exclude (line=3)", pad + '  A: domain="' + domain + '"', pad + '  A: path="."']
+    return "\n".join(lines) + "\n"
+
+
+class ResourceTests(unittest.TestCase):
+    def test_renamed_resource_paths_are_resolved_by_id_and_name(self):
+        renamed = RESOURCES.replace("res/xml/backup_rules.xml", "res/a.xml").replace(
+            "res/xml/data_extraction_rules.xml", "res/b.xml").replace(
+            "res/drawable-nodpi-v4/sudokura_icon_source.png", "res/c.png")
+        self.assertEqual(audit_apk.packaged_resources(renamed, MANIFEST), {
+            "fullBackupContent": "res/a.xml", "dataExtractionRules": "res/b.xml", "icon": "res/c.png"})
+
+    def test_missing_or_ambiguous_resources_fail_closed(self):
+        for resources, manifest in (("", MANIFEST), (RESOURCES, MANIFEST.replace("@0x7f020000", "@0x7f990000")),
+                (RESOURCES + 'resource 0x7f020000 other:xml/other:\n  (string8) "res/other.xml"\n', MANIFEST)):
+            with self.assertRaises(ValueError): audit_apk.packaged_resources(resources, manifest)
+
+    def test_compiled_backup_policy_is_checked(self):
+        for modern in (False, True):
+            dump = backup_tree(modern)
+            audit_apk.audit_backup_xml(dump, modern)
+            for broken in (dump.replace('domain="root"', 'domain="file"'),
+                           dump.replace('path="."', 'path="other"'),
+                           dump.replace('E: exclude', 'E: include')):
+                with self.assertRaises(ValueError): audit_apk.audit_backup_xml(broken, modern)
+
+
 class IdentityTests(unittest.TestCase):
     def test_versions_derive_from_source(self):
         for minor, patch, code in ((3, 9, 10309), (4, 0, 10400), (5, 12, 10512)):
@@ -168,6 +210,17 @@ class ArchiveTests(unittest.TestCase):
     def test_required_structure(self):
         self.assertEqual(len(self.audit()), 4)
 
+    def test_release_renamed_xml_and_icon_archive(self):
+        mapping = {"fullBackupContent": "res/a.xml", "dataExtractionRules": "res/b.xml", "icon": "res/c.png"}
+        self.contents[mapping["fullBackupContent"]] = self.contents.pop("res/xml/backup_rules.xml")
+        self.contents[mapping["dataExtractionRules"]] = self.contents.pop("res/xml/data_extraction_rules.xml")
+        self.contents[mapping["icon"]] = self.contents.pop(self.icon)
+        self.write_archive()
+        self.assertEqual(len(audit_apk.audit_archive(self.apk, self.audio, mapping)), 4)
+        del self.contents["res/a.xml"]
+        self.write_archive()
+        with self.assertRaises(ValueError): audit_apk.audit_archive(self.apk, self.audio, mapping)
+
     def test_missing_or_empty_notice(self):
         path = "assets/licenses/FreeType-FTL.txt"
         del self.contents[path]
@@ -204,7 +257,10 @@ class ArchiveTests(unittest.TestCase):
     def test_main_receipt_never_claims_device_acceptance(self):
         self.write_archive()
         responses = [subprocess.CompletedProcess([], 0, badging(), ""),
-                     subprocess.CompletedProcess([], 0, MANIFEST, "")]
+                     subprocess.CompletedProcess([], 0, MANIFEST, ""),
+                     subprocess.CompletedProcess([], 0, RESOURCES, ""),
+                     subprocess.CompletedProcess([], 0, backup_tree(), ""),
+                     subprocess.CompletedProcess([], 0, backup_tree(True), "")]
         output = io.StringIO()
         with mock.patch.object(audit_apk, "ROOT", self.root), \
              mock.patch.object(audit_apk.subprocess, "run", side_effect=responses) as run, \
@@ -215,7 +271,7 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(receipt["version_code"], 10400)
         self.assertEqual(receipt["build_variant"], "debug")
         self.assertFalse(receipt["android_backup"])
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 5)
         self.assertEqual(run.call_args_list[0].args[0][1:3], ["dump", "badging"])
 
     def test_aapt_failure_is_fatal(self):
