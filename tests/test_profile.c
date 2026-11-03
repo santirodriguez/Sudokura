@@ -895,7 +895,23 @@ static void test_cancelled_v12_import_preserves_sources(void) {
   cleanup();
 }
 
+static void test_v4_activity_and_v3_compatibility(void) {
+  ProfileSlot slot;SessionState state=normal_state();
+  assert(profile_slot_set(&slot,&state,true));
+  slot.value.started=true;slot.value.explicitly_saved=true;
+  unsigned char bytes[8192];size_t size=0;
+  assert(profile_session_encode_blob(&slot.value,bytes,sizeof(bytes),&size));
+  ProfileSession decoded;
+  assert(profile_session_decode_blob(bytes,size,false,&decoded)==STORE_OK);
+  assert(decoded.started && decoded.explicitly_saved);
+  /* Remove the v4 activity flags to recreate an immutable v3 session. */
+  bytes[0]=3;bytes[1]=0;memmove(bytes+44,bytes+45,size-45);--size;
+  assert(profile_session_decode_blob(bytes,size,false,&decoded)==STORE_OK);
+  assert(decoded.started); /* The old session contains a digit/mistake. */
+}
+
 int main(void) {
+  test_v4_activity_and_v3_compatibility();
   cleanup();
   test_profile_roundtrip();
   cleanup();

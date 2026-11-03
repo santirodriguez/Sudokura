@@ -112,7 +112,7 @@ static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
 /* Lightweight line glyphs share the existing SDL renderer; no image library. */
 typedef enum {
   UI_GLYPH_FOLDER, UI_GLYPH_SAVE, UI_GLYPH_PLAY, UI_GLYPH_BACK,
-  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE
+  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE, UI_GLYPH_TROPHY
 } UiGlyph;
 
 static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
@@ -124,7 +124,13 @@ static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
   int y = box.y + (box.h - side) / 2;
   int end_x = x + side - 2;
   int end_y = y + side - 2;
-  if (glyph == UI_GLYPH_FOLDER) {
+  if (glyph == UI_GLYPH_TROPHY) {
+    draw_round_rect(renderer,(SDL_Rect){x+side/4,y,side/2,side/2},3,color);
+    draw_line(renderer,x+side/2,y+side/2,x+side/2,y+3*side/4,color);
+    draw_line(renderer,x+side/4,y+side-2,x+3*side/4,y+side-2,color);
+    draw_line(renderer,x,y+side/5,x+side/4,y+side/2,color);
+    draw_line(renderer,x+side-1,y+side/5,x+3*side/4,y+side/2,color);
+  } else if (glyph == UI_GLYPH_FOLDER) {
     draw_line(renderer, x + 1,y + 5,x + side/2,y + 5,color);
     draw_line(renderer, x + 1,y + 5,x + 1,end_y - 1,color);
     draw_line(renderer, x + 1,end_y - 1,end_x,end_y - 1,color);
@@ -412,7 +418,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
       false, false, show_home_keyboard_focus && home_focus == HOME_FOCUS_DAILY, fonts.control);
 
-  SDL_Rect library = sdl_rect(geometry.home_secondary[0]);
+  SDL_Rect library = home_collection_rect(&geometry,false);
   bool library_hover = point_in(library,mx,my);
   SDL_Rect library_face = polish_quiet_face(
       gfx,theme,library,library_hover ? theme.hover : theme.btn,
@@ -433,6 +439,26 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   draw_line(gfx->ren,arrow_x,arrow_y,arrow_x-5,arrow_y+5,theme.dim);
   if (show_home_keyboard_focus && home_focus == HOME_FOCUS_GAMES)
     draw_focus_ring(gfx->ren,library,theme.sel_outline);
+
+  SDL_Rect journey=home_collection_rect(&geometry,true);
+  SDL_Color celebrate=ui->dark_theme?(SDL_Color){230,185,86,255}:(SDL_Color){132,83,10,255};
+  SDL_Color surface=ui->dark_theme?(SDL_Color){58,47,29,255}:(SDL_Color){255,235,190,255};
+  bool journey_hover=point_in(journey,mx,my);
+  SDL_Rect journey_face=polish_quiet_face(gfx,theme,journey,
+      journey_hover?theme.hover:surface,journey_hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+  if(journey_home_summary.available) {
+    SDL_Rect trophy={journey_face.x+8,journey_face.y+8,20,20};
+    ui_draw_glyph(gfx->ren,trophy,UI_GLYPH_TROPHY,celebrate);
+    SDL_Rect title={journey_face.x+34,journey_face.y+2,journey_face.w-40,journey_face.h/2};
+    (void)draw_fitted_text(gfx,tr(ui->language,T_JOURNEY),celebrate,title,fonts.control,10);
+    const ProfileResult *last=&journey_home_summary.latest;
+    char summary[120];unsigned long long seconds=last->elapsed_ms/1000;
+    (void)snprintf(summary,sizeof(summary),"%02llu:%02llu · %u %s",seconds/60,seconds%60,last->mistakes,tr(ui->language,T_ERRORS));
+    title.y+=journey_face.h/2-1;title.h=journey_face.h/2;
+    (void)draw_fitted_text(gfx,summary,theme.btnfg,title,12,9);
+  }else ui_draw_icon_label(gfx,journey_face,tr(ui->language,T_JOURNEY),UI_GLYPH_TROPHY,celebrate,fonts.control);
+  if(show_home_keyboard_focus&&home_focus==HOME_FOCUS_JOURNEY)
+    draw_focus_ring(gfx->ren,journey,theme.sel_outline);
 
   const TextKey footer_keys[] = {T_HELP,T_ABOUT,T_SETTINGS,T_QUIT};
   for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {

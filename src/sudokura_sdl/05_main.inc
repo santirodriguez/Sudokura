@@ -238,7 +238,8 @@ static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
         if (ui->has_session) rect = sdl_rect(g.home_primary[1]);
         break;
       case HOME_FOCUS_DAILY: rect = sdl_rect(g.home_primary[2]); break;
-      case HOME_FOCUS_GAMES: rect = sdl_rect(g.home_secondary[0]); break;
+      case HOME_FOCUS_GAMES: rect = home_collection_rect(&g,false); break;
+      case HOME_FOCUS_JOURNEY: rect = home_collection_rect(&g,true); break;
       case HOME_FOCUS_HELP: rect = sdl_rect(g.home_secondary[1]); break;
       case HOME_FOCUS_ABOUT: rect = sdl_rect(g.home_secondary[2]); break;
       case HOME_FOCUS_SETTINGS: rect = sdl_rect(g.home_secondary[3]); break;
@@ -290,6 +291,46 @@ static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
 /* Keep the live session and terminal archive in memory until every
    required persistence domain is acknowledged. Home has no discard path:
    explicit discarding remains available through the Exit gate. */
+/* User navigation resolves an attempt; OS backgrounding only checkpoints. */
+static bool journey_leave_prompt(Persistence *p, UI *ui, Gfx *gfx, bool exiting) {
+  if (!ui->session_open || ui->result!=RES_NONE || !ui->attempt_started ||
+      ui->screen!=SCR_PLAY) return false;
+  AppModalRequest request={.kind=APP_MODAL_CONFIRM,
+      .action=exiting?APP_MODAL_JOURNEY_EXIT:APP_MODAL_JOURNEY_HOME,
+      .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+      .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,
+      .destructive_buttons=4u};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
+static bool journey_continue_daily(const Persistence *p) {
+  return p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+      p->profile.daily.value.session.status==SESSION_ACTIVE &&
+      (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+       p->profile.normal.value.session.status!=SESSION_ACTIVE);
+}
+
+static bool journey_switch_target_daily;
+static bool journey_switch_source_daily;
+static bool journey_switch_rollover;
+static GameAttemptId journey_switch_id;
+static uint64_t journey_switch_revision;
+static bool journey_other_auto_offer(Persistence *p,UI *ui,Gfx *gfx,bool target_daily) {
+  ProfileSlot *other=target_daily?&p->profile.normal:&p->profile.daily;
+  if (!other->present || other->value.explicitly_saved || other->value.session.status!=SESSION_ACTIVE) return false;
+  if (!other->value.started) {
+    if(journey_interrupt_slot(p,ui,!target_daily))return false;
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_SAVE_FAILED);return true;
+  }
+  journey_switch_target_daily=target_daily;
+  journey_switch_source_daily=!target_daily;journey_switch_rollover=false;
+  journey_switch_id=other->attempt_id;journey_switch_revision=other->revision;
+  AppModalRequest request={.kind=APP_MODAL_CONFIRM,.action=APP_MODAL_JOURNEY_SWITCH,
+    .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+    .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,.destructive_buttons=4u};
+  (void)ui_modal_open_request(gfx,ui,&request);return true;
+}
+
 static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx) return false;
   bool checkpointed = ui->session_open
@@ -299,6 +340,7 @@ static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) 
     (void)ui_modal_open_home(p, ui, gfx);
     return false;
   }
+  if(journey_leave_prompt(p,ui,gfx,false))return false;
   go_home(p, game, ui);
   return true;
 }
@@ -537,6 +579,7 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
+  if(journey_other_auto_offer(p,ui,g,false))return;
   new_game_requested(p, game, ui, g);
 }
 
@@ -1024,6 +1067,7 @@ static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
 }
 
 static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  if(p && ui && gfx && ui->screen==SCR_TITLE && journey_other_auto_offer(p,ui,gfx,true))return;
   if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
     return;
   if (p->daily_activation_unresolved) {
@@ -1088,6 +1132,16 @@ static void home_daily_dispatch(Persistence *p, Game *game, UI *ui,
   } else if ((choice->action==APP_MODAL_DAILY && choice->button==2) ||
              (choice->action==APP_MODAL_DAILY_CHECKPOINT &&
               choice->button==1)) {
+    const ProfileSlot *older=&p->profile.daily;
+    if(choice->action==APP_MODAL_DAILY && older->present && !older->value.explicitly_saved &&
+        older->value.session.status==SESSION_ACTIVE && older->value.started) {
+      journey_switch_target_daily=true;journey_switch_source_daily=true;journey_switch_rollover=true;
+      journey_switch_id=older->attempt_id;journey_switch_revision=older->revision;
+      AppModalRequest request={.kind=APP_MODAL_CONFIRM,.action=APP_MODAL_JOURNEY_SWITCH,
+        .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+        .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,.destructive_buttons=4u};
+      (void)ui_modal_open_request(gfx,ui,&request);return;
+    }
     home_daily_checkpoint(p,game,ui,gfx,
                           choice->action==APP_MODAL_DAILY_CHECKPOINT);
   }
@@ -1112,11 +1166,14 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
     case HOME_FOCUS_CONTINUE:
       if (ui->has_session) {
         victory_animation_reset();
-        restore_saved_session(p, game, ui, false);
+        restore_saved_session(p, game, ui, journey_continue_daily(p));
       }
       break;
     case HOME_FOCUS_DAILY:
       home_daily_game(p, game, ui, g);
+      break;
+    case HOME_FOCUS_JOURNEY:
+      if(games_browser_open(p,game,ui,g)) games_browser_change_view(p,g,JOURNEY_WON);
       break;
     case HOME_FOCUS_GAMES:
       (void)games_browser_open(p, game, ui, g);
@@ -1400,6 +1457,7 @@ static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   if (!p || !ui || !g) return true;
   if (ui_modal.active || ui_modal_has_pending()) return false;
   if (ui->session_open && game) (void)stage_current_session(p, game, ui);
+  if(journey_leave_prompt(p,ui,g,true))return false;
   capture_window_preferences(p, g, ui);
   if (p->save_policy.dirty_mask == 0 ||
       persistence_retry_current(p, game, ui))
@@ -4907,7 +4965,7 @@ int main(int argc, char **argv) {
                             g.renderer_ready) ||
                             (!ui_modal.active &&
                             ((ui.screen == APP_SCREEN_GAMES &&
-                               games_browser.scanning) || home_daily_scan.active)))
+                               games_browser.scanning) || home_daily_scan.active || journey_home_summary.scanning)))
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
     int button_feedback_wait = ui_feedback_remaining(&ui);
     if (g.mobile_layout && g.renderer_ready &&
@@ -5393,12 +5451,14 @@ int main(int argc, char **argv) {
             ui_button_click();
             home_focus = HOME_FOCUS_CONTINUE;
             victory_animation_reset();
-            restore_saved_session(&persistence, &game, &ui, false);
+            restore_saved_session(&persistence, &game, &ui, journey_continue_daily(&persistence));
           } else if (point_in(sdl_rect(a.home_primary[2]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_DAILY;
             home_daily_game(&persistence, &game, &ui, &g);
-          } else if (point_in(sdl_rect(a.home_secondary[0]), x, y)) {
+          } else if (point_in(home_collection_rect(&a,true), x, y)) {
+            home_focus=HOME_FOCUS_JOURNEY;home_activate(&persistence,&game,&ui,&g,&running);
+          } else if (point_in(home_collection_rect(&a,false), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_GAMES;
             (void)games_browser_open(&persistence, &game, &ui, &g);
@@ -5672,6 +5732,34 @@ int main(int argc, char **argv) {
     AppModalResult modal_result;
     if (ui_modal_take_result(&modal_result)) {
       startup_recovery_dispatch(&persistence,&ui,&g,&modal_result);
+      if (modal_result.resolution==APP_MODAL_CHOSEN && modal_result.button>0 &&
+          app_modal_binding_equal(modal_result.binding,ui_modal_current_binding(&persistence,&ui)) &&
+          (modal_result.action==APP_MODAL_JOURNEY_HOME || modal_result.action==APP_MODAL_JOURNEY_EXIT)) {
+        bool ok=modal_result.button==1
+          ? games_browser_save_hot(&persistence,ui.is_daily)
+          : journey_interrupt_slot(&persistence,&ui,ui.is_daily);
+        if(ok)ok=persistence_flush(&persistence);
+        if(ok) {
+          if(modal_result.action==APP_MODAL_JOURNEY_EXIT)running=false;
+          else go_home(&persistence,&game,&ui);
+        }else (void)ui_modal_message(&g,&ui,T_STORAGE_ERROR,T_SAVE_FAILED);
+      }
+      if (modal_result.resolution==APP_MODAL_CHOSEN && modal_result.button>0 &&
+          modal_result.action==APP_MODAL_JOURNEY_SWITCH &&
+          app_modal_binding_equal(modal_result.binding,ui_modal_current_binding(&persistence,&ui))) {
+        bool daily=journey_switch_source_daily;
+        const ProfileSlot *slot=daily?&persistence.profile.daily:&persistence.profile.normal;
+        if(slot->present && game_attempt_id_equal(slot->attempt_id,journey_switch_id) && slot->revision==journey_switch_revision) {
+          bool ok=modal_result.button==1?games_browser_save_hot(&persistence,daily):journey_interrupt_slot(&persistence,&ui,daily);
+          if(ok)ok=persistence_flush(&persistence);
+          if(ok) {
+            if(journey_switch_rollover)home_daily_checkpoint(&persistence,&game,&ui,&g,false);
+            else if(journey_switch_target_daily)home_daily_game(&persistence,&game,&ui,&g);
+            else home_new_game(&persistence,&game,&ui,&g);
+          }else (void)ui_modal_message(&g,&ui,T_STORAGE_ERROR,T_SAVE_FAILED);
+        }
+      }
+
       AppModalBinding current = ui_modal_dispatch_binding(
           &persistence, &ui, modal_result.action);
       if (modal_result.resolution == APP_MODAL_CHOSEN &&
@@ -5794,6 +5882,7 @@ int main(int argc, char **argv) {
       continue;
     }
     ui_scroll_flush_preview();
+    if(!ui_modal.active && journey_home_pump(&persistence,&ui))g.dirty=true;
     if (!ui_modal.active && ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
     if (!ui_modal.active && home_daily_scan.active) {

@@ -21,7 +21,8 @@ typedef enum {
 typedef enum {
   APP_RESULT_NONE = 0,
   APP_RESULT_WIN = 1,
-  APP_RESULT_LOSE = 2
+  APP_RESULT_LOSE = 2,
+  APP_RESULT_INTERRUPTED = 3
 } AppResult;
 
 typedef struct {
@@ -64,6 +65,7 @@ typedef struct {
   unsigned pause_reasons;
 
   bool session_open, has_session, is_daily;
+  bool attempt_started;
   int daily_year, daily_month, daily_day;
   AppResumeInfo normal_resume, daily_resume;
   uint32_t result_finished_count;

@@ -1,12 +1,19 @@
 #include "library_paging.h"
+#include "journey.h"
+
+typedef enum { GAMES_SAVED, JOURNEY_WON, JOURNEY_RETRY, JOURNEY_ATTEMPTS } GamesView;
 
 /* Retained Games browser. The library, not this view, owns durable records. */
 typedef struct {
   GameLibraryEntry entry;
   bool hot_only;
+  GameAttemptId family;
+  unsigned attempts, setbacks;
 } GamesRow;
 
 typedef struct {
+  GamesView view, return_view;
+  GameAttemptId family_filter;
   GamesRow *rows;
   size_t count, capacity, selected, scroll;
   StoreStatus scan_status;
@@ -38,6 +45,7 @@ static GamesReplayConflict games_replay_conflict;
 typedef struct {
   AppModalAction action;
   AppModalBinding binding;
+  bool daily;
   GameAttemptId departing_id;
   uint64_t departing_revision;
   bool departing_present, departing_retained;
@@ -51,7 +59,7 @@ typedef struct {
   AppModalBinding binding;
   GameAttemptId departing_id;
   uint64_t departing_revision;
-  bool daily, hot_only, departing_present, departing_retained;
+  bool daily, target_daily, hot_only, departing_present, departing_retained;
 } GamesLoadGate;
 static GamesLoadGate games_load_gate;
 
@@ -75,6 +83,7 @@ static bool games_browser_modal_binding(Persistence *p, UI *ui,
 
 typedef struct {
   SDL_Rect title, subtitle, list, detail, primary, back, replay, remove;
+  SDL_Rect tabs[3];
   SDL_Rect page_previous, page_next, page_label;
   int row_height, visible;
   bool side_by_side;
@@ -92,6 +101,10 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
 #undef MOBILE_RECT
     layout.row_height=mobile.row_height;layout.visible=mobile.visible;
     layout.side_by_side=mobile.side_by_side;
+    for (int i=0;i<3;++i) {
+      int gap=6,width=(layout.subtitle.w-2*gap)/3;
+      layout.tabs[i]=(SDL_Rect){layout.subtitle.x+i*(width+gap),layout.subtitle.y,width,layout.subtitle.h};
+    }
     return layout;
   }
 
@@ -162,6 +175,10 @@ static GamesBrowserLayout games_browser_layout(const Gfx *gfx) {
     layout.remove = (SDL_Rect){x+(bw+gap)*3,buttons_y,
                                 width-(bw+gap)*3,button_height};
   }
+  for (int i=0;i<3;++i) {
+    int gap=6, width=(layout.subtitle.w-2*gap)/3;
+    layout.tabs[i]=(SDL_Rect){layout.subtitle.x+i*(width+gap),layout.subtitle.y,width,layout.subtitle.h};
+  }
   return layout;
 }
 
@@ -181,7 +198,7 @@ static bool games_browser_push(const GameLibraryEntry *entry, bool hot) {
     games_browser.rows = rows;
     games_browser.capacity = capacity;
   }
-  games_browser.rows[games_browser.count++] = (GamesRow){*entry, hot};
+  games_browser.rows[games_browser.count++] = (GamesRow){.entry=*entry,.hot_only=hot};
   return true;
 }
 
@@ -213,7 +230,10 @@ static void games_browser_add_hot(const ProfileSlot *slot) {
     return;
   for (size_t i = 0; i < games_browser.count; ++i)
     if (game_attempt_id_equal(games_browser.rows[i].entry.id,
-                              slot->attempt_id)) return;
+                              slot->attempt_id)) {
+      if (!slot->value.explicitly_saved) games_browser.rows[i].hot_only=true;
+      return;
+    }
   GameLibraryEntry entry;
   memset(&entry, 0, sizeof(entry));
   entry.id = slot->attempt_id;
@@ -293,6 +313,33 @@ static bool games_browser_focus_attempt(const Persistence *p, Gfx *gfx,
   return false;
 }
 
+static bool journey_home_scan_entry(const GameLibraryEntry *entry, void *context) {
+  (void)context;
+  if(entry->status==STORE_OK && entry->result.status==SESSION_WON &&
+      (!journey_home_summary.available || entry->finished_utc>journey_home_summary.latest_utc)) {
+    journey_home_summary.latest=entry->result;journey_home_summary.latest_utc=entry->finished_utc;
+    journey_home_summary.available=true;
+  }
+  return true;
+}
+
+static bool journey_home_pump(Persistence *p,UI *ui) {
+  if(!p->enabled || ui->screen!=SCR_TITLE) {
+    if(journey_home_summary.scanning) { game_library_scan_close(&journey_home_summary.cursor);journey_home_summary.scanning=false;journey_home_dirty=true; }
+    return false;
+  }
+  if(journey_home_dirty && !journey_home_summary.scanning) {
+    journey_home_dirty=false;journey_home_summary.available=false;journey_home_summary.latest_utc=0;
+    StoreStatus status=game_library_scan_begin(p->profile_directory,&journey_home_summary.cursor);
+    journey_home_summary.scanning=status==STORE_OK && !journey_home_summary.cursor.finished;
+  }
+  if(!journey_home_summary.scanning)return false;
+  bool finished=false;
+  StoreStatus status=game_library_scan_step(&journey_home_summary.cursor,16,journey_home_scan_entry,NULL,&finished);
+  if(finished || status!=STORE_OK) { game_library_scan_close(&journey_home_summary.cursor);journey_home_summary.scanning=false; }
+  return true;
+}
+
 static void games_browser_select(Persistence *p, Gfx *gfx, size_t index);
 
 static bool games_browser_page_enabled(const Gfx *gfx, int direction) {
@@ -338,6 +385,8 @@ static void games_browser_close(Persistence *p, Game *game, UI *ui) {
 }
 
 /* Enumerate at most sixteen directory names per frame. */
+static void games_browser_filter(void);
+
 static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
   games_replay_conflict = (GamesReplayConflict){0};
   games_replay_gate = (GamesReplayGate){0};
@@ -345,10 +394,16 @@ static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
   game_library_scan_close(&games_browser.scanner);
   games_browser.scanning = false;
   games_browser.incomplete = games_browser.scan_status != STORE_OK;
-  games_browser_add_hot(&p->profile.normal);
-  games_browser_add_hot(&p->profile.daily);
+  if (games_browser.view==GAMES_SAVED) {
+    const ProfileSlot *normal=&p->profile.normal,*daily=&p->profile.daily;
+    if (normal->present && normal->value.session.status==SESSION_ACTIVE && !normal->value.explicitly_saved)
+      games_browser_add_hot(normal);
+    else if (daily->present && daily->value.session.status==SESSION_ACTIVE && !daily->value.explicitly_saved)
+      games_browser_add_hot(daily);
+  }
   qsort(games_browser.rows, games_browser.count, sizeof(GamesRow),
         games_browser_row_cmp);
+  games_browser_filter();
   games_browser.selected = games_browser.scroll = 0;
   games_browser.focus = games_browser.count ? 0 : 2;
   games_browser_preview_selected(p);
@@ -357,6 +412,63 @@ static void games_browser_finish_scan(const Persistence *p, Gfx *gfx) {
     (void)games_browser_focus_attempt(p, gfx, games_browser.focus_after_scan,
                                       games_browser.detail_after_scan);
   }
+}
+
+static void games_browser_filter(void) {
+  size_t count=games_browser.count;
+  if (!count) return;
+  GameLibraryEntry *entries=malloc(count*sizeof(*entries));
+  GameAttemptId *roots=malloc(count*sizeof(*roots));
+  if (!entries || !roots) { free(entries);free(roots);games_browser.incomplete=true;games_browser.count=0;return; }
+  for (size_t i=0;i<count;++i) entries[i]=games_browser.rows[i].entry;
+  for (size_t i=0;i<count;++i) {
+    GamesRow *row=&games_browser.rows[i];
+    roots[i]=journey_root(entries,count,i);row->family=roots[i];row->attempts=0;row->setbacks=0;
+  }
+  size_t out=0;
+  for (size_t i=0;i<count;++i) {
+    GamesRow row=games_browser.rows[i];
+    bool active=row.entry.result.status==SESSION_ACTIVE;
+    if (games_browser.view==GAMES_SAVED) {
+      if (row.entry.status!=STORE_OK || (active && (row.hot_only || row.entry.explicitly_saved))) games_browser.rows[out++]=row;
+      continue;
+    }
+    if (row.entry.status!=STORE_OK || active) continue;
+    if (games_browser.view==JOURNEY_ATTEMPTS) {
+      if ((game_attempt_id_equal(row.family,games_browser.family_filter) || game_attempt_id_equal(row.entry.id,games_browser.family_filter))) games_browser.rows[out++]=row;
+      continue;
+    }
+    bool won=false;size_t representative=i;
+    for (size_t j=0;j<count;++j) {
+      if (entries[j].status!=STORE_OK || entries[j].result.status==SESSION_ACTIVE ||
+          !game_attempt_id_equal(roots[j],row.family)) continue;
+      ++row.attempts;
+      if (entries[j].result.status!=SESSION_WON) ++row.setbacks;
+      else if (!won) { won=true;representative=j; }
+      /* Entries are newest first; retain the newest winning attempt. */
+    }
+    if (!won) {
+      for (size_t j=0;j<i;++j)
+        if (entries[j].status==STORE_OK && entries[j].result.status!=SESSION_ACTIVE &&
+            game_attempt_id_equal(roots[j],row.family)) { representative=j;break; }
+    }
+    if (representative==i && won==(games_browser.view==JOURNEY_WON)) games_browser.rows[out++]=row;
+  }
+  games_browser.count=out;free(entries);free(roots);
+}
+
+static void games_browser_change_view(Persistence *p, Gfx *gfx, GamesView view) {
+  ui_modal_invalidate();
+  game_library_scan_close(&games_browser.scanner);
+  free(games_browser.rows);games_browser.rows=NULL;
+  games_browser.count=games_browser.capacity=0;
+  games_browser.selected=games_browser.scroll=0;
+  games_browser.preview_valid=games_browser.detail_record_valid=false;
+  games_browser.detail_open=false;games_browser.view=view;
+  games_browser.focus=7+(view<3?(int)view:0);
+  games_browser.scan_status=game_library_scan_begin(p->profile_directory,&games_browser.scanner);
+  games_browser.scanning=games_browser.scan_status==STORE_OK && !games_browser.scanner.finished;
+  if (!games_browser.scanning) games_browser_finish_scan(p,gfx);
 }
 
 static bool games_browser_scan_pump(const Persistence *p, Gfx *gfx) {
@@ -409,6 +521,8 @@ static bool games_browser_open_focused(Persistence *p, Game *game,
                                        bool open_detail) {
   if (!game_attempt_id_valid(id) ||
       !games_browser_open(p, game, ui, gfx)) return false;
+  if (open_detail) games_browser.view=JOURNEY_ATTEMPTS;
+  if (open_detail) games_browser.family_filter=id;
   games_browser.focus_after_scan = id;
   games_browser.detail_after_scan = open_detail;
   if (!games_browser.scanning &&
@@ -425,7 +539,19 @@ static bool games_browser_save_hot(Persistence *p, bool daily) {
   ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
   if (!slot->present || !game_attempt_id_valid(slot->attempt_id) ||
       slot->revision == UINT64_MAX) return false;
-  if (slot->retained) return (p->keep_pending_mask & bit) == 0;
+  if (slot->retained) {
+    if (slot->value.explicitly_saved) return (p->keep_pending_mask & bit)==0;
+    GameLibraryRecord previous,record;
+    if (game_library_load(p->profile_directory,slot->attempt_id,&previous)!=STORE_OK) return false;
+    ProfileSlot saved=*slot;saved.value.explicitly_saved=true;++saved.revision;
+    if(!game_library_make_exact_runtime(&record,saved.attempt_id,saved.revision,&saved.value,true))return false;
+    record.parent=previous.parent;record.practice=previous.practice;record.result.practice=previous.practice;
+    record.original_daily=previous.original_daily;record.original_daily_year=previous.original_daily_year;
+    record.original_daily_month=previous.original_daily_month;record.original_daily_day=previous.original_daily_day;
+    if(game_library_save_runtime(p->profile_directory,&record,&p->game_cache[daily?1:0])!=STORE_OK)return false;
+    *slot=saved;save_policy_mark(&p->save_policy,bit,now_ms());
+    return persistence_flush(p);
+  }
   if (p->capture_failed || (p->keep_pending_mask & ~bit) != 0)
     return false; /* A different pending record must not be acknowledged. */
 
@@ -435,9 +561,10 @@ static bool games_browser_save_hot(Persistence *p, bool daily) {
   save_policy_mark(&p->save_policy, bit, started);
   save_policy_record_result(&p->save_policy, STORE_IO_ERROR, started);
 
-  ProfileSlot retained;
+  ProfileSlot retained,saving=*slot;
+  saving.value.explicitly_saved=true;
   if (game_library_retain_hot_slot_runtime(
-          p->profile_directory, slot, &p->game_cache[daily ? 1 : 0],
+          p->profile_directory, &saving, &p->game_cache[daily ? 1 : 0],
           retry_pending, &retained) != STORE_OK)
     return false;
 
@@ -927,8 +1054,8 @@ static bool games_browser_load_offer(Persistence *p, UI *ui, Gfx *gfx,
     }
   } else if (action==APP_MODAL_LOAD_KEEP) {
     request.title=T_GAMES_KEEP_TITLE;request.body=T_GAMES_KEEP_PROMPT;
-    request.buttons[0]=T_CANCEL;request.buttons[1]=T_GAMES_SAVE_CONTINUE;
-    request.buttons[2]=T_DISCARD;request.button_count=3;
+    request.buttons[0]=T_CANCEL;request.buttons[1]=T_LEAVE_SAVE;
+    request.buttons[2]=T_LEAVE_ABANDON;request.button_count=3;
     request.destructive_buttons=4u;
   } else if (action!=APP_MODAL_LOAD_RETAIN_RETRY) {
     return false;
@@ -936,7 +1063,7 @@ static bool games_browser_load_offer(Persistence *p, UI *ui, Gfx *gfx,
   if (!ui_modal_open_request(gfx,ui,&request)) return false;
   const ProfileSlot *slot=daily ? &p->profile.daily : &p->profile.normal;
   games_load_gate=(GamesLoadGate){
-      .action=action,.binding=expected,.daily=daily,
+      .action=action,.binding=expected,.daily=daily,.target_daily=games_browser.rows[games_browser.selected].entry.result.is_daily,
       .hot_only=games_browser.rows[games_browser.selected].hot_only,
       .departing_id=slot->attempt_id,.departing_revision=slot->revision,
       .departing_present=slot->present,.departing_retained=slot->retained};
@@ -951,7 +1078,7 @@ static bool games_browser_load_source_valid(const Persistence *p,
       row->entry.kind!=GAME_RECORD_EXACT ||
       row->entry.result.status!=SESSION_ACTIVE) return false;
   if (row->hot_only) {
-    const ProfileSlot *slot=gate->daily ? &p->profile.daily : &p->profile.normal;
+    const ProfileSlot *slot=gate->target_daily ? &p->profile.daily : &p->profile.normal;
     return slot->present && slot->revision==gate->binding.revision &&
         slot->attempt_id.high==gate->binding.key_hi &&
         slot->attempt_id.low==gate->binding.key_lo &&
@@ -962,7 +1089,7 @@ static bool games_browser_load_source_valid(const Persistence *p,
       target.kind==GAME_RECORD_EXACT &&
       target.revision==gate->binding.revision &&
       target.exact.session.status==SESSION_ACTIVE &&
-      target.exact.session.is_daily==gate->daily;
+      target.exact.session.is_daily==gate->target_daily;
 }
 
 static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
@@ -1031,6 +1158,15 @@ static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
   ProfileSlot *departing = daily ? &p->profile.daily : &p->profile.normal;
   bool same_attempt = departing->present &&
       game_attempt_id_equal(departing->attempt_id, target.id);
+  if(!preflight_ready) {
+    const ProfileSlot *other=daily?&p->profile.normal:&p->profile.daily;
+    if(other->present && !other->value.explicitly_saved && other->value.session.status==SESSION_ACTIVE) {
+      if(other->value.started) {
+        (void)games_browser_load_offer(p,ui,gfx,expected,!daily,APP_MODAL_LOAD_KEEP);return false;
+      }
+      if(!journey_interrupt_slot(p,ui,!daily))return false;
+    }
+  }
   bool prefer_record = !same_attempt;
   if (same_attempt && !row.hot_only) {
     StoreStatus resolution = game_library_resolve_hot_record(
@@ -1057,8 +1193,8 @@ static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
                                     APP_MODAL_LOAD_CHECKPOINT);
       return false;
     }
-    if (!same_attempt && departing->present && !departing->retained &&
-        session_has_meaningful_progress_runtime(&departing->value.session)) {
+    if (!same_attempt && departing->present && !departing->value.explicitly_saved &&
+        departing->value.started) {
       (void)games_browser_load_offer(p,ui,gfx,expected,daily,
                                     APP_MODAL_LOAD_KEEP);
       return false;
@@ -1167,11 +1303,12 @@ static bool games_browser_load_chosen(Persistence *p, Game *game, UI *ui,
     return games_browser_activate_bound(p,game,ui,gfx,gate.binding,false,false);
   }
   if (gate.action==APP_MODAL_LOAD_KEEP) {
-    if (!slot->present || slot->retained ||
-        !session_has_meaningful_progress_runtime(&slot->value.session))
+    if (!slot->present || slot->value.explicitly_saved || !slot->value.started)
       return false;
-    if (choice->button==2)
+    if (choice->button==2) {
+      if(!journey_interrupt_slot(p,ui,gate.daily))return false;
       return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,false);
+    }
     if (choice->button!=1) return false;
     if (games_browser_save_hot(p,gate.daily))
       return games_browser_activate_bound(p,game,ui,gfx,gate.binding,true,false);
@@ -1205,7 +1342,7 @@ static void games_browser_load_activation_dispatch(
     (void)games_browser_load_activation_offer(p,ui,gfx);
     return;
   }
-  GamesLoadGate source={.binding=current,.daily=games_load_activation.daily,
+  GamesLoadGate source={.binding=current,.daily=games_load_activation.daily,.target_daily=games_load_activation.daily,
       .hot_only=games_browser.rows[games_browser.selected].hot_only};
   if (!profile_encoded_equal(&p->profile,&games_load_activation.previous_live) ||
       !games_browser_load_source_valid(p,&source)) {
@@ -1267,8 +1404,8 @@ static bool games_browser_replay_offer(
       request.title=T_GAMES_KEEP_TITLE;
       request.body=T_GAMES_KEEP_PROMPT;
       request.buttons[0]=T_CANCEL;
-      request.buttons[1]=T_GAMES_SAVE_CONTINUE;
-      request.buttons[2]=T_DISCARD;
+      request.buttons[1]=T_LEAVE_SAVE;
+      request.buttons[2]=T_LEAVE_ABANDON;
       request.button_count=3;
       request.destructive_buttons=4u;
       break;
@@ -1290,9 +1427,10 @@ static bool games_browser_replay_offer(
       return false;
   }
   if (!ui_modal_open_request(gfx,ui,&request)) return false;
-  const ProfileSlot *normal=&p->profile.normal;
+  bool source_daily=journey_auto_daily(p);
+  const ProfileSlot *normal=source_daily?&p->profile.daily:&p->profile.normal;
   games_replay_gate=(GamesReplayGate){
-      .action=action, .binding=binding,
+      .action=action, .binding=binding,.daily=source_daily,
       .departing_id=normal->attempt_id,
       .departing_revision=normal->revision,
       .departing_present=normal->present,
@@ -1310,7 +1448,7 @@ static bool games_browser_replay_preflight(
   bool flushed=persistence_flush(p);
   if (!flushed || p->capture_failed || p->keep_pending_mask ||
       save_policy_dirty(&p->save_policy)) {
-    const ProfileSlot *normal=&p->profile.normal;
+    const ProfileSlot *normal=journey_auto_daily(p)?&p->profile.daily:&p->profile.normal;
     bool unretained_active=normal->present && !normal->retained &&
                             normal->value.session.status==SESSION_ACTIVE;
     bool can_discard=save_policy_replacement_discard_allowed(
@@ -1320,13 +1458,14 @@ static bool games_browser_replay_preflight(
              APP_MODAL_REPLAY_CHECKPOINT,can_discard);
     return false;
   }
-  const ProfileSlot *normal=&p->profile.normal;
-  if (normal->present && !normal->retained &&
-      session_has_meaningful_progress_runtime(&normal->value.session)) {
+  const ProfileSlot *normal=journey_auto_daily(p)?&p->profile.daily:&p->profile.normal;
+  if (normal->present && !normal->value.explicitly_saved && normal->value.started) {
     (void)games_browser_replay_offer(p,ui,gfx,binding,
              APP_MODAL_REPLAY_KEEP,true);
     return false;
   }
+  if(normal->present && !normal->value.explicitly_saved && normal->value.session.status==SESSION_ACTIVE)
+    return journey_interrupt_slot(p,ui,journey_auto_daily(p));
   return true;
 }
 
@@ -1648,7 +1787,7 @@ static bool games_browser_replay_gate_chosen(
       !app_modal_binding_equal(consent.binding,expected) ||
       !games_browser_modal_binding(p,ui,&current) ||
       !app_modal_binding_equal(current,expected)) return false;
-  const ProfileSlot *normal=&p->profile.normal;
+  const ProfileSlot *normal=consent.daily?&p->profile.daily:&p->profile.normal;
   if (normal->present!=consent.departing_present ||
       normal->retained!=consent.departing_retained ||
       normal->revision!=consent.departing_revision ||
@@ -1668,13 +1807,13 @@ static bool games_browser_replay_gate_chosen(
       (void)persistence_retry_current(p,game,ui);
       return games_browser_replay_confirmed(p,game,ui,gfx,expected,false);
     case APP_MODAL_REPLAY_KEEP:
-      if (!normal->present || normal->retained ||
-          !session_has_meaningful_progress_runtime(
-              &normal->value.session)) return false;
-      if (button==2)
+      if (!normal->present || normal->value.explicitly_saved || !normal->value.started) return false;
+      if (button==2) {
+        if(!journey_interrupt_slot(p,ui,consent.daily))return false;
         return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
+      }
       if (button!=1) return false;
-      if (games_browser_save_hot(p,false))
+      if (games_browser_save_hot(p,consent.daily))
         return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
       if (!games_browser_replay_offer(p,ui,gfx,expected,
               APP_MODAL_REPLAY_RETAIN_RETRY,false))
@@ -1683,7 +1822,7 @@ static bool games_browser_replay_gate_chosen(
     case APP_MODAL_REPLAY_RETAIN_RETRY:
       if (button!=1) return false;
       if (persistence_retry_current(p,game,ui) &&
-          p->profile.normal.present && p->profile.normal.retained)
+          normal->present && normal->value.explicitly_saved)
         return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);
       if (!games_browser_replay_offer(p,ui,gfx,expected,
               APP_MODAL_REPLAY_RETAIN_RETRY,false))
@@ -1951,6 +2090,31 @@ static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   if (focused&&enabled)draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
+static void games_browser_result_description(const GamesRow *row, Language language,
+                                                char *text, size_t capacity) {
+  const ProfileResult *r=&row->entry.result;
+  unsigned long long seconds=r->elapsed_ms/1000u;
+  int n=snprintf(text,capacity,"%s · %s · %s\n%02llu:%02llu · %s: %u · %s: %u\n%s%s%s",
+      tr(language,r->status==SESSION_WON?T_YOU_WIN:r->status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE),
+      tr(language,mode_key(r->mode)),difficulty_name(language,r->difficulty),
+      seconds/60u,seconds%60u,tr(language,T_ERRORS),r->mistakes,
+      tr(language,T_GAMES_STRIKES),r->strikes,
+      r->practice?tr(language,T_GAMES_PRACTICE):tr(language,T_GAMES_FINISHED),
+      r->assisted?" · ":"",r->assisted?tr(language,T_ASSISTED):"");
+  if(n<0 || (size_t)n>=capacity)return;
+  size_t used=(size_t)n;
+  if(row->attempts) {
+    if(used+1<capacity)text[used++]='\n';
+    n=snprintf(text+used,capacity-used,tr(language,T_JOURNEY_ATTEMPTS_FMT),row->attempts,row->setbacks);
+    if(n<0 || (size_t)n>=capacity-used)return;
+    used+=(size_t)n;
+  }
+  if(row->entry.finished_utc && used+25<capacity) {
+    time_t finished=(time_t)row->entry.finished_utc;struct tm *date=gmtime(&finished);
+    if(date) { text[used++]='\n';strftime(text+used,capacity-used,"%Y-%m-%d UTC",date); }
+  }
+}
+
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
   (void)game;
   games_browser_semantic_board.valid=false;
@@ -1962,10 +2126,14 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
                 UI_GLYPH_FOLDER,theme.title);
   heading.x+=31;
   heading.w-=31;
-  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES_LIBRARY_TITLE),
+  (void)draw_fitted_text(gfx,tr(ui->language,games_browser.view==GAMES_SAVED?T_GAMES_LIBRARY_TITLE:T_JOURNEY),
                          theme.btnfg,heading,30,15);
-  (void)polish_draw_wrapped_fit(gfx,tr(ui->language,T_GAMES_HELP),
-                                theme.dim,lay.subtitle,15,10,true);
+  const TextKey tabs[3]={T_GAMES,T_JOURNEY_WON,T_JOURNEY_RETRY};
+  for (int i=0;i<3;++i) {
+    SDL_Color color=i==1?(SDL_Color){72,174,122,255}:i==2?(SDL_Color){77,145,218,255}:theme.title;
+    games_browser_draw_button(gfx,theme,lay.tabs[i],tr(ui->language,tabs[i]),
+        games_browser.focus==7+i,true,color,UI_GLYPH_FOLDER,games_browser.view==(GamesView)i);
+  }
 
   if (games_browser.detail_open) {
     const GamesRow *row=&games_browser.rows[games_browser.selected];
@@ -1976,7 +2144,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     /* Short landscape windows need a side-by-side finished preview:
        a tiny 9px Sudoku cell hides its number entirely. */
     bool compact_landscape=surface.w>=520 && surface.h<300;
-    int free_height=surface.h-128;
+    int free_height=surface.h-170;
     int side=surface.w-40;
     if (compact_landscape) {
       side=surface.h-34;
@@ -1997,57 +2165,21 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     else
       (void)polish_draw_wrapped_fit(
           gfx,tr(ui->language,T_GAMES_SUMMARY_ONLY),theme.dim,board,17,10,true);
-    char heading_info[250];
-    unsigned long long seconds=(unsigned long long)(result->elapsed_ms/1000u);
-    (void)snprintf(heading_info,sizeof(heading_info),
-                   "%s · %s · %s · %02llu:%02llu",
-                   tr(ui->language,result->status==SESSION_WON
-                       ?T_YOU_WIN:T_YOU_LOSE),
-                   tr(ui->language,mode_key(result->mode)),
-                   difficulty_name(ui->language,result->difficulty),
-                   seconds/60u,seconds%60u);
+    char description[640];
+    games_browser_result_description(row,ui->language,description,sizeof(description));
     SDL_Rect info=compact_landscape
-        ? (SDL_Rect){board.x+side+18,surface.y+35,
-                     surface.x+surface.w-board.x-side-34,26}
-        : (SDL_Rect){surface.x+16,board.y+side+15,surface.w-32,26};
-    (void)draw_fitted_text(gfx,heading_info,theme.btnfg,info,17,10);
-    char detail[260];
-    int revealed=0;
-    if(games_browser.preview_valid)
-      for(int k=0;k<81;k++)
-        if(games_browser.preview.game.hinted[k])++revealed;
-    (void)snprintf(detail,sizeof(detail),"%s: %u · %s: %u · %s: %d",
-                   tr(ui->language,T_ERRORS),(unsigned)result->mistakes,
-                   tr(ui->language,T_GAMES_STRIKES),(unsigned)result->strikes,
-                   tr(ui->language,T_GAMES_REVEALS),revealed);
-    info.y+=29;info.h=21;
-    (void)draw_fitted_text(gfx,detail,theme.dim,info,14,10);
-    const char *provenance=result->practice
-        ?tr(ui->language,T_GAMES_PRACTICE)
-        :tr(ui->language,T_GAMES_FINISHED);
-    info.y+=22;
-    (void)draw_fitted_text(gfx,provenance,theme.dim,info,13,10);
-    if(games_browser.detail_record_valid &&
-       games_browser.detail_record.original_daily) {
-      const GameLibraryRecord *record=&games_browser.detail_record;
-      char source[120];
-      (void)snprintf(source,sizeof(source),"%s · %04u-%02u-%02u",
-          tr(ui->language,T_GAMES_SOURCE_DAILY),
-          (unsigned)record->original_daily_year,
-          (unsigned)record->original_daily_month,
-          (unsigned)record->original_daily_day);
-      info.y+=21;
-      (void)draw_fitted_text(gfx,source,theme.dim,info,13,10);
-    }
+        ? (SDL_Rect){board.x+side+18,surface.y+12,surface.x+surface.w-board.x-side-34,surface.h-24}
+        : (SDL_Rect){surface.x+16,board.y+side+12,surface.w-32,surface.y+surface.h-board.y-side-22};
+    (void)polish_draw_wrapped_fit(gfx,description,theme.btnfg,info,17,10,true);
     bool can_replay=!row->hot_only&&row->entry.kind==GAME_RECORD_EXACT&&
                     row->entry.status==STORE_OK;
     games_browser_draw_button(gfx,theme,lay.back,tr(ui->language,T_BACK),
         games_browser.focus==2,true,theme.btnfg,UI_GLYPH_BACK,false);
     games_browser_draw_button(gfx,theme,lay.replay,
-        tr(ui->language,T_GAMES_REPLAY),games_browser.focus==3,can_replay,
+        tr(ui->language,T_JOURNEY_RETRY_ACTION),games_browser.focus==3,can_replay,
         theme.btnfg,UI_GLYPH_REPLAY,false);
     games_browser_draw_button(gfx,theme,lay.remove,
-        tr(ui->language,T_GAMES_DELETE),games_browser.focus==4,true,
+        tr(ui->language,games_browser.view==GAMES_SAVED?T_GAMES_DELETE:T_JOURNEY_ATTEMPTS),games_browser.focus==4,true,
         theme.btnfg,UI_GLYPH_TRASH,false);
     return;
   }
@@ -2082,7 +2214,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
             ?(row->hot_only?tr(ui->language,T_GAMES_AUTOSAVE)
                             :tr(ui->language,T_GAMES_IN_PROGRESS))
             :tr(ui->language,entry->result.status==SESSION_WON
-                                  ?T_YOU_WIN:T_YOU_LOSE);
+                                  ?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE);
     if(entry->status==STORE_OK)
       (void)snprintf(caption,sizeof(caption),"%s · %s",
            tr(ui->language,mode_key(entry->result.mode)),
@@ -2241,16 +2373,16 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
       games_browser.focus==1,can_open||can_recover,theme.btnfg,
       active?UI_GLYPH_PLAY:UI_GLYPH_EYE,active);
   games_browser_draw_button(gfx,theme,lay.replay,
-      tr(ui->language,T_GAMES_REPLAY),games_browser.focus==3,can_replay,
+      tr(ui->language,T_JOURNEY_RETRY_ACTION),games_browser.focus==3,can_replay,
       theme.btnfg,UI_GLYPH_REPLAY,false);
   games_browser_draw_button(gfx,theme,lay.remove,
-      tr(ui->language,T_GAMES_DELETE),games_browser.focus==4,
+      tr(ui->language,games_browser.view==GAMES_SAVED?T_GAMES_DELETE:T_JOURNEY_ATTEMPTS),games_browser.focus==4,
       !games_browser.scanning&&games_browser.count>0,
       theme.btnfg,UI_GLYPH_TRASH,false);
 }
 
 static bool games_browser_focus_enabled(int focus) {
-  if(focus==2)return true;
+  if(focus==2 || (focus>=7 && focus<=9))return true;
   if(focus==5 || focus==6)
     return games_browser_window && games_browser_page_enabled(games_browser_window,
                                                    focus==5?-1:1);
@@ -2272,11 +2404,14 @@ static bool games_browser_focus_enabled(int focus) {
 static bool games_browser_activate_focus(Persistence *p,Game *game,
                                           UI *ui,Gfx *gfx) {
   switch(games_browser.focus){
+    case 7: case 8: case 9:
+      games_browser_change_view(p,gfx,(GamesView)(games_browser.focus-7));return true;
     case 2:
       if(games_browser.detail_open){
         games_browser.detail_open=false;
         games_browser.focus=0;
-      }else games_browser_close(p,game,ui);
+      }else if (games_browser.view==JOURNEY_ATTEMPTS) games_browser_change_view(p,gfx,games_browser.return_view==JOURNEY_RETRY?JOURNEY_RETRY:JOURNEY_WON);
+      else games_browser_close(p,game,ui);
       return true;
     case 1:
     case 0:
@@ -2292,6 +2427,11 @@ static bool games_browser_activate_focus(Persistence *p,Game *game,
       return games_browser_focus_enabled(3) &&
              games_browser_replay_selected(p,game,ui,gfx);
     case 4:
+      if (games_browser.view!=GAMES_SAVED && games_browser.selected<games_browser.count) {
+        games_browser.family_filter=games_browser.rows[games_browser.selected].family;
+        games_browser.return_view=games_browser.view;
+        games_browser_change_view(p,gfx,JOURNEY_ATTEMPTS);return true;
+      }
       return games_browser_focus_enabled(4) &&
              games_browser_delete_selected(p,game,ui,gfx);
     default: return false;
@@ -2300,12 +2440,13 @@ static bool games_browser_activate_focus(Persistence *p,Game *game,
 
 static bool games_browser_key(Persistence *p,Game *game,UI *ui,Gfx *gfx,
                                SDL_Keycode key,SDL_Keymod mod,bool repeat) {
+  if (!repeat && key>=SDLK_1 && key<=SDLK_3) { games_browser_change_view(p,gfx,(GamesView)(key-SDLK_1));return true; }
   if(key==SDLK_ESCAPE){
     games_browser.focus=2;
     (void)games_browser_activate_focus(p,game,ui,gfx);
     return true;
   }
-  if(games_browser.scanning || !games_browser.count){
+  if((games_browser.scanning || !games_browser.count) && key!=SDLK_TAB){
     if(!repeat && input_activation_key(key)){
       games_browser.focus=2;
       (void)games_browser_activate_focus(p,game,ui,gfx);
@@ -2314,8 +2455,8 @@ static bool games_browser_key(Persistence *p,Game *game,UI *ui,Gfx *gfx,
   }
   if(key==SDLK_TAB && !repeat){
     int delta=(mod & KMOD_SHIFT)?-1:1;
-    for(int attempts=0;attempts<7;++attempts){
-      games_browser.focus=(games_browser.focus+delta+7)%7;
+    for(int attempts=0;attempts<10;++attempts){
+      games_browser.focus=(games_browser.focus+delta+10)%10;
       if(games_browser_focus_enabled(games_browser.focus))break;
     }
   }else if(!games_browser.detail_open &&
@@ -2345,6 +2486,7 @@ static bool games_browser_key(Persistence *p,Game *game,UI *ui,Gfx *gfx,
 static bool games_browser_click(Persistence *p,Game *game,UI *ui,
                                  Gfx *gfx,int x,int y) {
   GamesBrowserLayout lay=games_browser_layout(gfx);
+  for (int i=0;i<3;++i) if(point_in(lay.tabs[i],x,y)) { games_browser_change_view(p,gfx,(GamesView)i);return true; }
   if(point_in(lay.back,x,y)){
     games_browser.focus=2;
     (void)games_browser_activate_focus(p,game,ui,gfx);

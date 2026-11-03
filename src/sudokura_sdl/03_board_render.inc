@@ -182,8 +182,15 @@ enum{
   HOME_FOCUS_LANGUAGE=0,HOME_FOCUS_MODE,HOME_FOCUS_DIFFICULTY,
   HOME_FOCUS_NEW,HOME_FOCUS_CONTINUE,HOME_FOCUS_DAILY,
   HOME_FOCUS_GAMES,HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_SETTINGS,HOME_FOCUS_QUIT,
-  HOME_FOCUS_COUNT
+  HOME_FOCUS_JOURNEY,HOME_FOCUS_COUNT
 };
+static SDL_Rect home_collection_rect(const AppGeometry *geometry, bool journey) {
+  SDL_Rect rect=sdl_rect(geometry->home_secondary[0]);
+  int gap=8,half=(rect.w-gap)/2;
+  if (journey) { rect.x+=half+gap;rect.w-=half+gap; }
+  else rect.w=half;
+  return rect;
+}
 static int home_focus=HOME_FOCUS_NEW;
 enum{
   INFO_FOCUS_BACK=0,INFO_FOCUS_STUDY,INFO_FOCUS_LINK_0,

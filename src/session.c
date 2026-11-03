@@ -53,7 +53,7 @@ static bool valid_difficulty(GameDifficulty difficulty) {
 }
 
 static bool valid_status(SessionStatus status) {
-  return status >= SESSION_ACTIVE && status <= SESSION_LOST;
+  return status >= SESSION_ACTIVE && status <= SESSION_INTERRUPTED;
 }
 
 static void writer_u8(ByteWriter *writer, uint8_t value) {
@@ -288,6 +288,7 @@ bool session_validate_runtime(const SessionState *session) {
                              session->mode == MODE_TIME ? 600.0 : 0.0);
   if (session->status == SESSION_ACTIVE) return !solved && !lost;
   if (session->status == SESSION_WON) return solved && !lost;
+  if (session->status == SESSION_INTERRUPTED) return !solved && !lost;
   return !solved && lost;
 }
 

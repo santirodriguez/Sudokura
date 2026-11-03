@@ -159,6 +159,7 @@ typedef AppState UI;
 #define RES_NONE APP_RESULT_NONE
 #define RES_WIN APP_RESULT_WIN
 #define RES_LOSE APP_RESULT_LOSE
+#define RES_INTERRUPTED APP_RESULT_INTERRUPTED
 #define PAUSE_MANUAL APP_PAUSE_MANUAL
 #define PAUSE_FOCUS APP_PAUSE_FOCUS
 #define PAUSE_MODAL APP_PAUSE_MODAL
@@ -267,7 +268,7 @@ static void set_mode_params(UI*ui){
 static void begin_fresh_play(UI*ui){
   ui->screen=SCR_PLAY; ui->prev_screen=SCR_PLAY; ui->result=RES_NONE;
   ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
-  ui->undo_count=0; ui->redo_count=0;
+  ui->undo_count=0; ui->redo_count=0;ui->attempt_started=false;
   set_mode_params(ui); clock_reset(ui);
 }
 static void victory_animation_start(void);
@@ -308,7 +309,8 @@ static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool
   uint64_t action_ms=now_ms();
   AppActionOutcome outcome=app_apply_action(
       game,ui,action,app_clock_elapsed_s(ui,action_ms));
-  return apply_action_outcome(ui,outcome,action_ms);
+  bool changed=apply_action_outcome(ui,outcome,action_ms);
+  return changed || (action.kind==APP_ACTION_PLACE && ui->attempt_started);
 }
 
 static bool apply_history_action(Game*game,UI*ui,AppActionKind kind){
@@ -463,6 +465,13 @@ static void resume_info_from_slot(AppResumeInfo*out,const ProfileSlot*slot,
   }
 }
 
+static bool journey_auto_daily(const Persistence *p) {
+  return p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+      p->profile.daily.value.session.status==SESSION_ACTIVE &&
+      (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+       p->profile.normal.value.session.status!=SESSION_ACTIVE);
+}
+
 static void refresh_resume_info(Persistence*p,UI*ui){
   if(!ui)return;
   memset(&ui->normal_resume,0,sizeof(ui->normal_resume));
@@ -470,6 +479,11 @@ static void refresh_resume_info(Persistence*p,UI*ui){
   if(p&&p->enabled){
     resume_info_from_slot(&ui->normal_resume,&p->profile.normal,false);
     resume_info_from_slot(&ui->daily_resume,&p->profile.daily,true);
+    if (p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+        p->profile.daily.value.session.status==SESSION_ACTIVE &&
+        (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+         p->profile.normal.value.session.status!=SESSION_ACTIVE))
+      resume_info_from_slot(&ui->normal_resume,&p->profile.daily,true);
   }
   ui->has_session=ui->normal_resume.can_continue;
 }
@@ -511,6 +525,14 @@ static void refresh_result_summary(Persistence*p,const SessionState*session,
   ui->result_best_time_ms=summary.best_time_ms;
 }
 
+static bool journey_home_dirty=true;
+static struct {
+  GameLibraryScanCursor cursor;
+  bool scanning, available;
+  uint64_t latest_utc;
+  ProfileResult latest;
+} journey_home_summary;
+
 static bool record_terminal_result(Persistence*p,const SessionState*session,
                                    bool assisted,GameAttemptId id,UI*ui){
   if(!p||!p->enabled||!session||session->status==SESSION_ACTIVE)return false;
@@ -521,6 +543,7 @@ static bool record_terminal_result(Persistence*p,const SessionState*session,
       game_attempt_id_equal(p->active_replay.id,id);
   bool inserted=false;
   if(!profile_record_result(&p->profile,&result,&inserted))return false;
+  if(inserted)journey_home_dirty=true;
   if(inserted)
     save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
   refresh_result_summary(p,session,assisted,ui);
@@ -771,6 +794,7 @@ static bool capture_session(SessionState*out,const Game*game,const UI*ui,
   candidate.daily_day=ui->daily_day;
   if(ui->result==RES_WIN)candidate.status=SESSION_WON;
   else if(ui->result==RES_LOSE)candidate.status=SESSION_LOST;
+  else if(ui->result==RES_INTERRUPTED)candidate.status=SESSION_INTERRUPTED;
   else if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,
                         (double)candidate.elapsed_ms/1000.0,
                         ui->time_limit_s))candidate.status=SESSION_LOST;
@@ -886,6 +910,8 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   GameAttemptId id=same_identity?slot->attempt_id:(GameAttemptId){0,0};
   uint64_t old_revision=same_identity?slot->revision:0;
   bool retained=same_identity&&slot->retained;
+  bool started=ui->attempt_started||(same_identity&&slot->value.started);
+  bool explicitly_saved=same_identity&&slot->value.explicitly_saved;
   bool terminal_repeat=same_identity &&
       slot->value.session.status!=SESSION_ACTIVE &&
       state.status==slot->value.session.status;
@@ -917,8 +943,10 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   /* A pending first Save must finish its own record transaction before
      a terminal result can publish a new retained hot pointer. */
   slot->retained=retained||
-      (state.status==SESSION_WON&&!keep_pending)||
+      (state.status!=SESSION_ACTIVE&&(started||state.status==SESSION_WON)&&!keep_pending)||
       p->active_replay.practice;
+  slot->value.started=started;
+  slot->value.explicitly_saved=explicitly_saved;
   slot->value.undo_count=ui->undo_count;
   slot->value.redo_count=ui->redo_count;
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
@@ -937,7 +965,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
     }
   }
   if(!state.is_daily)p->saved=state;
-  if(state.status!=SESSION_ACTIVE &&
+  if(state.status!=SESSION_ACTIVE && (started||state.status==SESSION_WON) &&
      !record_terminal_result(p,&state,assisted,id,ui)){
     persistence_capture_failure(p,ui);
     return false;
@@ -949,6 +977,47 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
                    now_ms());
   /* Finished outcomes are durable before result presentation or exit. */
   return state.status==SESSION_ACTIVE || persistence_flush(p);
+}
+
+/* Close the exact attempt only after its terminal archive is durable. A retry
+   retains its own ID/parent; opening or browsing a board is not a failed attempt. */
+static bool journey_interrupt_slot(Persistence *p, UI *ui, bool daily) {
+  if (!p || !p->enabled || persistence_activation_blocked(p)) return false;
+  ProfileSlot *slot=daily?&p->profile.daily:&p->profile.normal;
+  if (!slot->present) return true;
+  if (slot->value.session.status != SESSION_ACTIVE) return persistence_flush(p);
+  if (!slot->value.started) {
+    memset(slot,0,sizeof(*slot));
+  } else {
+    if (slot->revision==UINT64_MAX) return false;
+    ProfileSlot terminal=*slot;
+    terminal.value.session.status=SESSION_INTERRUPTED;
+    terminal.retained=true;++terminal.revision;
+    GameLibraryRecord record;
+    if (!game_library_make_exact_runtime(&record,terminal.attempt_id,
+          terminal.revision,&terminal.value,true)) return false;
+    if (slot->retained) {
+      GameLibraryRecord previous;
+      if (game_library_load(p->profile_directory,slot->attempt_id,&previous)!=STORE_OK) return false;
+      record.practice=previous.practice;record.result.practice=previous.practice;
+      record.parent=previous.parent;record.original_daily=previous.original_daily;
+      record.original_daily_year=previous.original_daily_year;
+      record.original_daily_month=previous.original_daily_month;
+      record.original_daily_day=previous.original_daily_day;
+    }
+    if (game_library_save_runtime(p->profile_directory,&record,
+          &p->game_cache[daily?1:0])!=STORE_OK) return false;
+    *slot=terminal;
+    bool inserted=false;
+    if (!profile_record_result(&p->profile,&record.result,&inserted)) return false;
+    save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
+  }
+  if (ui && ui->session_open && ui->is_daily==daily) {
+    ui->result=RES_INTERRUPTED;ui->session_open=false;
+  }
+  persistence_refresh_normal(p);refresh_resume_info(p,ui);
+  save_policy_mark(&p->save_policy,daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,now_ms());
+  return persistence_flush(p);
 }
 
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
@@ -1006,6 +1075,7 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   bool normal_continue=session_can_continue_runtime(&p->saved);
   ui->has_session=true;
   ui->assisted=slot->value.assisted;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  ui->attempt_started=slot->value.started;
   ui->undo_count=slot->value.undo_count;ui->redo_count=slot->value.redo_count;
   memcpy(ui->undo,slot->value.undo,sizeof(ui->undo));
   memcpy(ui->redo,slot->value.redo,sizeof(ui->redo));
@@ -1074,19 +1144,28 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
-  if(p && persistence_activation_blocked(p))return;
-  bool retry_after_loss=ui&&ui->result==RES_LOSE;
+  if(!p || persistence_activation_blocked(p))return;
+  bool previous_attempt=ui->attempt_started || ui->result==RES_LOSE;
+  GameLibraryRecord source;bool linked=false;
+  if(previous_attempt) {
+    if(ui->result==RES_NONE && (!stage_current_session(p,game,ui) ||
+         !journey_interrupt_slot(p,ui,ui->is_daily)))return;
+    const ProfileSlot *slot=ui->is_daily?&p->profile.daily:&p->profile.normal;
+    linked=slot->present && game_library_load(p->profile_directory,slot->attempt_id,&source)==STORE_OK &&
+           source.result.status!=SESSION_ACTIVE;
+    if(!linked && ui->attempt_started)return;
+  }
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
   if(!outcome.changed)return;
-  if(retry_after_loss){
-    GameReplayOrigin replay=p->active_replay;
-    persistence_begin_distinct_attempt(p,ui->is_daily);
-    if(replay.practice){
-      p->active_replay=replay;
-      p->active_replay.id=(GameAttemptId){0,0};
-    }
+  if(linked) {
+    persistence_begin_distinct_attempt(p,false);
+    p->active_replay=(GameReplayOrigin){.practice=true,.parent=source.id,
+      .original_daily=source.original_daily,.year=source.original_daily_year,
+      .month=source.original_daily_month,.day=source.original_daily_day};
+    ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;
   }
+  ui->attempt_started=false;ui->assisted=false;
   ui->sel_r=4;ui->sel_c=4;ui->hint_preview_active=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   set_mode_params(ui);clock_reset(ui);

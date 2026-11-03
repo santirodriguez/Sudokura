@@ -169,7 +169,7 @@ static bool valid_result(const ProfileResult *result) {
       result->difficulty < DIFFICULTY_EASY ||
       result->difficulty >= DIFFICULTY_COUNT ||
       result->mode < MODE_CLASSIC || result->mode > MODE_TIME ||
-      result->status < SESSION_WON || result->status > SESSION_LOST ||
+      result->status < SESSION_WON || result->status > SESSION_INTERRUPTED ||
       result->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
       result->mistakes > PROFILE_MAX_COUNTER ||
       result->strikes > PROFILE_MAX_COUNTER)
@@ -503,6 +503,8 @@ static void encode_session(ProfileWriter *writer,
   writer_u8(writer, (uint8_t)session->daily_month);
   writer_u8(writer, (uint8_t)session->daily_day);
   writer_u8(writer, profile_session->assisted ? 1u : 0u);
+  writer_u8(writer, (profile_session->started ? 1u : 0u) |
+                    (profile_session->explicitly_saved ? 2u : 0u));
   for (int i = 0; i < 81; ++i)
     writer_u8(writer, (uint8_t)session->game.puzzle[i]);
   for (int i = 0; i < 81; ++i)
@@ -522,6 +524,7 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   uint16_t version = reader_u16(reader);
   if (!reader->ok) return STORE_CORRUPT;
   if (version != SUDOKURA_SESSION_CONTENT_VERSION &&
+      version != SUDOKURA_SESSION_CONTENT_VERSION_V3 &&
       version != SUDOKURA_SESSION_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
   bool legacy_history = version == SUDOKURA_SESSION_CONTENT_VERSION_LEGACY;
@@ -544,14 +547,15 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   int daily_month = reader_u8(reader);
   int daily_day = reader_u8(reader);
   uint8_t assisted = reader_u8(reader);
+  uint8_t started = version >= 4u ? reader_u8(reader) : 0u;
 
   if (!reader->ok) return STORE_CORRUPT;
   if (!game_generator_revision_supported(generator_revision))
     return STORE_INCOMPATIBLE;
   if (difficulty < DIFFICULTY_EASY || difficulty >= DIFFICULTY_COUNT ||
       mode < MODE_CLASSIC || mode > MODE_TIME || notes_mode > 1 ||
-      strict_mode > 1 || manual_paused > 1 || is_daily > 1 || assisted > 1 ||
-      status < SESSION_ACTIVE || status > SESSION_LOST ||
+      strict_mode > 1 || manual_paused > 1 || is_daily > 1 || assisted > 1 || started > 3 ||
+      status < SESSION_ACTIVE || status > SESSION_INTERRUPTED ||
       mistakes > PROFILE_MAX_COUNTER || strikes > PROFILE_MAX_COUNTER ||
       elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
       (is_daily != 0) != expected_daily)
@@ -577,6 +581,8 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   loaded.session.daily_month = daily_month;
   loaded.session.daily_day = daily_day;
   loaded.assisted = assisted != 0;
+  loaded.started = (started & 1u) != 0;
+  loaded.explicitly_saved = version < 4u || (started & 2u) != 0;
 
   for (int i = 0; i < 81; ++i)
     loaded.session.game.puzzle[i] = reader_u8(reader);
@@ -597,6 +603,15 @@ static StoreStatus decode_session(ProfileReader *reader, ProfileSession *out,
   for (uint16_t i = 0; i < loaded.redo_count; ++i)
     loaded.redo[i] = decode_edit(reader, legacy_history);
 
+  if (version < 4u) {
+    loaded.started = mistakes != 0 || strikes != 0;
+    for (int i=0;i<81;++i)
+      if (!loaded.session.game.initial[i] && loaded.session.game.puzzle[i]) loaded.started=true;
+    for (uint16_t i=0;i<loaded.undo_count;++i)
+      if (loaded.undo[i].before_value != loaded.undo[i].after_value) loaded.started=true;
+    for (uint16_t i=0;i<loaded.redo_count;++i)
+      if (loaded.redo[i].before_value != loaded.redo[i].after_value) loaded.started=true;
+  }
   if (!reader->ok || !valid_profile_session(&loaded, expected_daily))
     return STORE_CORRUPT;
   *out = loaded;
@@ -874,12 +889,14 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
   uint16_t content_version = reader_u16(&reader);
   if (!reader.ok) return STORE_CORRUPT;
   if (content_version != SUDOKURA_PROFILE_CONTENT_VERSION &&
+      content_version != SUDOKURA_PROFILE_CONTENT_VERSION_V2 &&
       content_version != SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
 
   ProfileData loaded;
   profile_defaults(&loaded);
-  loaded.codec_version = content_version;
+  loaded.codec_version = content_version==SUDOKURA_PROFILE_CONTENT_VERSION_V2
+      ? SUDOKURA_PROFILE_CONTENT_VERSION : content_version;
   status = decode_sized_preferences(&reader, &loaded.preferences);
   if (status != STORE_OK) return status;
   status = decode_slot(&reader, &loaded.normal, false);
@@ -894,7 +911,7 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
     status = decode_result(&reader, &loaded.results[i]);
     if (status != STORE_OK) return status;
   }
-  if (content_version == SUDOKURA_PROFILE_CONTENT_VERSION) {
+  if (content_version >= SUDOKURA_PROFILE_CONTENT_VERSION_V2) {
     ProfileSlot *slots[2] = {&loaded.normal, &loaded.daily};
     for (int index = 0; index < 2; ++index) {
       slots[index]->attempt_id.high = reader_u64(&reader);
@@ -903,6 +920,7 @@ StoreStatus profile_load_file(const char *path, ProfileData *profile) {
       uint8_t retained = reader_u8(&reader);
       if (retained > 1) return STORE_CORRUPT;
       slots[index]->retained = retained == 1;
+      if (!slots[index]->retained) slots[index]->value.explicitly_saved=false;
     }
     for (uint16_t i = 0; i < loaded.result_count; ++i) {
       loaded.results[i].attempt_id.high = reader_u64(&reader);

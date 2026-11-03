@@ -9,12 +9,14 @@
 
 #define SUDOKURA_PROFILE_CONTAINER_VERSION 2u
 #define SUDOKURA_PROFILE_CONTENT_VERSION_LEGACY 1u
-#define SUDOKURA_PROFILE_CONTENT_VERSION 2u
+#define SUDOKURA_PROFILE_CONTENT_VERSION_V2 2u
+#define SUDOKURA_PROFILE_CONTENT_VERSION 3u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_LEGACY 1u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION_V2 2u
 #define SUDOKURA_PREFERENCES_CONTENT_VERSION 3u
 #define SUDOKURA_SESSION_CONTENT_VERSION_LEGACY 2u
-#define SUDOKURA_SESSION_CONTENT_VERSION 3u
+#define SUDOKURA_SESSION_CONTENT_VERSION_V3 3u
+#define SUDOKURA_SESSION_CONTENT_VERSION 4u
 #define SUDOKURA_RESULT_LIMIT 128u
 
 typedef struct {
@@ -27,6 +29,8 @@ typedef GameEdit ProfileEdit;
 typedef struct {
   SessionState session;
   bool assisted;
+  bool explicitly_saved;
+  bool started; /* Monotonic: a digit attempt occurred, even if later undone. */
   uint16_t undo_count;
   uint16_t redo_count;
   ProfileEdit undo[SUDOKURA_HISTORY_LIMIT];

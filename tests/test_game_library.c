@@ -1,5 +1,6 @@
 #define SUDOKURA_STORE_TESTING 1
 #include "game_library.h"
+#include "journey.h"
 #include "seed.h"
 #include "store_io.h"
 
@@ -230,10 +231,10 @@ static void test_codec_and_atomic_decode(void) {
   assert(game_library_decode(bytes, count, &output) == STORE_CORRUPT);
   assert(memcmp(&output, &unchanged, sizeof(output)) == 0);
   bytes[count - 1] ^= 0x45;
-  bytes[8] = 2;
+  bytes[8] = SUDOKURA_GAME_RECORD_VERSION+1;
   assert(game_library_decode(bytes, count, &output) == STORE_INCOMPATIBLE);
   assert(memcmp(&output, &unchanged, sizeof(output)) == 0);
-  bytes[8] = 1;
+  bytes[8] = SUDOKURA_GAME_RECORD_VERSION;
   assert(game_library_decode(bytes, count - 1, &output) == STORE_CORRUPT);
 
   ProfileResult won = {
@@ -770,7 +771,7 @@ static void test_mixed_record_health_and_oversized_future_envelope(void) {
 
   unsigned char oversized[SUDOKURA_GAME_RECORD_MAX_BYTES + 16u] = {0};
   memcpy(oversized, "SUDOGAME", 8u);
-  oversized[8] = 2u; /* recognized, unsupported container */
+  oversized[8] = SUDOKURA_GAME_RECORD_VERSION+1u; /* unsupported container */
   assert(store_atomic_write(future_path, NULL, oversized,
                             sizeof(oversized)) == STORE_OK);
   assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
@@ -782,7 +783,7 @@ static void test_mixed_record_health_and_oversized_future_envelope(void) {
   assert(record.revision == 1);
 
   oversized[8] = 1u;
-  oversized[20] = 2u; /* recognized, unsupported payload */
+  oversized[20] = 3u; /* unsupported payload */
   assert(store_atomic_write(future_path, NULL, oversized,
                             sizeof(oversized)) == STORE_OK);
   assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
@@ -2333,7 +2334,31 @@ static void test_daily_activation_interrupted_and_retried(void) {
   cleanup();
 }
 
+static void test_interrupted_journey_and_replay(void) {
+  prepare();
+  ProfileSession played=make_session(SESSION_INTERRUPTED);
+  played.started=true;
+  GameLibraryRecord first,replay,output;
+  assert(game_library_make_exact(&first,make_id(19001),1,&played,true));
+  GameLibraryHotCache cache={0};
+  assert(game_library_save_runtime_at(root,&first,&cache,100)==STORE_OK);
+  assert(game_library_load(root,first.id,&output)==STORE_OK);
+  assert(output.exact.started && output.result.status==SESSION_INTERRUPTED);
+  assert(game_library_prepare_replay(&replay,&output,make_id(19002)));
+  assert(!replay.exact.started && !replay.exact.explicitly_saved);
+  assert(game_attempt_id_equal(replay.parent,first.id));
+  GameLibraryEntry entries[3]={0};
+  entries[0].id=first.id;entries[0].result=first.result;
+  entries[1].id=replay.id;entries[1].parent=first.id;entries[1].result=replay.result;
+  entries[2]=entries[1];entries[2].id=make_id(19003);entries[2].parent=replay.id;
+  assert(game_attempt_id_equal(journey_root(entries,3,2),first.id));
+  entries[0].parent=entries[2].id;
+  assert(game_attempt_id_equal(journey_root(entries,3,2),entries[2].id));
+  cleanup();
+}
+
 int main(void) {
+  test_interrupted_journey_and_replay();
   test_daily_activation_interrupted_and_retried();
   cleanup();
   prepare();

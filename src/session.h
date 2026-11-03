@@ -16,7 +16,8 @@
 typedef enum {
   SESSION_ACTIVE = 0,
   SESSION_WON,
-  SESSION_LOST
+  SESSION_LOST,
+  SESSION_INTERRUPTED
 } SessionStatus;
 
 typedef struct {

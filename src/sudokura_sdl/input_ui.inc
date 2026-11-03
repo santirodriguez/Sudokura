@@ -436,6 +436,7 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
   if (ui->screen == APP_SCREEN_GAMES) {
     GamesBrowserLayout a = games_browser_layout(gfx);
     TARGET(30, a.back, true);
+    for(int i=0;i<3;++i) TARGET(36+i,a.tabs[i],true);
     if (games_browser.scanning) return (PointerTarget){0};
     if (!games_browser.detail_open) {
       SDL_Rect pages[] = {a.page_previous,a.page_next};
@@ -490,7 +491,9 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
     }
     for (int i = 0; i < 3; ++i)
       TARGET(100 + i, sdl_rect(a.home_primary[i]), i != 1 || ui->has_session);
-    for (int i = 0; i < 5; ++i)
+    TARGET(115,home_collection_rect(&a,true),true);
+    TARGET(110,home_collection_rect(&a,false),true);
+    for (int i = 1; i < 5; ++i)
       TARGET(110 + i, sdl_rect(a.home_secondary[i]), true);
   } else if (ui->screen == SCR_END) {
     for (int i = 0; i < 2; ++i) TARGET(120 + i, sdl_rect(a.end_buttons[i]), true);

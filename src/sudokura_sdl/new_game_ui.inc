@@ -39,7 +39,7 @@ static bool new_game_open_keep(Persistence *p, UI *ui, Gfx *gfx) {
       .kind = APP_MODAL_CONFIRM, .action = APP_MODAL_NEW_KEEP,
       .binding = ui_modal_new_game_binding(p, ui),
       .title = T_GAMES_KEEP_TITLE, .body = T_GAMES_NEW_PROMPT,
-      .buttons = {T_CANCEL, T_GAMES_SAVE_CONTINUE, T_DISCARD},
+      .buttons = {T_CANCEL, T_LEAVE_SAVE, T_LEAVE_ABANDON},
       .button_count = 3u, .destructive_buttons = 4u};
   return ui_modal_open_request(gfx, ui, &request);
 }
@@ -96,9 +96,9 @@ static void new_game_after_saved(Persistence *p, Game *game, UI *ui,
   }
   const ProfileSlot *slot = &p->profile.normal;
   const SessionState *saved = profile_slot_session(slot);
-  if (!saved || !session_has_meaningful_progress_runtime(saved)) {
+  if (!saved || !slot->value.started) {
     (void)new_game_launch(p, game, ui, gfx, false);
-  } else if (slot->retained) {
+  } else if (slot->value.explicitly_saved) {
     (void)new_game_open_confirm(p, ui, gfx);
   } else {
     (void)new_game_open_keep(p, ui, gfx);
@@ -155,7 +155,7 @@ static void new_game_dispatch(Persistence *p, Game *game, UI *ui, Gfx *gfx,
         (void)new_game_open_keep_retry(p, ui, gfx);
     } else if (result->button == 2u) {
       if (new_game_ready(p) && p->profile.normal.present &&
-          !p->profile.normal.retained)
+          !p->profile.normal.value.explicitly_saved && journey_interrupt_slot(p,ui,false))
         (void)new_game_launch(p, game, ui, gfx, false);
       else
         new_game_after_saved(p, game, ui, gfx);

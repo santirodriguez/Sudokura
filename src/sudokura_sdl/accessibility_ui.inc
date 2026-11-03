@@ -190,8 +190,9 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
     const int focuses[]={HOME_FOCUS_NEW,HOME_FOCUS_CONTINUE,HOME_FOCUS_DAILY,
         HOME_FOCUS_GAMES,HOME_FOCUS_HELP,HOME_FOCUS_ABOUT,HOME_FOCUS_SETTINGS,HOME_FOCUS_QUIT};
     for (int i=0;i<8;++i)
-      ADD(A11Y_HOME+focuses[i],i<3?sdl_rect(geo.home_primary[i]):sdl_rect(geo.home_secondary[i-3]),
+      ADD(A11Y_HOME+focuses[i],i<3?sdl_rect(geo.home_primary[i]):i==3?home_collection_rect(&geo,false):sdl_rect(geo.home_secondary[i-3]),
           keys[i],i!=1||ui->normal_resume.can_continue,false);
+    ADD(A11Y_HOME+HOME_FOCUS_JOURNEY,home_collection_rect(&geo,true),T_JOURNEY,true,false);
     for (int i=0;i<3;++i) {
       ADD(A11Y_MODE+i,sdl_rect(geo.home_mode[i]),mode_key((Mode)i),true,ui->mode==(Mode)i);
       ui_a11y_add(s,g,A11Y_DIFFICULTY+i,sdl_rect(geo.home_difficulty[i]),
@@ -231,7 +232,9 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
     return;
   } else if (ui->screen==APP_SCREEN_GAMES) {
     GamesBrowserLayout lay=games_browser_layout(g);
-    ui_a11y_add(s,g,A11Y_HEADING,lay.title,tr(ui->language,T_GAMES_LIBRARY_TITLE),0,true,false);
+    ui_a11y_add(s,g,A11Y_HEADING,lay.title,tr(ui->language,games_browser.view==GAMES_SAVED?T_GAMES_LIBRARY_TITLE:T_JOURNEY),0,true,false);
+    const TextKey tabs[]={T_GAMES,T_JOURNEY_WON,T_JOURNEY_RETRY};
+    for(int i=0;i<3;++i)ADD(A11Y_LIBRARY+7+i,lay.tabs[i],tabs[i],true,games_browser.view==(GamesView)i);
     const int focuses[]={2,1,3,4,5,6};
     const TextKey keys[]={T_BACK,T_GAMES_LOAD,T_GAMES_REPLAY,T_GAMES_DELETE,
                           T_GAMES_PREVIOUS_PAGE,T_GAMES_NEXT_PAGE};
@@ -239,6 +242,8 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
     for (int i=0;i<6;++i) {
       if (games_browser.detail_open && (i==1 || i>=4)) continue;
       TextKey key=keys[i];
+      if(i==2)key=T_JOURNEY_RETRY_ACTION;
+      if(i==3 && games_browser.view!=GAMES_SAVED)key=T_JOURNEY_ATTEMPTS;
       if (i==1 && games_browser.selected<games_browser.count) {
         const GamesRow *row=&games_browser.rows[games_browser.selected];
         key=game_library_entry_recoverable(&row->entry)?T_RECOVER:
@@ -255,10 +260,14 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
             difficulty_name(ui->language,entry->result.difficulty),
             tr(ui->language,entry->status!=STORE_OK?T_GAMES_UNAVAILABLE:
               entry->result.status==SESSION_ACTIVE?T_GAMES_IN_PROGRESS:
-              entry->result.status==SESSION_WON?T_YOU_WIN:T_YOU_LOSE));
+              entry->result.status==SESSION_WON?T_YOU_WIN:entry->result.status==SESSION_INTERRUPTED?T_JOURNEY_INTERRUPTED:T_YOU_LOSE));
         ui_a11y_add(s,g,A11Y_ROW+row,games_browser_row_rect(lay,row),label,
             ACCESSIBILITY_ACTIVATE,true,index==games_browser.selected);
       }
+    }
+    if(games_browser.detail_open && games_browser.selected<games_browser.count) {
+      char summary[640];games_browser_result_description(&games_browser.rows[games_browser.selected],ui->language,summary,sizeof(summary));
+      ui_a11y_add(s,g,A11Y_STATUS,lay.subtitle,summary,0,true,false);
     }
     ui_a11y_saved_preview(s,ui,g);
     return;
@@ -471,7 +480,7 @@ static bool ui_a11y_dispatch(Persistence *p,Game *game,UI *ui,Gfx *g,bool *runni
     else ui_audio_set_fx_level(audio_fx_volume()+delta);
   } else if (id>=A11Y_HINT && id<A11Y_HINT+HINT_FOCUS_COUNT) {
     hint_keyboard_focus=(HintKeyboardFocus)(id-A11Y_HINT);(void)activate_hint_focus(p,game,ui);
-  } else if (id>=A11Y_LIBRARY && id<A11Y_LIBRARY+7) {
+  } else if (id>=A11Y_LIBRARY && id<A11Y_LIBRARY+10) {
     games_browser.focus=id-A11Y_LIBRARY;(void)games_browser_activate_focus(p,game,ui,g);
   } else if (id>=A11Y_ROW && id<A11Y_ROW+60) {
     games_browser_select(p,g,games_browser.scroll+(size_t)(id-A11Y_ROW));

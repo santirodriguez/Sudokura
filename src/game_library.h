@@ -9,7 +9,8 @@
 #include <stdint.h>
 
 #define SUDOKURA_GAME_RECORD_MAX_BYTES 8192u
-#define SUDOKURA_GAME_RECORD_VERSION 1u
+#define SUDOKURA_GAME_RECORD_VERSION_LEGACY 1u
+#define SUDOKURA_GAME_RECORD_VERSION 2u
 
 typedef enum {
   GAME_RECORD_EXACT = 1,
@@ -37,9 +38,10 @@ typedef struct {
 } GameLibraryRecord;
 
 typedef struct {
-  GameAttemptId id;
+  GameAttemptId id, parent;
   StoreStatus status;
   bool only_backup;
+  bool explicitly_saved;
   /* Metadata/CRC status of .bak; STORE_OK still requires full canonical
      validation before an explicit recovery. */
   StoreStatus previous_status;

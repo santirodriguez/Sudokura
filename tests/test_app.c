@@ -531,7 +531,21 @@ static void test_storage_is_substitutable(void) {
   assert(!storage_save_preferences(&missing, "preferences.dat", &preferences));
 }
 
+static void test_real_digit_attempt_marker(void) {
+  Game game;fixture_game_new(&game,9301);
+  AppState state=playing_state(MODE_CLASSIC);
+  int index=-1;for(int i=0;i<81;++i)if(!game.fixed[i]){index=i;break;}
+  assert(index>=0);
+  AppAction note={.kind=APP_ACTION_NOTE,.row=index/9,.column=index%9,.value=1};
+  (void)app_apply_action(&game,&state,note,0);assert(!state.attempt_started);
+  AppAction place=note;place.kind=APP_ACTION_PLACE;place.value=game.solution[index];
+  (void)app_apply_action(&game,&state,place,1);assert(state.attempt_started);
+  AppAction undo={.kind=APP_ACTION_UNDO};
+  (void)app_apply_action(&game,&state,undo,2);assert(state.attempt_started);
+}
+
 int main(void) {
+  test_real_digit_attempt_marker();
   test_navigation_contract();
   test_result_context_survives_auxiliary_round_trip();
   test_no_change_and_strikes();
