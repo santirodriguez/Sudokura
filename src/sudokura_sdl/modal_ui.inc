@@ -194,7 +194,8 @@ static void ui_modal_render(Gfx *gfx, UI *ui) {
     SDL_Rect label={rect.x+10,rect.y+4,rect.w-20,rect.h-8};
     (void)polish_draw_wrapped_fit(gfx,tr(ui->language,ui_modal.request.buttons[i]),
         destructive?accent:i==1?theme.bg:theme.btnfg,label,18,12,true);
-    if (focused) draw_focus_ring(gfx->ren,rect,accent);
+    if (focused && (!gfx->mobile_layout || ui_keyboard_focus_visible))
+      draw_focus_ring(gfx->ren,rect,accent);
   }
 }
 
@@ -312,9 +313,12 @@ static bool ui_modal_handle_event(const SDL_Event *event) {
     if (event->key.repeat) return true;
     SDL_Keycode key=event->key.keysym.sym;
     SDL_Keymod mod=(SDL_Keymod)event->key.keysym.mod;
+    UiModalLayout layout=ui_modal_layout(audio_gfx,ui_modal.request.button_count);
+    bool vertical=ui_modal.request.button_count>1 && layout.buttons[0].y!=layout.buttons[1].y;
     if (key==SDLK_ESCAPE) ui_modal_cancel_current();
-    else if (key==SDLK_TAB || key==SDLK_LEFT || key==SDLK_RIGHT) {
-      int direction=key==SDLK_LEFT ||
+    else if (key==SDLK_TAB || key==SDLK_LEFT || key==SDLK_RIGHT ||
+             (vertical && (key==SDLK_UP || key==SDLK_DOWN))) {
+      int direction=key==SDLK_LEFT || key==SDLK_UP ||
           (key==SDLK_TAB && (mod & KMOD_SHIFT)) ? -1:1;
       int count=(int)ui_modal.request.button_count;
       unsigned next=(unsigned)(((int)ui_modal.focus+direction+count)%count);

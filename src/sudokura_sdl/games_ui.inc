@@ -2114,7 +2114,7 @@ static void games_browser_draw_button(Gfx *gfx, Theme theme, SDL_Rect rect,
     (void)polish_draw_wrapped_fit(gfx,text,foreground,label,17,13,true);
   } else
     ui_draw_icon_label(gfx,face,text,glyph,foreground,17);
-  if (focused&&enabled)draw_focus_ring(gfx->ren,rect,theme.sel_outline);
+  if (focused&&enabled&&(!gfx->mobile_layout||ui_keyboard_focus_visible))draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
 static void games_browser_result_description(const GamesRow *row, Language language,
@@ -2166,7 +2166,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
       SDL_Rect marker={lay.tabs[i].x+12,lay.tabs[i].y+lay.tabs[i].h-4,lay.tabs[i].w-24,3};
       draw_round_rect(gfx->ren,marker,1,color);
     }
-    if(games_browser.focus==7+i)draw_focus_ring(gfx->ren,lay.tabs[i],color);
+    if(games_browser.focus==7+i&&(!gfx->mobile_layout||ui_keyboard_focus_visible))draw_focus_ring(gfx->ren,lay.tabs[i],color);
   }
 
   if (games_browser.detail_open) {
@@ -2278,7 +2278,7 @@ static void games_browser_render(Gfx *gfx, const Game *game, UI *ui) {
     SDL_Rect sub_label={label_x,rect.y+rect.h-25,rect.w-48,21};
     (void)draw_fitted_text(gfx,caption,theme.btnfg,main_label,17,10);
     (void)draw_fitted_text(gfx,status,theme.dim,sub_label,13,10);
-    if(selected&&games_browser.focus==0)
+    if(selected&&games_browser.focus==0&&(!gfx->mobile_layout||ui_keyboard_focus_visible))
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
   if(!games_browser.count) {
