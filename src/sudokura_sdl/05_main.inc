@@ -51,9 +51,30 @@ static bool window_event_changes_surface_metrics(const Gfx *gfx, Uint8 event) {
 static bool app_handle_surface_resize(Gfx *gfx, UI *ui,
                                       const SDL_WindowEvent *event) {
   if (!gfx || !ui || !event) return false;
+  if (gfx->mobile_layout) gfx->surface_repaint_until_ms=now_ms()+1500u;
   if (gfx->mobile_layout && event->event == SDL_WINDOWEVENT_RESIZED)
     return app_refresh_renderer_metrics(gfx, ui);
   return app_resize_renderer_metrics(gfx, ui, event->data1, event->data2);
+}
+
+/* Surface output can settle after the resize notification. Idle screens
+   need a bounded repaint window too; never retry an unavailable renderer. */
+static bool app_settle_mobile_surface(Gfx *gfx, UI *ui) {
+  if (!gfx || !gfx->mobile_layout || app_suspended || !gfx->renderer_ready ||
+      now_ms()>=gfx->surface_repaint_until_ms) return false;
+  int w=0,h=0;
+  if (SDL_GetRendererOutputSize(gfx->ren,&w,&h)!=0 || w<=0 || h<=0) {
+    gfx->surface_repaint_until_ms=0;
+    app_mark_renderer_unavailable(gfx,ui);
+    return false;
+  }
+  if ((w!=gfx->output_width || h!=gfx->output_height) &&
+      !app_refresh_renderer_metrics(gfx,ui)) {
+    gfx->surface_repaint_until_ms=0;
+    return false;
+  }
+  gfx->dirty=true;
+  return true;
 }
 
 static bool home_focus_available(const UI *ui, int focus) {
@@ -2408,15 +2429,19 @@ int main(int argc, char **argv) {
       const int shell_sizes[][2]={{360,600},{600,320},{600,360},{800,480}};
       g.mobile_layout=true;
       for (unsigned size=0;size<sizeof(shell_sizes)/sizeof(shell_sizes[0]);++size) {
-        SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
-        SDL_PumpEvents();
         SDL_WindowEvent mobile_resize; SDL_zero(mobile_resize);
         mobile_resize.type=SDL_WINDOWEVENT;mobile_resize.windowID=SDL_GetWindowID(g.win);
         mobile_resize.event=SDL_WINDOWEVENT_RESIZED;
         mobile_resize.data1=shell_sizes[size][0];
         mobile_resize.data2=shell_sizes[size][1];
         if (!window_event_changes_surface_metrics(&g,mobile_resize.event) ||
-            !app_handle_surface_resize(&g,&ui,&mobile_resize) ||
+            !app_handle_surface_resize(&g,&ui,&mobile_resize)) {
+          app_shutdown(&g);return 1;
+        }
+        /* Deliver the notification before the output actually changes. */
+        SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
+        SDL_PumpEvents();
+        if (!app_settle_mobile_surface(&g,&ui) ||
             g.width!=shell_sizes[size][0] || g.height!=shell_sizes[size][1]) {
           fprintf(stderr,"mobile RESIZED surface metrics regression at %dx%d\n",
                   shell_sizes[size][0],shell_sizes[size][1]);
@@ -4881,6 +4906,8 @@ int main(int argc, char **argv) {
                                games_browser.scanning) || home_daily_scan.active)))
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
     int button_feedback_wait = ui_feedback_remaining(&ui);
+    if (g.mobile_layout && g.renderer_ready &&
+        now_ms()<g.surface_repaint_until_ms && wait_ms>16) wait_ms=16;
     if (button_feedback_wait > 0 &&
         (wait_ms < 0 || wait_ms > button_feedback_wait))
       wait_ms = button_feedback_wait;
@@ -4949,6 +4976,7 @@ int main(int argc, char **argv) {
             capture_window_preferences(&persistence, &g, &ui);
 #endif
         } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
+          if (g.mobile_layout) g.surface_repaint_until_ms=now_ms()+1500u;
           if (g.renderer_ready) g.dirty = true;
         } else if (ui.session_open && ui.result == RES_NONE &&
                    window_event_requires_focus_pause(&g, &e.window)) {
@@ -5779,6 +5807,7 @@ int main(int argc, char **argv) {
     }
     if (ui_modal.active && ui.screen != ui_modal.request.binding.screen)
       ui_modal_invalidate();
+    (void)app_settle_mobile_surface(&g,&ui);
     if(desktop_dynamic_frame_due(&ui))g.dirty=true;
     if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);

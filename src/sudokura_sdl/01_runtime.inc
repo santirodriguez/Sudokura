@@ -102,6 +102,7 @@ typedef struct {
   bool mobile_layout;
   bool renderer_ready;
   bool dirty;
+  uint64_t surface_repaint_until_ms;
   char font_path[PATH_MAX];
   int restored_x, restored_y, restored_width, restored_height;
   bool restored_bounds_valid;
