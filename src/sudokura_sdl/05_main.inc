@@ -41,6 +41,21 @@ static bool window_event_requires_focus_pause(const Gfx *gfx,
       desktop_window_event(event->event), desktop_window_state(gfx->win));
 }
 
+/* Android SDL 2.32.10 reports SurfaceView rotations as RESIZED. Desktop
+   keeps using SIZE_CHANGED; refresh the mobile viewport for either event. */
+static bool window_event_changes_surface_metrics(const Gfx *gfx, Uint8 event) {
+  return event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+         (gfx && gfx->mobile_layout && event == SDL_WINDOWEVENT_RESIZED);
+}
+
+static bool app_handle_surface_resize(Gfx *gfx, UI *ui,
+                                      const SDL_WindowEvent *event) {
+  if (!gfx || !ui || !event) return false;
+  if (gfx->mobile_layout && event->event == SDL_WINDOWEVENT_RESIZED)
+    return app_refresh_renderer_metrics(gfx, ui);
+  return app_resize_renderer_metrics(gfx, ui, event->data1, event->data2);
+}
+
 static bool home_focus_available(const UI *ui, int focus) {
   return focus != HOME_FOCUS_CONTINUE || ui->has_session;
 }
@@ -2395,7 +2410,18 @@ int main(int argc, char **argv) {
       for (unsigned size=0;size<sizeof(shell_sizes)/sizeof(shell_sizes[0]);++size) {
         SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
         SDL_PumpEvents();
-        if (!gfx_refresh_metrics(&g)) {app_shutdown(&g);return 1;}
+        SDL_WindowEvent mobile_resize; SDL_zero(mobile_resize);
+        mobile_resize.type=SDL_WINDOWEVENT;mobile_resize.windowID=SDL_GetWindowID(g.win);
+        mobile_resize.event=SDL_WINDOWEVENT_RESIZED;
+        mobile_resize.data1=shell_sizes[size][0];
+        mobile_resize.data2=shell_sizes[size][1];
+        if (!window_event_changes_surface_metrics(&g,mobile_resize.event) ||
+            !app_handle_surface_resize(&g,&ui,&mobile_resize) ||
+            g.width!=shell_sizes[size][0] || g.height!=shell_sizes[size][1]) {
+          fprintf(stderr,"mobile RESIZED surface metrics regression at %dx%d\n",
+                  shell_sizes[size][0],shell_sizes[size][1]);
+          app_shutdown(&g);return 1;
+        }
         for (int mode=MODE_CLASSIC;mode<=MODE_TIME;++mode) {
           ui.mode=(Mode)mode;ui.session_open=true;ui.has_session=true;
           ui.pause_reasons=0;ui.result=RES_NONE;
@@ -4898,9 +4924,8 @@ int main(int argc, char **argv) {
         continue;
       }
       if (e.type == SDL_WINDOWEVENT) {
-        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-          if (app_resize_renderer_metrics(&g, &ui,
-                                          e.window.data1, e.window.data2))
+        if (window_event_changes_surface_metrics(&g,e.window.event)) {
+          if (app_handle_surface_resize(&g,&ui,&e.window))
             capture_window_preferences(&persistence, &g, &ui);
           else
             fprintf(stderr, "window resize metrics unavailable: %s\n",
@@ -4931,7 +4956,7 @@ int main(int argc, char **argv) {
             (void)checkpoint_current_session(&persistence, &game, &ui);
         }
         if ((ui_modal.active || ui_modal_has_pending()) &&
-            (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+            (window_event_changes_surface_metrics(&g,e.window.event) ||
              e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
              e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
              e.window.event == SDL_WINDOWEVENT_HIDDEN ||
