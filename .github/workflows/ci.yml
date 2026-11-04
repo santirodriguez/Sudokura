@@ -542,16 +542,32 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/sudokura-runtime-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
           printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
             --force --name sudokura-16k --device pixel_2 \
+            --path "$ANDROID_AVD_HOME/sudokura-16k.avd" \
             --package "system-images;android-35;google_apis_ps16k;x86_64"
+          test -s "$ANDROID_AVD_HOME/sudokura-16k.avd/config.ini"
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' \
+            "$ANDROID_AVD_HOME/sudokura-16k.avd" > "$ANDROID_AVD_HOME/sudokura-16k.ini"
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee android-runtime-output/avd-list.txt
+          grep -Fxq sudokura-16k android-runtime-output/avd-list.txt
           "$ANDROID_HOME/emulator/emulator" -avd sudokura-16k -port 5554 \
             -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -memory 2048 -cores 2 \
             > android-runtime-output/emulator.log 2>&1 &
           emulator_pid=$!
           trap 'timeout 15 adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
-          timeout 180 adb -s emulator-5554 wait-for-device
+          boot_deadline=$((SECONDS + 180))
+          until timeout 5 adb -s emulator-5554 get-state 2>/dev/null | grep -Fxq device; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$boot_deadline" ]; then
+              tail -60 android-runtime-output/emulator.log
+              exit 1
+            fi
+            sleep 2
+          done
           timeout 30 adb -s emulator-5554 root
           timeout 90 adb -s emulator-5554 wait-for-device
           python3 android/scripts/emulator_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" \
