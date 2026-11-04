@@ -37,3 +37,10 @@ The maintainer accepted gameplay, More styling, official/localized links and ini
 Exact-device/API/density provenance, ARM64 deterministic equivalence, acknowledged-save process death recovery, full lifecycle/Back/cutout matrix, measured latency/CPU/memory, 16 KiB execution, stable production signing/upgrade and final screenshots remain separate publicability gates. Structural alignment is not runtime acceptance. See the full [v1.4.0 blueprint](../docs/V1.4.0_BLUEPRINT.md).
 
 Keep an existing prototype installation with progress: an ephemeral debug-signature mismatch is not a reason to uninstall or clear data. Production uses separate storage and does not promise automatic prototype migration. GitHub/Obtainium is the primary planned direct channel; F-Droid inclusion and Play submission/approval remain external work, not currently available listings.
+
+
+## Opt-in 16 KiB emulator diagnostic
+
+A push explicitly marked `[android-runtime]` enables one diagnostic job inside the existing CI run. It builds only the x86_64 prototype with `-PsudokuraEmulatorTest=true`; the production variant is disabled in that configuration and normal builds remain ARM64. No signing secrets are available to the diagnostic job.
+
+The job uses the SDK's API35 `google_apis_ps16k` image, records its revision, requires `getconf PAGE_SIZE` to report16384 and disables page-size compatibility fallback. It checks native ELF/ZIP alignment, loads all four shared libraries, exercises Home/play/background/explicit Resume/landscape through the actual Android surface and compares full deterministic core fixtures against the host executable. XML/PNG/logs and a source/APK-bound receipt are retained even on failure. This is an x86_64 emulator diagnostic, not acceptance of the public ARM64 APK, TalkBack, or physical-device performance. Official setup: https://developer.android.com/guide/practices/page-sizes .

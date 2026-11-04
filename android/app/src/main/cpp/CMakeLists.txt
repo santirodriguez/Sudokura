@@ -83,3 +83,18 @@ target_include_directories(main PRIVATE "${SUDOKURA_ROOT}" "${SUDOKURA_ROOT}/src
 target_compile_features(main PRIVATE c_std_11)
 target_compile_options(main PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(main PRIVATE SDL2 SDL2main SDL2_ttf SDL2_mixer log android m)
+
+# Executable is pushed to an isolated emulator by CI, never packaged in an APK.
+option(SUDOKURA_EMULATOR_TEST "Build the CI-only core parity executable" OFF)
+if(SUDOKURA_EMULATOR_TEST)
+  if(NOT ANDROID_ABI STREQUAL "x86_64")
+    message(FATAL_ERROR "Emulator test configuration is x86_64-only")
+  endif()
+  add_executable(sudokura-parity
+    "${SUDOKURA_ROOT}/tests/test_deterministic_parity.c"
+    "${SUDOKURA_ROOT}/src/game.c" "${SUDOKURA_ROOT}/src/human.c")
+  target_include_directories(sudokura-parity PRIVATE "${SUDOKURA_ROOT}/src")
+  target_compile_features(sudokura-parity PRIVATE c_std_11)
+  target_compile_options(sudokura-parity PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(sudokura-parity PRIVATE m)
+endif()

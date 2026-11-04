@@ -490,3 +490,83 @@ jobs:
             deterministic-v138.txt
             deterministic-v139.txt
           retention-days: 14
+
+  android-runtime:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[android-runtime]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Prepare isolated 16 KiB emulator inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core libpulse0 libxkbfile1 libnss3 libx11-xcb1
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          sudo chmod u+rw /dev/kvm
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" \
+            "ndk;28.2.13676358" "cmake;3.22.1" "emulator" \
+            "system-images;android-35;google_apis_ps16k;x86_64"
+          mkdir -p android-runtime-output
+          cp "$ANDROID_HOME/system-images/android-35/google_apis_ps16k/x86_64/source.properties" android-runtime-output/image-source.properties
+          "$ANDROID_HOME/emulator/emulator" -version > android-runtime-output/emulator-version.txt
+          python3 android/scripts/prepare_sources.py
+          make assets
+      - name: Build test-only prototype and native parity executable
+        run: |
+          bash android/gradlew --no-daemon :app:assemblePrototypeDebug \
+            -PsudokuraEmulatorTest=true \
+            -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+            -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
+          APK=android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk
+          python3 android/scripts/audit_elf.py \
+            "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            "$APK" --abi x86_64 > android-runtime-output/elf-audit.txt
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK" > android-runtime-output/zipalign.txt
+          make tests/test_deterministic_parity WERROR=-Werror
+          ./tests/test_deterministic_parity > android-runtime-output/parity-host.txt
+      - name: Execute 16 KiB prototype runtime and deterministic parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force --name sudokura-16k --device pixel_2 \
+            --package "system-images;android-35;google_apis_ps16k;x86_64"
+          "$ANDROID_HOME/emulator/emulator" -avd sudokura-16k -port 5554 \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 2048 -cores 2 \
+            > android-runtime-output/emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
+          timeout 180 adb -s emulator-5554 wait-for-device
+          adb -s emulator-5554 root
+          timeout 90 adb -s emulator-5554 wait-for-device
+          python3 android/scripts/emulator_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" \
+            --apk android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk \
+            --source "$GITHUB_SHA" --output android-runtime-output
+          parity=$(find android/app/.cxx -type f -name sudokura-parity -path '*/x86_64/*' -print -quit)
+          test -n "$parity"
+          adb -s emulator-5554 push "$parity" /data/local/tmp/sudokura-parity
+          adb -s emulator-5554 shell chmod 700 /data/local/tmp/sudokura-parity
+          adb -s emulator-5554 exec-out /data/local/tmp/sudokura-parity > android-runtime-output/parity-android.txt
+          cmp android-runtime-output/parity-host.txt android-runtime-output/parity-android.txt
+          printf 'x86_64_fixture_parity=PASS\nproduction_arm64_acceptance=NOT_ESTABLISHED\n' > android-runtime-output/parity-result.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: android-16k-runtime-diagnostics
+          path: android-runtime-output/
+          retention-days: 7
