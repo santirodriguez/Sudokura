@@ -2,6 +2,13 @@ name: Android package preview
 
 on:
   workflow_call:
+    inputs:
+      source_commit:
+        type: string
+        default: ""
+      require_signed:
+        type: boolean
+        default: false
     secrets:
       SUDOKURA_APP_KEYSTORE_BASE64:
         required: false
@@ -20,8 +27,20 @@ jobs:
   android-debug:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          fetch-depth: 0
+      - name: Check signing trust and exact source
+        id: signing
+        env:
+          REQUIRE_SIGNED: ${{ inputs.require_signed && 'true' || 'false' }}
+        run: |
+          python3 tests/test_signing_context.py
+          python3 android/scripts/signing_context.py
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -76,7 +95,7 @@ jobs:
           python3 android/scripts/audit_elf.py "$READELF" "$APK" | tee android-preview-output/elf-audit.txt
           "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-preview-output/zipalign.txt
           sha256sum "$APK" | tee android-preview-output/SHA256SUMS.txt
-          printf 'source_sha=%s\n' "$GITHUB_SHA" | tee android-preview-output/build-info.txt
+          printf 'source_sha=%s\n' "$SUDOKURA_SOURCE_COMMIT" | tee android-preview-output/build-info.txt
           printf 'gradle=8.13\nagp=8.11.1\njava=17\nndk=28.2.13676358\ncmake=3.22.1\nmin_sdk=28\ntarget_sdk=36\nabi=arm64-v8a\nphysical_device=NOT_RUN\n' >> android-preview-output/build-info.txt
           du -h "$APK" | tee android-preview-output/apk-size.txt
           cp "$APK" android-preview-output/app-debug.apk
@@ -132,9 +151,9 @@ jobs:
           }, indent=2) + '\n')
           PYBUNDLE
           sha256sum android-production-output/*.apk android-production-output/*.aab > android-production-output/SHA256SUMS.txt
-          printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$GITHUB_SHA" "$VERSION" > android-production-output/build-info.txt
+          printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$SUDOKURA_SOURCE_COMMIT" "$VERSION" > android-production-output/build-info.txt
       - name: Sign production APK with the Sudokura app key
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0'
+        if: steps.signing.outputs.sign == 'true'
         shell: bash
         env:
           SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
@@ -176,9 +195,9 @@ jobs:
           cp android-production-output/signed-apk-audit.json android-production-output/signed-SHA256SUMS.txt android-production-output/apk-signature.txt android-production-output/signed-zipalign.txt android-signed-output/
           python3 android/scripts/release_manifest.py \
             --directory android-signed-output --version "$(sh scripts/version.sh)" \
-            --source-commit "$GITHUB_SHA"
+            --source-commit "$SUDOKURA_SOURCE_COMMIT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0'
+        if: steps.signing.outputs.sign == 'true'
         with:
           name: sudokura-android-signed-github
           path: android-signed-output/

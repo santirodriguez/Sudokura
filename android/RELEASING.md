@@ -59,7 +59,7 @@ Exactly two repository secrets are used for direct APK signing:
 - `SUDOKURA_APP_KEYSTORE_BASE64`: base64 of the app-signing JKS.
 - `SUDOKURA_APP_KEYSTORE_PASSWORD`: the shared JKS store/key-entry password.
 
-The alias is fixed as `sudokura`. The store password and key-entry password are different concepts, but this key uses the same value for both; no third secret is needed. Signing is restricted to the trusted `release/1.4.0` branch. Pull requests and tags do not gain signing access. The Play upload JKS and password are not used by this workflow.
+The alias is fixed as `sudokura`. The store password and key-entry password are different concepts, but this key uses the same value for both; no third secret is needed. Signing is allowed on the exact trusted `release/1.4.0` branch source and on push events for version-matched release tags whose exact commit belongs to `main`. Pull requests, arbitrary refs, mismatched sources and manual tag dispatch do not sign. The context is checked before the signing step receives credentials. The Play upload JKS and password are not used by this workflow.
 
 Keep private JKS files and password records outside source control, chat, Issues and ordinary build artifacts. Base64 is an encoding, not encryption. Do not echo secret values or enable shell tracing while handling them. Keep JKS files mode 0600 and their private directory mode 0700. Preserve role-labelled `01-app-signing/`, `02-play-upload/` and `public/` groups in private custody; only exported public certificates belong in the last group.
 
@@ -98,7 +98,7 @@ This stages files only: it creates no tag, draft, release or network request, an
 
 After separate authorization, bind the release tag to that same source commit, attach the seven staged files to one draft, apply `release_bundle.py labels --version 1.4.0 --include-android`, and validate the draft asset list with `validate-assets --include-android`. Before publication verify all seven uploaded bytes/checksums and source identity; after publication require `validate-assets --published --include-android`. If the release source changes, rebuild and revalidate a combined bundle from that source instead of relabeling older bytes.
 
-The existing tag workflow still stages desktop assets only; it is not the complete Android publication handoff. If it creates a desktop draft, replace its application/checksum/Build-Info set with the seven exact combined-bundle files before publication and validation. Never publish the intermediate six-asset draft. This approach retains existing signing access on the trusted release branch and gives tags or pull requests no new credential access.
+The tag workflow now calls the reusable Android job with the resolved source commit and requires trusted signing. Its combined bundle includes the signed APK, and the draft upload, labels and asset validator all require seven files. A failure in Android, either Linux runtime check or another package job blocks the draft. Tags trigger the release workflow without also triggering the general CI. Manual packaging creates no draft and must use an exact trusted workflow source; it cannot sign an arbitrary historical ref. No tag or draft is created as part of a branch CI run.
 
 ## Before public distribution
 
