@@ -556,7 +556,7 @@ jobs:
           grep -Fxq sudokura-16k android-runtime-output/avd-list.txt
           "$ANDROID_HOME/emulator/emulator" -avd sudokura-16k -port 5554 \
             -no-window -no-audio -no-boot-anim -no-snapshot \
-            -gpu swiftshader_indirect -memory 2048 -cores 2 \
+            -gpu swiftshader_indirect -memory 4096 -cores 2 \
             > android-runtime-output/emulator.log 2>&1 &
           emulator_pid=$!
           trap 'timeout 15 adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
@@ -573,8 +573,9 @@ jobs:
           python3 android/scripts/emulator_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" \
             --apk android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk \
             --source "$GITHUB_SHA" --output android-runtime-output
-          parity=$(find android/app/.cxx -type f -name sudokura-parity -path '*/x86_64/*' -print -quit)
+          parity=$(find android/app -type f -name sudokura-parity -path '*/x86_64/*' -print -quit)
           test -n "$parity"
+          test -x "$parity"
           adb -s emulator-5554 push "$parity" /data/local/tmp/sudokura-parity
           adb -s emulator-5554 shell chmod 700 /data/local/tmp/sudokura-parity
           adb -s emulator-5554 exec-out /data/local/tmp/sudokura-parity > android-runtime-output/parity-android.txt

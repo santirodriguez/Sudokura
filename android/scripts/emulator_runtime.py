@@ -97,12 +97,19 @@ def run(args):
               ('bionic.linker.16kb.app_compat.enabled', 'pm.16kb.app_compat.disabled')}
     if list(compat.values()) != ['false', 'true']:
         raise RuntimeError('Cannot verify disabled page-size compatibility fallback')
+    # Complete only this disposable emulator's first-boot setup.
+    shell('settings', 'put', 'global', 'device_provisioned', '1')
+    shell('settings', 'put', 'secure', 'user_setup_complete', '1')
+    shell('input', 'keyevent', 'KEYCODE_WAKEUP')
+    shell('wm', 'dismiss-keyguard')
+    (output / 'memory-before.txt').write_text(shell('cat', '/proc/meminfo'))
     adb('install', '-r', str(args.apk))
     adb('logcat', '-c')
     shell('am', 'start', '-W', '-n', ACTIVITY)
     home = wait_scene('home', lambda t: find(t, 'Start new game') is not None)
     tap(find(home, 'Start new game'))
     wait_scene('play', lambda t: len(cells(t)) == 81)
+    (output / 'memory-playing.txt').write_text(shell('dumpsys', 'meminfo', PACKAGE))
     pid = shell('pidof', PACKAGE)
     if not re.fullmatch(r'[0-9]+', pid):
         raise RuntimeError('Expected exactly one native game process')
@@ -131,7 +138,7 @@ def run(args):
         raise RuntimeError('Runtime crash/linker failure in logcat')
     receipt = {'source_commit': args.source, 'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(),
                'abi': abi, 'page_size': int(page_size), 'compatibility_properties': compat,
-               'native_libraries_loaded': list(LIBRARIES), 'home_play_resume': 'PASS',
+               'native_libraries_loaded': list(LIBRARIES), 'memory_receipts': ['memory-before.txt', 'memory-playing.txt'], 'home_play_resume': 'PASS',
                'rotation_smoke': 'PASS', 'production_arm64_acceptance': 'NOT_ESTABLISHED',
                'talkback_acceptance': 'NOT_ESTABLISHED'}
     (output / 'runtime.json').write_text(json.dumps(receipt, indent=2) + '\n')
