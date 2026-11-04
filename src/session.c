@@ -1,0 +1,469 @@
+#if !defined(_WIN32)
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
+#include "session.h"
+#include "store_io.h"
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#if defined(_WIN32)
+#include <io.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#define STORE_HEADER_SIZE 18u
+#define STORE_MAX_FILE_SIZE 4096u
+#define SESSION_PAYLOAD_SIZE 365u
+#define PREFERENCES_LEGACY_PAYLOAD_SIZE 5u
+#define PREFERENCES_PAYLOAD_SIZE 6u
+#define NOTES_VALID_MASK UINT16_C(0x03fe)
+#define SESSION_MAX_COUNTER 1000000
+
+static const unsigned char session_magic[8] = {'S','U','D','O','S','A','V','E'};
+static const unsigned char preferences_magic[8] = {'S','U','D','O','P','R','E','F'};
+
+typedef struct {
+  unsigned char *data;
+  size_t size;
+  size_t position;
+  bool ok;
+} ByteWriter;
+
+typedef struct {
+  const unsigned char *data;
+  size_t size;
+  size_t position;
+  bool ok;
+} ByteReader;
+
+static bool valid_mode(GameMode mode) {
+  return mode >= MODE_CLASSIC && mode <= MODE_TIME;
+}
+
+static bool valid_difficulty(GameDifficulty difficulty) {
+  return difficulty >= DIFFICULTY_EASY && difficulty < DIFFICULTY_COUNT;
+}
+
+static bool valid_status(SessionStatus status) {
+  return status >= SESSION_ACTIVE && status <= SESSION_INTERRUPTED;
+}
+
+static void writer_u8(ByteWriter *writer, uint8_t value) {
+  if (!writer || !writer->ok || writer->position >= writer->size) {
+    if (writer) writer->ok = false;
+    return;
+  }
+  writer->data[writer->position++] = value;
+}
+
+static void writer_u16(ByteWriter *writer, uint16_t value) {
+  writer_u8(writer, (uint8_t)(value & 0xffu));
+  writer_u8(writer, (uint8_t)((value >> 8) & 0xffu));
+}
+
+static void writer_u32(ByteWriter *writer, uint32_t value) {
+  for (unsigned shift = 0; shift < 32; shift += 8) {
+    writer_u8(writer, (uint8_t)((value >> shift) & 0xffu));
+  }
+}
+
+static void writer_u64(ByteWriter *writer, uint64_t value) {
+  for (unsigned shift = 0; shift < 64; shift += 8) {
+    writer_u8(writer, (uint8_t)((value >> shift) & UINT64_C(0xff)));
+  }
+}
+
+static uint8_t reader_u8(ByteReader *reader) {
+  if (!reader || !reader->ok || reader->position >= reader->size) {
+    if (reader) reader->ok = false;
+    return 0;
+  }
+  return reader->data[reader->position++];
+}
+
+static uint16_t reader_u16(ByteReader *reader) {
+  uint16_t value = reader_u8(reader);
+  value |= (uint16_t)((uint16_t)reader_u8(reader) << 8);
+  return value;
+}
+
+static uint32_t reader_u32(ByteReader *reader) {
+  uint32_t value = 0;
+  for (unsigned shift = 0; shift < 32; shift += 8) {
+    value |= (uint32_t)reader_u8(reader) << shift;
+  }
+  return value;
+}
+
+static uint64_t reader_u64(ByteReader *reader) {
+  uint64_t value = 0;
+  for (unsigned shift = 0; shift < 64; shift += 8) {
+    value |= (uint64_t)reader_u8(reader) << shift;
+  }
+  return value;
+}
+
+static uint32_t crc32_bytes(const unsigned char *data, size_t size) {
+  uint32_t crc = UINT32_C(0xffffffff);
+  for (size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      uint32_t mask = (uint32_t)(0u - (crc & 1u));
+      crc = (crc >> 1) ^ (UINT32_C(0xedb88320) & mask);
+    }
+  }
+  return ~crc;
+}
+
+static void put_u16(unsigned char *data, uint16_t value) {
+  data[0] = (unsigned char)(value & 0xffu);
+  data[1] = (unsigned char)((value >> 8) & 0xffu);
+}
+
+static void put_u32(unsigned char *data, uint32_t value) {
+  for (unsigned shift = 0; shift < 32; shift += 8) {
+    data[shift / 8] = (unsigned char)((value >> shift) & 0xffu);
+  }
+}
+
+static uint16_t get_u16(const unsigned char *data) {
+  return (uint16_t)data[0] | (uint16_t)((uint16_t)data[1] << 8);
+}
+
+static uint32_t get_u32(const unsigned char *data) {
+  uint32_t value = 0;
+  for (unsigned shift = 0; shift < 32; shift += 8) {
+    value |= (uint32_t)data[shift / 8] << shift;
+  }
+  return value;
+}
+
+static bool write_container(const char *path, const unsigned char magic[8],
+                            const unsigned char *payload, size_t payload_size) {
+  if (!path || !path[0] || !magic || !payload || payload_size > UINT32_MAX)
+    return false;
+  if (payload_size > STORE_MAX_FILE_SIZE - STORE_HEADER_SIZE) return false;
+
+  unsigned char data[STORE_MAX_FILE_SIZE];
+  memcpy(data, magic, 8);
+  put_u16(data + 8, (uint16_t)SUDOKURA_SAVE_FORMAT_VERSION);
+  put_u32(data + 10, (uint32_t)payload_size);
+  put_u32(data + 14, crc32_bytes(payload, payload_size));
+  memcpy(data + STORE_HEADER_SIZE, payload, payload_size);
+  return store_atomic_write(path, NULL, data,
+                            STORE_HEADER_SIZE + payload_size) == STORE_OK;
+}
+
+static StoreStatus read_container(const char *path,
+                                  const unsigned char expected_magic[8],
+                                  unsigned char *payload,
+                                  size_t minimum_payload_size,
+                                  size_t maximum_payload_size,
+                                  size_t *payload_size_out) {
+  if (!path || !path[0] || !expected_magic || !payload ||
+      minimum_payload_size > maximum_payload_size ||
+      maximum_payload_size > STORE_MAX_FILE_SIZE - STORE_HEADER_SIZE)
+    return STORE_IO_ERROR;
+
+  unsigned char data[STORE_MAX_FILE_SIZE];
+  size_t size = 0;
+  StoreStatus status = store_read_file(path, data, sizeof(data), &size);
+  if (status != STORE_OK) return status;
+  if (size < STORE_HEADER_SIZE || memcmp(data, expected_magic, 8) != 0)
+    return STORE_CORRUPT;
+
+  uint16_t version = get_u16(data + 8);
+  uint32_t payload_size = get_u32(data + 10);
+  uint32_t stored_crc = get_u32(data + 14);
+  if (version > SUDOKURA_SAVE_FORMAT_VERSION) return STORE_INCOMPATIBLE;
+  if (version != SUDOKURA_SAVE_FORMAT_VERSION ||
+      payload_size < minimum_payload_size || payload_size > maximum_payload_size ||
+      size != STORE_HEADER_SIZE + (size_t)payload_size)
+    return STORE_CORRUPT;
+
+  const unsigned char *source = data + STORE_HEADER_SIZE;
+  if (crc32_bytes(source, payload_size) != stored_crc) return STORE_CORRUPT;
+  memcpy(payload, source, payload_size);
+  if (payload_size_out) *payload_size_out = payload_size;
+  return STORE_OK;
+}
+
+void preferences_defaults(Preferences *preferences) {
+  if (!preferences) return;
+  preferences->language = LANG_EN;
+  preferences->dark_theme = true;
+  preferences->strict_mode = false;
+  preferences->mode = MODE_CLASSIC;
+  preferences->difficulty = DIFFICULTY_MEDIUM;
+  preferences->audio_enabled = true;
+  preferences->music_volume = 20;
+  preferences->fx_volume = 65;
+  preferences->music_muted = false;
+  preferences->fx_muted = false;
+  preferences->reduced_motion = false;
+  preferences->auto_remove_peer_notes = false;
+  preferences->window_x = INT32_MIN;
+  preferences->window_y = INT32_MIN;
+  preferences->window_width = SUDOKURA_DEFAULT_WINDOW_WIDTH;
+  preferences->window_height = SUDOKURA_DEFAULT_WINDOW_HEIGHT;
+  preferences->window_maximized = false;
+}
+
+bool preferences_validate(const Preferences *preferences) {
+  if (!preferences || preferences->language < LANG_EN ||
+      preferences->language >= LANG_COUNT || !valid_mode(preferences->mode) ||
+      !valid_difficulty(preferences->difficulty) ||
+      preferences->music_volume > 100 || preferences->fx_volume > 100)
+    return false;
+  if (preferences->window_width < 320 || preferences->window_width > 16384 ||
+      preferences->window_height < 240 || preferences->window_height > 16384)
+    return false;
+  return true;
+}
+
+static bool game_matches_canonical(const Game *game, const Game *canonical) {
+  return game && canonical && game->seed == canonical->seed &&
+         game->generator_revision == canonical->generator_revision &&
+         game->difficulty == canonical->difficulty &&
+         game->difficulty_score == canonical->difficulty_score &&
+         memcmp(game->solution, canonical->solution, sizeof(game->solution)) == 0 &&
+         memcmp(game->initial, canonical->initial, sizeof(game->initial)) == 0 &&
+         memcmp(game->fixed, canonical->fixed, sizeof(game->fixed)) == 0;
+}
+
+bool session_validate_runtime(const SessionState *session) {
+  if (!session || !valid_mode(session->mode) ||
+      !valid_difficulty(session->game.difficulty) ||
+      !valid_status(session->status) || session->selected_row < 0 ||
+      session->selected_row >= 9 || session->selected_column < 0 ||
+      session->selected_column >= 9 || session->mistakes < 0 ||
+      session->mistakes > SESSION_MAX_COUNTER || session->strikes < 0 ||
+      session->strikes > SESSION_MAX_COUNTER ||
+      session->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
+      !game_generator_revision_supported(session->game.generator_revision))
+    return false;
+
+  for (int i = 0; i < 81; ++i) {
+    int value = session->game.puzzle[i];
+    uint16_t notes = session->game.notes[i];
+    if (value < 0 || value > 9 || session->game.hinted[i] > 1 ||
+        (notes & (uint16_t)~NOTES_VALID_MASK) != 0)
+      return false;
+    if (session->game.fixed[i]) {
+      if (value != session->game.initial[i] || session->game.hinted[i] || notes)
+        return false;
+    } else if (session->game.hinted[i]) {
+      if (value != session->game.solution[i] || notes) return false;
+    } else if (value != 0 && notes != 0) {
+      return false;
+    }
+  }
+
+  if (session->is_daily) {
+    uint64_t daily_seed = 0;
+    if (session->mode != MODE_CLASSIC ||
+        session->game.difficulty != DIFFICULTY_MEDIUM ||
+        !game_daily_seed_revision(session->daily_year, session->daily_month,
+                                  session->daily_day,
+                                  session->game.generator_revision,
+                                  &daily_seed) ||
+        daily_seed != session->game.seed)
+      return false;
+  } else if (session->daily_year != 0 || session->daily_month != 0 ||
+             session->daily_day != 0) {
+    return false;
+  }
+
+  bool solved = game_is_solved(&session->game);
+  bool lost = game_mode_lost(session->mode, session->strikes, 3,
+                             (double)session->elapsed_ms / 1000.0,
+                             session->mode == MODE_TIME ? 600.0 : 0.0);
+  if (session->status == SESSION_ACTIVE) return !solved && !lost;
+  if (session->status == SESSION_WON) return solved && !lost;
+  if (session->status == SESSION_INTERRUPTED) return !solved && !lost;
+  return !solved && lost;
+}
+
+bool session_validate(const SessionState *session) {
+  if (!session_validate_runtime(session)) return false;
+
+  Game canonical;
+  if (!game_new_difficulty_revision(&canonical, session->game.seed,
+                                    session->game.difficulty,
+                                    session->game.generator_revision))
+    return false;
+  if (!game_matches_canonical(&session->game, &canonical)) return false;
+
+  return true;
+}
+
+bool preferences_save_file(const char *path, const Preferences *preferences) {
+  if (!preferences_validate(preferences)) return false;
+  unsigned char payload[PREFERENCES_PAYLOAD_SIZE];
+  ByteWriter writer = {payload, sizeof(payload), 0, true};
+  writer_u8(&writer, (uint8_t)preferences->language);
+  writer_u8(&writer, preferences->dark_theme ? 1u : 0u);
+  writer_u8(&writer, preferences->strict_mode ? 1u : 0u);
+  writer_u8(&writer, (uint8_t)preferences->mode);
+  writer_u8(&writer, (uint8_t)preferences->difficulty);
+  writer_u8(&writer, preferences->audio_enabled ? 1u : 0u);
+  return writer.ok && writer.position == sizeof(payload) &&
+         write_container(path, preferences_magic, payload, sizeof(payload));
+}
+
+StoreStatus preferences_load_file(const char *path, Preferences *preferences) {
+  if (!preferences) return STORE_IO_ERROR;
+  unsigned char payload[PREFERENCES_PAYLOAD_SIZE];
+  size_t payload_size = 0;
+  StoreStatus status = read_container(path, preferences_magic, payload,
+                                      PREFERENCES_LEGACY_PAYLOAD_SIZE,
+                                      PREFERENCES_PAYLOAD_SIZE, &payload_size);
+  if (status != STORE_OK) return status;
+
+  ByteReader reader = {payload, payload_size, 0, true};
+  Preferences loaded;
+  preferences_defaults(&loaded);
+  loaded.language = (Language)reader_u8(&reader);
+  uint8_t dark = reader_u8(&reader);
+  uint8_t strict = reader_u8(&reader);
+  loaded.mode = (GameMode)reader_u8(&reader);
+  loaded.difficulty = (GameDifficulty)reader_u8(&reader);
+  uint8_t audio = payload_size == PREFERENCES_PAYLOAD_SIZE
+                      ? reader_u8(&reader)
+                      : 1u;
+  loaded.dark_theme = dark != 0;
+  loaded.strict_mode = strict != 0;
+  loaded.audio_enabled = audio != 0;
+  if (!reader.ok || reader.position != payload_size || dark > 1 || strict > 1 ||
+      audio > 1 || !preferences_validate(&loaded))
+    return STORE_CORRUPT;
+  *preferences = loaded;
+  return STORE_OK;
+}
+
+bool session_save_file(const char *path, const SessionState *session) {
+  if (!session_validate(session)) return false;
+
+  unsigned char payload[SESSION_PAYLOAD_SIZE];
+  ByteWriter writer = {payload, sizeof(payload), 0, true};
+  writer_u32(&writer, session->game.generator_revision);
+  writer_u64(&writer, session->game.seed);
+  writer_u8(&writer, (uint8_t)session->game.difficulty);
+  writer_u8(&writer, (uint8_t)session->mode);
+  writer_u8(&writer, (uint8_t)session->selected_row);
+  writer_u8(&writer, (uint8_t)session->selected_column);
+  writer_u8(&writer, session->notes_mode ? 1u : 0u);
+  writer_u8(&writer, session->strict_mode ? 1u : 0u);
+  writer_u8(&writer, session->manual_paused ? 1u : 0u);
+  writer_u8(&writer, (uint8_t)session->status);
+  writer_u32(&writer, (uint32_t)session->mistakes);
+  writer_u32(&writer, (uint32_t)session->strikes);
+  writer_u64(&writer, session->elapsed_ms);
+  writer_u8(&writer, session->is_daily ? 1u : 0u);
+  writer_u16(&writer, (uint16_t)session->daily_year);
+  writer_u8(&writer, (uint8_t)session->daily_month);
+  writer_u8(&writer, (uint8_t)session->daily_day);
+  for (int i = 0; i < 81; ++i)
+    writer_u8(&writer, (uint8_t)session->game.puzzle[i]);
+  for (int i = 0; i < 81; ++i) writer_u8(&writer, session->game.hinted[i]);
+  for (int i = 0; i < 81; ++i) writer_u16(&writer, session->game.notes[i]);
+
+  return writer.ok && writer.position == sizeof(payload) &&
+         write_container(path, session_magic, payload, sizeof(payload));
+}
+
+StoreStatus session_load_file(const char *path, SessionState *session) {
+  if (!session) return STORE_IO_ERROR;
+  unsigned char payload[SESSION_PAYLOAD_SIZE];
+  StoreStatus status = read_container(path, session_magic, payload,
+                                      sizeof(payload), sizeof(payload), NULL);
+  if (status != STORE_OK) return status;
+
+  ByteReader reader = {payload, sizeof(payload), 0, true};
+  uint32_t generator_revision = reader_u32(&reader);
+  uint64_t seed = reader_u64(&reader);
+  GameDifficulty difficulty = (GameDifficulty)reader_u8(&reader);
+  GameMode mode = (GameMode)reader_u8(&reader);
+  int selected_row = reader_u8(&reader);
+  int selected_column = reader_u8(&reader);
+  uint8_t notes_mode = reader_u8(&reader);
+  uint8_t strict_mode = reader_u8(&reader);
+  uint8_t manual_paused = reader_u8(&reader);
+  SessionStatus session_status = (SessionStatus)reader_u8(&reader);
+  uint32_t mistakes = reader_u32(&reader);
+  uint32_t strikes = reader_u32(&reader);
+  uint64_t elapsed_ms = reader_u64(&reader);
+  uint8_t is_daily = reader_u8(&reader);
+  int daily_year = reader_u16(&reader);
+  int daily_month = reader_u8(&reader);
+  int daily_day = reader_u8(&reader);
+
+  if (!reader.ok) return STORE_CORRUPT;
+  if (!game_generator_revision_supported(generator_revision))
+    return STORE_INCOMPATIBLE;
+  if (!valid_difficulty(difficulty) || !valid_mode(mode) || notes_mode > 1 ||
+      strict_mode > 1 || manual_paused > 1 || is_daily > 1 ||
+      mistakes > SESSION_MAX_COUNTER || strikes > SESSION_MAX_COUNTER)
+    return STORE_CORRUPT;
+
+  SessionState loaded;
+  memset(&loaded, 0, sizeof(loaded));
+  if (!game_new_difficulty_revision(&loaded.game, seed, difficulty,
+                                    generator_revision))
+    return STORE_CORRUPT;
+  loaded.mode = mode;
+  loaded.selected_row = selected_row;
+  loaded.selected_column = selected_column;
+  loaded.notes_mode = notes_mode != 0;
+  loaded.strict_mode = strict_mode != 0;
+  loaded.manual_paused = manual_paused != 0;
+  loaded.status = session_status;
+  loaded.mistakes = (int)mistakes;
+  loaded.strikes = (int)strikes;
+  loaded.elapsed_ms = elapsed_ms;
+  loaded.is_daily = is_daily != 0;
+  loaded.daily_year = daily_year;
+  loaded.daily_month = daily_month;
+  loaded.daily_day = daily_day;
+
+  for (int i = 0; i < 81; ++i) loaded.game.puzzle[i] = reader_u8(&reader);
+  for (int i = 0; i < 81; ++i) loaded.game.hinted[i] = reader_u8(&reader);
+  for (int i = 0; i < 81; ++i) loaded.game.notes[i] = reader_u16(&reader);
+
+  if (!reader.ok || reader.position != sizeof(payload) ||
+      !session_validate(&loaded))
+    return STORE_CORRUPT;
+  *session = loaded;
+  return STORE_OK;
+}
+
+bool store_quarantine_corrupt(const char *path) {
+  if (!path || !path[0] || !store_file_exists(path)) return false;
+
+  unsigned char data[STORE_MAX_FILE_SIZE];
+  size_t size = 0;
+  if (store_read_file(path, data, sizeof(data), &size) != STORE_OK || size == 0)
+    return false;
+
+  char destination[STORE_MAX_FILE_SIZE];
+  for (int suffix = 0; suffix < 100; ++suffix) {
+    int written = suffix == 0
+                      ? snprintf(destination, sizeof(destination), "%s.corrupt", path)
+                      : snprintf(destination, sizeof(destination), "%s.corrupt.%d",
+                                 path, suffix);
+    if (written < 0 || (size_t)written >= sizeof(destination)) return false;
+    if (store_file_exists(destination)) continue;
+    if (store_atomic_write(destination, NULL, data, size) == STORE_OK &&
+        store_remove_file(path))
+      return true;
+  }
+  return false;
+}

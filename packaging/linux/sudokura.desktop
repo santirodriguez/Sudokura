@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sudokura
+Comment=Compact multilingual Sudoku
+Exec=sudokura
+Icon=sudokura
+Categories=Game;LogicGame;
+Terminal=false

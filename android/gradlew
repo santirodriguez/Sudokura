@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+ANDROID_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+python3 "$ANDROID_DIR/scripts/prepare_sources.py"
+exec "$ANDROID_DIR/.cache/gradle/gradle-8.13/bin/gradle" -p "$ANDROID_DIR" "$@"

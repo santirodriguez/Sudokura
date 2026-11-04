@@ -1,0 +1,60 @@
+!ifndef VERSION
+  !error "VERSION is required"
+!endif
+!ifndef ROOT
+  !error "ROOT is required"
+!endif
+!ifndef DIST
+  !error "DIST is required"
+!endif
+!ifndef OUTPUT
+  !error "OUTPUT is required"
+!endif
+
+Unicode true
+Name "Sudokura"
+OutFile "${OUTPUT}"
+Icon "${ROOT}\assets\generated\sudokura.ico"
+RequestExecutionLevel user
+SilentInstall silent
+AutoCloseWindow true
+ShowInstDetails nevershow
+CRCCheck force
+SetCompressor /SOLID lzma
+
+VIProductVersion "${VERSION}.0"
+VIAddVersionKey /LANG=1033 "ProductName" "Sudokura"
+VIAddVersionKey /LANG=1033 "FileDescription" "Sudokura portable launcher"
+VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
+VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
+VIAddVersionKey /LANG=1033 "CompanyName" "Santiago Rodriguez"
+VIAddVersionKey /LANG=1033 "OriginalFilename" "Sudokura-${VERSION}-Windows-x64-Portable.exe"
+
+!include "FileFunc.nsh"
+
+Section
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR\Sudokura"
+  File /r "${DIST}\*"
+
+  ${GetParameters} $0
+
+!ifdef SUDOKURA_PORTABLE_TEST_FAIL_LAUNCH
+  Delete "$PLUGINSDIR\Sudokura\sudokura.exe"
+!endif
+
+  ClearErrors
+  ExecWait '"$PLUGINSDIR\Sudokura\sudokura.exe" $0' $1
+  IfErrors launch_failed launch_done
+
+launch_failed:
+!ifndef SUDOKURA_PORTABLE_TEST_SUPPRESS_ERROR_UI
+  MessageBox MB_OK|MB_ICONSTOP|MB_SETFOREGROUND "Sudokura could not start.$\r$\n$\r$\nWindows may have blocked or quarantined a required file while Sudokura was starting. Check Windows Security or your antivirus, then try again."
+!endif
+  StrCpy $1 127
+
+launch_done:
+  SetOutPath "$TEMP"
+  RMDir /r "$PLUGINSDIR\Sudokura"
+  SetErrorLevel $1
+SectionEnd

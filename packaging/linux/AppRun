@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+case $0 in
+  */*) appdir_hint=${0%/*} ;;
+  *) appdir_hint=. ;;
+esac
+
+resolved_appdir=$(CDPATH= cd -P "$appdir_hint" && pwd -P)
+if [ -z "${APPDIR:-}" ] || [ ! -x "$APPDIR/usr/bin/sudokura" ]; then
+  APPDIR=$resolved_appdir
+fi
+export APPDIR
+
+bundle_lib="$APPDIR/usr/lib"
+decor_plugin_dir="$bundle_lib/libdecor/plugins-1"
+test -f "$decor_plugin_dir/libdecor-cairo.so"
+
+if [ "${LD_LIBRARY_PATH+x}" = x ]; then
+  SUDOKURA_HOST_LD_LIBRARY_PATH_SET=1
+  SUDOKURA_HOST_LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+else
+  SUDOKURA_HOST_LD_LIBRARY_PATH_SET=0
+  SUDOKURA_HOST_LD_LIBRARY_PATH=
+fi
+export SUDOKURA_APPIMAGE=1
+export SUDOKURA_HOST_LD_LIBRARY_PATH_SET
+export SUDOKURA_HOST_LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="$bundle_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LIBDECOR_PLUGIN_DIR="$decor_plugin_dir"
+
+exec "$APPDIR/usr/bin/sudokura" "$@"
