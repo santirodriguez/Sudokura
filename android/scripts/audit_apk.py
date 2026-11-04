@@ -35,19 +35,18 @@ def expected_identity(version_header, variant="debug"):
     if variant not in ("debug", "release"):
         raise ValueError("Unsupported APK variant")
     components = []
-    for name in ("MAJOR", "MINOR", "PATCH"):
+    for name in ("MAJOR", "MINOR", "PATCH", "ANDROID_CODE"):
         values = re.findall(
             rf"^#define[ \t]+SUDOKURA_VERSION_{name}[ \t]+([^\n]*)$",
             version_header, flags=re.MULTILINE)
         if len(values) != 1 or not re.fullmatch(r"[0-9]+", values[0].strip()):
             raise ValueError(f"Invalid or ambiguous version component: {name}")
         components.append(int(values[0].strip()))
-    major, minor, patch = components
+    major, minor, patch, code = components
     if minor > 99 or patch > 99:
         raise ValueError("versionCode requires two-digit minor/patch")
-    code = major * 10000 + minor * 100 + patch
-    if not 0 < code <= 2_147_483_647:
-        raise ValueError("versionCode must fit a positive signed 32-bit integer")
+    if not 0 < code <= 2_100_000_000:
+        raise ValueError("versionCode must be between 1 and 2100000000")
     return {
         "application_id": "org.sudokura.prototype.debug" if variant == "debug" else "org.cajapersonal.sudokura",
         "version_code": code,

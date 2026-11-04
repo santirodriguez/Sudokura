@@ -186,9 +186,12 @@ def build(args):
         document = json.loads(manifest_path.read_text(encoding="utf-8"))
         validate_identity(document, spec, args.version, args.source_commit)
         if spec["platform"] == "android":
-            major, minor, patch = map(int, args.version.split("."))
+            codes = re.findall(r"^#define[ \t]+SUDOKURA_VERSION_ANDROID_CODE[ \t]+([0-9]+)[ \t]*$",
+                               (pathlib.Path(__file__).resolve().parents[1] / "src/version.h").read_text(), re.M)
+            if len(codes) != 1 or not 0 < int(codes[0]) <= 2100000000:
+                raise SystemExit("invalid Android version code")
             if (document.get("application_id") != "org.cajapersonal.sudokura"
-                    or document.get("version_code") != major*10000+minor*100+patch
+                    or document.get("version_code") != int(codes[0])
                     or document.get("signing_receipt_verified") is not True
                     or document.get("signing_certificate_sha256") !=
                     "fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d"):

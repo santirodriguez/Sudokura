@@ -15,10 +15,11 @@ def prepare(directory, version, source_commit):
         raise ValueError('invalid version')
     if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
         raise ValueError('invalid source commit')
-    major, minor, patch = map(int, version.split('.'))
-    code = major * 10000 + minor * 100 + patch
-    if minor > 99 or patch > 99 or not 0 < code <= 2147483647:
+    values = re.findall(r"^#define[ \t]+SUDOKURA_VERSION_ANDROID_CODE[ \t]+([0-9]+)[ \t]*$",
+                        (Path(__file__).resolve().parents[2] / 'src/version.h').read_text(), re.M)
+    if len(values) != 1 or not 0 < int(values[0]) <= 2100000000:
         raise ValueError('invalid Android version code')
+    code = int(values[0])
     name = f'Sudokura-{version}-Android-arm64.apk'
     apk = directory / name
     digest = hashlib.sha256(apk.read_bytes()).hexdigest()

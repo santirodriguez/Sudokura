@@ -14,13 +14,14 @@ import zipfile
 import audit_apk
 
 
-def header(major=1, minor=4, patch=0):
+def header(major=1, minor=4, patch=0, code=1):
     return (f"#define SUDOKURA_VERSION_MAJOR {major}\n"
             f"#define SUDOKURA_VERSION_MINOR {minor}\n"
-            f"#define SUDOKURA_VERSION_PATCH {patch}\n")
+            f"#define SUDOKURA_VERSION_PATCH {patch}\n"
+            f"#define SUDOKURA_VERSION_ANDROID_CODE {code}\n")
 
 
-def badging(version="1.4.0-prototype", code=10400):
+def badging(version="1.4.0-prototype", code=1):
     return ("package: name='org.sudokura.prototype.debug' "
             f"versionCode='{code}' versionName='{version}'\n"
             "sdkVersion:'28'\ntargetSdkVersion:'36'\n"
@@ -78,8 +79,8 @@ class ResourceTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     def test_versions_derive_from_source(self):
-        for minor, patch, code in ((3, 9, 10309), (4, 0, 10400), (5, 12, 10512)):
-            identity = audit_apk.expected_identity(header(1, minor, patch))
+        for minor, patch, code in ((4, 0, 1), (4, 1, 2), (5, 12, 3)):
+            identity = audit_apk.expected_identity(header(1, minor, patch, code))
             self.assertEqual(identity["version_code"], code)
             self.assertEqual(identity["version_name"], f"1.{minor}.{patch}-prototype")
             audit_apk.audit_manifest(
@@ -91,8 +92,10 @@ class IdentityTests(unittest.TestCase):
 
     def test_missing_duplicate_invalid_and_overflow_fail(self):
         for text in ("", header() + "#define SUDOKURA_VERSION_MINOR 4\n",
+                     header() + "#define SUDOKURA_VERSION_ANDROID_CODE 2\n",
                      header(patch=-1), header(patch="0x1"), header(minor=100),
-                     header(patch=100), header(0, 0, 0), header(214749, 0, 0)):
+                     header(patch=100), header(code=0), header(code=-1),
+                     header(code=2100000001), header(code='1x')):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 audit_apk.expected_identity(text)
 
@@ -104,7 +107,7 @@ class IdentityTests(unittest.TestCase):
         identity = audit_apk.expected_identity(header(), "release")
         self.assertEqual(identity["application_id"], "org.cajapersonal.sudokura")
         self.assertEqual(identity["version_name"], "1.4.0")
-        self.assertEqual(identity["version_code"], 10400)
+        self.assertEqual(identity["version_code"], 1)
         production = badging("1.4.0").replace("org.sudokura.prototype.debug", "org.cajapersonal.sudokura")
         audit_apk.audit_manifest(production, MANIFEST, identity)
         for text, manifest in ((production + "application-debuggable\n", MANIFEST),
@@ -116,7 +119,7 @@ class IdentityTests(unittest.TestCase):
     def test_source_header_has_expected_candidate_version(self):
         identity = audit_apk.expected_identity(
             (audit_apk.ROOT / "src/version.h").read_text(encoding="utf-8"))
-        self.assertGreaterEqual(identity["version_code"], 10400)
+        self.assertGreaterEqual(identity["version_code"], 1)
         self.assertTrue(identity["version_name"].endswith("-prototype"))
 
     def test_stale_version_and_wrong_identity_fail(self):
@@ -128,7 +131,7 @@ class IdentityTests(unittest.TestCase):
     def test_package_must_be_unique_and_not_an_incidental_match(self):
         for text in (badging().replace("package:", "activity:"),
                      badging() + badging().splitlines()[0] + "\n",
-                     badging().replace("versionCode='10400'", "versionCode='10400' versionCode='10400'")):
+                     badging().replace("versionCode='1'", "versionCode='1' versionCode='1'")):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 audit_apk.audit_manifest(text, MANIFEST, audit_apk.expected_identity(header()))
 
@@ -268,7 +271,7 @@ class ArchiveTests(unittest.TestCase):
             audit_apk.main(["fake-aapt", str(self.apk), "--variant", "debug"])
         receipt = json.loads(output.getvalue())
         self.assertEqual(receipt["device_test"], "NOT_RUN")
-        self.assertEqual(receipt["version_code"], 10400)
+        self.assertEqual(receipt["version_code"], 1)
         self.assertEqual(receipt["build_variant"], "debug")
         self.assertFalse(receipt["android_backup"])
         self.assertEqual(run.call_count, 5)

@@ -1,17 +1,17 @@
 # First public Android release: Sudokura 1.4.0
 
-Status: preparation, not publication. Sudokura 1.4.0 is planned as the **first public Android release**. The earlier Android APKs were private debug prototypes. Keep the shared project version `1.4.0` and Android versionCode `10400`; “first Android release” is release/listing copy, not a second version sequence or a reset to 1.0.
+Status: preparation, not publication. Sudokura 1.4.0 is planned as the **first public Android release**. The earlier Android APKs were private debug prototypes. Keep the shared project version `1.4.0` and Android versionCode `1`; “first Android release” is release/listing copy, not a second version sequence or a reset to 1.0.
 
 ## One production identity
 
 | Variant | Application ID | Version | Intended use |
 | --- | --- | --- | --- |
-| Prototype debug | `org.sudokura.prototype.debug` | `1.4.0-prototype` / 10400 | Separate test installation; ephemeral debug signer |
-| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 10400 | Gradle stages unsigned APK/AAB; trusted release-branch CI signs the direct APK |
+| Prototype debug | `org.sudokura.prototype.debug` | `1.4.0-prototype` / 1 | Separate test installation; ephemeral debug signer |
+| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 1 | Gradle stages unsigned APK/AAB; trusted release-branch CI signs the direct APK |
 
 The production ID was confirmed on November 3, 2026. The internal Java namespace remains independent of the application ID; retain the JNI class names. The production label is Sudokura. Prototype data is separate; no automatic migration or uninstall workaround is promised. Keep backup/device transfer excluded and preserve local progress.
 
-Version components come from `src/version.h`, using major*10000+minor*100+patch with positive signed-32-bit bounds. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Neither store is currently claimed available or approved.
+The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.h`. The independent `SUDOKURA_VERSION_ANDROID_CODE` in the same header starts at 1 and is shared by GitHub/Obtainium, F-Droid and Google Play for equivalent releases. It must stay between 1 and 2100000000. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Internal production candidates used code 10400; Android refuses a normal downgrade to code 1. Preserve installations holding progress: no uninstall/data-clear workaround or automatic progress migration is provided. Matching version numbers alone do not establish cross-store signing compatibility. Neither store is currently claimed available or approved.
 
 ## Build outputs and verified signing
 

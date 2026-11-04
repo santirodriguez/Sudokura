@@ -3,7 +3,7 @@
 ## [1.4.0]
 
 ### First Android release
-- Prepared the first public Android version, sharing desktop version 1.4.0 and Android versionCode 10400. Earlier Android builds were private debug prototypes.
+- Prepared the first public Android version, sharing desktop version 1.4.0 and Android versionCode 1. Earlier Android builds were private debug prototypes.
 - Added portrait and landscape layouts, touch-first help, responsive auxiliary screens and a bounded Android semantic bridge. Full TalkBack navigation, measured device performance and 16 KB runtime compatibility remain unverified.
 - Established production identity `org.cajapersonal.sudokura` and verified direct APK signing. The app key and Play upload key have separate roles; store submissions and seamless cross-store updates are not claimed.
 

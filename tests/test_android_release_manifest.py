@@ -37,7 +37,7 @@ def fixture(root):
         f'Number of signers: 1\nSigner #1 certificate SHA-256 digest: {android.APP_CERT}\n')
     (root / 'signed-zipalign.txt').write_text('Verification succesful\n')
     audit = {'application_id': android.APP_ID, 'version_name': VERSION,
-             'version_code': 10400, 'build_variant': 'release',
+             'version_code': 1, 'build_variant': 'release',
              'android_backup': False, 'permissions': [], 'bytes': len(data),
              'unsigned_preparation': False}
     (root / 'signed-apk-audit.json').write_text(json.dumps(audit))

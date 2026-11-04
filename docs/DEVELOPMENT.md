@@ -8,7 +8,7 @@ This document describes the project's maintained technical, gameplay, and releas
 - Do not rewrite it in another language, toolkit, engine, or web framework.
 - Preserve the established visual identity, game modes, keyboard/mouse interaction, offline behavior, and optional-audio model unless an explicitly approved change requires otherwise.
 - Keep runtime dependencies and packaged size low. Do not add SDL_image only to load icons or flags, and do not add media dependencies for UI effects that can be generated safely at runtime.
-- The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the version from them rather than maintain independent version strings. Refer to the current release blueprint for the intended next version.
+- The numeric version components in `src/version.h` remain the source of truth; packaging and workflows must derive the visible version from them rather than maintain independent version strings. Android uses the independent `SUDOKURA_VERSION_ANDROID_CODE` from that same header, starting at 1 for its first public release and increasing for subsequent distributed builds across channels. Refer to the current release blueprint for the intended next version.
 
 ## Engineering requirements
 

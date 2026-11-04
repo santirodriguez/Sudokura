@@ -14,7 +14,7 @@ Sudokura 1.4.0 is planned as the **first public Android release**, following the
 
 ## Variants and CI
 
-`prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 10400. Gradle emits unsigned production packages. The trusted release-branch CI subsequently signs and verifies the direct APK with the existing app key; it never generates a long-lived key. The Play AAB remains unsigned staging output. The other flavor/build combinations are disabled.
+`prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 1. Gradle emits unsigned production packages. The trusted release-branch CI subsequently signs and verifies the direct APK with the existing app key; it never generates a long-lived key. The Play AAB remains unsigned staging output. The other flavor/build combinations are disabled.
 
 The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts, including `sudokura-android-signed-github` on the trusted release branch. The AAB passes official bundletool validation; Console acceptance remains separate. These are internal candidates, not a public release.
 
