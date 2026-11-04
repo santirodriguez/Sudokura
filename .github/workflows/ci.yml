@@ -550,9 +550,9 @@ jobs:
             -gpu swiftshader_indirect -memory 2048 -cores 2 \
             > android-runtime-output/emulator.log 2>&1 &
           emulator_pid=$!
-          trap 'adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
+          trap 'timeout 15 adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
           timeout 180 adb -s emulator-5554 wait-for-device
-          adb -s emulator-5554 root
+          timeout 30 adb -s emulator-5554 root
           timeout 90 adb -s emulator-5554 wait-for-device
           python3 android/scripts/emulator_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" \
             --apk android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk \
