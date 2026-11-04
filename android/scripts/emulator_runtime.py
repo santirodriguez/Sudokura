@@ -26,7 +26,7 @@ def run(args):
     def adb(*command, binary=False, check=True):
         return subprocess.run([args.adb, '-s', args.serial, *command],
                               check=check, capture_output=True,
-                              text=not binary, timeout=45).stdout
+                              text=not binary, errors=None if binary else 'replace', timeout=45).stdout
 
     def shell(*command):
         return adb('shell', *command).strip()
@@ -60,13 +60,23 @@ def run(args):
 
     def wait_scene(name, predicate):
         deadline = time.monotonic() + 90
+        previous_layout = None
         while time.monotonic() < deadline:
             tree = dump(name)
+            # Initial Android insets and surface geometry can settle after
+            # the first semantic publication. Do not tap stale pixel bounds.
+            layout = [(n.get('class'), n.get('bounds'), n.get('enabled'))
+                      for n in tree.iter('node')]
             if predicate(tree):
-                (output / (name + '.png')).write_bytes(adb('exec-out', 'screencap', '-p', binary=True))
-                return tree
+                if layout == previous_layout:
+                    (output / (name + '.png')).write_bytes(adb('exec-out', 'screencap', '-p', binary=True))
+                    return tree
+                previous_layout = layout
+            else:
+                previous_layout = None
             time.sleep(2)
-        raise RuntimeError('Native UI did not reach ' + name)
+        (output / (name + '-failure.png')).write_bytes(adb('exec-out', 'screencap', '-p', binary=True))
+        raise RuntimeError('Native UI did not reach stable ' + name)
 
     def cells(tree):
         return [n for n in tree.iter('node')
