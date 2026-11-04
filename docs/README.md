@@ -6,7 +6,7 @@ The [main README](../README.md) introduces the game and links to the latest publ
 
 ## Start here
 
-- [v1.3.9 release notes](RELEASE_NOTES_1.3.9.md)
+- [v1.4.0 release notes](RELEASE_NOTES_1.4.0.md)
 - [Changelog](../CHANGELOG.md)
 - [Screenshot gallery](images/README.md)
 - [Issue reporting, saved games, and recovery](REPORTING_ISSUES.md)
@@ -15,10 +15,10 @@ The [main README](../README.md) introduces the game and links to the latest publ
 ## Android development
 
 - [Android release roadmap and distribution plans](ANDROID_RELEASE_PLAN.md)
-- [Android debug prototype](../android/README.md)
+- [Android builds and runtime limitations](../android/README.md)
 - [v1.3.9 implementation blueprint](V1.3.9_BLUEPRINT.md)
 
-The Android prototype is not a public APK. Future distribution requirements and channel decisions belong to the roadmap, not to this documentation index.
+Version 1.4.0 prepares the first signed Android release. Private prototypes remain separate installations. See [Android release preparation](../android/RELEASING.md) for the direct APK, signing and store-channel details.
 
 ## Repository layout
 

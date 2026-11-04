@@ -136,3 +136,11 @@ Update only at a meaningful decision, verified prototype, release closure or cha
 The v1.4.0 blueprint owns executable scope and acceptance. Its Phase 0 completion is not implementation or Android acceptance. The preferred v1.4.0 / maximum v1.5.0 horizon remains unchanged. GitHub APK/Obtainium is primary, F-Droid inclusion is separate, Play optional. Confirm public identity before freezing it; signing/custody/publication require separate authority. Preserve all detailed gates above.
 
 After every actual publication, verify public release/tag/source, CI/packages and remaining Android obligations, then update the transversal roadmap continuity before closing the release-specific workstream. A merged PR, tag or draft alone is not publication.
+
+## Release acceptance amendment — November 4, 2026
+
+The maintainer prioritizes completing v1.4.0 over further exploratory validation. Full manual TalkBack testing, extended device performance measurements and further emulator debugging are deferred from the immediate release-preparation path. Existing semantic/core/UI/package checks remain enabled. Unverified behavior remains explicitly unverified; this amendment does not convert a failed diagnostic into a pass or remove checks for known crashes, data loss, signing identity, source/checksum integrity or unusable critical actions.
+
+The signed production phone candidate was accepted for gameplay, revised journey/dialog design, Try again, and explicit Save followed by Android force stop and reopening with numbers/notes retained. The optional x86_64 16 KB emulator reached play, but its complete run remains unaccepted because of guest/system instability. No production ARM64 16 KB, exhaustive lifecycle matrix, measured performance, independent reproducibility or full TalkBack acceptance is inferred. Store submission and cross-store migration remain separate work.
+
+The next publication handoff uses the exact source-bound combined CI bundle: five applications and two technical files. No merge, tag, publication, credential or permission change is authorized by this amendment. Genuine current screenshots and final public-copy review remain before merge; historical screenshots must retain their actual version.

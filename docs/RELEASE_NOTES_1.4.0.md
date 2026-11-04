@@ -1,19 +1,21 @@
-First public Android release, alongside the Sudokura 1.4.0 desktop update.
+Sudokura comes to Android, and your games now have a journey worth keeping.
 
-> Unreleased draft. Publication and store availability remain pending; internally signed APKs are verified; final copy and genuine screenshots require maintainer review.
+### First Android release
 
-### Sudoku on Android
+**1.4.0 is the first public Android version**, alongside the desktop update. Play offline with touch controls, portrait and landscape layouts, readable help, optional music, and English, Español, or Català. Requires Android 9 or later on ARM64.
 
-The same offline Sudoku engine now has touch-first help, portrait and landscape layouts, a cleaner More panel and shared save/recovery behavior. Earlier Android builds were private debug prototypes; this is planned as the first public Android version, **1.4.0**.
+### Celebrate, save, and try again
 
-### Your journey
+**Achieved** celebrates completed puzzles with time, errors, and assistance details. **Try again** brings back the same puzzle after a lost or interrupted attempt; a later win keeps the earlier attempts in its history.
 
-Celebrate wins in Achieved and revisit lost or interrupted attempts with Try again. Replays keep the original puzzle and earlier attempts, with separate time/error statistics and assistance/practice labels. Saved Games holds explicit saves and the current autosave. Merely opening a board is not a failed attempt; phone backgrounding only saves progress.
+**Saved Games** holds your explicit saves and one current autosave. Leaving a played game offers Save, Abandon, or Cancel. Merely opening an untouched board does not count as a failed attempt, and backgrounding the app only saves progress.
 
-### More reliable interruptions
+### Smoother interruptions
 
-Confirmations and recovery run through the main event loop, preserving independent pause reasons and stable saved-game identities. Compact auxiliary screens have readable scrolling controls. The Android semantic bridge has automated coverage; a full physical TalkBack journey is not yet accepted.
+Improved confirmations, recovery, compact screens, and phone button spacing make it easier to pause, leave, and return to a game.
 
-### Installation and updates
+### Installation notes
 
-The production Android app uses `org.cajapersonal.sudokura` and remains separate from test installations. Automatic migration from the prototype is not promised. Do not uninstall an installation that holds progress to work around a signing mismatch. Final signed APKs, update acceptance, F-Droid and Play availability must be verified before replacing this draft with publication copy.
+The Android APK is signed for `org.cajapersonal.sudokura`. Private prototypes remain separate, with no automatic progress migration. Progress stays on your device; automatic cloud backup and device transfer are disabled. Do not uninstall a progress-bearing installation to resolve a signing mismatch. F-Droid and Google Play availability will be announced separately; seamless switching between stores is not promised.
+
+Full TalkBack navigation and runtime compatibility with 16 KB Android devices have not been verified. Windows builds are unsigned; the experimental macOS Apple Silicon build is ad-hoc signed and not notarized. Keep your full desktop game-data folder before an upgrade or rollback.

@@ -18,7 +18,7 @@
   <a href="#download">Download</a> ·
   <a href="#play-your-way">Features</a> ·
   <a href="docs/images/README.md">Screenshots</a> ·
-  <a href="docs/RELEASE_NOTES_1.3.9.md">What's new</a>
+  <a href="docs/RELEASE_NOTES_1.4.0.md">What's new</a>
 </p>
 
 ---
@@ -54,7 +54,7 @@
     <img src="docs/images/sudokura-v1.3.9.png" alt="Sudokura desktop gameplay: Sudoku board, notes, number keys and Save controls" width="900">
   </a>
   <br>
-  <sub>Regular desktop gameplay — the approved view remains unchanged in v1.3.9.</sub>
+  <sub>Previously approved desktop gameplay, captured in v1.3.9; retained here as a historical view.</sub>
 </p>
 
 <table>
@@ -108,11 +108,13 @@ Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest sta
 
 Existing compatible v1.2 and v1.3 desktop data keeps its migration and recovery safeguards. If you're moving between versions, **keep your complete game-data folder**. See [saves, recovery, and rollback](docs/REPORTING_ISSUES.md).
 
-## Android is on its way
+## Android · first release in 1.4.0
 
-An early ARM64 prototype has been tested on a real phone, but **there is no public Android release yet**. The eventual plan is a signed APK on GitHub that Obtainium can follow, an application for F-Droid inclusion, and possibly Google Play. Each channel requires its own readiness and update-safety checks.
+Version **1.4.0** introduces the first Android release, with the same offline Sudoku engine, portrait and landscape play, touch controls, and Your journey. The signed production candidate has been tested on a real phone. The shared version is 1.4.0; Android does not start a separate 1.0 version sequence.
 
-Read the [Android release roadmap](docs/ANDROID_RELEASE_PLAN.md) for current status and requirements. Debug previews are not a stable upgrade path.
+Use the **Android APK** asset on the [published release page](https://github.com/santirodriguez/Sudokura/releases/latest) when it is available. GitHub is the direct download channel; Obtainium can follow this repository. F-Droid inclusion and Google Play availability are separate, and neither listing is announced here.
+
+Android requires **9 or later on ARM64**. Progress stays on the device; automatic cloud backup, device transfer and migration from private prototypes are not supported. Keep an installation that holds your progress: changing to a store with a different signing certificate may prevent an in-place update. Full TalkBack navigation and 16 KB runtime compatibility have not been verified. See [Android installation and signing](android/RELEASING.md) for channel and update details.
 
 ## Build & contribute
 

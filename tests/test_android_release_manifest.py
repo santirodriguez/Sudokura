@@ -107,6 +107,29 @@ with tempfile.TemporaryDirectory() as directory:
     assert len(bundle.contract(VERSION)) == 6
     print('PASS Android included in shared checksums and Build-Info; desktop contract preserved')
 
+    export_args = SimpleNamespace(**vars(args), output_dir=str(root / 'public'))
+    with contextlib.redirect_stdout(io.StringIO()):
+        bundle.export(export_args)
+    assert {p.name for p in (root / 'public').iterdir()} == {e['name'] for e in bundle.contract(VERSION, True)}
+    rejected(lambda: bundle.export(export_args), 'existing export destination')
+    export_args.output_dir = str(root / 'rejected')
+    export_args.source_commit = 'b' * 40
+    rejected(lambda: bundle.export(export_args), 'export source mismatch')
+    assert not (root / 'rejected').exists()
+    export_args.source_commit = SOURCE
+    saved = (root / APK).read_bytes()
+    (root / APK).write_bytes(b'tampered')
+    rejected(lambda: bundle.export(export_args), 'export modified APK')
+    assert not (root / 'rejected').exists()
+    (root / APK).write_bytes(saved)
+    original_info = (root / f'Sudokura-{VERSION}-Build-Info.json').read_bytes()
+    altered = json.loads(original_info)
+    altered['validation']['release_asset_count'] = 6
+    (root / f'Sudokura-{VERSION}-Build-Info.json').write_text(json.dumps(altered))
+    rejected(lambda: bundle.export(export_args), 'export modified aggregate metadata')
+    (root / f'Sudokura-{VERSION}-Build-Info.json').write_bytes(original_info)
+    print('PASS exact seven-file export without publishing or overwriting')
+
     manifest = root / 'artifact-manifest-android.json'
     valid = json.loads(manifest.read_text())
     for key, value in [('source_commit', 'b' * 40), ('signing_certificate_sha256', 'b' * 64)]:

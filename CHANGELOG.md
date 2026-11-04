@@ -8,8 +8,8 @@
 - Persisted a real-play marker across Undo and restart, so viewing or noting an untouched board does not create a failed attempt. Added compatible profile/session/record readers and archive coverage beyond the 128-result cache.
 
 
-- Planned first public Android release, retaining the shared project version 1.4.0 and Android code 10400; previous Android APKs were private debug prototypes.
-- Added landscape/compact screens, touch-first help and a bounded native/Android semantic bridge. Physical accessibility and other publicability gates remain open.
+- Prepared the first public Android release, retaining the shared project version 1.4.0 and Android code 10400; previous Android APKs were private debug prototypes.
+- Added landscape/compact screens, touch-first help and a bounded native/Android semantic bridge. Full TalkBack navigation and 16 KB runtime compatibility remain unverified.
 - Improved event-driven confirmations, save/recovery and renderer/lifecycle handling while preserving game and retained-record identities.
 - Prepared separate prototype and unsigned production packages for the confirmed Android identity, with APK audits and preliminary Play bundle packaging. Internal APK signing is verified; public acceptance and store submission remain pending.
 

@@ -76,10 +76,25 @@ The trusted release-branch CI signs and verifies the APK, then emits `artifact-m
 
 When that same CI run builds Android, its final internal bundle includes the signed APK alongside the four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
 
-The tag/draft publishing workflow remains desktop-only. Before an authorized public Android release, wire its exact accepted APK into the publishing handoff and validate seven release assets with `--include-android`; never assume the internal combined bundle publishes Android automatically. Signing access remains restricted to the trusted release branch, with no new credential access on tags or pull requests.
+### Exact public upload handoff
+
+Use the accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle already contains all five applications and their shared Build-Info/checksums. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then produces only the seven public upload files in a new directory:
+
+```sh
+python3 scripts/release_bundle.py export \
+  --artifacts-dir /path/to/extracted/phase9-release-bundle \
+  --output-dir /path/to/new/public-upload \
+  --version 1.4.0 --source-commit <exact-40-character-source-sha> --include-android
+```
+
+This stages files only: it creates no tag, draft, release or network request, and refuses an existing output directory. Do not substitute unsigned APKs, AABs, per-platform receipts or another run's checksums. Keep the downloaded Actions ZIP digest and source commit with the acceptance record.
+
+After separate authorization, bind the release tag to that same source commit, attach the seven staged files to one draft, apply `release_bundle.py labels --version 1.4.0 --include-android`, and validate the draft asset list with `validate-assets --include-android`. Before publication verify all seven uploaded bytes/checksums and source identity; after publication require `validate-assets --published --include-android`. If the release source changes, rebuild and revalidate a combined bundle from that source instead of relabeling older bytes.
+
+The existing tag workflow still stages desktop assets only; it is not the complete Android publication handoff. If it creates a desktop draft, replace its application/checksum/Build-Info set with the seven exact combined-bundle files before publication and validation. Never publish the intermediate six-asset draft. This approach retains existing signing access on the trusted release branch and gives tags or pull requests no new credential access.
 
 ## Before public distribution
 
-The full [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) retain the physical lifecycle/storage, ARM64 parity, 16 KiB runtime, accessibility, performance, stable upgrade/Obtainium and screenshot/public-copy gates. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.
+The November 4 acceptance amendment in the [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) defers full manual accessibility, extended performance measurements and further emulator debugging. Preserve their unverified status and public limitations; known critical defects, source/signing/checksum integrity, and screenshot/public-copy review remain release requirements. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.
 
 Review the exact signed artifacts, public certificates, immutable source, checksums, genuine screenshots and final EN/ES/CA copy before separately authorized merge/publication. First-Android release wording does not waive those gates.

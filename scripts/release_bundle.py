@@ -4,7 +4,10 @@ import hashlib
 import json
 import pathlib
 import re
+import shutil
 import sys
+import tempfile
+from types import SimpleNamespace
 
 PRODUCT = "Sudokura"
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -296,6 +299,52 @@ def build(args):
     print(f"checksums={checksum_path.name}")
 
 
+def export(args):
+    """Revalidate a combined CI bundle and stage only its public assets."""
+    if not VERSION_RE.fullmatch(args.version) or not COMMIT_RE.fullmatch(args.source_commit):
+        raise SystemExit("invalid version or source commit")
+    source = pathlib.Path(args.artifacts_dir)
+    destination = pathlib.Path(args.output_dir)
+    if destination.exists():
+        raise SystemExit("export destination must not already exist")
+    entries = contract(args.version, args.include_android)
+    info_name = f"Sudokura-{args.version}-Build-Info.json"
+    for name in [entry["name"] for entry in entries]:
+        path = source / name
+        if path.is_symlink() or not path.is_file():
+            raise SystemExit(f"missing or symbolic public asset: {name}")
+    original_info = (source / info_name).read_bytes()
+    original_checksums = (source / "SHA256SUMS.txt").read_bytes()
+    document = json.loads(original_info)
+    # Rebuild from the embedded per-platform manifests, rather than trusting
+    # the aggregate validation booleans or accepting a different artifact set.
+    with tempfile.TemporaryDirectory(prefix="sudokura-release-export-") as temporary:
+        checked = pathlib.Path(temporary)
+        for entry in entries:
+            if entry["role"] == "application":
+                shutil.copyfile(source / entry["name"], checked / entry["name"])
+        for spec in manifest_specs(args.version, args.include_android):
+            manifest = document.get("platform_manifests", {}).get(spec["key"])
+            if not isinstance(manifest, dict):
+                raise SystemExit(f"missing embedded manifest: {spec['key']}")
+            (checked / spec["file"]).write_text(json.dumps(manifest), encoding="utf-8")
+            lines = [f"{item['sha256']}  {item['name']}" for item in manifest["artifacts"]]
+            (checked / spec["checksums"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        build(SimpleNamespace(version=args.version, source_commit=args.source_commit,
+                              artifacts_dir=str(checked), include_android=args.include_android))
+        if (checked / info_name).read_bytes() != original_info:
+            raise SystemExit("aggregate Build-Info differs from verified manifests")
+        if (checked / "SHA256SUMS.txt").read_bytes() != original_checksums:
+            raise SystemExit("aggregate checksums differ from verified assets")
+        # No output is created before every validation passes. mkdir also refuses
+        # an existing destination created concurrently; existing files stay intact.
+        destination.mkdir(parents=True)
+        for entry in entries:
+            shutil.copyfile(checked / entry["name"], destination / entry["name"])
+    print(f"exported_public_assets={len(entries)}")
+    print("publication=NOT_RUN")
+
+
 def labels(args):
     if not VERSION_RE.fullmatch(args.version):
         raise SystemExit(f"invalid version: {args.version}")
@@ -357,6 +406,14 @@ def parser():
     build_parser.add_argument("--include-android", action="store_true", help="Include the verified signed Android APK; no publication implied.")
     build_parser.add_argument("--source-commit", required=True)
     build_parser.set_defaults(func=build)
+
+    export_parser = sub.add_parser("export")
+    export_parser.add_argument("--artifacts-dir", required=True)
+    export_parser.add_argument("--output-dir", required=True)
+    export_parser.add_argument("--version", required=True)
+    export_parser.add_argument("--source-commit", required=True)
+    export_parser.add_argument("--include-android", action="store_true")
+    export_parser.set_defaults(func=export)
 
     label_parser = sub.add_parser("labels")
     label_parser.add_argument("--version", required=True)
