@@ -1,6 +1,14 @@
 # Documentation images
 
-## Sudokura v1.3.9
+## Sudokura v1.4.0
+
+### Main desktop gameplay image
+
+[![Sudokura regular desktop gameplay](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
+
+- `sudokura-v1.4.0.png` — approved reuse of the image previously published with v1.3.9, with identical image bytes. The original capture is from v1.3.7 and was also reused in v1.3.8 and v1.3.9. It represents the familiar desktop board and controls; it does not show the new journey views or Android interface. This is a reused image, not a new v1.4.0 capture.
+
+## Sudokura v1.3.9 (historical)
 
 ### Main desktop gameplay image
 

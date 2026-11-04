@@ -50,11 +50,11 @@
 ## A familiar board, carefully made
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.3.9.png">
-    <img src="docs/images/sudokura-v1.3.9.png" alt="Sudokura desktop gameplay: Sudoku board, notes, number keys and Save controls" width="900">
+  <a href="docs/images/sudokura-v1.4.0.png">
+    <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura desktop gameplay: Sudoku board, notes, number keys and Save controls" width="900">
   </a>
   <br>
-  <sub>Previously approved desktop gameplay, captured in v1.3.9; retained here as a historical view.</sub>
+  <sub>Desktop gameplay — the approved image from v1.3.9 is reused for v1.4.0.</sub>
 </p>
 
 <table>
