@@ -19,7 +19,7 @@ The [main README](../README.md) introduces the game and links to the latest publ
 - [v1.4.0 implementation blueprint and acceptance decisions](V1.4.0_BLUEPRINT.md)
 - [Android packaging, signing and publication](../android/RELEASING.md)
 
-Version 1.4.0 prepares the first signed Android release. Private prototypes remain separate installations. See [Android release preparation](../android/RELEASING.md) for the direct APK, signing and store-channel details.
+Version 1.4.0 introduces the first signed Android ARM64 distribution package alongside desktop builds. [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) is authoritative for current public availability. Private prototypes remain separate installations; see [Android packaging and signing](../android/RELEASING.md) for identity, update safeguards and separate store channels.
 
 ## Repository layout
 

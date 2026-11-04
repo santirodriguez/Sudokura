@@ -1,16 +1,16 @@
 # Sudokura: desktop evolution and Android release plan
 
-Status: v1.4.0 release preparation. The shared implementation and signed Android candidate are complete; standard cross-platform CI and the combined five-application bundle have passed. Desktop v1.3.9 remains the published baseline until a separately authorized release. F-Droid and Google Play are not claimed available.
+Status (2026-11-04): v1.4.0 implementation, signing and exact-source seven-file release-candidate bundle verified by cross-platform CI. This is a dated acceptance record, not a live publication indicator; see [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for current public availability. F-Droid and Google Play are separate distribution channels.
 Reviewed: 2026-11-04.
-Current published baseline: `f7e8acb4a2a3fdfed9267d8862e8b30057710d7a` (`main` and `v1.3.9`).
-Next-release specification: [v1.4.0 blueprint](V1.4.0_BLUEPRINT.md). Completed prototype contract: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
+Published baseline at the start of v1.4.0 work: `f7e8acb4a2a3fdfed9267d8862e8b30057710d7a` (`main` at the time and published tag `v1.3.9`). This is historical provenance, not a claim about the current release.
+Implementation specification: [v1.4.0 blueprint](V1.4.0_BLUEPRINT.md). Completed prototype contract: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
 Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.
 
 ## Current acceptance and interpretation
 
 The original roadmap requirements and prototype observations below are retained with their release context. The [November 4 amendment](#release-acceptance-amendment--november-4-2026) supersedes earlier mandatory wording only for full manual TalkBack testing, extended performance measurements and further emulator debugging on the immediate preparation path. These remain unverified. Known crashes, data loss, signer/source/checksum integrity and unusable critical actions are not waived.
 
-The signed production candidate has been accepted for gameplay, the revised journey/dialog design, Try again and Save followed by Android force stop/reopening with numbers and notes retained. Production identity is `org.cajapersonal.sudokura`; the direct APK uses the established app-signing certificate. Backup/device transfer remain disabled, and cross-store switching is not promised. The previous desktop image is explicitly approved for v1.4.0 reuse with truthful provenance; no new desktop capture is required. Final public-copy approval, merge and publication remain separate.
+The signed production candidate was accepted for gameplay, revised journey/dialog design, Try again, and Save followed by Android force stop/reopening with numbers and notes retained. Production identity is `org.cajapersonal.sudokura`; the direct APK uses the established app-signing certificate. Backup/device transfer remain disabled, and cross-store switching is not promised. The approved v1.4.0 desktop screenshot preserves the prior image bytes and accurately identifies its original provenance. Public copy was reviewed during the November 4 documentation freeze; actual merge, tag and publication are separately authorized and verified events.
 
 ## Outcome and constraints
 
@@ -33,7 +33,7 @@ The planned sequence is 1.3.8 → 1.3.9 → 1.4.0. If evidence requires further 
 | **1.4.0 — shared reliability and Android publicability target** | Robust interruption/resume behavior across screens, generation and audio; readable compact/HiDPI screens and scrolling improvements validated by the prototype | Complete functional parity and distribution candidate, including release APK/AAB preparation, native dependency audit and store-readiness material | Depends on recorded prototype findings, including **all specifically deferred physical proof** from v1.3.9. Close concrete shared lifecycle/UI/resource defects; no unrelated feature bundle. Publish Android here only when every publicability gate passes. | Full cross-platform regression; documented tested-device/installed APK identity, fixed-seed ARM64 original/solution equality, acknowledged-save process death recovery and lifecycle/Back/rotation/cutout coverage, TalkBack audit, measured device performance, verified 16 KiB execution, native dependency/ABI audits, clean-update and signing verification when separately authorized, honest store metadata/privacy/licensing. |
 | **1.4.1 onward, ending no later than 1.5.0 — contingency only** | Only actual shared defects or usability gaps identified by testing | Close named publicability blockers; no second architecture | Not preapproved implementation scopes. At each release boundary identify the remaining blockers and update this plan. If remaining work is Android-only and supplies no desktop benefit, keep it within the ongoing useful release rather than inventing a filler desktop release. | Same publicability gates; if quality and the horizon truly conflict, report evidence and seek a decision before changing the horizon or dropping functionality |
 
-Release 1.3.9 is published. The v1.4.0 executable blueprint linked above defines shared modal/recovery improvements, responsive parity, bounded accessibility integration and stable Android distribution preparation. Earlier Android delivery is permitted only after satisfying the same gates. A successful v1.4.0 closes the Android-publicability objective; it does not force further releases.
+Release 1.3.9 was published before v1.4.0 preparation. The v1.4.0 implementation blueprint linked above defines shared modal/recovery improvements, responsive parity, bounded accessibility integration and stable Android distribution preparation. Earlier Android delivery was permitted only after satisfying the same applicable gates. A successful v1.4.0 release closes the Android-publicability objective; it does not require a follow-up release.
 
 ## Milestones with different meanings
 
@@ -131,7 +131,7 @@ Published v1.3.9 introduced native single-owner touch, bounded Help/library drag
 
 A narrow phone cannot fit nine 48dp cells across its width. The prototype must measure and disclose board-cell size/comfort while giving action controls meaningful targets; this is not a blanket accessibility claim. Any paused rotate/enlarge fallback for short surfaces is prototype-only and must be resolved before functional parity/publicability. TalkBack remains an evidence-driven decision before publicability, not an assumed capability or automatic rewrite mandate.
 
-The public distribution priority is now GitHub signed APK/Obtainium first, F-Droid inclusion application next and potentially Google Play later. Production identity, key roles and the disabled backup/transfer policy are now established for v1.4.0; the prototype remains a separate installation. Stable-update and cross-store compatibility must not be inferred from a successful prototype installation. The v1.4.0 target and v1.5.0 maximum horizon are unchanged.
+The v1.4.0 distribution plan prioritizes GitHub signed APK/Obtainium first, F-Droid inclusion separately and potentially Google Play later. Production identity, key roles and the disabled backup/transfer policy were established for v1.4.0; the prototype remains a separate installation. Stable-update and cross-store compatibility must not be inferred from a successful prototype installation. The v1.4.0 target and v1.5.0 contingency horizon were the accepted planning constraints.
 
 ## Maintenance of this plan
 
@@ -139,7 +139,7 @@ Update only at a meaningful decision, verified prototype, release closure or cha
 
 ## v1.4.0 planning handoff and release closure
 
-The v1.4.0 blueprint owns executable scope and acceptance. Its Phase 0 completion is not implementation or Android acceptance. The preferred v1.4.0 / maximum v1.5.0 horizon remains unchanged. GitHub APK/Obtainium is primary, F-Droid inclusion is separate, Play optional. The production identity and internal signing are established. Publication still requires separate authority; interpret the original validation requirements through the current acceptance amendment above.
+The v1.4.0 blueprint owns executable scope and acceptance. Phase 0 completion did not establish implementation or Android acceptance; the subsequent implementation and November 4 acceptance amendment are documented there. GitHub APK/Obtainium is the direct channel; F-Droid inclusion is separate, Play optional. Production identity and signed APK are established. Publication is determined by a separately authorized, verified GitHub release, not by this roadmap.
 
 After every actual publication, verify public release/tag/source, CI/packages and remaining Android obligations, then update the transversal roadmap continuity before closing the release-specific workstream. A merged PR, tag or draft alone is not publication.
 
@@ -149,4 +149,4 @@ The maintainer prioritizes completing v1.4.0 over further exploratory validation
 
 The signed production phone candidate was accepted for gameplay, revised journey/dialog design, Try again, and explicit Save followed by Android force stop and reopening with numbers/notes retained. The optional x86_64 16 KB emulator reached play, but its complete run remains unaccepted because of guest/system instability. No production ARM64 16 KB, exhaustive lifecycle matrix, measured performance, independent reproducibility or full TalkBack acceptance is inferred. Store submission and cross-store migration remain separate work.
 
-The next publication handoff uses the exact source-bound combined CI bundle: five applications and two technical files. No merge, tag, publication, credential or permission change is authorized by this amendment. Approved screenshot provenance and final public-copy review remain before merge; the maintainer approved reusing the previous desktop screenshot for v1.4.0 without altering its pixels or claiming a new capture.
+The pre-merge candidate handoff used the exact-source combined CI bundle: five applications and two technical files. This November 4 amendment itself granted no merge, tag, publication, credential or permission authority. The maintainer approved reusing the preceding desktop screenshot without altering its pixels or claiming a new capture. Final public-copy review was completed during the subsequent documentation freeze. A tag-triggered release rebuild must still be verified against its own exact source and uploaded files.

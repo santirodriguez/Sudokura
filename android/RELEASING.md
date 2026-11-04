@@ -1,6 +1,6 @@
 # First public Android release: Sudokura 1.4.0
 
-Status: preparation, not publication. Sudokura 1.4.0 is planned as the **first public Android release**. The earlier Android APKs were private debug prototypes. Keep the shared project version `1.4.0` and Android versionCode `1`; “first Android release” is release/listing copy, not a second version sequence or a reset to 1.0.
+This is the packaging and signing record for Sudokura 1.4.0, the **first public Android distribution version** following private debug prototypes. Live APK availability is determined by [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases), not by the state of this document. The shared product version is `1.4.0` and the initial Android versionCode is `1`; “first Android release” is listing copy, not a second version sequence or reset to 1.0.
 
 ## One production identity
 
@@ -11,7 +11,7 @@ Status: preparation, not publication. Sudokura 1.4.0 is planned as the **first p
 
 The production ID was confirmed on November 3, 2026. The internal Java namespace remains independent of the application ID; retain the JNI class names. The production label is Sudokura. Prototype data is separate; no automatic migration or uninstall workaround is promised. Keep backup/device transfer excluded and preserve local progress.
 
-The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.h`. The independent `SUDOKURA_VERSION_ANDROID_CODE` in the same header starts at 1 and is shared by GitHub/Obtainium, F-Droid and Google Play for equivalent releases. It must stay between 1 and 2100000000. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Internal production candidates used code 10400; Android refuses a normal downgrade to code 1. Preserve installations holding progress: no uninstall/data-clear workaround or automatic progress migration is provided. Matching version numbers alone do not establish cross-store signing compatibility. Neither store is currently claimed available or approved.
+The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.h`. The independent `SUDOKURA_VERSION_ANDROID_CODE` in the same header starts at 1 and is shared by GitHub/Obtainium, F-Droid and Google Play for equivalent releases. It must stay between 1 and 2100000000. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Internal production candidates used code 10400; Android refuses a normal downgrade to code 1. Preserve installations holding progress: no uninstall/data-clear workaround or automatic progress migration is provided. Matching version numbers alone do not establish cross-store signing compatibility. F-Droid and Play acceptance must be checked independently; GitHub publication does not establish their availability.
 
 ## Build outputs and verified signing
 
@@ -85,7 +85,7 @@ When that same CI run builds Android, its final internal bundle includes the sig
 
 ### Exact public upload handoff
 
-Use the accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle already contains all five applications and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to the inspected candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then produces only the seven public upload files in a new directory:
+For a pre-publication audit or separately authorized manual upload, use an accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle contains all five application packages and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to that specific candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then stages only seven public files in a new directory:
 
 ```sh
 python3 scripts/release_bundle.py export \
@@ -96,11 +96,11 @@ python3 scripts/release_bundle.py export \
 
 This stages files only: it creates no tag, draft, release or network request, and refuses an existing output directory. Do not substitute unsigned APKs, AABs, per-platform receipts or another run's checksums. Keep the downloaded Actions ZIP digest and source commit with the acceptance record.
 
-After separate authorization, bind the release tag to that same source commit, attach the seven staged files to one draft, apply `release_bundle.py labels --version 1.4.0 --include-android`, and validate the draft asset list with `validate-assets --include-android`. Before publication verify all seven uploaded bytes/checksums and source identity; after publication require `validate-assets --published --include-android`. If the release source changes, rebuild and revalidate a combined bundle from that source instead of relabeling older bytes.
+For normal publication, separately authorize the exact `main`-ancestor source commit and release tag. The tag-triggered workflow rebuilds and signs Android and desktop from its resolved source, validates seven release assets, and creates a draft only; do not relabel older branch-CI bytes as a new tag build. Validate the draft's seven uploaded assets using `scripts/release_bundle.py validate-assets --version 1.4.0 --assets-json draft-release-assets.json --include-android` and independently confirm the uploaded bytes, source and checksums before publication; after publication require the `--published` validation mode. The export procedure above is an audit/staging option, not a requirement to replace the tag-built draft. Any source change requires regeneration and validation of its own exact-source bundle.
 
 The tag workflow now calls the reusable Android job with the resolved source commit and requires trusted signing. Its combined bundle includes the signed APK, and the draft upload, labels and asset validator all require seven files. A failure in Android, either Linux runtime check or another package job blocks the draft. Tags trigger the release workflow without also triggering the general CI. Manual packaging creates no draft and must use an exact trusted workflow source; it cannot sign an arbitrary historical ref. No tag or draft is created as part of a branch CI run.
 
-## Before public distribution
+## Distribution acceptance and limitations
 
 The November 4 acceptance amendment in the [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) defers full manual accessibility, extended performance measurements and further emulator debugging. Preserve their unverified status and public limitations; known critical defects, source/signing/checksum integrity, and screenshot/public-copy review remain release requirements. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.
 

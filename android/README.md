@@ -1,6 +1,6 @@
 # Sudokura Android build
 
-Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. The signed production candidate has been accepted in maintainer phone testing. Publication and store availability remain pending; specialized unverified behavior is listed below. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
+Sudokura 1.4.0 is the **first Android distribution version** after the private debug prototypes. Its signed production candidate was accepted in maintainer phone testing. See [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for live APK availability; this build guide does not assert that a release is already published. F-Droid and Google Play are separate channels. Specialized unverified behavior is listed below; see [Android packaging and signing](RELEASING.md) for identities, key custody and distribution gates.
 
 ## Pinned shared-engine host
 
@@ -34,9 +34,9 @@ Portrait targets 360x600 usable dp and larger; supported landscape starts at 600
 
 The maintainer accepted gameplay, More styling, official/localized links and initial-Home rotation on the recorded debug APKs. The semantic bridge publishes visible controls and cells through bounded snapshots; Java focus does not edit the game and native actions reject stale context. Host automated tests and successful Android compilation do not establish a complete physical TalkBack journey.
 
-The maintainer accepted the signed production candidate, revised journey/dialog design, Try again, and explicit Save followed by Android force stop/reopening with numbers and notes retained. Full TalkBack navigation, ARM64 fixture equivalence, the exhaustive lifecycle matrix, measured performance, 16 KiB runtime compatibility and independent reproducibility remain unverified. The November 4 [release acceptance amendment](../docs/V1.4.0_BLUEPRINT.md#release-acceptance-amendment--november-4-2026) defers extended manual validation and further emulator debugging from immediate release preparation. Structural alignment is not runtime acceptance. Stable upgrade/channel switching and final screenshot/public-copy review remain separate.
+The maintainer accepted the signed production candidate, revised journey/dialog design, Try again, and explicit Save followed by Android force stop/reopening with numbers and notes retained. Full TalkBack navigation, ARM64 fixture equivalence, the exhaustive lifecycle matrix, measured performance, 16 KiB runtime compatibility and independent reproducibility remain unverified. The November 4 [release acceptance amendment](../docs/V1.4.0_BLUEPRINT.md#release-acceptance-amendment--november-4-2026) defers extended manual validation and further emulator debugging from the immediate release-preparation path. Structural alignment is not runtime acceptance. Stable upgrade and channel switching remain unverified; the approved screenshot provenance and final pre-merge public-copy review are recorded in the [v1.4.0 blueprint](../docs/V1.4.0_BLUEPRINT.md).
 
-Keep an existing prototype installation with progress: an ephemeral debug-signature mismatch is not a reason to uninstall or clear data. Production uses separate storage and does not promise automatic prototype migration. GitHub/Obtainium is the primary planned direct channel; F-Droid inclusion and Play submission/approval remain external work, not currently available listings.
+Keep an existing prototype installation with progress: an ephemeral debug-signature mismatch is not a reason to uninstall or clear data. Production uses separate storage and does not promise automatic prototype migration. GitHub Releases/Obtainium is the primary direct distribution channel when a signed APK is published; F-Droid inclusion and Play submission/approval are external work and are not implied by GitHub publication.
 
 
 ## Opt-in 16 KiB emulator diagnostic
