@@ -9,10 +9,49 @@ import struct
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 
 PACKAGE = 'org.sudokura.prototype.debug'
 ACTIVITY = PACKAGE + '/org.sudokura.prototype.PrototypeActivity'
 LIBRARIES = ('libmain.so', 'libSDL2.so', 'libSDL2_ttf.so', 'libSDL2_mixer.so')
+
+
+def loaded_libraries(apk, maps, installed_apk):
+    executable_maps = []
+    for line in maps.splitlines():
+        parts = line.split(maxsplit=5)
+        if len(parts) == 6 and 'x' in parts[1]:
+            executable_maps.append((int(parts[2], 16), parts[5]))
+    loaded = {}
+    package_root = installed_apk.rsplit('/', 1)[0]
+    with zipfile.ZipFile(apk) as archive, apk.open('rb') as raw:
+        for library in LIBRARIES:
+            info = archive.getinfo('lib/x86_64/' + library)
+            raw.seek(info.header_offset)
+            header = raw.read(30)
+            filename_size, extra_size = struct.unpack_from('<HH', header, 26)
+            start = info.header_offset + 30 + filename_size + extra_size
+            for offset, path in executable_maps:
+                if path.startswith(package_root + '/lib/') and path.endswith('/' + library):
+                    loaded[library] = 'extracted'
+                elif (info.compress_type == zipfile.ZIP_STORED and path == installed_apk
+                      and start <= offset < start + info.file_size):
+                    loaded[library] = 'apk-mmap'
+            if library not in loaded:
+                raise RuntimeError('No executable mapping for ' + library)
+    return loaded
+
+
+def capture_tree(adb, output, name):
+    # uiautomator can return zero after failing to write a hierarchy. Remove
+    # the previous dump first so a failed capture cannot masquerade as fresh.
+    remote = '/sdcard/sudokura-ui.xml'
+    adb('shell', 'rm', '-f', remote)
+    adb('shell', 'uiautomator', 'dump', remote)
+    data = adb('exec-out', 'cat', remote)
+    tree = ET.fromstring(data)
+    (output / (name + '.xml')).write_text(data)
+    return tree
 
 
 def run(args):
@@ -40,10 +79,7 @@ def run(args):
         raise RuntimeError('Emulator boot timeout')
 
     def dump(name):
-        adb('shell', 'uiautomator', 'dump', '/sdcard/sudokura-ui.xml')
-        data = adb('exec-out', 'cat', '/sdcard/sudokura-ui.xml')
-        (output / (name + '.xml')).write_text(data)
-        return ET.fromstring(data)
+        return capture_tree(adb, output, name)
 
     def find(tree, text):
         return next((node for node in tree.iter('node')
@@ -115,8 +151,13 @@ def run(args):
         raise RuntimeError('Expected exactly one native game process')
     maps = shell('run-as', PACKAGE, 'cat', '/proc/' + pid + '/maps')
     (output / 'native-maps.txt').write_text(maps)
-    if not all(library in maps for library in LIBRARIES):
-        raise RuntimeError('Not all packaged native libraries loaded')
+    paths = shell('pm', 'path', PACKAGE).splitlines()
+    base_paths = [p[len('package:'):] for p in paths
+                  if p.startswith('package:') and p.endswith('/base.apk')]
+    if len(base_paths) != 1:
+        raise RuntimeError('Expected one installed base APK')
+    mappings = loaded_libraries(args.apk, maps, base_paths[0])
+    (output / 'native-library-mappings.json').write_text(json.dumps(mappings, indent=2) + '\n')
     shell('input', 'keyevent', 'KEYCODE_HOME')
     time.sleep(2)
     shell('am', 'start', '-W', '-n', ACTIVITY)
@@ -138,7 +179,7 @@ def run(args):
         raise RuntimeError('Runtime crash/linker failure in logcat')
     receipt = {'source_commit': args.source, 'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest(),
                'abi': abi, 'page_size': int(page_size), 'compatibility_properties': compat,
-               'native_libraries_loaded': list(LIBRARIES), 'memory_receipts': ['memory-before.txt', 'memory-playing.txt'], 'home_play_resume': 'PASS',
+               'native_libraries_loaded': mappings, 'memory_receipts': ['memory-before.txt', 'memory-playing.txt'], 'home_play_resume': 'PASS',
                'rotation_smoke': 'PASS', 'production_arm64_acceptance': 'NOT_ESTABLISHED',
                'talkback_acceptance': 'NOT_ESTABLISHED'}
     (output / 'runtime.json').write_text(json.dumps(receipt, indent=2) + '\n')
