@@ -7,6 +7,10 @@ load = lambda name: yaml.load((root / '.github/workflows' / name).read_text(), L
 release, android, ci = map(load, ['release.yml', 'android-preview.yml', 'ci.yml'])
 assert 'branches' in ci['on']['push'] and 'tags' not in ci['on']['push']
 assert "refs/heads/main" in ci['jobs']['android-changes']['if']
+android_gate = ci['jobs']['android-changes']['if']
+assert "github.event_name == 'pull_request'" in android_gate
+assert "github.base_ref == 'main'" in android_gate
+assert "github.head_ref == 'release/1.4.0'" in android_gate
 assert release['jobs']['android']['with']['require_signed'] == 'true'
 assert 'needs.version.outputs.commit' in release['jobs']['android']['with']['source_commit']
 assert 'android' in release['jobs']['release-bundle']['needs']

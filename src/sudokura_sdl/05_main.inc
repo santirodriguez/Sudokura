@@ -1456,8 +1456,18 @@ static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   if (!p || !ui || !g) return true;
   if (ui_modal.active || ui_modal_has_pending()) return false;
-  if (ui->session_open && game) (void)stage_current_session(p, game, ui);
-  if(journey_leave_prompt(p,ui,g,true))return false;
+  if (ui->session_open && game && !stage_current_session(p, game, ui)) {
+    /* Keep the live attempt available for Retry after any capture failure.
+       Never offer Abandon while its current checkpoint is unresolved. */
+    (void)ui_modal_open_exit(p, ui, g);
+    return false;
+  }
+  if (ui->session_open && ui->screen == SCR_PLAY &&
+      ui->result == RES_NONE && ui->attempt_started) {
+    /* An unavailable confirmation must not authorize leaving the attempt. */
+    (void)journey_leave_prompt(p, ui, g, true);
+    return false;
+  }
   capture_window_preferences(p, g, ui);
   if (p->save_policy.dirty_mask == 0 ||
       persistence_retry_current(p, game, ui))
@@ -2459,6 +2469,106 @@ int main(int argc, char **argv) {
       settings_persistence.profile.preferences =
           settings_persistence.preferences;
       save_policy_init(&settings_persistence.save_policy);
+
+      /* A failed capture cannot abandon a live attempt. Retry must recover
+         its actual progress before the exit confirmation can be offered. */
+      {
+        Persistence probe = {0};
+        UI exit_ui;
+        Game exit_game = game;
+        app_state_init(&exit_ui);
+        app_clock_reset(&exit_ui, now_ms());
+        exit_ui.screen = SCR_PLAY;
+        exit_ui.session_open = true;
+        exit_ui.has_session = true;
+        exit_ui.attempt_started = true;
+        int entry = -1, note = -1;
+        for (int cell = 0; cell < 81; ++cell) {
+          if (!exit_game.fixed[cell]) {
+            if (entry < 0) entry = cell;
+            else { note = cell; break; }
+          }
+        }
+        if (entry < 0 || note < 0 ||
+            !game_place(&exit_game, entry / 9, entry % 9,
+                        exit_game.solution[entry], false) ||
+            !game_toggle_note(&exit_game, note / 9, note % 9, 3)) {
+          fprintf(stderr, "exit save gate fixture progress regression\n");
+          app_shutdown(&g); return 1;
+        }
+        probe.enabled = true;
+        preferences_defaults(&probe.preferences);
+        profile_defaults(&probe.profile);
+        probe.profile.preferences = probe.preferences;
+        save_policy_init(&probe.save_policy);
+        SessionState initial;
+        if (!capture_session(&initial, &exit_game, &exit_ui, now_ms()) ||
+            !profile_slot_set(&probe.profile.normal, &initial, false)) {
+          fprintf(stderr, "exit save gate fixture session regression\n");
+          app_shutdown(&g); return 1;
+        }
+        probe.active_attempt_id = (GameAttemptId){177, 178};
+        probe.profile.normal.attempt_id = probe.active_attempt_id;
+        probe.profile.normal.revision = 4;
+        unsigned long long nonce = (unsigned long long)SDL_GetPerformanceCounter();
+        char path[PATH_MAX], backup[PATH_MAX];
+        snprintf(path, sizeof(path), ".sudokura-exit-smoke-%llu.dat", nonce);
+        snprintf(backup, sizeof(backup), ".sudokura-exit-smoke-%llu.dat.bak", nonce);
+        if (store_file_exists(path) || store_file_exists(backup)) {
+          fprintf(stderr, "exit save gate fixture path collision\n");
+          app_shutdown(&g); return 1;
+        }
+        snprintf(probe.profile_path, sizeof(probe.profile_path),
+                 ".sudokura-exit-smoke-%llu-missing/profile.dat", nonce);
+        snprintf(probe.profile_backup_path, sizeof(probe.profile_backup_path),
+                 ".sudokura-exit-smoke-%llu-missing/profile.dat.bak", nonce);
+        probe.profile.codec_version = 0; /* Inject capture failure. */
+        bool guarded = !request_exit(&probe, &exit_game, &exit_ui, &g) &&
+            probe.capture_failed && exit_ui.session_open &&
+            probe.profile.normal.value.session.status == SESSION_ACTIVE &&
+            ui_modal.active && ui_modal.request.action == APP_MODAL_EXIT &&
+            ui_modal.request.button_count == 3;
+        ui_modal_cancel_current(); /* Back must preserve the attempt. */
+        bool capture_retry_failed =
+            !persistence_retry_current(&probe, &exit_game, &exit_ui) &&
+            probe.capture_failed && exit_ui.session_open;
+        probe.profile.codec_version = SUDOKURA_PROFILE_CONTENT_VERSION;
+        bool disk_retry_failed =
+            !persistence_retry_current(&probe, &exit_game, &exit_ui) &&
+            !probe.capture_failed && exit_ui.session_open &&
+            save_policy_dirty(&probe.save_policy);
+        snprintf(probe.profile_path, sizeof(probe.profile_path), "%s", path);
+        snprintf(probe.profile_backup_path, sizeof(probe.profile_backup_path),
+                 "%s", backup);
+        bool recovered = persistence_retry_current(&probe, &exit_game, &exit_ui);
+        ProfileData disk;
+        bool preserved = recovered &&
+            profile_load_file(path, &disk) == STORE_OK &&
+            disk.normal.present && disk.normal.value.started &&
+            disk.normal.value.session.status == SESSION_ACTIVE &&
+            disk.normal.value.session.game.puzzle[entry] ==
+                exit_game.puzzle[entry] &&
+            disk.normal.value.session.game.notes[note] ==
+                exit_game.notes[note] &&
+            !probe.capture_failed && !save_policy_dirty(&probe.save_policy);
+        bool confirmed = preserved &&
+            !request_exit(&probe, &exit_game, &exit_ui, &g) &&
+            ui_modal.active &&
+            ui_modal.request.action == APP_MODAL_JOURNEY_EXIT &&
+            ui_modal.request.button_count == 3 &&
+            exit_ui.session_open && exit_ui.result == RES_NONE;
+        ui_modal_cancel_current();
+        (void)store_remove_file(path);
+        (void)store_remove_file(backup);
+        if (!guarded || !capture_retry_failed || !disk_retry_failed ||
+            !preserved || !confirmed) {
+          fprintf(stderr, "exit capture/retry/journey regression:"
+                  " guard=%d capture=%d disk=%d saved=%d modal=%d\n",
+                  guarded, capture_retry_failed, disk_retry_failed,
+                  preserved, confirmed);
+          app_shutdown(&g); return 1;
+        }
+      }
 
       audio_persistence = &settings_persistence;
       audio_gfx = &g;
@@ -5792,10 +5902,13 @@ int main(int argc, char **argv) {
         if (modal_result.button == 2) {
           running = false;  /* Explicit Discard only. */
         } else if (modal_result.button == 1) {
-          if (persistence_retry_current(&persistence, &game, &ui))
-            running = false;
-          else
+          if (persistence_retry_current(&persistence, &game, &ui)) {
+            /* After recovery, a started attempt still needs its explicit
+               Save/Abandon/Cancel decision rather than an implicit exit. */
+            if (request_exit(&persistence, &game, &ui, &g)) running = false;
+          } else {
             (void)ui_modal_open_exit(&persistence, &ui, &g);
+          }
         }
       } else if (modal_result.resolution == APP_MODAL_CHOSEN &&
                  app_modal_binding_equal(modal_result.binding, current) &&
