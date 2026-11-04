@@ -26,21 +26,26 @@
 ## Download
 
 <p align="center">
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-Installer-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows installer"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-Portable-4567B4?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows portable EXE"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG"></a>
-  <a href="#android"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK information"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows x64 — installer and portable EXE" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-arm64-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG" height="28"></a>
+  <a href="#android"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
 </p>
 
 <p align="center">
-  <sub>Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon (experimental)</sub><br>
-  <sub>Desktop buttons open the latest <strong>published</strong> release. Android APKs start with v1.4.0; see the Android section below.</sub>
+  <sub>Windows installer or portable · Linux AppImage · macOS Apple Silicon · Android ARM64</sub>
+</p>
+
+<p align="center">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/santirodriguez/Sudokura"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Add Sudokura to Obtainium" height="48"></a><br>
+  <sub>Follow Android releases with Obtainium. APK downloads start with v1.4.0.</sub>
 </p>
 
 <details>
 <summary>Installation and download verification</summary>
 
+- **Requirements:** Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon · Android 9+ ARM64.
+- **Downloads:** buttons open the latest published release. Android downloads require the v1.4.0 release to be published; F-Droid and Google Play are separate channels.
 - **Windows:** choose the installer or the single-file, installation-free portable EXE. Unsigned Windows builds may trigger a SmartScreen reputation warning.
 - **Linux:** make the AppImage executable with <code>chmod +x Sudokura-*-Linux-x64.AppImage</code>. If FUSE is unavailable, launch with <code>--appimage-extract-and-run</code>.
 - **macOS:** the Apple Silicon DMG is experimental, ad-hoc signed, and not Apple-notarized.
@@ -105,17 +110,33 @@ All essential actions are also available through the interface.
 
 ## Private, even when you take a break
 
-Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest state of the same attempt. Saved Games holds explicit saves and one current autosave; **Your journey** keeps wins and interrupted or lost attempts. Linked retries preserve earlier results and move into Achieved when you win. Backgrounding only autosaves; leaving a played attempt offers Save, Abandon, or Cancel.
+Sudokura has no account, cloud sync, or telemetry. Your games, settings, and history stay on your device.
+
+<details>
+<summary>How saves, retries, and upgrades work</summary>
+
+**Save** keeps the latest state of the same attempt. Saved Games holds explicit saves and one current autosave; **Your journey** keeps wins and interrupted or lost attempts. Linked retries preserve earlier results and move into Achieved when you win. Backgrounding only autosaves; leaving a played attempt offers Save, Abandon, or Cancel.
 
 Existing compatible v1.2 and v1.3 desktop data keeps its migration and recovery safeguards. If you're moving between versions, **keep your complete game-data folder**. See [saves, recovery, and rollback](docs/REPORTING_ISSUES.md).
 
+</details>
+
 ## Android
 
-Version **1.4.0** introduces the first Android release, with the same offline Sudoku engine, portrait and landscape play, touch controls, and Your journey. The signed production candidate has been tested on a real phone. It shares the desktop version number, 1.4.0.
+**1.4.0 is Sudokura's first Android release.** The same offline Sudoku engine, portrait and landscape play, touch controls, and Your journey — now on your phone.
 
-Use the **Android APK** asset on the [published release page](https://github.com/santirodriguez/Sudokura/releases/latest) when it is available. GitHub is the direct download channel. You can add this repository to Obtainium; discovery and updates require a published APK release. F-Droid inclusion and Google Play availability are separate, and neither listing is announced here.
+Requires **Android 9+ on ARM64**. Download the signed APK from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases/latest), or follow the repository with the Obtainium button above. Android downloads require a published APK release. F-Droid and Google Play availability will be announced separately.
 
-Android requires **9 or later on ARM64**. Progress stays on the device; automatic cloud backup, device transfer and migration from private prototypes are not supported. Keep an installation that holds your progress: changing to a store with a different signing certificate may prevent an in-place update. Full TalkBack navigation and 16 KB runtime compatibility have not been verified. See [Android installation and signing](android/RELEASING.md) for channel and update details.
+<details>
+<summary>Android compatibility, updates, and local progress</summary>
+
+The signed production candidate has been tested on a real phone. It shares the desktop version number, 1.4.0.
+
+Progress stays on the device; automatic cloud backup, device transfer and migration from private prototypes are not supported. Keep an installation that holds your progress: changing to a store with a different signing certificate may prevent an in-place update. Full TalkBack navigation and 16 KB runtime compatibility have not been verified.
+
+See [Android installation and signing](android/RELEASING.md) for channel and update details. Obtainium discovery and updates require a published APK release; adding the repository does not create a release or establish store availability.
+
+</details>
 
 ## Build & contribute
 

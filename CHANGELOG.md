@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.4.0] — Unreleased
+## [1.4.0]
 
 ### First Android release
 - Prepared the first public Android version, sharing desktop version 1.4.0 and Android versionCode 10400. Earlier Android builds were private debug prototypes.

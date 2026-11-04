@@ -1,1 +1,0 @@
-First Android release: 1.4.0. Play offline with touch controls, portrait and landscape layouts, and local saves. Celebrate completed puzzles, try the same puzzle again and keep earlier attempt statistics. Improved confirmations and button spacing. Earlier Android builds were private prototypes.

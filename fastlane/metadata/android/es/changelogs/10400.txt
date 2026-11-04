@@ -1,1 +1,0 @@
-Primera versión de Android: 1.4.0. Jugá sin conexión, con controles táctiles, orientación vertical y horizontal y partidas locales. Celebrá los juegos completados, volvé a intentar el mismo sudoku y conservá las estadísticas de cada intento. Mejoramos los diálogos y los botones. Las versiones Android anteriores eran prototipos privados.
