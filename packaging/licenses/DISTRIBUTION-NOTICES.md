@@ -35,4 +35,6 @@ bit-for-bit reproducibility or a substitute for platform acceptance testing.
 
 Linux candidates include `COMPONENTS.txt` plus copied Debian copyright files for bundled shared libraries. The AppImage intentionally leaves graphics-driver implementations to the target system and records external system dependencies separately.
 
-The macOS v1.3 candidate is macOS 15+ arm64 only. Its bundle contains a `COMPONENTS.txt` inventory and license material/metadata for Homebrew-owned dylibs. The bundle is relocalized before an **ad-hoc integrity signature** is applied. Ad-hoc signing is not Developer ID signing and is not notarization; real downloaded-DMG acceptance remains a separate gate.
+The current macOS package targets macOS 15+ on Apple Silicon/arm64 only. Its bundle contains a `COMPONENTS.txt` inventory and license material/metadata for Homebrew-owned dylibs. The bundle is relocalized before an **ad-hoc integrity signature** is applied. Ad-hoc signing is not Developer ID signing and is not notarization; real downloaded-DMG acceptance remains a separate gate.
+
+Android candidates build the pinned SDL2, SDL2_ttf, SDL2_mixer and their selected font/audio dependencies from source. The Android audit records the packaged licenses and native library closure. Direct release APKs use the Sudokura app-signing certificate; that signature is independent of any Google Play or F-Droid submission.

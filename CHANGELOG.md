@@ -2,16 +2,25 @@
 
 ## [1.4.0] — Unreleased
 
+### First Android release
+- Prepared the first public Android version, sharing desktop version 1.4.0 and Android versionCode 10400. Earlier Android builds were private debug prototypes.
+- Added portrait and landscape layouts, touch-first help, responsive auxiliary screens and a bounded Android semantic bridge. Full TalkBack navigation, measured device performance and 16 KB runtime compatibility remain unverified.
+- Established production identity `org.cajapersonal.sudokura` and verified direct APK signing. The app key and Play upload key have separate roles; store submissions and seamless cross-store updates are not claimed.
+
 ### Your journey
-- Added a colored Home entry with Achieved and Try again views, per-attempt statistics and linked replay history. A later win celebrates the puzzle without erasing previous attempts.
-- Separated explicit Saved Games and the current global autosave from terminal history. In-app leave/replacement offers Save, Abandon, or Cancel; OS backgrounding only checkpoints.
-- Persisted a real-play marker across Undo and restart, so viewing or noting an untouched board does not create a failed attempt. Added compatible profile/session/record readers and archive coverage beyond the 128-result cache.
+- Added a colored Home entry with Achieved and Try again, per-attempt statistics and linked replay history. A later win celebrates the puzzle without erasing earlier attempts.
+- Separated explicit Saved Games and one current global autosave from finished-game history. Leaving or replacing a played attempt offers Save, Abandon, or Cancel; backgrounding only checkpoints progress.
+- Persisted a real-play marker across Undo and restart. Viewing, selecting or adding notes to an untouched board does not create a failed attempt. Added compatible profile/session/record readers and archive coverage beyond the 128-result cache.
 
-
-- Prepared the first public Android release, retaining the shared project version 1.4.0 and Android code 10400; previous Android APKs were private debug prototypes.
-- Added landscape/compact screens, touch-first help and a bounded native/Android semantic bridge. Full TalkBack navigation and 16 KB runtime compatibility remain unverified.
+### Reliability and presentation
 - Improved event-driven confirmations, save/recovery and renderer/lifecycle handling while preserving game and retained-record identities.
-- Prepared separate prototype and unsigned production packages for the confirmed Android identity, with APK audits and preliminary Play bundle packaging. Internal APK signing is verified; public acceptance and store submission remain pending.
+- Refined phone dialog actions, destructive-action contrast, journey cards, empty states and navigation spacing. Maintainer phone testing accepted the revised design, Try again, and explicit Save followed by Android force stop and reopening with numbers and notes retained.
+- Retained the approved desktop screenshot with its original provenance; new journey screens and Android are not pictured in that image.
+
+### Packages and updates
+- Preserved the Windows installer/portable EXE, Linux AppImage and experimental macOS 15+ Apple Silicon DMG. Android-enabled bundles add the signed ARM64 APK, with shared checksums and source-bound Build-Info: five applications and seven release files.
+- Kept production Android progress separate from private prototypes, with cloud backup/device transfer disabled and no promised prototype migration. In-place direct updates require the same application ID and signing certificate; do not uninstall an app containing progress to work around a mismatch.
+- Validated APK identity, native closure/alignment, signed receipt binding and unsigned Play AAB structure. Structural validation is not a claim of full 16 KB runtime, independent reproducibility or store acceptance.
 
 ## [1.3.9]
 

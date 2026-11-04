@@ -7,18 +7,20 @@ Status: preparation, not publication. Sudokura 1.4.0 is planned as the **first p
 | Variant | Application ID | Version | Intended use |
 | --- | --- | --- | --- |
 | Prototype debug | `org.sudokura.prototype.debug` | `1.4.0-prototype` / 10400 | Separate test installation; ephemeral debug signer |
-| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 10400 | Unsigned preparation, then separately authorized stable signing |
+| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 10400 | Gradle stages unsigned APK/AAB; trusted release-branch CI signs the direct APK |
 
 The production ID was confirmed on November 3, 2026. The internal Java namespace remains independent of the application ID; retain the JNI class names. The production label is Sudokura. Prototype data is separate; no automatic migration or uninstall workaround is promised. Keep backup/device transfer excluded and preserve local progress.
 
 Version components come from `src/version.h`, using major*10000+minor*100+patch with positive signed-32-bit bounds. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Neither store is currently claimed available or approved.
 
-## Unsigned preparation
+## Build outputs and verified signing
 
 The existing reusable Android job, called by CI, builds only `prototypeDebug` and `productionRelease`. It retains:
 
 - `sudokura-android-debug-prototype`: the installable debug APK and structural receipts.
 - `sudokura-android-unsigned-production`: the unsigned production APK, unsigned Play AAB, source/version/checksum receipts and APK/native/alignment audits.
+- `sudokura-android-signed-github`: the signed direct APK, verified app certificate and source-bound manifest/checksum receipts.
+- `phase9-release-bundle`: the five application files with shared Build-Info and checksums, after the standard cross-platform package jobs succeed.
 
 The production APK is not installable until signed. CI validates the AAB with official bundletool 1.18.3, downloaded from its release with SHA-256 verification, and retains the validation output and tool identity. This structural validation does not establish upload signing or Console acceptance; both remain open. Repository secrets `SUDOKURA_APP_KEYSTORE_BASE64` and `SUDOKURA_APP_KEYSTORE_PASSWORD` let the trusted release-branch job sign an internal GitHub APK artifact. Pull-request runs never receive or use them. The Play upload JKS stays separate and is not used by this APK-signing job. A signed CI artifact is not a public release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
 
@@ -31,44 +33,49 @@ python3 android/scripts/audit_apk.py /path/to/aapt android/app/build/outputs/apk
 
 Do not install tooling on the maintainer's computer merely to reproduce CI. Final signed APK naming remains `Sudokura-1.4.0-Android-arm64.apk`; files containing `unsigned` are staging artifacts, not public downloads. AABs remain internal Play preparation, not GitHub public release assets. Desktop release assets and their existing checks remain unchanged.
 
-## Signing and recovery plan
+## Existing signing identities and recovery
 
-Use **new, independent Sudokura keys**, following the same separation of roles used by the other applications; never reuse another application's private keys or certificates.
+The two independent Sudokura keys have already been created. The app key signs the direct APK in CI; the Play upload key remains separate. Do not generate replacements or repeat initial setup for a normal build, update or password change. Never reuse another application's keys.
 
-| Role | Planned private filename / alias | Purpose | Current state |
+| Role | Private filename / alias | Purpose | Current state |
 | --- | --- | --- | --- |
 | Long-lived app signing | `sudokura-release.jks` / `sudokura` | Signs GitHub/Obtainium APKs; intended common installed-app identity across channels | Created locally; app-signing certificate verified |
 | Dedicated Play upload | `sudokura-play-upload.jks` / `sudokura-play-upload` | Signs AAB uploads; not the direct APK signing identity | Created locally; upload certificate verified |
 | PEPK transfer archive | Provider-generated encrypted transfer plus original public certificate | Only if separately enrolling the original app key in Play App Signing | Not generated |
 
-Before key creation/signing, agree the secure operator procedure and recoverable custody. Keep private material outside the repository and chat. Use labelled private groups `01-app-signing/`, `02-play-upload/`, and, when applicable, `03-play-transfer/`. Keep passwords separately protected. Verify an independent encrypted/offline recovery copy and match the restored public certificate fingerprint; a second copy on the same disk is not independent recovery.
+### Public certificate identities
 
-### Local custody procedure
+| Role | Certificate SHA-256 |
+| --- | --- |
+| App signing | `FD:E9:51:E3:D2:EF:42:E4:1C:71:86:EE:96:59:44:AE:CA:54:9D:59:0A:D0:80:71:1D:D3:D8:75:F8:2D:F6:6D` |
+| Play upload | `ED:32:FB:EF:2E:28:31:92:E8:0F:74:E1:11:28:82:37:71:3C:61:6E:74:72:8B:56:79:3E:2A:C3:CE:BE:A4:86` |
 
-The planned operator root is `/home/smrp/Desktop/Work/Sudokura/signing`, matching the existing application custody convention. Private material stays on the operator's machine; cloud CI must not generate the long-lived keys. Preparation of these instructions is not key creation authority.
+These identify the public certificates, not JKS-file checksums. A matching alias or filename alone does not establish the signer.
 
-After explicit authorization to create the keys, use an already available trusted JDK `keytool` interactively. Do not install a local toolchain merely to enable CI. Set `umask 077`; create the root and the `01-app-signing`, `02-play-upload` and `public` directories with mode 0700. Stop if either planned keystore already exists: inspect its public certificate and recover its known credentials rather than overwriting or regenerating it.
+### Current CI configuration
 
-Run each command in its corresponding private directory, without shell tracing, recording, password arguments or password environment variables:
+Exactly two repository secrets are used for direct APK signing:
 
-```sh
-# In 01-app-signing (only after confirming the file does not exist):
-keytool -genkeypair -storetype JKS -keystore sudokura-release.jks -alias sudokura -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -dname 'CN=Sudokura'
-# In 02-play-upload (only after confirming the file does not exist):
-keytool -genkeypair -storetype JKS -keystore sudokura-play-upload.jks -alias sudokura-play-upload -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -dname 'CN=Sudokura Play Upload'
-```
+- `SUDOKURA_APP_KEYSTORE_BASE64`: base64 of the app-signing JKS.
+- `SUDOKURA_APP_KEYSTORE_PASSWORD`: the shared JKS store/key-entry password.
 
-Enter independently generated strong passwords at the protected prompts and save them in the password manager, including any separate key-entry password. Keep both JKS files mode 0600. Export only the public certificates with `keytool -exportcert -rfc`, using the correct keystore/alias and distinct filenames under `public/`; inspect each with `keytool -printcert -file`. Confirm their SHA-256 fingerprints differ. Retain those public fingerprints with the role, alias and creation date; do not confuse the file checksum with the certificate fingerprint.
+The alias is fixed as `sudokura`. The store password and key-entry password are different concepts, but this key uses the same value for both; no third secret is needed. Signing is restricted to the trusted `release/1.4.0` branch. Pull requests and tags do not gain signing access. The Play upload JKS and password are not used by this workflow.
 
-Before first signing, create an independent encrypted/offline backup of both JKS files and the separate password records. Restore into an isolated private directory, open each restored keystore with its recorded password and alias, and compare exported certificate fingerprints to the originals. Mark recovery VERIFIED only after that exercise. Do not delete originals as part of the exercise.
+Keep private JKS files and password records outside source control, chat, Issues and ordinary build artifacts. Base64 is an encoding, not encryption. Do not echo secret values or enable shell tracing while handling them. Keep JKS files mode 0600 and their private directory mode 0700. Preserve role-labelled `01-app-signing/`, `02-play-upload/` and `public/` groups in private custody; only exported public certificates belong in the last group.
 
-Repository secret configuration is a later separately authorized step. Configure only the Sudokura repository using its official secrets interface, from the operator machine; never paste values into chat or Issues. The app-signing workflow uses the exact repository secrets `SUDOKURA_APP_KEYSTORE_BASE64` and `SUDOKURA_APP_KEYSTORE_PASSWORD`; the alias is fixed as `sudokura`. These secrets contain only the app-signing JKS and its shared store/key password. Never add the Play upload key to this workflow. PEPK enrollment/transfer is a further explicit step after the live Play Console identifies its required transfer parameters.
+Changing a JKS password does not by itself create a new app-signing certificate. It also does not invalidate a previously copied keystore protected by the old password. For subsequent CI signing, update both the uploaded JKS content and its matching password secret if they changed. Keep any store/key-entry passwords consistent with the workflow, or deliberately adapt the configuration. Do not rotate the app's signing identity as a password-change workaround. Removing CI secrets prevents future CI signing but does not revoke earlier signed APKs or copies of the private key; local signing remains possible with the original key.
 
-Record public certificate SHA-256 fingerprints and non-secret package/source receipts after actual key creation. A filename or alias does not establish signing identity. Never silently regenerate a missing keystore: restore the exact backup and verify its certificate. Do not put JKS, passwords, base64 keystores or private transfer material into source, Issues, logs or ordinary artifacts. The maintainer reports these two app-signing repository secrets are configured; secret values are never read or echoed.
+### Backup and recovery
+
+The maintainer reports that both JKS files are backed up. An independent restore exercise has not been verified. Keep encrypted/offline recovery copies and separately protected password records; a second copy on the same disk is not independent recovery.
+
+Restore copies into an isolated private directory without overwriting the originals. Open each restored JKS interactively with its recorded store password and alias, and compare the exported public certificate fingerprint with the table above. Listing a certificate validates access to the keystore, not the ability to use a separately password-protected private key: verify the key-entry password through an isolated signing check when exercising full recovery. Record recovery as verified only after the appropriate check succeeds.
+
+If a key file or password is missing, recover the exact original rather than generating a replacement. Never uninstall a progress-bearing app to hide a signing mismatch. Preserve the long-lived app certificate for future direct updates.
 
 For Play, propose enrolling the original app-signing identity and using the separate upload key, so Play does not silently introduce a different installed-app signer. Actual enrollment and private-key transfer need separate authorization. Verify the live Console certificate before relying on enrollment. F-Droid use of the developer signer requires an accepted reproducible-build recipe and signature verification; it is not automatic. A different store signer can block in-place cross-store updates. Do not promise channel switching until tested with retained data.
 
-Pin and validate the signing toolchain against the F-Droid signature-copy/rebuild process before signing the first public APK. Preserve the same app certificate for future direct updates. Do not select a different compiler/NDK merely to copy another application's signing configuration.
+The direct APK uses the pinned signing toolchain. Before claiming F-Droid developer-signature/reproducible-build support, validate that toolchain against the applicable signature-copy/rebuild process. Preserve the same app certificate for future direct updates. Do not select a different compiler/NDK merely to copy another application's signing configuration.
 
 ## Internal combined candidate
 
@@ -78,13 +85,13 @@ When that same CI run builds Android, its final internal bundle includes the sig
 
 ### Exact public upload handoff
 
-Use the accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle already contains all five applications and their shared Build-Info/checksums. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then produces only the seven public upload files in a new directory:
+Use the accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle already contains all five applications and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to the inspected candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then produces only the seven public upload files in a new directory:
 
 ```sh
 python3 scripts/release_bundle.py export \
   --artifacts-dir /path/to/extracted/phase9-release-bundle \
   --output-dir /path/to/new/public-upload \
-  --version 1.4.0 --source-commit <exact-40-character-source-sha> --include-android
+  --version 1.4.0 --source-commit "$SOURCE_COMMIT" --include-android
 ```
 
 This stages files only: it creates no tag, draft, release or network request, and refuses an existing output directory. Do not substitute unsigned APKs, AABs, per-platform receipts or another run's checksums. Keep the downloaded Actions ZIP digest and source commit with the acceptance record.
@@ -97,4 +104,4 @@ The existing tag workflow still stages desktop assets only; it is not the comple
 
 The November 4 acceptance amendment in the [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) defers full manual accessibility, extended performance measurements and further emulator debugging. Preserve their unverified status and public limitations; known critical defects, source/signing/checksum integrity, and screenshot/public-copy review remain release requirements. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.
 
-Review the exact signed artifacts, public certificates, immutable source, checksums, genuine screenshots and final EN/ES/CA copy before separately authorized merge/publication. First-Android release wording does not waive those gates.
+Review the exact signed artifacts, public certificates, immutable source, checksums, approved screenshots with truthful capture provenance and final EN/ES/CA copy before separately authorized merge/publication. First-Android release wording does not waive those gates.

@@ -30,11 +30,12 @@
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-Portable-4567B4?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows portable EXE"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG"></a>
+  <a href="#android"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK information"></a>
 </p>
 
 <p align="center">
   <sub>Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon (experimental)</sub><br>
-  <sub>Buttons open the latest <strong>published</strong> release. Choose the file for your platform.</sub>
+  <sub>Desktop buttons open the latest <strong>published</strong> release. Android APKs start with v1.4.0; see the Android section below.</sub>
 </p>
 
 <details>
@@ -54,7 +55,7 @@
     <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura desktop gameplay: Sudoku board, notes, number keys and Save controls" width="900">
   </a>
   <br>
-  <sub>Desktop gameplay — the approved image from v1.3.9 is reused for v1.4.0.</sub>
+  <sub>The familiar desktop board — approved screenshot reused from v1.3.9. New journey screens and Android are not pictured.</sub>
 </p>
 
 <table>
@@ -108,11 +109,11 @@ Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest sta
 
 Existing compatible v1.2 and v1.3 desktop data keeps its migration and recovery safeguards. If you're moving between versions, **keep your complete game-data folder**. See [saves, recovery, and rollback](docs/REPORTING_ISSUES.md).
 
-## Android · first release in 1.4.0
+## Android
 
-Version **1.4.0** introduces the first Android release, with the same offline Sudoku engine, portrait and landscape play, touch controls, and Your journey. The signed production candidate has been tested on a real phone. The shared version is 1.4.0; Android does not start a separate 1.0 version sequence.
+Version **1.4.0** introduces the first Android release, with the same offline Sudoku engine, portrait and landscape play, touch controls, and Your journey. The signed production candidate has been tested on a real phone. It shares the desktop version number, 1.4.0.
 
-Use the **Android APK** asset on the [published release page](https://github.com/santirodriguez/Sudokura/releases/latest) when it is available. GitHub is the direct download channel; Obtainium can follow this repository. F-Droid inclusion and Google Play availability are separate, and neither listing is announced here.
+Use the **Android APK** asset on the [published release page](https://github.com/santirodriguez/Sudokura/releases/latest) when it is available. GitHub is the direct download channel. You can add this repository to Obtainium; discovery and updates require a published APK release. F-Droid inclusion and Google Play availability are separate, and neither listing is announced here.
 
 Android requires **9 or later on ARM64**. Progress stays on the device; automatic cloud backup, device transfer and migration from private prototypes are not supported. Keep an installation that holds your progress: changing to a store with a different signing certificate may prevent an in-place update. Full TalkBack navigation and 16 KB runtime compatibility have not been verified. See [Android installation and signing](android/RELEASING.md) for channel and update details.
 

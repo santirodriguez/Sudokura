@@ -1,1 +1,1 @@
-Primera versió pública de Sudokura per a Android. La versió 1.4.0 incorpora el motor de sudoku sense connexió, controls tàctils, orientació vertical i horitzontal i partides desades localment. Les versions Android anteriors eren prototips privats.
+Primera versió per a Android: 1.4.0. Juga sense connexió, amb controls tàctils, orientació vertical i horitzontal i partides locals. Celebra els sudokus completats, torna a intentar el mateix tauler i conserva les estadístiques de cada intent. Millores als diàlegs i als botons. Les versions Android anteriors eren prototips privats.

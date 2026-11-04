@@ -1,6 +1,6 @@
 # Sudokura Android build
 
-Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. Internal APK signing is verified; device/publicability acceptance and store availability remain pending. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
+Sudokura 1.4.0 is planned as the **first public Android release**, following the earlier private debug prototypes. The signed production candidate has been accepted in maintainer phone testing. Publication and store availability remain pending; specialized unverified behavior is listed below. See [release and signing preparation](RELEASING.md) for the exact identities, custody plan and distribution gates.
 
 ## Pinned shared-engine host
 
@@ -14,9 +14,9 @@ Sudokura 1.4.0 is planned as the **first public Android release**, following the
 
 ## Variants and CI
 
-`prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 10400. Production is unsigned; no key is injected or generated. The other flavor/build combinations are disabled.
+`prototypeDebug` preserves `org.sudokura.prototype.debug`, the Prototype label and the version-derived `-prototype` suffix. `productionRelease` uses confirmed `org.cajapersonal.sudokura`, label Sudokura and plain source version, currently 1.4.0 / 10400. Gradle emits unsigned production packages. The trusted release-branch CI subsequently signs and verifies the direct APK with the existing app key; it never generates a long-lived key. The Play AAB remains unsigned staging output. The other flavor/build combinations are disabled.
 
-The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts. The AAB passes official bundletool validation; Console acceptance remains separate. These are internal candidates, not a public release.
+The [Android package workflow](../.github/workflows/android-preview.yml) is one reusable job within [CI](../.github/workflows/ci.yml), with optional manual dispatch. It verifies inputs, generates shared assets, builds the prototype and unsigned production APK/AAB, audits both APK identities/assets/native closure/alignment, and retains separate Actions artifacts, including `sudokura-android-signed-github` on the trusted release branch. The AAB passes official bundletool validation; Console acceptance remains separate. These are internal candidates, not a public release.
 
 For an already equipped environment (no local tool installation requested):
 
@@ -43,4 +43,4 @@ Keep an existing prototype installation with progress: an ephemeral debug-signat
 
 A push explicitly marked `[android-runtime]` enables one diagnostic job inside the existing CI run. It builds only the x86_64 prototype with `-PsudokuraEmulatorTest=true`; the production variant is disabled in that configuration and normal builds remain ARM64. No signing secrets are available to the diagnostic job.
 
-The job uses the SDK's API35 `google_apis_ps16k` image, records its revision, requires `getconf PAGE_SIZE` to report16384 and disables page-size compatibility fallback. It checks native ELF/ZIP alignment, loads all four shared libraries, exercises Home/play/background/explicit Resume/landscape through the actual Android surface and compares full deterministic core fixtures against the host executable. XML/PNG/logs and a source/APK-bound receipt are retained even on failure. This is an x86_64 emulator diagnostic, not acceptance of the public ARM64 APK, TalkBack, or physical-device performance. Official setup: https://developer.android.com/guide/practices/page-sizes .
+The job uses the SDK's API35 `google_apis_ps16k` image, records its revision, requires `getconf PAGE_SIZE` to report16384 and disables page-size compatibility fallback. It checks native ELF/ZIP alignment, loads all four shared libraries, exercises Home/play/background/explicit Resume/landscape through the actual Android surface and compares full deterministic core fixtures against the host executable. Available XML/PNG/logs are retained even on failure; the source/APK-bound runtime receipt is emitted only when the full runtime path succeeds. This is an x86_64 emulator diagnostic, not acceptance of the public ARM64 APK, TalkBack, or physical-device performance. Official setup: https://developer.android.com/guide/practices/page-sizes .
