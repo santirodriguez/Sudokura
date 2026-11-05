@@ -93,7 +93,7 @@ for path, symbol in (
 
 print(
     "validated two app branding masters and two separate store assets, "
-    "eight icon sizes derived only from 
+    "eight icon sizes derived only from "
     "sudokura-512.png, PNG-backed ICO/ICNS, embedded icon, transparent head, "
     "and the three licensed offline language flags"
 )
