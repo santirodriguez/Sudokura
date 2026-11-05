@@ -1,6 +1,8 @@
-# Reporting Sudokura issues
+# Found something odd?
 
-Sudokura does not collect telemetry. A useful report is a small, reproducible description of what happened on the affected machine.
+Sometimes it's the puzzle. Sometimes it's a bug. If Sudokura isn't doing what you expected, a short, clear report helps us tell the difference.
+
+You don't need to be a developer. Tell us what you were playing, what you tried, what happened and what you expected instead. Sudokura doesn't collect telemetry, so your report is how we learn about problems on your device.
 
 ## Include
 - Sudokura version, OS/version, architecture, and package type.

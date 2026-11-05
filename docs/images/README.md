@@ -1,12 +1,17 @@
-# Documentation images
+# The Sudokura gallery
+
+A real Sudoku board is a better introduction than a wall of technical details. These genuine captures are kept with their release history so you know what you're looking at.
+
+[Back to Sudokura](../../README.md) · [What's new in 1.4.0](../RELEASE_NOTES_1.4.0.md)
 
 ## Sudokura v1.4.0
 
-### Main desktop gameplay image
+### The familiar desktop board
 
-[![Sudokura regular desktop gameplay](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
+[![Real Sudokura Classic desktop gameplay with selected cell, number palette, notes and Save controls](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
 
-- `sudokura-v1.4.0.png` — approved reuse of the image previously published with v1.3.9, with identical image bytes. The original capture is from v1.3.7 and was also reused in v1.3.8 and v1.3.9. It represents the familiar desktop board and controls; it does not show the new journey views or Android interface. This is a reused image, not a new v1.4.0 capture.
+- **`sudokura-v1.4.0.png`:** the approved, unchanged reuse of the screenshot published with v1.3.9. The original capture was made for v1.3.7 and was also reused in v1.3.8 and v1.3.9. It shows the familiar desktop board, **not** the new journey screens or Android UI. It isn't a newly captured 1.4.0 screenshot.
+- The Android store's six real phone screenshots are a separate, still-pending editorial set. This desktop screenshot does not stand in for them, and no unapproved phone images have been added to the canonical gallery.
 
 ## Sudokura v1.3.9 (historical)
 

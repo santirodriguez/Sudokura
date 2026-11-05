@@ -1,6 +1,8 @@
 # First public Android release: Sudokura 1.4.0
 
-This is the packaging and signing record for Sudokura 1.4.0, the **first public Android distribution version** following private debug prototypes. Live APK availability is determined by [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases), not by the state of this document. The shared product version is `1.4.0` and the initial Android versionCode is `1`; “first Android release” is listing copy, not a second version sequence or reset to 1.0.
+Solving the Sudoku is the fun part. This page covers the equally important part: making sure you're installing the right APK and an update doesn't take your saved games with it.
+
+Sudokura 1.4.0 is the **first public Android distribution version** after private debug prototypes. It shares the desktop version number; Android starts at `versionCode 1`, not a separate 1.0.0 series. Only [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) determines actual APK availability. Signing, store submission and approval are separate steps.
 
 ## One production identity
 

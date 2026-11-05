@@ -1,21 +1,23 @@
-Sudokura comes to Android, and your games now have a journey worth keeping.
+A good puzzle doesn't have to make a fuss. Sudokura 1.4.0 brings the familiar grid to Android and gives every finished game a little history of its own.
 
-### First Android release
+### Your next puzzle, wherever you are
 
-**1.4.0 is the first public Android version**, alongside the desktop update. Play offline with touch controls, portrait and landscape layouts, readable help, optional music, and English, Español, or Català. Requires Android 9 or later on ARM64.
+**Sudokura comes to Android.** Choose Classic, Strikes, Time Attack or a Daily Sudoku with its real calendar date. Pick Easy, Medium or Hard, tap your numbers, take notes and ask for a Hint if a 7 is being particularly unhelpful.
 
-### Celebrate, save, and try again
+The phone layout supports portrait and landscape, readable Help, optional music and sounds, and English, Español and Català. The first public Android version requires Android 9+ on ARM64; downloads start with the published 1.4.0 APK.
 
-**Achieved** celebrates completed puzzles with time, errors, and assistance details. **Try again** brings back the same puzzle after a lost or interrupted attempt; a later win keeps the earlier attempts in its history.
+### Every attempt counts
 
-**Saved Games** holds your explicit saves and one current autosave. Leaving a played game offers Save, Abandon, or Cancel. Merely opening an untouched board does not count as a failed attempt, and backgrounding the app only saves progress.
+**Your journey** keeps wins and their time, errors and assistance details. **Achieved** celebrates solved puzzles. **Try again** lets you replay a lost or interrupted puzzle while keeping the earlier attempt in the story, even after a later win.
 
-### Smoother interruptions
+**Saved Games** holds explicit saves and one current autosave. Opening an untouched board isn't a failed attempt; making a real move starts the game.
 
-Improved confirmations, recovery, compact screens, and phone button spacing make it easier to pause, leave, and return to a game.
+### More play, fewer interruptions
 
-### Installation notes
+Clearer phone controls, better dialogs and safer Save/recovery flows make it easier to step away and return. Backgrounding checkpoints progress without abandoning the game; leaving a played attempt offers an explicit choice. Replay no longer prompts for an invalid additional save of an already completed or interrupted attempt.
 
-The Android APK is signed for `org.cajapersonal.sudokura`. Private prototypes remain separate, with no automatic progress migration. Progress stays on your device; automatic cloud backup and device transfer are disabled. Do not uninstall a progress-bearing installation to resolve a signing mismatch. F-Droid and Google Play availability will be announced separately; seamless switching between stores is not promised.
+### Good to know before installing
 
-Full TalkBack navigation and runtime compatibility with 16 KB Android devices have not been verified. Windows builds are unsigned; the experimental macOS Apple Silicon build is ad-hoc signed and not notarized. Keep your full desktop game-data folder before an upgrade or rollback.
+The Android APK uses `org.cajapersonal.sudokura` and the existing app signing identity. Private prototypes are separate installations, without automatic progress migration. Games stay on your device; cloud backup and device transfer are disabled. **Don't uninstall the only installation containing your progress to solve a signing mismatch.** Different store signatures may prevent in-place updates.
+
+F-Droid and Google Play are separate from GitHub/Obtainium; availability isn't implied by this update. Full TalkBack navigation and actual 16 KiB page-size runtime compatibility remain unverified. Windows builds are unsigned; the experimental Apple Silicon macOS build is ad-hoc signed and not notarized. Keep the complete desktop game-data folder before upgrading or rolling back.

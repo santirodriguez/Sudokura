@@ -2,25 +2,26 @@
 
 ## [1.4.0]
 
-### First Android release
-- Prepared the first public Android version, sharing desktop version 1.4.0 and Android versionCode 1. Earlier Android builds were private debug prototypes.
-- Added portrait and landscape layouts, touch-first help, responsive auxiliary screens and a bounded Android semantic bridge. Full TalkBack navigation, measured device performance and 16 KB runtime compatibility remain unverified.
-- Established production identity `org.cajapersonal.sudokura` and verified direct APK signing. The app key and Play upload key have separate roles; store submissions and seamless cross-store updates are not claimed.
+### A familiar puzzle, now on Android
+- Sudokura's first public Android version brings the C11/SDL2 game to touchscreens, with portrait/landscape layouts and clear controls. Choose Classic, Strikes, Time Attack or a dated Daily puzzle at Easy, Medium or Hard; English, Español and Català remain available.
+- Android production uses version 1.4.0 / versionCode 1 and `org.cajapersonal.sudokura`. Private debug prototypes keep their own identity and data. The app signing key differs from the Play upload key; store publication or seamless cross-store updates are not implied.
+- Full TalkBack journeys, measured device performance and actual 16 KiB runtime behavior remain unverified, despite structural and build audits.
 
-### Your journey
-- Added a colored Home entry with Achieved and Try again, per-attempt statistics and linked replay history. A later win celebrates the puzzle without erasing earlier attempts.
-- Separated explicit Saved Games and one current global autosave from finished-game history. Leaving or replacing a played attempt offers Save, Abandon, or Cancel; backgrounding only checkpoints progress.
-- Persisted a real-play marker across Undo and restart. Viewing, selecting or adding notes to an untouched board does not create a failed attempt. Added compatible profile/session/record readers and archive coverage beyond the 128-result cache.
+### The story behind every attempt
+- **Your journey** adds Achieved and Try again, completion details, per-attempt statistics and linked replay history. Winning a retry doesn't erase what happened before.
+- **Saved Games** separates explicit saves and the current autosave from completed and interrupted history. Leaving a played attempt offers Save, Abandon or Cancel; backgrounding checkpoints without abandoning. Notes and untouched-board navigation never turn into a lost game.
+- Preserved deterministic puzzle generation, Daily identities, migration readers, archive records beyond the 128-result cache and recovery safeguards.
 
-### Reliability and presentation
-- Improved event-driven confirmations, save/recovery and renderer/lifecycle handling while preserving game and retained-record identities.
-- Refined phone dialog actions, destructive-action contrast, journey cards, empty states and navigation spacing. Maintainer phone testing accepted the revised design, Try again, and explicit Save followed by Android force stop and reopening with numbers and notes retained.
-- Retained the approved desktop screenshot with its original provenance; new journey screens and Android are not pictured in that image.
+### Little fixes that make playing nicer
+- Improved dialogs, compact screens, button spacing, focus and Android lifecycle handling while preserving game and retained-record identities.
+- Replay no longer asks to save immutable completed/interrupted attempts. An active unsaved attempt still receives its proper retention choice, with regressions covering terminal and active states.
+- The mobile Daily heading displays its actual `YYYY-MM-DD` puzzle date. Maintainer phone testing covered Try again, explicit Save, force-stop and reopening with numbers and notes retained.
+- The approved desktop screenshot was reused unchanged. It shows familiar desktop gameplay, not the new journey or Android screens.
 
-### Packages and updates
-- Preserved the Windows installer/portable EXE, Linux AppImage and experimental macOS 15+ Apple Silicon DMG. Android-enabled bundles add the signed ARM64 APK, with shared checksums and source-bound Build-Info: five applications and seven release files.
-- Kept production Android progress separate from private prototypes, with cloud backup/device transfer disabled and no promised prototype migration. In-place direct updates require the same application ID and signing certificate; do not uninstall an app containing progress to work around a mismatch.
-- Validated APK identity, native closure/alignment, signed receipt binding and unsigned Play AAB structure. Structural validation is not a claim of full 16 KB runtime, independent reproducibility or store acceptance.
+### Downloads and updating safely
+- Kept Windows installer/portable EXE, Linux AppImage and experimental macOS 15+ Apple Silicon DMG; added a signed Android ARM64 APK. The exact-source bundle includes five applications, shared checksums and Build-Info.
+- Android progress is local; backup/transfer and automatic prototype migration aren't supplied. Keep the installation containing progress when signatures don't match. Matching version numbers alone don't ensure cross-store updates.
+- APK identity, native alignment, signing receipts and unsigned Play AAB structure were validated. This is not a claim of full 16 KiB runtime, independent reproducibility or store approval.
 
 ## [1.3.9]
 

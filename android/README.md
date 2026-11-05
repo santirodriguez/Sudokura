@@ -1,6 +1,8 @@
 # Sudokura Android build
 
-Sudokura 1.4.0 is the **first Android distribution version** after the private debug prototypes. Its signed production candidate was accepted in maintainer phone testing. See [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for live APK availability; this build guide does not assert that a release is already published. F-Droid and Google Play are separate channels. Specialized unverified behavior is listed below; see [Android packaging and signing](RELEASING.md) for identities, key custody and distribution gates.
+The familiar Sudoku grid, now made for thumbs. Sudokura 1.4.0 brings Classic, dated Daily challenges and Your journey to Android. This page is for people building or testing the app; for a quick introduction, start with the [main README](../README.md).
+
+**Availability and compatibility:** 1.4.0 is the first public Android distribution version after private debug prototypes. Its signed production candidate passed maintainer phone testing, but a passing build doesn't mean an APK is published: check [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases). Android 9+ ARM64 is required. Google Play and F-Droid are separate channels. For signing and safe updates, see [Android packaging](RELEASING.md); specialized unverified behavior is documented below.
 
 ## Pinned shared-engine host
 

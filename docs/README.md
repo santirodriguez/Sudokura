@@ -1,47 +1,50 @@
-# Sudokura documentation
+# Good puzzles. Good documentation.
 
-The [main README](../README.md) introduces the game and links to the latest published downloads. This index keeps technical documentation and older release history available without crowding the front page.
+Here for a quick download, a puzzle tip or the deeper technical details? You're in the right place. If you're ready to play, start at [Sudokura's main page](../README.md); we'll keep the build instructions out of your way.
 
 [Official website](https://sudokura.cajapersonal.org/) · [Support development](https://cajapersonal.org/donate/)
 
-## Start here
+## Start with the game
 
-- [v1.4.0 release notes](RELEASE_NOTES_1.4.0.md)
-- [Changelog](../CHANGELOG.md)
-- [Screenshot gallery](images/README.md)
-- [Issue reporting, saved games, and recovery](REPORTING_ISSUES.md)
-- [Development and packaging](DEVELOPMENT.md)
+- **[What's new in v1.4.0](RELEASE_NOTES_1.4.0.md)** — Android, Your journey and an easier return to the grid.
+- **[See the real screenshots](images/README.md)** — the familiar desktop board and historical galleries.
+- **[Something not working?](REPORTING_ISSUES.md)** — report a bug, protect your saves or recover a game.
+- **[Read the full changelog](../CHANGELOG.md)** — the release-by-release history.
 
-## Android development
+## Playing on Android
 
-- [Android release roadmap and distribution plans](ANDROID_RELEASE_PLAN.md)
-- [Android builds and runtime limitations](../android/README.md)
-- [v1.4.0 implementation blueprint and acceptance decisions](V1.4.0_BLUEPRINT.md)
-- [Android packaging, signing and publication](../android/RELEASING.md)
+The familiar grid now fits in your pocket. Android 1.4.0 uses a separate production identity from the earlier private prototypes, so keep your progress safe when switching builds.
 
-Version 1.4.0 introduces the first signed Android ARM64 distribution package alongside desktop builds. [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) is authoritative for current public availability. Private prototypes remain separate installations; see [Android packaging and signing](../android/RELEASING.md) for identity, update safeguards and separate store channels.
+- [Android builds and known limitations](../android/README.md)
+- [Installing, signing and updating](../android/RELEASING.md)
+- [Android roadmap and distribution plans](ANDROID_RELEASE_PLAN.md)
+- [v1.4.0 implementation and acceptance record](V1.4.0_BLUEPRINT.md)
 
-## Repository layout
+**Availability:** [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) shows what's actually published. Google Play and F-Droid are independent channels.
 
-- [`src/`](../src/) — shared Sudoku engine and SDL application code.
-- [`android/`](../android/) — Android host, native build, packaging and dependency audits.
-- [`assets/`](../assets/) — artwork, flags, music and generated UI resources.
-- [`tests/`](../tests/) — gameplay, persistence, input, layout and tooling tests.
-- [`scripts/`](../scripts/) — asset generation, validation and release helpers.
-- [`packaging/`](../packaging/) — platform-specific distribution and packaging support.
-- [`.github/workflows/`](../.github/workflows/) — continuous integration, package previews and release automation.
+## Building Sudokura
 
-The existing paths are intentional: avoid moving source, assets or historical releases solely to shorten the directory tree.
+- [Development guidelines](DEVELOPMENT.md) — code, tests, design constraints and release checks.
+
+## Find your way around the repository
+
+- [`src/`](../src/) — Sudoku engine and SDL app.
+- [`android/`](../android/) — Android host, native build and packaging.
+- [`assets/`](../assets/) — artwork, language flags, sounds and music.
+- [`tests/`](../tests/) — game, saves, input, layout and tooling tests.
+- [`scripts/`](../scripts/) — asset generation and validation tools.
+- [`packaging/`](../packaging/) — desktop distribution.
+- [`.github/workflows/`](../.github/workflows/) — CI and release automation.
 
 ## Previous releases
 
 - [v1.3.9](RELEASE_NOTES_1.3.9.md) · [v1.3.8](RELEASE_NOTES_1.3.8.md) · [v1.3.7](RELEASE_NOTES_1.3.7.md) · [v1.3.6](RELEASE_NOTES_1.3.6.md) · [v1.3.5](RELEASE_NOTES_1.3.5.md)
 - [v1.3.0](RELEASE_NOTES_1.3.0.md) · [v1.2.0](RELEASE_NOTES_1.2.0.md) · [v1.1.0](RELEASE_NOTES_1.1.0.md)
-- [All published GitHub releases](https://github.com/santirodriguez/Sudokura/releases)
+- [All published releases](https://github.com/santirodriguez/Sudokura/releases)
 
 ## Historical technical records
 
-These documents are retained for implementation and compatibility history; they are not a second current specification.
+These documents preserve implementation and compatibility history. They aren't competing current specifications.
 
 - [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md)
 - [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md)
