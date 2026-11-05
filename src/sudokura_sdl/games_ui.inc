@@ -1466,6 +1466,14 @@ static bool games_browser_replay_offer(
   return true;
 }
 
+/* Replay only retains a departing active attempt. Completed or interrupted
+   records are already immutable and must not be saved again. */
+static bool games_browser_replay_keep_required(const ProfileSlot *slot) {
+  return slot && slot->present &&
+         slot->value.session.status == SESSION_ACTIVE &&
+         !slot->value.explicitly_saved && slot->value.started;
+}
+
 /* Replay-specific save gate: one attempt, then return to the main pump.
    Other Games operations retain their existing checked save protocol. */
 static bool games_browser_replay_preflight(
@@ -1486,7 +1494,7 @@ static bool games_browser_replay_preflight(
     return false;
   }
   const ProfileSlot *normal=journey_auto_daily(p)?&p->profile.daily:&p->profile.normal;
-  if (normal->present && !normal->value.explicitly_saved && normal->value.started) {
+  if (games_browser_replay_keep_required(normal)) {
     (void)games_browser_replay_offer(p,ui,gfx,binding,
              APP_MODAL_REPLAY_KEEP,true);
     return false;
@@ -1834,7 +1842,7 @@ static bool games_browser_replay_gate_chosen(
       (void)persistence_retry_current(p,game,ui);
       return games_browser_replay_confirmed(p,game,ui,gfx,expected,false);
     case APP_MODAL_REPLAY_KEEP:
-      if (!normal->present || normal->value.explicitly_saved || !normal->value.started) return false;
+      if (!games_browser_replay_keep_required(normal)) return false;
       if (button==2) {
         if(!journey_interrupt_slot(p,ui,consent.daily))return false;
         return games_browser_replay_confirmed(p,game,ui,gfx,expected,true);

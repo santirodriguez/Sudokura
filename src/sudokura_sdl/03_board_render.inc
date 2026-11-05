@@ -482,6 +482,17 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
   char hud[GEOMETRY_HUD_COUNT][80] = {{0}};
   double el = elapsed_time(ui);
   const char *mode_name = tr(ui->language, mode_key(ui->mode));
+  char daily_title[80] = {0};
+  if (ui->is_daily) {
+    const char *label = tr(ui->language, T_DAILY_SHORT);
+    if (ui->daily_year > 0 && ui->daily_month >= 1 &&
+        ui->daily_month <= 12 && ui->daily_day >= 1 &&
+        ui->daily_day <= 31)
+      snprintf(daily_title, sizeof daily_title, "%s %04d-%02d-%02d",
+               label, ui->daily_year, ui->daily_month, ui->daily_day);
+    else
+      snprintf(daily_title, sizeof daily_title, "%s", label);
+  }
   bool landscape_hud = L.model.mobile_layout && g->height<600;
   bool desktop_hud = g->width >= 640 && !landscape_hud;
   if (desktop_hud) {
@@ -489,7 +500,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
              ui->is_daily ? tr(ui->language, T_DAILY_SHORT) : mode_name,
              difficulty_name(ui->language, game->difficulty));
   } else if (ui->is_daily) {
-    snprintf(hud[0], sizeof hud[0], "%s", tr(ui->language, T_DAILY_SHORT));
+    snprintf(hud[0], sizeof hud[0], "%s", daily_title);
   } else {
     snprintf(hud[0], sizeof hud[0], "%s: %s", tr(ui->language, T_MODE),
              mode_name);
@@ -526,7 +537,7 @@ static void render_board_and_sidebar(Gfx*g,const Game*game,UI*ui){
              tr(ui->language, T_STRIKES_LEFT), left, ui->strikes_max);
   }
   if (landscape_hud) {
-    snprintf(hud[0],sizeof hud[0],"%s",ui->is_daily ? tr(ui->language,T_DAILY_SHORT) : mode_name);
+    snprintf(hud[0],sizeof hud[0],"%s",ui->is_daily ? daily_title : mode_name);
     snprintf(hud[1],sizeof hud[1],"%s",difficulty_name(ui->language,game->difficulty));
   }
   SDL_GetMouseState(&mx, &my);

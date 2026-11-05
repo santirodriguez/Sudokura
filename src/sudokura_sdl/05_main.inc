@@ -4352,6 +4352,30 @@ int main(int argc, char **argv) {
         fprintf(stderr,"Replay pending stale continuation regression\n");
         app_shutdown(&g); return 1;
       }
+      /* Terminal records cannot enter Replay's departing-save gate. */
+      ProfileSlot replay_keep_slot={0};
+      replay_keep_slot.present=true;
+      replay_keep_slot.value.started=true;
+      replay_keep_slot.value.session.status=SESSION_WON;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay terminal-win keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.session.status=SESSION_INTERRUPTED;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay terminal-interrupted keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.session.status=SESSION_ACTIVE;
+      if (!games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay active unsaved keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.explicitly_saved=true;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay active saved keep regression\n");
+        app_shutdown(&g); return 1;
+      }
       AppModalBinding save_gate_binding;
       if (!games_browser_modal_binding(&settings_persistence,&ui,
                                        &save_gate_binding) ||
