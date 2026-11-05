@@ -59,7 +59,8 @@ jobs:
           prefixes = ('android/', 'src/', 'assets/audio/',
                       'assets/branding/source/', 'assets/flags/raster/')
           files = {'Makefile', 'scripts/generate_assets.go',
-                   'scripts/generate_assets.py', '.github/workflows/ci.yml',
+                   'scripts/generate_assets.py', 'scripts/validate_assets.py',
+                   '.github/workflows/ci.yml',
                    '.github/workflows/android-preview.yml'}
           # A missing/new-branch base must build rather than silently skip.
           build = changed is None or any(
