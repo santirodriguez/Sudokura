@@ -42,12 +42,16 @@ canonical_sources = {
     "sudokura-head.png": (516, 166),
     "sudokura-512.png": (512, 512),
 }
+store_sources = {
+    "sudokura-store-icon-512.png": (512, 512),
+    "sudokura-store-feature-graphic-1024x500.png": (1024, 500),
+}
 source_files = {path.name for path in source.iterdir() if path.is_file()}
-assert source_files == set(canonical_sources), (
-    "branding source directory must contain exactly the two canonical masters",
+assert source_files == set(canonical_sources) | set(store_sources), (
+    "branding source directory must contain the two app masters and two store assets",
     source_files,
 )
-for name, expected in canonical_sources.items():
+for name, expected in {**canonical_sources, **store_sources}.items():
     assert png_size(source / name) == expected, name
 
 upstream_blobs = {
@@ -88,7 +92,8 @@ for path, symbol in (
     assert min(values[3::4]) == 255
 
 print(
-    "validated exactly two branding masters, eight icon sizes derived only from "
+    "validated two app branding masters and two separate store assets, "
+    "eight icon sizes derived only from 
     "sudokura-512.png, PNG-backed ICO/ICNS, embedded icon, transparent head, "
     "and the three licensed offline language flags"
 )
