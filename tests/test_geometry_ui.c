@@ -21,7 +21,7 @@ int main(void) {
       {600, 640}, {639, 640}, {640, 640},
   };
 
-  assert(GEOMETRY_ABOUT_LINK_COUNT == 4);
+  assert(GEOMETRY_ABOUT_LINK_COUNT == 5);
   assert(PLAY_ACTION_COUNT == GEOMETRY_ACTION_COUNT);
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     int width = sizes[s][0], height = sizes[s][1];

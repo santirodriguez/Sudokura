@@ -443,8 +443,10 @@ int main(void) {
       GeometryLibrary library;
       assert(geometry_mobile_info(width,height,true,&info));
       assert(geometry_mobile_library(width,height,&library));
-      const TextKey info_keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT};
-      for (unsigned i=0;i<5;++i)
+      const TextKey info_keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,
+                                 T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
+      assert(sizeof(info_keys)/sizeof(info_keys[0]) == GEOMETRY_ABOUT_LINK_COUNT+1);
+      for (unsigned i=0;i<sizeof(info_keys)/sizeof(info_keys[0]);++i)
         assert(wrapped_fits(font,tr(lang,info_keys[i]),17,13,
                             info.links[i].w-12,info.links[i].h));
       assert(fits(font,tr(lang,T_BACK),20,13,info.back.w,info.back.h));
