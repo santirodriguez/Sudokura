@@ -213,6 +213,7 @@ static void check_auxiliary(int w,int h) {
       controls[count++]=g.links[i];
     for (int i=0;i<count;++i) {
       assert(controls[i].w>=48 && controls[i].h>=48);
+      if (about && h<600 && i>=3) assert(controls[i].w>=120);
       assert(geometry_rect_in_bounds(controls[i],w,h));
       assert(!overlap(controls[i],g.body) && !overlap(controls[i],g.heading));
       for (int j=0;j<i;++j) assert(!overlap(controls[i],controls[j]));

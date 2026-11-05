@@ -61,7 +61,8 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   memset(&g,0,sizeof(g));
   int x=6,w=width-12,footer=height-54;
   bool columns=about && height<600;
-  int body_w=columns ? w-216 : w;
+  /* Reserve two readable button columns for long localized About links. */
+  int body_w=columns ? w-276 : w;
   g.heading=(GeoRect){x,60,body_w,40};
   int body_bottom=footer-6;
   if (about && !columns) body_bottom-=162;
