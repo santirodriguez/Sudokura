@@ -20,11 +20,13 @@ preparation notes, not Play Console selections or an approved legal policy.
 - In-app About currently presents project/support/website links, but no
   identifiable Privacy page/link or policy text was found in current SDL sources.
   A new localized and accessible entry requires a bounded app-code change.
-- A verified live public privacy page and its developer/privacy contact do not
-  currently have an accepted URL or content. Do not publish or claim an
-  unverified `sudokura.cajapersonal.org/privacy/` address.
+- The maintainer reports an existing Privacy section at `sudokura.cajapersonal.org`.
+  This session could not retrieve its public content, precise route or privacy
+  contact, so none is yet independently verified. Use ChatGPT Sites to make a
+  minimal localized EN/ES/CA update of that existing section; check the published
+  public HTTPS page and real contact before using the link in Play Console.
 
-## Content to draft and verify for a future public HTML privacy page
+## Content to verify/update in the existing public HTML privacy page
 
 1. Policy title "Sudokura Privacy Policy", developer/app identity and current
    privacy contact mechanism (verified and approved by the maintainer).
