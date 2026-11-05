@@ -28,6 +28,7 @@ int main(void) {
   assert(url_launcher_is_allowed(
       "https://github.com/santirodriguez/Sudokura"));
   assert(url_launcher_is_allowed("https://sudokura.cajapersonal.org/"));
+  assert(url_launcher_is_allowed(SUDOKURA_PRIVACY_POLICY_URL));
   assert(url_launcher_is_allowed("https://doi.org/10.1002/gps.5085"));
   assert(url_launcher_is_allowed(
       "https://cajapersonal.org/donaciones/"));
@@ -36,6 +37,10 @@ int main(void) {
   assert(url_launcher_is_allowed("https://cajapersonal.org/donacions/"));
   assert(!url_launcher_is_allowed("https://santiagorodriguez.com/donate/"));
   assert(!url_launcher_is_allowed("https://sudokura.cajapersonal.org.evil.example/"));
+  assert(!url_launcher_is_allowed("https://sudokura.cajapersonal.org/#Privacy"));
+  assert(!url_launcher_is_allowed("https://sudokura.cajapersonal.org/#privacy?x=1"));
+  assert(!url_launcher_is_allowed("https://sudokura.cajapersonal.org/privacy"));
+  assert(!url_launcher_is_allowed("https://sudokura.cajapersonal.org.evil.example/#privacy"));
   assert(!url_launcher_is_allowed("https://cajapersonal.org/donate/?unexpected=1"));
   assert(!url_launcher_is_allowed(NULL));
   assert(!url_launcher_is_allowed(""));

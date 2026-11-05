@@ -1229,6 +1229,7 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
   if(link>=0&&link<3){open_about_url(g,game,ui,link);return true;}
   if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
+  if(link==4){ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);return true;}
   return false;
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
@@ -2645,6 +2646,14 @@ int main(int argc, char **argv) {
                   if (help_scroll_max_px>0 && help_scroll_px==0) {
                     PointerTarget target=ui_pointer_resolve(info.down.x+24,info.down.y+24);
                     if (target.action!=137) {app_shutdown(&g);return 1;}
+                  }
+                  if (ui.screen==SCR_ABOUT) {
+                    GeoRect link=info.links[GEOMETRY_ABOUT_LINK_COUNT];
+                    PointerTarget target=ui_pointer_resolve(link.x+link.w/2,
+                                                          link.y+link.h/2);
+                    if (target.action!=131+GEOMETRY_ABOUT_LINK_COUNT-1) {
+                      app_shutdown(&g);return 1;
+                    }
                   }
                 }
                 SDL_RenderPresent(g.ren);

@@ -61,7 +61,7 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   memset(&g,0,sizeof(g));
   int x=6,w=width-12,footer=height-54;
   bool columns=about && height<600;
-  int body_w=columns ? w-204 : w;
+  int body_w=columns ? w-216 : w;
   g.heading=(GeoRect){x,60,body_w,40};
   int body_bottom=footer-6;
   if (about && !columns) body_bottom-=162;
@@ -70,13 +70,16 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   g.up=(GeoRect){x+body_w-102,footer,48,48};
   g.down=(GeoRect){x+body_w-48,footer,48,48};
   if (columns) {
-    int top=height<360 ? 56 : 60,step=height<360 ? 52 : 54;
-    for (int i=0;i<5;++i) g.links[i]=(GeoRect){x+body_w+12,top+i*step,192,48};
+    /* Fit all six actions in two columns without obscuring the scroll body. */
+    int top=height<360 ? 56 : 60,step=54;
+    int column_w=(w-body_w-18)/2;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
+      g.links[i]=(GeoRect){x+body_w+12+(i%2)*(column_w+6),
+                           top+(i/2)*step,column_w,48};
   } else if (about) {
     int y=footer-162,half=(w-6)/2;
-    g.links[0]=(GeoRect){x,y,w,48};
-    for (int i=1;i<5;++i)
-      g.links[i]=(GeoRect){x+((i-1)%2)*(half+6),y+54+((i-1)/2)*54,half,48};
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
+      g.links[i]=(GeoRect){x+(i%2)*(half+6),y+(i/2)*54,half,48};
   }
   *out=g;return true;
 }
@@ -272,7 +275,7 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
 
   int link_h = portrait ? 36 : (short_desktop ? 34 : (xl ? 46 : 42));
   int link_gap = portrait ? 6 : 8;
-  int link_columns = portrait ? 1 : 2;
+  int link_columns = portrait ? 2 : 3;
   int link_rows = (GEOMETRY_ABOUT_LINK_COUNT + link_columns - 1) / link_columns;
   int links_h = link_h * link_rows + link_gap * (link_rows - 1);
   int links_y = about_top + about_stack_h - links_h;
@@ -544,7 +547,7 @@ static bool mobile_shell_valid(const AppGeometry *g,int width,int height) {
         !geometry_rect_in_bounds(g->home_primary[i],width,height)) return false;
   for (int i=0;i<5;++i)
     if (!geometry_rect_in_bounds(g->home_secondary[i],width,height)) return false;
-  for (int i=0;i<4;++i)
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
     if (!geometry_rect_in_bounds(g->about_links[i],width,height)) return false;
   for (int i=0;i<2;++i)
     if (!geometry_rect_in_bounds(g->end_buttons[i],width,height) ||
@@ -1378,7 +1381,8 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
     g->info_heading=help.heading;g->info_body=help.body;g->back_button=help.back;
     g->about_logo=about.heading;g->about_body=about.body;
     g->about_study_link=about.links[0];
-    for (int i=0;i<4;++i) g->about_links[i]=about.links[i+1];
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+      g->about_links[i]=about.links[i+1];
     mobile_result_pause(width,height,g);
     set_compatibility_aliases(g);
     return geometry_play_valid(g,width,height);

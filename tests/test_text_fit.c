@@ -83,7 +83,8 @@ int main(void) {
   };
   const TextKey modes[] = {T_CLASSIC, T_STRIKES, T_TIME_ATTACK};
   const TextKey difficulties[] = {T_EASY, T_MEDIUM, T_HARD};
-  const TextKey about_links[] = {T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT};
+  const TextKey about_links[] = {T_GITHUB, T_REPOSITORY, T_WEBSITE,
+                                T_SUPPORT, T_PRIVACY_POLICY};
 
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     for (int mode = 0; mode < 3; ++mode) {

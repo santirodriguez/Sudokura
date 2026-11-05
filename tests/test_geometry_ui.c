@@ -187,12 +187,14 @@ int main(void) {
                g.board.y);
         assert(g.play_controls[PLAY_CONTROL_MORE].y ==
                g.play_controls[PLAY_CONTROL_SAVE].y);
-        for (int i = 1; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
-          assert(g.about_links[i].y > g.about_links[i - 1].y);
-      } else {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
-        assert(g.about_links[2].y > g.about_links[0].y);
+        assert(g.about_links[4].y > g.about_links[3].y);
+      } else {
+        assert(g.about_links[0].y == g.about_links[1].y);
+        assert(g.about_links[1].y == g.about_links[2].y);
+        assert(g.about_links[3].y == g.about_links[4].y);
+        assert(g.about_links[3].y > g.about_links[2].y);
         /* Wordmark, title and controls use separate vertical regions. */
         assert(g.play_language.h == 1);
         assert(g.play_title.h >= 32);

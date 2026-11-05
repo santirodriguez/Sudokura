@@ -502,8 +502,9 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
     TARGET(136,ui_info_scroll_rect(gfx,ui,false),help_scroll_px>0);
     TARGET(137,ui_info_scroll_rect(gfx,ui,true),help_scroll_px<help_scroll_max_px);
     if (ui->screen == SCR_ABOUT) {
-      for (int i = 0; i < 4; ++i) TARGET(131 + i, ui_info_link_rect(gfx,ui,i+1), true);
-      TARGET(135, ui_info_link_rect(gfx,ui,0), true);
+      for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
+        TARGET(131 + i, ui_info_link_rect(gfx,ui,i+1), true);
+      TARGET(138, ui_info_link_rect(gfx,ui,0), true);
     }
   } else if (ui->pause_reasons) {
     if (ui->pause_reasons & PAUSE_USER_VISIBLE)
@@ -968,8 +969,9 @@ static bool ui_prepare_event(SDL_Event *event) {
       return false;
     int digit = input_digit_value(key, event->key.keysym.scancode);
 
-    if (audio_ui && audio_ui->screen == SCR_ABOUT && digit == 4) {
-      ui_open_url(ui_support_url(audio_ui->language));
+    if (audio_ui && audio_ui->screen == SCR_ABOUT && (digit == 4 || digit == 5)) {
+      ui_open_url(digit == 4 ? ui_support_url(audio_ui->language)
+                             : SUDOKURA_PRIVACY_POLICY_URL);
       return false;
     }
 
@@ -994,6 +996,13 @@ static bool ui_prepare_event(SDL_Event *event) {
         if (event->button.button == SDL_BUTTON_LEFT) {
           info_keyboard_focus = INFO_FOCUS_LINK_3;
           ui_open_url(ui_support_url(audio_ui->language));
+        }
+        return false;
+      }
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,5), x, y)) {
+        if (event->button.button == SDL_BUTTON_LEFT) {
+          info_keyboard_focus = INFO_FOCUS_LINK_4;
+          ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);
         }
         return false;
       }

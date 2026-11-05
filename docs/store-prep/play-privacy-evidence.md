@@ -17,9 +17,9 @@ preparation notes, not Play Console selections or an approved legal policy.
   analytics. An assertion of "no personal data collected" in Play Console
   requires a complete code/SDK/network inventory and final runtime confirmation,
   not only reading this worksheet.
-- In-app About currently presents project/support/website links, but no
-  identifiable Privacy page/link or policy text was found in current SDL sources.
-  A new localized and accessible entry requires a bounded app-code change.
+- The isolated store-preparation source adds an in-app About policy link in
+  English, Spanish and Catalan, using the exact allowlisted Site fragment.
+  Device/browser behavior still requires focused Android runtime verification.
 - The maintainer published the existing Site policy at
   `https://sudokura.cajapersonal.org/#privacy` via ChatGPT Sites on 2026-11-05.
   In a connected browser, the English section was inspected directly under the
@@ -53,8 +53,8 @@ preparation notes, not Play Console selections or an approved legal policy.
 - [ ] Full merged manifest + source/network/SDK audit on the intended APK/AAB.
 - [x] Candidate HTTPS HTML Privacy URL published and English policy content visible in the connected browser: `https://sudokura.cajapersonal.org/#privacy`.
 - [ ] Confirm anonymous/no-login access, ES/CA language content and Play Console's acceptance of this fragment URL before final submission.
-- [ ] The same policy is accessible from the Android app via a discoverable
-      localized link or in-app text.
+- [ ] Verify the discoverable multilingual About link on the exact Android
+      candidate, including external browser navigation and Back behavior.
 - [ ] Current accurate Data safety answers, audience/content rating and ads.
 - [ ] Developer contact details, app ownership, account type and any required
       closed-testing obligations verified in the actual Console.

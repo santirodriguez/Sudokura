@@ -12,7 +12,7 @@
 #define GEOMETRY_TITLE_BUTTON_COUNT 8
 #define GEOMETRY_END_BUTTON_COUNT 2
 #define GEOMETRY_PAUSE_BUTTON_COUNT 2
-#define GEOMETRY_ABOUT_LINK_COUNT 4
+#define GEOMETRY_ABOUT_LINK_COUNT 5
 #define GEOMETRY_MORE_COUNT 6
 
 typedef struct {
@@ -140,7 +140,7 @@ bool geometry_mobile_settings(int width, int height, GeometrySettings *out);
 bool geometry_mobile_home(int width, int height, AppGeometry *out);
 
 typedef struct {
-  GeoRect heading, body, back, up, down, links[5];
+  GeoRect heading, body, back, up, down, links[GEOMETRY_ABOUT_LINK_COUNT + 1];
 } GeometryInfo;
 
 bool geometry_mobile_info(int width, int height, bool about, GeometryInfo *out);

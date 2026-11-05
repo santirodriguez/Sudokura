@@ -554,10 +554,11 @@ static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
                                heights[i],help_scroll_px);
   }
   SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
-  const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT};
+  const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,
+                        T_SUPPORT,T_PRIVACY_POLICY};
   int mx=0,my=0;
   Uint32 mouse=SDL_GetMouseState(&mx,&my);
-  for (int i=0;i<5;++i) {
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i) {
     SDL_Rect r=sdl_rect(layout.links[i]);
     bool hover=point_in(r,mx,my);
     SDL_Rect face=polish_button_face(gfx,theme,r,hover ? theme.hover : theme.btn,
@@ -665,7 +666,7 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
                          music, fonts.help, 10);
 
   const TextKey link_keys[GEOMETRY_ABOUT_LINK_COUNT] = {
-      T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT};
+      T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT, T_PRIVACY_POLICY};
   for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i) {
     SDL_Rect rect = sdl_rect(geometry.about_links[i]);
     bool hover = point_in(rect, mx, my);
