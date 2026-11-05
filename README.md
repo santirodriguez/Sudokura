@@ -114,6 +114,13 @@ Compatible v1.2 and v1.3 desktop data retains migration and recovery safeguards.
 
 The familiar grid, made for thumbs. Sudokura 1.4.0 brings portrait and landscape play, touch controls, dated Daily puzzles and Your journey to Android.
 
+<p align="center">
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Classic Sudoku with notes and visible controls" width="165"></a>
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Daily Sudoku dated 2026-11-05 with a playable puzzle board" width="165"></a>
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with a saved attempt" width="165"></a>
+</p>
+<p align="center"><sub>Real Android gameplay and saved progress. <a href="docs/images/README.md#android-phone-gallery">Explore all six approved phone captures.</a></sub></p>
+
 Requires **Android 9+ on ARM64**. Get the signed APK from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases/latest) **when v1.4.0 is published**, or follow the repository in Obtainium. F-Droid and Google Play availability will be announced separately.
 
 <details>

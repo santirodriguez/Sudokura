@@ -11,7 +11,31 @@ A real Sudoku board is a better introduction than a wall of technical details. T
 [![Real Sudokura Classic desktop gameplay with selected cell, number palette, notes and Save controls](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
 
 - **`sudokura-v1.4.0.png`:** the approved, unchanged reuse of the screenshot published with v1.3.9. The original capture was made for v1.3.7 and was also reused in v1.3.8 and v1.3.9. It shows the familiar desktop board, **not** the new journey screens or Android UI. It isn't a newly captured 1.4.0 screenshot.
-- The Android store's six real phone screenshots are a separate, still-pending editorial set. This desktop screenshot does not stand in for them, and no unapproved phone images have been added to the canonical gallery.
+- The six approved **Android phone screenshots** now live in the canonical [Fastlane source](../../fastlane/metadata/android/en-US/images/phoneScreenshots/). They show the real Android UI and remain separate from this desktop screenshot. There are no separately captured Spanish or Catalan phone screenshots.
+
+### Android phone gallery
+
+<table>
+<tr>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png" alt="Sudokura Home in dark theme with Classic, Strikes, Time Attack and Daily Sudoku" width="180"></a>
+<br><strong>Home</strong></td>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="180"></a>
+<br><strong>Classic</strong></td>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Daily Sudoku dated 2026-11-05 with entered numbers and Save controls" width="180"></a>
+<br><strong>Daily</strong></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png" alt="Your journey Achieved tab showing a completed Classic puzzle and its result" width="180"></a>
+<br><strong>Achieved</strong></td>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png" alt="Real Try again replay with entered numbers and Save controls" width="180"></a>
+<br><strong>Try again</strong></td>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with an available Continue action" width="180"></a>
+<br><strong>Saved Games</strong></td>
+</tr>
+</table>
+
+The gallery uses the exact six unretouched, approved RGB PNGs captured at 1080 × 1920. Five show the dark theme; Saved Games shows the light theme. They are truthful emulator previews of the app, **not** evidence that Google Play or F-Droid has published a listing. The three game-board images are Classic, the dated Daily and a genuine Try again replay.
+
 
 ## Sudokura v1.3.9 (historical)
 
