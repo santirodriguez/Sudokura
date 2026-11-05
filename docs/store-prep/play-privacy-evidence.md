@@ -20,11 +20,18 @@ preparation notes, not Play Console selections or an approved legal policy.
 - In-app About currently presents project/support/website links, but no
   identifiable Privacy page/link or policy text was found in current SDL sources.
   A new localized and accessible entry requires a bounded app-code change.
-- The maintainer reports an existing Privacy section at `sudokura.cajapersonal.org`.
-  This session could not retrieve its public content, precise route or privacy
-  contact, so none is yet independently verified. Use ChatGPT Sites to make a
-  minimal localized EN/ES/CA update of that existing section; check the published
-  public HTTPS page and real contact before using the link in Play Console.
+- The maintainer published the existing Site policy at
+  `https://sudokura.cajapersonal.org/#privacy` via ChatGPT Sites on 2026-11-05.
+  In a connected browser, the English section was inspected directly under the
+  heading `Sudokura Privacy Policy`; it names the app and developer Santiago
+  Rodriguez, describes app-private saves/notes/history/settings, uninstall and
+  clear-data deletion, Android backup/transfer disabled, no app accounts, ads,
+  analytics or cloud sync, and voluntary external links. Its contact mechanism
+  is `https://github.com/santirodriguez/Sudokura/issues`.
+  The visible EN/ES/CA selector and ChatGPT Sites' report support translation
+  availability; ES/CA actual policy text and anonymous access were not separately
+  inspected. The `#privacy` fragment is client navigation on `/`, not a distinct
+  server route. Play Console acceptance is pending.
 
 ## Content to verify/update in the existing public HTML privacy page
 
@@ -44,7 +51,8 @@ preparation notes, not Play Console selections or an approved legal policy.
 ## Before filling Play Console
 
 - [ ] Full merged manifest + source/network/SDK audit on the intended APK/AAB.
-- [ ] Real public HTML policy URL (not PDF, no login or geo restriction).
+- [x] Candidate HTTPS HTML Privacy URL published and English policy content visible in the connected browser: `https://sudokura.cajapersonal.org/#privacy`.
+- [ ] Confirm anonymous/no-login access, ES/CA language content and Play Console's acceptance of this fragment URL before final submission.
 - [ ] The same policy is accessible from the Android app via a discoverable
       localized link or in-app text.
 - [ ] Current accurate Data safety answers, audience/content rating and ads.
