@@ -1,0 +1,21 @@
+Una estona per gaudir d'un bon sudoku.
+
+Sudokura va al gra: tria la dificultat, toca una casella i comença. Un tauler clar, controls còmodes i ajuda quan la vulguis. Perquè de vegades el 7 decideix fer-se el misteriós.
+
+QUATRE MANERES DE JUGAR
+• Clàssic: resol el tauler al teu ritme.
+• Errors: tres equivocacions i s'acaba la partida. Pensa-t'ho abans d'aquell 9.
+• Contrarellotge: una mica de pressió a cada casella.
+• Sudoku diari: un repte amb data per tornar-hi cada dia.
+
+Tria Fàcil, Mitjana o Difícil. Apunta candidats amb Notes, fes servir Desfés i Refés, o demana una Pista i Verifica quan et calgui un cop de mà. També hi ha tema clar o fosc, música i efectes opcionals.
+
+CADA PARTIDA TÉ HISTÒRIA
+Desa i reprèn el progrés a Partides. A El teu recorregut pots veure els sudokus completats, els resultats i els intents anteriors. No te n'has sortit? Amb Torna-hi recuperes el mateix tauler sense esborrar-ne la història.
+
+Pensat per jugar amb els dits, en vertical o horitzontal. Disponible en English, Español i Català.
+
+EL TEU PROGRÉS, AL TEU DISPOSITIU
+Sense comptes, anuncis ni analítiques. Les partides es desen al dispositiu; no hi ha sincronització, còpia automàtica d'Android ni transferència entre dispositius.
+
+Cal Android 9 o posterior amb ARM64. Conserva la instal·lació que tingui les partides: canviar de botiga pot impedir-ne l'actualització si les signatures no coincideixen. Sudokura és gratuït i de codi obert (GPLv3).

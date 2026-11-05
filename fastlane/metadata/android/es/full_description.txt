@@ -1,0 +1,21 @@
+Un ratito para disfrutar de un buen sudoku.
+
+Sudokura va al grano: elegís una dificultad, tocás una casilla y empezás. Un tablero claro, controles cómodos y toda la ayuda que quieras. Porque a veces el 7 se pone misterioso.
+
+CUATRO FORMAS DE JUGAR
+• Clásico: resolvé el tablero a tu ritmo.
+• Errores: tres equivocaciones y termina la partida. Pensá bien ese 9.
+• Contrarreloj: un poco de presión para cada número.
+• Sudoku diario: un desafío con su fecha, para volver cada día.
+
+Elegí Fácil, Media o Difícil. Anotá candidatos con Notas, Deshacé y Rehacé movimientos, o usá Pista y Verificar cuando necesites una mano. Tenés temas claro y oscuro, música y efectos opcionales.
+
+CADA PARTIDA CUENTA
+Guardá y retomá el progreso en Mis partidas. En Tu recorrido encontrás los sudokus completados, sus resultados y los intentos anteriores. ¿Se te escapó uno? Con Rejugar volvés al mismo tablero sin borrar su historia.
+
+Diseñado para jugar con el dedo, en vertical u horizontal. Disponible en English, Español y Català.
+
+TU PROGRESO, EN TU DISPOSITIVO
+No hay cuentas, anuncios ni analíticas. Las partidas y el historial se guardan en tu dispositivo; no hay sincronización, copia automática de Android ni transferencia entre dispositivos.
+
+Requiere Android 9 o posterior en ARM64. Conservá la instalación que tenga tus partidas: cambiar de tienda puede impedir actualizarla si las firmas son distintas. Sudokura es gratuito y de código abierto (GPLv3).
