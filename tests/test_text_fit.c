@@ -103,7 +103,7 @@ int main(void) {
       assert_rect(g.about_credits, width, height);
       for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
         assert_rect(g.about_links[i], width, height);
-        assert_rect(g.about_back,width,height);
+      assert_rect(g.about_back,width,height);
 
       for (int language = 0; language < LANG_COUNT; ++language) {
         int screen_segment = g.screen_language.w / 3 - 40;
@@ -330,8 +330,14 @@ int main(void) {
           char label[128];
           snprintf(label, sizeof label, "%s",
                    tr((Language)language, about_links[i]));
-          assert(fits(font, label, tier.control, 10, g.about_links[i].w-52,
-                      g.about_links[i].h - 3));
+          bool compact=g.about_links[i].w<222;
+          if (compact)
+            assert(wrapped_fits(font,label,tier.control,10,
+                                g.about_links[i].w-26,
+                                g.about_links[i].h-2));
+          else
+            assert(fits(font,label,tier.control,10,
+                        g.about_links[i].w-54,g.about_links[i].h-3));
         }
 
         GeometryHintPanel hint;
@@ -447,7 +453,7 @@ int main(void) {
       const TextKey info_keys[]={T_REPOSITORY,T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
       assert(sizeof(info_keys)/sizeof(info_keys[0]) == GEOMETRY_ABOUT_LINK_COUNT);
       for (unsigned i=0;i<sizeof(info_keys)/sizeof(info_keys[0]);++i) {
-        bool compact=info.links[i].w<150;
+        bool compact=info.links[i].w<222;
         assert(wrapped_fits(font,tr(lang,info_keys[i]),17,13,
                             info.links[i].w-(compact?26:56),
                             info.links[i].h-2));

@@ -288,8 +288,9 @@ static void polish_about_action(Gfx *gfx, Theme theme, SDL_Rect rect,
       hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
   SDL_Rect icon,text_rect;
   int side=mobile ? 16 : 18;
-  if (mobile && face.w < 150) {
-    /* Preserve two-line labels in the shortest landscape controls. */
+  bool compact_label=face.w < 220;
+  if (compact_label) {
+    /* Share the narrow-control two-line treatment with compact desktop. */
     side=13;
     icon=(SDL_Rect){face.x+4,face.y+(face.h-side)/2,side,side};
     text_rect=(SDL_Rect){face.x+20,face.y,face.w-24,face.h};
@@ -300,8 +301,9 @@ static void polish_about_action(Gfx *gfx, Theme theme, SDL_Rect rect,
                          face.w-2*inset-side-6,face.h};
   }
   ui_draw_glyph(gfx->ren,icon,glyph,theme.btnfg);
-  if (mobile)
-    (void)polish_draw_wrapped_fit(gfx,label,theme.btnfg,text_rect,17,13,true);
+  if (mobile || compact_label)
+    (void)polish_draw_wrapped_fit(gfx,label,theme.btnfg,text_rect,
+                                  mobile ? 17 : preferred,mobile ? 13 : 10,true);
   else
     (void)draw_fitted_text(gfx,label,theme.btnfg,text_rect,preferred,10);
 }
