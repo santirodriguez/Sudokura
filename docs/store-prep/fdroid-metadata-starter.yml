@@ -1,7 +1,8 @@
 # PROVISIONAL METADATA STARTER — NOT AN fdroiddata SUBMISSION.
 # This file is intentionally outside fdroiddata/metadata and upstream Fastlane.
-# A working exact-commit source build and legal/license review are mandatory
-# before setting Builds, version checks, upstream binary URL or allowed signatures.
+# F-Droid source-build and license verification are deferred to v1.4.1.
+# Do not add Builds, automatic version checks, Binaries or signing keys
+# without a tested, immutable source build and an explicit channel decision.
 
 Categories:
   - Games
@@ -9,15 +10,20 @@ AutoName: Sudokura
 License: GPL-3.0-only
 SourceCode: https://github.com/santirodriguez/Sudokura
 IssueTracker: https://github.com/santirodriguez/Sudokura/issues
+WebSite: https://sudokura.cajapersonal.org/
+Changelog: https://github.com/santirodriguez/Sudokura/blob/main/CHANGELOG.md
 RepoType: git
 Repo: https://github.com/santirodriguez/Sudokura.git
 
-# Known provisional facts: Android package org.cajapersonal.sudokura;
-# candidate 1.4.0/versionCode 1; no publicly released 1.4.0 tag yet.
-# Before submission: verify SPDX license, build tools/asset licenses, source
-# archive staging, font license, the exact published full commit SHA,
-# productionRelease Gradle task, no-network build, source-only packages,
-# and fdroid lint/build results. Do not simply add a guessed Builds block.
+# v1.4.0 is tagged at c1b3eb31e82bcc06a078bc10e10f342aa8329e25;
+# its GitHub Release remains an unpublished draft as of 2026-11-06.
+# F-Droid is deferred to the future v1.4.1 candidate (proposed versionCode 2).
+# Do not invent its commit, version code approval, or a working build recipe.
+# Reuse the accepted Fastlane text, icon and six genuine Android screenshots.
+# Before submission: verify SPDX and dependency/asset licenses, pre-staged
+# source archives, font licenses, SDK/NDK/Gradle, exact new release commit,
+# productionRelease source-only/no-network build, fdroid lint/build, and
+# update-signing compatibility. Do not add a guessed Builds block.
 #
 # The signed upstream binary and AllowedAPKSigningKeys must be used only after
 # independent reproducibility is proved; do not put signing secrets here.

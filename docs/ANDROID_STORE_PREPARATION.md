@@ -1,12 +1,12 @@
 # Android store preparation: Google Play + F-Droid
 
-Status: **PREPARATION ONLY** (2026-11-05). This document is a durable work checklist, not proof of store acceptance and not an authorization to merge, publish, upload, enroll keys or modify account access.
+Status: **PREPARATION ONLY** (reviewed 2026-11-06). This document is a durable work checklist, not proof of store acceptance and not an authorization to merge, publish, upload, enroll keys or modify account access.
 
 ## Delivery strategy
 
-1. Make the game ready for both stores before the first **public** distribution, but keep GitHub Releases + Obtainium as the intended first public channel.
-2. Keep the accepted `release/1.4.0` / PR #17 free of unapproved runtime changes. The maintainer uploaded and approved two store graphics that were byte-preservingly named and staged in Fastlane on release HEAD `4b7a7a1e9c70386195de7c709ded3e858a3ab356`. The preparatory branch remains independent and must reconcile that artwork before integrating any future code. Do not merge the PR or create a release tag.
-3. Reconcile the completed store work before the GitHub release decision. If privacy/API code changes are included in 1.4.0, promote and validate them **before** tagging. Otherwise carry them into the next release, with a new Android versionCode (e.g. 1.4.1/code 2), without replacing already published 1.4.0/code 1 bytes.
+1. GitHub Releases + Obtainium are the intended first public channels for v1.4.0. F-Droid and Google Play are later, separately reviewed distribution channels; F-Droid source-build preparation is deferred to v1.4.1 rather than blocking the audited v1.4.0 GitHub draft.
+2. The existing v1.4.0 tag and seven-asset draft are based on immutable source `c1b3eb31e82bcc06a078bc10e10f342aa8329e25`; keep their application bytes, signed APK, and accepted Fastlane screenshots/artwork unchanged. Any unique preparatory-branch work must be reviewed and explicitly kept or discarded before branch cleanup, not silently merged into the frozen release.
+3. Target the next source-based F-Droid candidate at v1.4.1 with Android `versionCode 2` (after checking actual distribution history). Carry any required privacy/API or build-source changes there with focused tests; never retag v1.4.0, overwrite its versionCode 1 APK, or claim F-Droid availability before acceptance.
 4. A private Google Play test track is not a public launch, but account access, enrollment, private-key transfer, uploads and testing still require separately scoped authorization.
 5. Never promise seamless cross-store updates unless package ID and installed-app signing certificate are identical and the update with existing user data has actually passed.
 
@@ -56,9 +56,9 @@ Status: **PREPARATION ONLY** (2026-11-05). This document is a durable work check
 
 1. **Immediately, offline/read-only:** audit source, licenses, SDK/NDK, dependency archives, app data practices and store formats. Reuse current Fastlane PNGs and copy rather than generating new screenshots.
 2. **Next, low-risk prep:** use the now-known Site Privacy URL `https://sudokura.cajapersonal.org/#privacy` as the candidate in-app/Play link; verify anonymous access and ES/CA text later, and keep the factual Data safety worksheet and F-Droid metadata draft current. Icon, feature graphic and six screenshots already reside in canonical Fastlane on the newer release branch (reconcile that source before merging app changes).
-3. **Bounded implementation, requires a separate agreed code-change scope:** add the accessible in-app Privacy page/link; make F-Droid source staging network-independent; add focused tests. Keep this isolated from release/1.4.0 until the same-version versus next-version decision.
+3. **Future v1.4.1 implementation, separately scoped:** reconcile and test the earlier in-app Privacy action candidate where needed; enable F-Droid's verified, network-independent source staging; add focused regression tests. Do not modify the frozen v1.4.0 source or require that work for its GitHub launch.
 4. **Validation:** run source-bound Android CI for any code changes; test Play AAB after authorized signing and actual runtime policy gates; test F-Droid `fdroid build` in its supported environment and, if feasible, reproducibility. Avoid rerunning expensive screenshot capture unless gameplay-visible content changed.
-5. **Final decision before GitHub launch:** either integrate the proven fixes into v1.4.0 before merging/tagging, **or** explicitly defer store-only app changes to v1.4.1/code2 and keep GitHub/Obtainium as the first public release. Record remaining Play/F-Droid tasks in source-controlled prep evidence, not in the published release's claims.
+5. **Current release decision:** the maintainer has deferred the F-Droid build recipe and store-only changes to v1.4.1/code 2. v1.4.0 can proceed on its already-validated GitHub release gates when separately authorized, without implying F-Droid readiness or changing the tag. Keep this future work in the store-preparation checklist, not in public v1.4.0 release claims.
 6. **After GitHub publication:** check exact tag/source/signed assets and Obtainium discovery; later submit to Play and F-Droid via independent, explicitly approved processes. Preserve the signing/update safety policy for users with saves.
 
 ## Gates and owners
