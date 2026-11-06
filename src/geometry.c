@@ -1242,37 +1242,42 @@ bool geometry_mobile_home(int width, int height, AppGeometry *g) {
   const int margin = 6, gap = 6, w = width - 2 * margin;
   const bool roomy = height >= 700;
   const int caption_h = 1; /* Mobile action labels already name each group. */
+  /* Spend tall-phone headroom on real touch surfaces and section rhythm.
+     Shared geometry keeps touch, focus and semantics aligned with painting. */
+  const int breathing = height > 700 ? (height - 700) / 10 : 0;
+  const int control_extra = breathing / 2 < 8 ? breathing / 2 : 8;
+  const int control_h = 48 + control_extra;
   g->screen_language = (GeoRect){margin, 6, w - 52, 48};
 
   int y = 60;
   int logo_h = height >= 760 ? 80 : height >= 680 ? 64 : 40;
   g->home_logo = (GeoRect){margin, y, w, logo_h};
-  y += logo_h + 4;
+  y += logo_h + 4 + breathing;
   g->home_new_label = (GeoRect){margin, y, w, caption_h};
   y += caption_h + (roomy ? 2 : 0);
   g->home_mode_label = (GeoRect){margin, y, w, 18};
   y += 20;
-  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+  grid_gap((GeoRect){margin, y, w, control_h}, 3, gap,
            g->home_mode, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += 48 + 5;
+  y += control_h + 5 + breathing / 2;
   g->home_difficulty_label = (GeoRect){margin, y, w, 18};
   y += 20;
-  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+  grid_gap((GeoRect){margin, y, w, control_h}, 3, gap,
            g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += 48 + 7;
-  g->home_primary[0] = (GeoRect){margin, y, w, 48};
-  y += 48 + 6;
+  y += control_h + 7 + breathing / 2;
+  g->home_primary[0] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 6 + breathing;
   g->home_continue_label = (GeoRect){margin, y, w, caption_h};
   y += caption_h + (roomy ? 2 : 0);
-  g->home_primary[1] = (GeoRect){margin, y, w, 48};
-  y += 48 + 6;
-  g->home_primary[2] = (GeoRect){margin, y, w, 48};
-  y += 48 + 8;
-  g->home_secondary[0] = (GeoRect){margin, y, w, 48};
-  y += 48 + 8;
+  g->home_primary[1] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 6 + breathing;
+  g->home_primary[2] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 8 + breathing;
+  g->home_secondary[0] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 8 + breathing;
 
   GeoRect secondary[GEOMETRY_HOME_SECONDARY_COUNT - 1];
-  grid_gap((GeoRect){margin, y, w, 102}, 2, gap, secondary,
+  grid_gap((GeoRect){margin, y, w, 2 * control_h + gap}, 2, gap, secondary,
            GEOMETRY_HOME_SECONDARY_COUNT - 1);
   for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
     g->home_secondary[i] = secondary[i - 1];

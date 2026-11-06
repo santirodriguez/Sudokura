@@ -243,6 +243,55 @@ static void check_auxiliary(int w,int h) {
   }
 }
 
+/* Portrait Home uses extra space for reachable controls instead of leaving
+   all content crowded at the top; landscape remains an independent layout. */
+static void check_home_portrait_balance(int width, int height) {
+  AppGeometry g = {0};
+  assert(geometry_mobile_home(width, height, &g));
+  assert(g.home_logo.y >= g.screen_language.y + g.screen_language.h);
+  assert(g.home_mode_label.y >= g.home_logo.y + g.home_logo.h);
+  assert(g.home_mode[0].y >= g.home_mode_label.y + g.home_mode_label.h);
+  assert(g.home_difficulty_label.y >= g.home_mode[0].y + g.home_mode[0].h);
+  assert(g.home_difficulty[0].y >=
+         g.home_difficulty_label.y + g.home_difficulty_label.h);
+  assert(g.home_primary[0].y >=
+         g.home_difficulty[0].y + g.home_difficulty[0].h);
+  assert(g.home_primary[1].y >=
+         g.home_primary[0].y + g.home_primary[0].h);
+  assert(g.home_primary[2].y >=
+         g.home_primary[1].y + g.home_primary[1].h);
+  assert(g.home_secondary[0].y >=
+         g.home_primary[2].y + g.home_primary[2].h);
+  GeoRect controls[GEOMETRY_HOME_SEGMENT_COUNT * 2 +
+                   GEOMETRY_HOME_PRIMARY_COUNT +
+                   GEOMETRY_HOME_SECONDARY_COUNT];
+  unsigned count = 0;
+  for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i) {
+    controls[count++] = g.home_mode[i];
+    controls[count++] = g.home_difficulty[i];
+  }
+  for (int i = 0; i < GEOMETRY_HOME_PRIMARY_COUNT; ++i)
+    controls[count++] = g.home_primary[i];
+  for (int i = 0; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
+    controls[count++] = g.home_secondary[i];
+  for (unsigned i = 0; i < count; ++i) {
+    assert(controls[i].h >= 48);
+    assert(geometry_rect_in_bounds(controls[i], width, height));
+    assert(!overlap(controls[i], g.home_logo));
+    assert(!overlap(controls[i], g.screen_language));
+    for (unsigned j = 0; j < i; ++j)
+      assert(!overlap(controls[i], controls[j]));
+  }
+  const GeoRect last = g.home_secondary[GEOMETRY_HOME_SECONDARY_COUNT - 1];
+  const int bottom_gap = height - last.y - last.h;
+  assert(bottom_gap >= 20);
+  if (height <= 700) assert(g.home_primary[0].h == 48);
+  if (height >= 840 && height <= 960) {
+    assert(g.home_primary[0].h >= 54);
+    assert(bottom_gap <= height / 7);
+  }
+}
+
 int main(void) {
   for (int w=360;w<=1200;w+=29)
     for (int h=600;h<=960;h+=31) check_auxiliary(w,h);
@@ -290,6 +339,11 @@ int main(void) {
   check(360, 600, GEOMETRY_MODE_CLASSIC);
   check(390, 844, GEOMETRY_MODE_STRIKES);
   check(412, 915, GEOMETRY_MODE_TIME);
+  const int home_heights[] = {600, 640, 700, 740, 760, 820, 844, 892, 915, 960};
+  const int home_widths[] = {360, 390, 412, 639, 640, 800};
+  for (unsigned w = 0; w < sizeof home_widths / sizeof home_widths[0]; ++w)
+    for (unsigned h = 0; h < sizeof home_heights / sizeof home_heights[0]; ++h)
+      check_home_portrait_balance(home_widths[w], home_heights[h]);
   AppGeometry tall;
   assert(geometry_compute_mobile(390, 920, GEOMETRY_MODE_CLASSIC, &tall));
   assert(tall.palette[0].h > 48);
