@@ -22,7 +22,9 @@ assert ubuntu['timeout-minutes'] == '15'
 install = next(s for s in ubuntu['steps']
                if s.get('name') == 'Install Ubuntu runtime validation dependencies')
 assert 'timeout --signal=TERM --kill-after=10s 180s' in install['run']
-assert 'timeout --signal=TERM --kill-after=10s 240s' in install['run']
+assert 'timeout --signal=TERM --kill-after=10s 480s' in install['run']
+assert 'install -y --no-install-recommends' in install['run']
+assert 'binutils libfuse2t64 xvfb weston dbus-x11 gdb strace' in install['run']
 assert 'validate-linux-runtime.sh' in ubuntu['steps'][-2]['run']
 assert release['jobs']['android']['with']['require_signed'] == 'true'
 assert 'needs.version.outputs.commit' in release['jobs']['android']['with']['source_commit']
