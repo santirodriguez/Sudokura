@@ -118,8 +118,10 @@ static void rollout_slider(Gfx *gfx, UI *ui, UiDesignTheme theme,
   char text[128];
   snprintf(text,sizeof(text),"%s  %d%%%s%s",tr(ui->language,key),value,
       available ? "" : " / ",available ? "" : tr(ui->language,T_UNAVAILABLE));
-  (void)draw_fitted_text(gfx,text,ui_design_sdl_color(theme.text),label_rect,
-                         preferred,gfx->mobile_layout ? 13 : 10);
+  /* Caption rows are 18 logical units high. The wrapped fitter keeps the
+     13-unit mobile minimum without the button fitter's extra vertical pad. */
+  (void)design_fit(gfx,text,theme.text,label_rect,preferred,
+                   gfx->mobile_layout ? 13 : 10,true);
   rollout_button(gfx,theme,minus,"-",UI_DESIGN_ICON_NONE,UI_ACTION_NONE,
                   UI_DESIGN_QUIET,false,false,preferred+2);
   rollout_button(gfx,theme,plus,"+",UI_DESIGN_ICON_NONE,UI_ACTION_NONE,

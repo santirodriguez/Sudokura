@@ -94,6 +94,18 @@ int main(void) {
         assert(wrapped_fit(font,tr((Language)language,T_ABOUT_STACK),credits.w-16,
                             credits.h-credits.h/2,14,10));
       }
+      GeometrySettings settings;
+      if(geometry_mobile_settings(width,height,&settings)) {
+        const TextKey keys[]={T_MUSIC,T_FX};
+        const GeoRect rows[]={settings.music_label,settings.fx_label};
+        for(int slider=0;slider<2;++slider)for(int available=0;available<2;++available) {
+          char caption[128];
+          snprintf(caption,sizeof(caption),"%s  100%%%s%s",
+              tr((Language)language,keys[slider]),available ? "" : " / ",
+              available ? "" : tr((Language)language,T_UNAVAILABLE));
+          assert(wrapped_fit(font,caption,rows[slider].w,rows[slider].h,18,13));
+        }
+      }
       check_play(font,width,height,false,(Language)language);
       check_play(font,width,height,true,(Language)language);
     }
