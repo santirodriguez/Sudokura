@@ -7,6 +7,19 @@
 - Android production uses version 1.4.0 / versionCode 1 and `org.cajapersonal.sudokura`. Private debug prototypes keep their own identity and data. The app signing key differs from the Play upload key; store publication or seamless cross-store updates are not implied.
 - Full TalkBack journeys, measured device performance and actual 16 KiB runtime behavior remain unverified, despite structural and build audits.
 
+### A unified interface for every screen
+- Refreshed Home and About with shared navy/indigo dark and contrasted light
+  surfaces, original action icons, clearer focus/pressed/disabled states and
+  roomier tall-phone controls. Labels remain readable in English, Español
+  and Català.
+- Extended the same design across Sudoku gameplay, the number palette,
+  Save/Undo/Redo/Notes/More, Settings, Help, Saved Games, Your journey,
+  Pause, Results and SDL-owned confirmations/recovery dialogs. The existing
+  command, geometry and persistence owners remain unchanged.
+- The maintainer smoke-tested the new presentation on Linux and Android.
+  Specialized accessibility, page-size execution, independent build
+  reproducibility and production upgrade paths remain distinct gates.
+
 ### The story behind every attempt
 - **Your journey** adds Achieved and Try again, completion details, per-attempt statistics and linked replay history. Winning a retry doesn't erase what happened before.
 - **Saved Games** separates explicit saves and the current autosave from completed and interrupted history. Leaving a played attempt offers Save, Abandon or Cancel; backgrounding checkpoints without abandoning. Notes and untouched-board navigation never turn into a lost game.

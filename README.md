@@ -33,6 +33,15 @@
 
 **Easy to start, satisfying to master.** Tap a cell or use a keyboard. Make pencil notes, Undo or Redo, and call on **Hint** or **Verify** whenever you want a nudge. Pick a light or dark theme, choose optional music and sounds, and play in **English, Español, or Català**.
 
+## A consistent look for every puzzle
+
+Sudokura 1.4.0 brings a unified dark/light interface to Home, About, the
+live board and number controls, Saved Games, Your journey, Settings, Help,
+Pause, Results and decision dialogs. Original vector icons, clearer button
+roles and responsive layouts make the same actions easier to find on
+desktop and Android. The visual refresh does not change puzzle generation,
+saved-game formats or the established recovery behavior.
+
 ## See the board
 
 <p align="center">

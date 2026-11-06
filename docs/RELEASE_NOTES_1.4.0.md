@@ -6,6 +6,19 @@ A good puzzle doesn't have to make a fuss. Sudokura 1.4.0 brings the familiar gr
 
 The phone layout supports portrait and landscape, readable Help, optional music and sounds, and English, Español and Català. The first public Android version requires Android 9+ on ARM64; downloads start with the published 1.4.0 APK.
 
+### One design, from Home to the final move
+
+The interface now shares one visual language across desktop and Android.
+Home and About set the tone; the puzzle grid, number buttons, Save and
+Notes, settings, saved games, journey history, pause and confirmation
+screens follow it. The dark and light themes have distinct contrast,
+action icons stay legible, and the controls adapt to tall phones as well
+as smaller desktop windows.
+
+It's a visual update, not a change to the rules of Sudoku or the data
+behind your games. Your local saves, recovery options and linked
+attempt history retain their established behavior.
+
 ### Every attempt counts
 
 **Your journey** keeps wins and their time, errors and assistance details. **Achieved** celebrates solved puzzles. **Try again** lets you replay a lost or interrupted puzzle while keeping the earlier attempt in the story, even after a later win.

@@ -71,5 +71,9 @@ Inspect gameplay, paused/concealed board, Settings, Help, library/history,
 confirmations and error states in both themes and supported compact sizes; verify
 Home/About remain consistent. A green structural validator is not aesthetic
 acceptance. Diagnostic SDL renders are not Android-device/store screenshots.
-Physical Android, full TalkBack, page-size execution and final release approval
-remain separately evidenced gates. Do not relabel an older APK as the new source.
+The maintainer tested the redesigned Linux app and the source-matched Android
+debug prototype and reported successful general visual/functional operation.
+This is a smoke acceptance for the unified presentation, not itemized proof of
+every interaction or runtime. Full TalkBack, 16 KiB page-size execution,
+production update/signing and final release approval remain separate gates.
+Do not relabel an older APK or diagnostic screenshot as the final release.
