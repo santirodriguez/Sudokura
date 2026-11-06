@@ -82,8 +82,11 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   } else if (about) {
     /* Scroll arrows occupy the reserved row above the link grid. */
     int y=footer-108,half=(w-6)/2;
-    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
-      g.links[i]=(GeoRect){x+(i%2)*(half+6),y+(i/2)*54,half,48};
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
+      int right=i%2;
+      g.links[i]=(GeoRect){x+right*(half+6),y+(i/2)*54,
+                           right ? w-half-6 : half,48};
+    }
     g.up.y=g.down.y=footer-162;
     g.back=(GeoRect){x,footer,w,48};
   }
