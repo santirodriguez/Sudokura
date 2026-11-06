@@ -29,7 +29,7 @@
 - Improved dialogs, compact screens, button spacing, focus and Android lifecycle handling while preserving game and retained-record identities.
 - Replay no longer asks to save immutable completed/interrupted attempts. An active unsaved attempt still receives its proper retention choice, with regressions covering terminal and active states.
 - The mobile Daily heading displays its actual `YYYY-MM-DD` puzzle date. Maintainer phone testing covered Try again, explicit Save, force-stop and reopening with numbers and notes retained.
-- The approved desktop screenshot was reused unchanged. It shows familiar desktop gameplay, not the new journey or Android screens.
+- The release gallery now uses a genuine 1.4.0 desktop gameplay capture with the unified design and an approved six-image Android collection from the corresponding new UI. Earlier screenshot files remain historical.
 
 ### Downloads and updating safely
 - Kept Windows installer/portable EXE, Linux AppImage and experimental macOS 15+ Apple Silicon DMG; added a signed Android ARM64 APK. The exact-source bundle includes five applications, shared checksums and Build-Info.

@@ -19,6 +19,12 @@ It's a visual update, not a change to the rules of Sudoku or the data
 behind your games. Your local saves, recovery options and linked
 attempt history retain their established behavior.
 
+The 1.4.0 gallery features a fresh capture of real desktop gameplay and
+six source-matched native Android emulator scenes, including Classic,
+Daily, Your journey, Try again and Saved Games. The images represent
+actual game state; they are not a claim of store publication or a
+substitute for full platform acceptance.
+
 ### Every attempt counts
 
 **Your journey** keeps wins and their time, errors and assistance details. **Achieved** celebrates solved puzzles. **Try again** lets you replay a lost or interrupted puzzle while keeping the earlier attempt in the story, even after a later win.

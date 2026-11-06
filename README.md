@@ -46,10 +46,10 @@ saved-game formats or the established recovery behavior.
 
 <p align="center">
   <a href="docs/images/sudokura-v1.4.0.png">
-    <img src="docs/images/sudokura-v1.4.0.png" alt="Real desktop Classic game with selected cell, number palette and Save controls" width="900">
+    <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura 1.4.0 Classic gameplay with entered numbers, a pencil note, number palette and Save controls" width="900">
   </a>
   <br>
-  <sub>Real desktop gameplay. The approved image is reused from an earlier version; new journey screens and Android aren't pictured.</sub>
+  <sub>Real Sudokura 1.4.0 gameplay on Linux, with the unified design, entered numbers, a pencil note and visible controls.</sub>
 </p>
 
 ## Every attempt tells a story
@@ -125,7 +125,7 @@ The familiar grid, made for thumbs. Sudokura 1.4.0 brings portrait and landscape
 
 <p align="center">
   <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Classic Sudoku with notes and visible controls" width="165"></a>
-  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Daily Sudoku dated 2026-11-05 with a playable puzzle board" width="165"></a>
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Real dated Daily Sudoku puzzle with entered numbers and gameplay controls" width="165"></a>
   <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with a saved attempt" width="165"></a>
 </p>
 <p align="center"><sub>Real Android gameplay and saved progress. <a href="docs/images/README.md#android-phone-gallery">Explore all six approved phone captures.</a></sub></p>

@@ -6,12 +6,12 @@ A real Sudoku board is a better introduction than a wall of technical details. T
 
 ## Sudokura v1.4.0
 
-### The familiar desktop board
+### Desktop gameplay with the unified design
 
-[![Real Sudokura Classic desktop gameplay with selected cell, number palette, notes and Save controls](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
+[![Sudokura 1.4.0 Classic Linux gameplay with the unified design, real entries, pencil note, number palette and Save](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
 
-- **`sudokura-v1.4.0.png`:** the approved, unchanged reuse of the screenshot published with v1.3.9. The original capture was made for v1.3.7 and was also reused in v1.3.8 and v1.3.9. It shows the familiar desktop board, **not** the new journey screens or Android UI. It isn't a newly captured 1.4.0 screenshot.
-- The six approved **Android phone screenshots** now live in the canonical [Fastlane source](../../fastlane/metadata/android/en-US/images/phoneScreenshots/). They show the real Android UI and remain separate from this desktop screenshot. There are no separately captured Spanish or Catalan phone screenshots.
+- **`sudokura-v1.4.0.png`:** a new native 1024 × 720 capture of real Classic gameplay from the 1.4.0 Linux AppImage with the unified interface, entered numbers, a pencil note, and the actual gameplay controls. This is not a generated mockup or an Android screen.
+- Six matching **Android phone screenshots** in the canonical [Fastlane source](../../fastlane/metadata/android/en-US/images/phoneScreenshots/) were captured on a disposable x86_64 Android emulator from source-equivalent 1.4.0 UI, in English. The Android arm64 release-signing, device-runtime and store approval gates are independent. Spanish and Catalan phone captures have not been claimed.
 
 ### Android phone gallery
 
@@ -21,7 +21,7 @@ A real Sudoku board is a better introduction than a wall of technical details. T
 <br><strong>Home</strong></td>
 <td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="180"></a>
 <br><strong>Classic</strong></td>
-<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Daily Sudoku dated 2026-11-05 with entered numbers and Save controls" width="180"></a>
+<td align="center" width="33%"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Actual dated Daily Sudoku board with entered numbers and Save controls" width="180"></a>
 <br><strong>Daily</strong></td>
 </tr>
 <tr>
@@ -34,7 +34,7 @@ A real Sudoku board is a better introduction than a wall of technical details. T
 </tr>
 </table>
 
-The gallery uses the exact six unretouched, approved RGB PNGs captured at 1080 × 1920. Five show the dark theme; Saved Games shows the light theme. They are truthful emulator previews of the app, **not** evidence that Google Play or F-Droid has published a listing. The three game-board images are Classic, the dated Daily and a genuine Try again replay.
+The six 1080 × 1920 PNGs are authentic Android emulator captures. The only conversion is lossless, pixel-equivalent RGB encoding from the native screenshots; no interface objects were painted, composited, resized or replaced. Five show the dark theme; Saved Games shows the light theme. These images are **not** evidence that Google Play or F-Droid has published a listing. The three real game-board views show Classic, the dated Daily and a genuine Try again replay.
 
 
 ## Sudokura v1.3.9 (historical)
