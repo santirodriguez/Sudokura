@@ -1,17 +1,19 @@
-name: Android debug prototype preview
+name: Android package preview
 
 on:
-  push:
-    branches: [release/1.3.9]
-    paths:
-      - 'android/**'
-      - 'src/**'
-      - 'assets/audio/**'
-      - 'assets/branding/source/**'
-      - 'assets/flags/raster/**'
-      - 'scripts/generate_assets.go'
-      - 'scripts/generate_assets.py'
-      - '.github/workflows/android-preview.yml'
+  workflow_call:
+    inputs:
+      source_commit:
+        type: string
+        default: ""
+      require_signed:
+        type: boolean
+        default: false
+    secrets:
+      SUDOKURA_APP_KEYSTORE_BASE64:
+        required: false
+      SUDOKURA_APP_KEYSTORE_PASSWORD:
+        required: false
   workflow_dispatch:
 
 permissions:
@@ -25,8 +27,20 @@ jobs:
   android-debug:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
+    env:
+      SUDOKURA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          fetch-depth: 0
+      - name: Check signing trust and exact source
+        id: signing
+        env:
+          REQUIRE_SIGNED: ${{ inputs.require_signed && 'true' || 'false' }}
+        run: |
+          python3 tests/test_signing_context.py
+          python3 android/scripts/signing_context.py
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -51,22 +65,24 @@ jobs:
             "ndk;28.2.13676358" "cmake;3.22.1"
       - name: Verify source-extraction safety (offline)
         run: python3 android/scripts/test_prepare_sources.py
+      - name: Verify version-derived APK audit (offline)
+        run: python3 android/scripts/test_audit_apk.py
       - name: Verify immutable SDL and Gradle inputs
         run: python3 android/scripts/prepare_sources.py
       - name: Generate existing shared C assets
         run: make assets
-      - name: Build exact-head arm64 debug APK
+      - name: Build exact-head prototype and unsigned production packages
         run: |
           java -version
           go version
-          bash android/gradlew --no-daemon :app:assembleDebug \
+          bash android/gradlew --no-daemon :app:assemblePrototypeDebug :app:assembleProductionRelease :app:bundleProductionRelease \
             -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
             -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
       - name: Audit APK identity, permissions, assets, ABI and 16 KiB alignment
         shell: bash
         run: |
           set -euo pipefail
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk
           test -s "$APK"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
@@ -75,19 +91,121 @@ jobs:
           test -x "$ZIPALIGN"
           test -x "$READELF"
           mkdir -p android-preview-output
-          python3 android/scripts/audit_apk.py "$AAPT" "$APK" | tee android-preview-output/apk-audit.json
+          python3 android/scripts/audit_apk.py "$AAPT" "$APK" --variant debug | tee android-preview-output/apk-audit.json
           python3 android/scripts/audit_elf.py "$READELF" "$APK" | tee android-preview-output/elf-audit.txt
           "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-preview-output/zipalign.txt
           sha256sum "$APK" | tee android-preview-output/SHA256SUMS.txt
-          printf 'source_sha=%s\n' "$GITHUB_SHA" | tee android-preview-output/build-info.txt
+          printf 'source_sha=%s\n' "$SUDOKURA_SOURCE_COMMIT" | tee android-preview-output/build-info.txt
           printf 'gradle=8.13\nagp=8.11.1\njava=17\nndk=28.2.13676358\ncmake=3.22.1\nmin_sdk=28\ntarget_sdk=36\nabi=arm64-v8a\nphysical_device=NOT_RUN\n' >> android-preview-output/build-info.txt
           du -h "$APK" | tee android-preview-output/apk-size.txt
+          cp "$APK" android-preview-output/app-debug.apk
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ success() }}
         with:
           name: sudokura-android-debug-prototype
           path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
             android-preview-output/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Audit unsigned production APK and stage Play bundle readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
+          AAB=android/app/build/outputs/bundle/productionRelease/app-production-release.aab
+          test -s "$APK"
+          test -s "$AAB"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          READELF="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          VERSION=$(sh scripts/version.sh)
+          mkdir -p android-production-output
+          python3 android/scripts/audit_apk.py "$AAPT" "$APK" --variant release --require-unsigned | tee android-production-output/apk-audit.json
+          python3 android/scripts/audit_elf.py "$READELF" "$APK" | tee android-production-output/elf-audit.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee android-production-output/zipalign.txt
+          cp "$APK" "android-production-output/Sudokura-$VERSION-Android-arm64-unsigned.apk"
+          cp "$AAB" "android-production-output/Sudokura-$VERSION-Android-unsigned.aab"
+          BUNDLETOOL="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar \
+            --output "$BUNDLETOOL"
+          printf '%s  %s\n' a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29 "$BUNDLETOOL" | sha256sum --check --strict
+          java -jar "$BUNDLETOOL" validate --bundle="$AAB" | tee android-production-output/bundletool-validation.txt
+          python3 - <<'PYBUNDLE'
+          import json
+          from pathlib import Path
+          import zipfile
+          aab = next(Path('android-production-output').glob('*.aab'))
+          with zipfile.ZipFile(aab) as archive:
+              paths = archive.namelist()
+              assert len(paths) == len(set(paths)), 'Duplicate bundle entries'
+              assert {'BundleConfig.pb', 'base/manifest/AndroidManifest.xml'} <= set(paths)
+              assert all(not p.startswith('/') and '..' not in p.split('/') for p in paths)
+              assert not any(p.upper().startswith('META-INF/') and p.upper().endswith(('.SF', '.RSA', '.DSA', '.EC')) for p in paths)
+              assert 'base/lib/arm64-v8a/libmain.so' in paths
+          Path('android-production-output/bundle-readiness.json').write_text(json.dumps({
+              'container': 'PASS', 'signed': False, 'bundletool_validation': 'PASS',
+              'bundletool_version': '1.18.3',
+              'bundletool_sha256': 'a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29',
+              'play_upload': 'NOT_RUN', 'store_acceptance': 'NOT_RUN'
+          }, indent=2) + '\n')
+          PYBUNDLE
+          sha256sum android-production-output/*.apk android-production-output/*.aab > android-production-output/SHA256SUMS.txt
+          printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$SUDOKURA_SOURCE_COMMIT" "$VERSION" > android-production-output/build-info.txt
+      - name: Sign production APK with the Sudokura app key
+        if: steps.signing.outputs.sign == 'true'
+        shell: bash
+        env:
+          SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
+          SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SUDOKURA_APP_KEYSTORE_BASE64:?Missing repository secret SUDOKURA_APP_KEYSTORE_BASE64}"
+          : "${SUDOKURA_APP_KEYSTORE_PASSWORD:?Missing repository secret SUDOKURA_APP_KEYSTORE_PASSWORD}"
+          APK=android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk
+          KEYSTORE="$RUNNER_TEMP/sudokura-release.jks"
+          SIGNED=android-production-output/Sudokura-$(sh scripts/version.sh)-Android-arm64.apk
+          trap 'rm -f "$KEYSTORE"' EXIT
+          python3 - "$KEYSTORE" <<'PYKEY'
+          import base64
+          import os
+          import sys
+          from pathlib import Path
+          data = base64.b64decode(os.environ['SUDOKURA_APP_KEYSTORE_BASE64'], validate=True)
+          if not data:
+              raise SystemExit('Decoded signing keystore is empty')
+          path = Path(sys.argv[1])
+          path.write_bytes(data)
+          path.chmod(0o600)
+          PYKEY
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type JKS \
+            --ks-key-alias sudokura \
+            --ks-pass env:SUDOKURA_APP_KEYSTORE_PASSWORD \
+            --key-pass env:SUDOKURA_APP_KEYSTORE_PASSWORD \
+            --out "$SIGNED" "$APK"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED" | tee android-production-output/apk-signature.txt
+          grep -Eqi 'fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d' android-production-output/apk-signature.txt
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$SIGNED" > android-production-output/signed-zipalign.txt
+          python3 android/scripts/audit_apk.py "$ANDROID_HOME/build-tools/35.0.0/aapt" "$SIGNED" --variant release > android-production-output/signed-apk-audit.json
+          sha256sum "$SIGNED" > android-production-output/signed-SHA256SUMS.txt
+          printf 'signing=PASS\nsigning_alias=sudokura\nsigning_certificate_sha256=FDE951E3D2EF42E41C7186EE965944AECA549D590AD080711DD3D875F82DF66D\n' >> android-production-output/build-info.txt
+          mkdir -p android-signed-output
+          cp "$SIGNED" android-signed-output/
+          cp android-production-output/signed-apk-audit.json android-production-output/signed-SHA256SUMS.txt android-production-output/apk-signature.txt android-production-output/signed-zipalign.txt android-signed-output/
+          python3 android/scripts/release_manifest.py \
+            --directory android-signed-output --version "$(sh scripts/version.sh)" \
+            --source-commit "$SUDOKURA_SOURCE_COMMIT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.signing.outputs.sign == 'true'
+        with:
+          name: sudokura-android-signed-github
+          path: android-signed-output/
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sudokura-android-unsigned-production
+          path: android-production-output/
           retention-days: 7
           if-no-files-found: error

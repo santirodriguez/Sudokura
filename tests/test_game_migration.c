@@ -1225,6 +1225,158 @@ static void test_collection_without_valid_primary_refuses_defaults(void) {
   }
 }
 
+typedef struct { unsigned calls, cancel_at; } CancellationProbe;
+
+static bool migration_continue(void *context) {
+  CancellationProbe *probe=(CancellationProbe *)context;
+  return ++probe->calls!=probe->cancel_at;
+}
+
+static void test_cancelled_upgrade_reloads_durable_intent(void) {
+  prepare();
+  write_legacy_profile();
+  ProfileData baseline;
+  assert(profile_load_file(primary,&baseline)==STORE_OK);
+  CancellationProbe count={0};
+  assert(game_migration_upgrade_controlled(root,primary,backup,&baseline,NULL,
+      migration_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    prepare();
+    write_legacy_profile();
+    ProfileData live,before,stable_intent;
+    assert(profile_load_file(primary,&live)==STORE_OK);
+    before=live;
+    unsigned char original[16384],preserved[16384];
+    size_t original_size=0,preserved_size=0;
+    assert(store_read_file(primary,original,sizeof(original),&original_size)==STORE_OK);
+    CancellationProbe cancel={0,stop};
+    bool upgraded=true;
+    assert(game_migration_upgrade_controlled(root,primary,backup,&live,&upgraded,
+        migration_continue,&cancel)==STORE_CANCELLED);
+    assert(!upgraded && profile_encoded_equal(&live,&before));
+    bool has_intent=profile_load_file(intent,&stable_intent)==STORE_OK;
+    if (store_file_exists(source)) {
+      assert(store_read_file(source,preserved,sizeof(preserved),&preserved_size)==STORE_OK);
+      assert(original_size==preserved_size &&
+             memcmp(original,preserved,original_size)==0);
+    }
+    /* A cancellation may follow a durable pending-hot write. Reload it,
+       exactly as startup does, before resuming the canonical migration. */
+    assert(profile_load_file(primary,&live)==STORE_OK);
+    assert(game_migration_upgrade(root,primary,backup,&live,&upgraded)==STORE_OK);
+    assert_upgraded(&live);
+    if (has_intent) {
+      assert(game_attempt_id_equal(live.normal.attempt_id,stable_intent.normal.attempt_id));
+      assert(game_attempt_id_equal(live.daily.attempt_id,stable_intent.daily.attempt_id));
+      assert(game_attempt_id_equal(live.results[1].attempt_id,stable_intent.results[1].attempt_id));
+    }
+    MigrationRecordCount records={0};
+    assert(game_library_scan(root,count_migrated_record,&records)==STORE_OK);
+    assert(records.count==3);
+  }
+  cleanup();
+}
+
+static ProfileData prepare_newer_record(void) {
+  prepare();write_legacy_profile();
+  ProfileData live;
+  assert(profile_load_file(primary,&live)==STORE_OK);
+  assert(game_migration_upgrade(root,primary,backup,&live,NULL)==STORE_OK);
+  ProfileSession newer=live.normal.value;
+  newer.session.elapsed_ms+=777;
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record,live.normal.attempt_id,
+      live.normal.revision+1,&newer,true));
+  assert(game_library_save(root,&record)==STORE_OK);
+  return live;
+}
+
+static void test_cancelled_reconcile_preserves_hot_profile(void) {
+  ProfileData live=prepare_newer_record();
+  CancellationProbe count={0};
+  assert(game_migration_reconcile_controlled(root,primary,backup,&live,
+      migration_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    live=prepare_newer_record();
+    ProfileData before=live,disk;
+    CancellationProbe cancel={0,stop};
+    assert(game_migration_reconcile_controlled(root,primary,backup,&live,
+        migration_continue,&cancel)==STORE_CANCELLED);
+    assert(profile_encoded_equal(&live,&before));
+    assert(profile_load_file(primary,&disk)==STORE_OK);
+    assert(profile_encoded_equal(&disk,&before));
+    assert(game_migration_reconcile(root,primary,backup,&live)==STORE_OK);
+    assert(live.normal.revision==before.normal.revision+1);
+    assert(live.normal.value.session.elapsed_ms==before.normal.value.session.elapsed_ms+777);
+    assert(game_attempt_id_equal(live.normal.attempt_id,before.normal.attempt_id));
+  }
+  cleanup();
+}
+
+static GameAttemptId prepare_cancelable_collection(void) {
+  prepare();
+  ProfileData old=legacy_profile();
+  GameAttemptId id={UINT64_C(0xabcd1234),1};
+  GameLibraryRecord record;
+  assert(game_library_make_exact(&record,id,1,&old.normal.value,true));
+  assert(game_library_save(root,&record)==STORE_OK);
+  return id;
+}
+
+static void test_cancelled_collection_recovery_never_publishes_defaults(void) {
+  (void)prepare_cancelable_collection();
+  ProfileData output;
+  GameMigrationRecoverySummary summary={0};
+  CancellationProbe count={0};
+  assert(game_migration_recover_collection_controlled(root,primary,backup,
+      &output,&summary,migration_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    GameAttemptId id=prepare_cancelable_collection();
+    profile_defaults(&output);output.preferences.language=LANG_CA;
+    ProfileData before=output;
+    summary=(GameMigrationRecoverySummary){.compatible_records=77};
+    CancellationProbe cancel={0,stop};
+    assert(game_migration_recover_collection_controlled(root,primary,backup,
+        &output,&summary,migration_continue,&cancel)==STORE_CANCELLED);
+    assert(profile_encoded_equal(&output,&before));
+    assert(summary.compatible_records==77);
+    assert(!store_file_exists(primary) && !store_file_exists(backup));
+    GameLibraryRecord record;
+    assert(game_library_load(root,id,&record)==STORE_OK && record.revision==1);
+    GameMigrationRecoveryRoute route=GAME_MIGRATION_RECOVERY_NONE;
+    CancellationProbe route_cancel={0,2};
+    assert(game_migration_missing_hot_route_controlled(root,primary,backup,
+        &route,migration_continue,&route_cancel)==STORE_CANCELLED);
+    assert(route==GAME_MIGRATION_RECOVERY_NONE && !store_file_exists(primary));
+    assert(game_migration_recover_collection(root,primary,backup,&output,&summary)==STORE_OK);
+    assert(output.normal.present && game_attempt_id_equal(output.normal.attempt_id,id));
+    assert(summary.compatible_records==1 && summary.normal_active_candidates==1);
+  }
+  cleanup();
+}
+
+static void test_restore_only_intent_resumes_newer_durable_record(void) {
+  ProfileData before=prepare_newer_record();
+  assert(store_remove_file(primary) && store_remove_file(backup));
+  ProfileData restored,frozen;
+  assert(profile_load_file(intent,&frozen)==STORE_OK && frozen.migration_pending);
+  assert(game_migration_restore_intent(root,primary,backup,&restored)==STORE_OK);
+  assert(profile_encoded_equal(&restored,&frozen));
+  /* Simulate leaving immediately after the acknowledged restore. The normal
+     startup pipeline must finish migration, preserving the original IDs and
+     the independently acknowledged newer exact record. */
+  assert(profile_load_file(primary,&restored)==STORE_OK);
+  assert(game_migration_upgrade(root,primary,backup,&restored,NULL)==STORE_OK);
+  assert(game_migration_reconcile(root,primary,backup,&restored)==STORE_OK);
+  assert(!restored.migration_pending);
+  assert(game_attempt_id_equal(restored.normal.attempt_id,before.normal.attempt_id));
+  assert(restored.normal.revision==before.normal.revision+1);
+  assert(restored.normal.value.session.elapsed_ms==before.normal.value.session.elapsed_ms+777);
+  MigrationRecordCount records={0};
+  assert(game_library_scan(root,count_migrated_record,&records)==STORE_OK && records.count==3);
+  cleanup();
+}
+
 int main(void) {
   cleanup();
   test_idempotent_import_and_newer_revision();
@@ -1248,6 +1400,10 @@ int main(void) {
   test_terminal_reconcile_after_unacknowledged_profile_replace();
   test_orphan_profile_artifacts_prevent_fresh_initialization();
   test_collection_without_valid_primary_refuses_defaults();
+  test_cancelled_upgrade_reloads_durable_intent();
+  test_cancelled_reconcile_preserves_hot_profile();
+  test_cancelled_collection_recovery_never_publishes_defaults();
+  test_restore_only_intent_resumes_newer_durable_record();
   cleanup();
   puts("immutable v1 import, replay-safe IDs, cut-point retry and receipts passed");
   return 0;

@@ -1,0 +1,23 @@
+# PROVISIONAL METADATA STARTER — NOT AN fdroiddata SUBMISSION.
+# This file is intentionally outside fdroiddata/metadata and upstream Fastlane.
+# A working exact-commit source build and legal/license review are mandatory
+# before setting Builds, version checks, upstream binary URL or allowed signatures.
+
+Categories:
+  - Games
+AutoName: Sudokura
+License: GPL-3.0-only
+SourceCode: https://github.com/santirodriguez/Sudokura
+IssueTracker: https://github.com/santirodriguez/Sudokura/issues
+RepoType: git
+Repo: https://github.com/santirodriguez/Sudokura.git
+
+# Known provisional facts: Android package org.cajapersonal.sudokura;
+# candidate 1.4.0/versionCode 1; no publicly released 1.4.0 tag yet.
+# Before submission: verify SPDX license, build tools/asset licenses, source
+# archive staging, font license, the exact published full commit SHA,
+# productionRelease Gradle task, no-network build, source-only packages,
+# and fdroid lint/build results. Do not simply add a guessed Builds block.
+#
+# The signed upstream binary and AllowedAPKSigningKeys must be used only after
+# independent reproducibility is proved; do not put signing secrets here.

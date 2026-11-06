@@ -51,6 +51,136 @@ static void grid_gap(GeoRect area, int columns, int gap, GeoRect *items,
 static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 
+bool geometry_mobile_size_supported(int width,int height) {
+  return (width>=360 && height>=600) || (width>=600 && height>=320);
+}
+
+bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
+  if (!out || !geometry_mobile_size_supported(width,height)) return false;
+  GeometryInfo g;
+  memset(&g,0,sizeof(g));
+  int x=6,w=width-12,footer=height-54;
+  bool columns=about && height<600;
+  /* Reserve two readable button columns for long localized About links. */
+  int body_w=columns ? w-276 : w;
+  g.heading=(GeoRect){x,60,body_w,40};
+  int body_bottom=footer-6;
+  if (about && !columns) body_bottom-=162;
+  g.body=(GeoRect){x,110,body_w,body_bottom-110};
+  g.back=(GeoRect){x,footer,body_w-108,48};
+  g.up=(GeoRect){x+body_w-102,footer,48,48};
+  g.down=(GeoRect){x+body_w-48,footer,48,48};
+  if (columns) {
+    /* Four actions in the right panel, with Back aligned below. */
+    int top=height<360 ? 56 : 60,step=54;
+    int column_w=(w-body_w-18)/2;
+    int link_x=x+body_w+12;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+      g.links[i]=(GeoRect){link_x+(i%2)*(column_w+6),
+                           top+(i/2)*step,column_w,48};
+    g.back=(GeoRect){link_x,footer,2*column_w+6,48};
+  } else if (about) {
+    /* Scroll arrows occupy the reserved row above the link grid. */
+    int y=footer-108,half=(w-6)/2;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
+      int right=i%2;
+      g.links[i]=(GeoRect){x+right*(half+6),y+(i/2)*54,
+                           right ? w-half-6 : half,48};
+    }
+    g.up.y=g.down.y=footer-162;
+    g.back=(GeoRect){x,footer,w,48};
+  }
+  *out=g;return true;
+}
+
+bool geometry_mobile_library(int width,int height,GeometryLibrary *out) {
+  if (!out || !geometry_mobile_size_supported(width,height)) return false;
+  GeometryLibrary g;
+  memset(&g,0,sizeof(g));
+  int x=12,w=width-24;
+  bool short_landscape=height<360;
+  g.title=(GeoRect){x,60,w,short_landscape ? 24 : 28};
+  g.subtitle=(GeoRect){x,short_landscape ? 88 : 92,w,short_landscape ? 28 : 38};
+  bool columns=height<600;
+  int action_y=height-12-(columns ? 48 : 108);
+  int top=short_landscape ? 122 : 138,content_h=action_y-top-12;
+  g.side_by_side=columns;
+  int list_w=columns ? (w-12)*44/100 : w;
+  int detail_h=columns ? content_h : (height>=720 ? 160 : 120);
+  int list_available=columns ? content_h-54 : content_h-detail_h-66;
+  /* Two label lines (26 + 21) and their inset must not overlap. */
+  g.row_height=60;
+  g.visible=list_available/g.row_height;
+  if (g.visible<1) return false;
+  g.list=(GeoRect){x,top,list_w,g.visible*g.row_height};
+  g.detail=columns ? (GeoRect){x+list_w+12,top,w-list_w-12,detail_h}
+      : (GeoRect){x,top+content_h-detail_h,w,detail_h};
+  int pager_y=g.list.y+g.list.h+6,label_w=80,pager_w=(list_w-label_w-12)/2;
+  g.page_previous=(GeoRect){x,pager_y,pager_w,48};
+  g.page_label=(GeoRect){x+pager_w+6,pager_y,label_w,48};
+  g.page_next=(GeoRect){x+pager_w+label_w+12,pager_y,
+                         list_w-pager_w-label_w-12,48};
+  GeoRect actions[4];
+  grid_gap((GeoRect){x,action_y,w,columns ? 48 : 108},columns ? 4 : 2,12,actions,4);
+  g.back=actions[0];g.primary=actions[1];g.replay=actions[2];g.remove=actions[3];
+  *out=g;return true;
+}
+
+bool geometry_modal(int width, int height, unsigned count, GeometryModal *out) {
+  if (!out || !count || count>3 || width<264 || height<264) return false;
+  GeometryModal g;
+  memset(&g,0,sizeof(g));
+  bool stacked=count==3 && width<600 && height>=440;
+  int w=min_i(width-24,540),h=min_i(height-24,stacked ? 386 : 302);
+  g.panel=(GeoRect){(width-w)/2,(height-h)/2,w,h};
+  g.title=(GeoRect){g.panel.x+16,g.panel.y+12,w-32,36};
+  int buttons_y=g.panel.y+h-(stacked ? 182 : 68);
+  g.body=(GeoRect){g.panel.x+18,g.panel.y+54,w-90,
+                    buttons_y-g.panel.y-66};
+  g.scroll_up=(GeoRect){g.panel.x+w-66,g.body.y,48,48};
+  g.scroll_down=(GeoRect){g.scroll_up.x,g.body.y+g.body.h-48,48,48};
+  int button_w=stacked ? w-32 : (w-32-(int)(count-1)*10)/(int)count;
+  for (unsigned i=0;i<count;++i)
+    g.buttons[i]=(GeoRect){g.panel.x+16+(stacked ? 0 : (int)i*(button_w+10)),
+                            buttons_y+(stacked ? (int)i*56 : 0),button_w,50};
+  *out=g;
+  return true;
+}
+
+bool geometry_mobile_settings(int width, int height, GeometrySettings *out) {
+  bool landscape=width>=600 && height>=320 && height<600;
+  if (!out || (!landscape && (width<360 || height<600))) return false;
+  GeometrySettings g;
+  memset(&g,0,sizeof(g));
+  int w=min_i(width-24,landscape ? 720 : 540),h=min_i(height-24,600);
+  g.card=(GeoRect){(width-w)/2,(height-h)/2,w,h};
+  int x=g.card.x+12,y=g.card.y+12,inner=w-24;
+  g.title=(GeoRect){x,y,inner,28};
+  bool short_landscape=landscape && height<360;
+  y+=short_landscape ? 32 : 36;
+  int col=landscape ? (inner-12)/2 : inner;
+  g.theme=(GeoRect){x,y,col,48};
+  g.language=(GeoRect){x,y+54,col,48};
+  g.sound=(GeoRect){x,y+108,col,48};
+  int slider_x=landscape ? x+col+12 : x;
+  int slider_y=landscape ? y : y+162;
+  g.music_label=(GeoRect){slider_x,slider_y,col,18};
+  g.music_minus=(GeoRect){slider_x,slider_y+20,48,48};
+  g.music_plus=(GeoRect){slider_x+col-48,slider_y+20,48,48};
+  g.music_track=(GeoRect){slider_x+55,slider_y+20,col-110,48};
+  int fx_y=slider_y+(short_landscape ? 70 : 74);
+  g.fx_label=(GeoRect){slider_x,fx_y,col,18};
+  g.fx_minus=(GeoRect){slider_x,fx_y+20,48,48};
+  g.fx_plus=(GeoRect){slider_x+col-48,fx_y+20,48,48};
+  g.fx_track=(GeoRect){slider_x+55,fx_y+20,col-110,48};
+  int lower_y=fx_y+(short_landscape ? 74 : 82);
+  g.reduced_motion=(GeoRect){slider_x,lower_y,col,48};
+  g.auto_notes=(GeoRect){slider_x,lower_y+(short_landscape ? 52 : 54),col,48};
+  g.back=(GeoRect){x,g.card.y+h-60,col,48};
+  *out=g;
+  return true;
+}
+
 static void common_screens(int width, int height, bool portrait, AppGeometry *g) {
   bool xl = !portrait && width >= 1600 && height >= 900;
   bool short_desktop = !portrait && height < 600;
@@ -149,20 +279,29 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   if (about_available_total > about_stack_h)
     about_top += (about_available_total - about_stack_h) / 3;
 
-  int about_logo_h = portrait ? 64 : (short_desktop ? 52 : (xl ? 96 : 80));
+  bool compact_about = !portrait && height <= 600;
+  int about_logo_h = portrait ? 64 : (short_desktop ? 40 :
+                     (compact_about ? 72 : (xl ? 96 : 80)));
   g->about_logo = (GeoRect){about_x, about_top, about_w, about_logo_h};
 
-  int link_h = portrait ? 36 : (short_desktop ? 34 : (xl ? 46 : 42));
-  int link_gap = portrait ? 6 : 8;
-  int link_columns = portrait ? 1 : 2;
-  int link_rows = (GEOMETRY_ABOUT_LINK_COUNT + link_columns - 1) / link_columns;
-  int links_h = link_h * link_rows + link_gap * (link_rows - 1);
+  int link_h = back_h;
+  int link_gap = portrait || short_desktop ? 6 : 8;
+  int links_h = 2*link_h + link_gap;
   int links_y = about_top + about_stack_h - links_h;
-  grid_gap((GeoRect){about_x, links_y, about_w, links_h}, link_columns, link_gap,
-           g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
+  int half=(about_w-link_gap)/2;
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
+    int right=i%2;
+    g->about_links[i]=(GeoRect){
+        about_x+right*(half+link_gap),
+        links_y+(i/2)*(link_h+link_gap),
+        right ? about_w-half-link_gap : half,link_h};
+  }
+  g->about_back=(GeoRect){about_x,g->back_button.y,about_w,link_h};
 
-  int content_top = g->about_logo.y + g->about_logo.h + 8;
-  int content_bottom = links_y - 8;
+  /* Keep the cards readable when short desktops need a third action row. */
+  int inner_gap = short_desktop ? 4 : (compact_about ? 6 : 8);
+  int content_top = g->about_logo.y + g->about_logo.h + inner_gap;
+  int content_bottom = links_y - inner_gap;
   int content_h = content_bottom - content_top;
   int content_gap = short_desktop ? 3 : 6;
   int intro_h = portrait ? 56 : (short_desktop ? 40 : (xl ? 76 : 64));
@@ -185,12 +324,9 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->about_fact = (GeoRect){about_x, content_y, about_w, fact_h};
   content_y += fact_h + content_gap;
   g->about_study = (GeoRect){about_x, content_y, about_w, study_h};
-  int study_link_h = min_i(28, max_i(22, study_h / 4));
-  int study_link_w = min_i(about_w / 2, portrait ? 190 : 220);
-  g->about_study_link =
-      (GeoRect){about_x + about_w - study_link_w - 10,
-                content_y + study_h - study_link_h - 4,
-                study_link_w, study_link_h};
+  int reference_h = min_i(24,max_i(20,study_h/4));
+  g->about_study_reference=(GeoRect){
+      about_x+9,content_y+study_h-reference_h-4,about_w-18,reference_h};
   content_y += study_h + content_gap;
   g->about_credits = (GeoRect){about_x, content_y, about_w, credits_h};
   g->about_meta = (GeoRect){about_x, g->about_fact.y, about_w,
@@ -413,6 +549,29 @@ GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
   return style;
 }
 
+static bool mobile_shell_valid(const AppGeometry *g,int width,int height) {
+  const GeoRect fixed[]={g->screen_language,g->home_logo,g->home_mode_label,
+      g->home_difficulty_label,g->info_heading,g->info_body,g->back_button,
+      g->about_logo,g->about_body,g->about_study_reference,g->about_back,
+       g->end_logo,g->end_heading,
+      g->end_summary,g->pause_logo,g->pause_heading};
+  for (unsigned i=0;i<sizeof(fixed)/sizeof(fixed[0]);++i)
+    if (!geometry_rect_in_bounds(fixed[i],width,height)) return false;
+  for (int i=0;i<3;++i)
+    if (!geometry_rect_in_bounds(g->home_mode[i],width,height) ||
+        !geometry_rect_in_bounds(g->home_difficulty[i],width,height) ||
+        !geometry_rect_in_bounds(g->home_primary[i],width,height)) return false;
+  for (int i=0;i<5;++i)
+    if (!geometry_rect_in_bounds(g->home_secondary[i],width,height)) return false;
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+    if (!geometry_rect_in_bounds(g->about_links[i],width,height)) return false;
+  for (int i=0;i<2;++i)
+    if (!geometry_rect_in_bounds(g->end_buttons[i],width,height) ||
+        !geometry_rect_in_bounds(g->pause_buttons[i],width,height) ||
+        g->end_buttons[i].h<48 || g->pause_buttons[i].h<48) return false;
+  return true;
+}
+
 bool geometry_play_valid(const AppGeometry *g, int width, int height) {
   if (!g || !geometry_rect_in_bounds(g->board, width, height) ||
       !geometry_rect_in_bounds(g->sidebar, width, height) ||
@@ -435,7 +594,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
   }
   for (int i = 0; i < GEOMETRY_PALETTE_COUNT; ++i) {
     if (!geometry_rect_in_bounds(g->palette[i], width, height) ||
-        g->palette[i].h < 22 || g->palette[i].w < (portrait ? 32 : 70))
+        g->palette[i].h < 22 || g->palette[i].w < (g->mobile_layout ? 48 : portrait ? 32 : 70))
       return false;
   }
 
@@ -457,6 +616,8 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     }
   }
 
+  if (g->mobile_layout && height<600) return mobile_shell_valid(g,width,height);
+
   if (!geometry_rect_in_bounds(g->screen_language, width, height) ||
       !geometry_rect_in_bounds(g->home_logo, width, height) ||
       !geometry_rect_in_bounds(g->home_new_label, width, height) ||
@@ -467,11 +628,12 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       !geometry_rect_in_bounds(g->info_body, width, height) ||
       !geometry_rect_in_bounds(g->back_button, width, height) ||
       !geometry_rect_in_bounds(g->about_logo, width, height) ||
+      !geometry_rect_in_bounds(g->about_back, width, height) ||
       !geometry_rect_in_bounds(g->about_body, width, height) ||
       !geometry_rect_in_bounds(g->about_meta, width, height) ||
       !geometry_rect_in_bounds(g->about_fact, width, height) ||
       !geometry_rect_in_bounds(g->about_study, width, height) ||
-      !geometry_rect_in_bounds(g->about_study_link, width, height) ||
+      !geometry_rect_in_bounds(g->about_study_reference, width, height) ||
       !geometry_rect_in_bounds(g->about_credits, width, height) ||
       !geometry_rect_in_bounds(g->end_logo, width, height) ||
       !geometry_rect_in_bounds(g->end_heading, width, height) ||
@@ -481,11 +643,11 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     return false;
 
   if (!geometry_contains(g->about_study,
-                         g->about_study_link.x,
-                         g->about_study_link.y) ||
+                         g->about_study_reference.x,
+                         g->about_study_reference.y) ||
       !geometry_contains(g->about_study,
-                         g->about_study_link.x + g->about_study_link.w - 1,
-                         g->about_study_link.y + g->about_study_link.h - 1))
+                         g->about_study_reference.x + g->about_study_reference.w - 1,
+                         g->about_study_reference.y + g->about_study_reference.h - 1))
     return false;
 
   for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i)
@@ -877,7 +1039,7 @@ bool geometry_compute(int width, int height, GeometryMode mode,
 GeoRect geometry_play_wordmark_rect(const AppGeometry *geometry, int width) {
   GeoRect empty = {0, 0, 0, 0};
   if (!geometry || width <= 0) return empty;
-  if (width >= 640) return geometry->play_title;
+  if (width >= 640 || geometry->mobile_layout) return geometry->play_title;
 
 #if defined(__ANDROID__)
   int logo_width = geometry->play_title.w - 24;
@@ -927,7 +1089,7 @@ AudioControlGeometry geometry_audio_control(int width, int height,
                   settings.y + (settings.h - size) / 2, size, size};
   } else if (app) {
     GeoRect language = app->screen_language;
-    int size = (app->play_compact && language.h >= 48) ? 48 :
+    int size = ((app->play_compact || app->mobile_layout) && language.h >= 48) ? 48 :
                geometry_final_audio_button_size(width, language.h);
     out.button =
         (GeoRect){language.x + language.w + 4,
@@ -967,6 +1129,27 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
                          GeometryHintPanel *out) {
   if (!geometry || !out || width <= 0 || height <= 0) return false;
   memset(out, 0, sizeof(*out));
+  if (geometry->mobile_layout) {
+    int w=width-24,h=min_i(height-24,430),x=12,y=(height-h)/2;
+    out->card=(GeoRect){x,y,w,h};
+    out->title=(GeoRect){x+12,y+12,w-24,28};
+    if (height<600) {
+      int actions_x=x+w-180;
+      out->body=(GeoRect){x+12,y+48,w-204,h-60};
+      out->primary=(GeoRect){actions_x,y+48,168,48};
+      out->reveal=(GeoRect){actions_x,y+102,168,48};
+      out->cancel=(GeoRect){actions_x,y+156,168,48};
+    } else {
+      int actions_y=y+h-168;
+      out->body=(GeoRect){x+12,y+48,w-24,actions_y-y-54};
+      out->primary=(GeoRect){x+12,actions_y,w-24,48};
+      out->reveal=(GeoRect){x+12,actions_y+54,w-24,48};
+      out->cancel=(GeoRect){x+12,actions_y+108,w-24,48};
+    }
+    /* Apply and Verify are mutually exclusive primary decisions. */
+    out->verify=out->primary;
+    return out->body.w>8 && out->body.h>8;
+  }
   GeoRect card;
   if (geometry->play_compact) {
     int card_h = height - 80;
@@ -1006,58 +1189,242 @@ bool geometry_hint_panel(const AppGeometry *geometry, int width, int height,
 /* Mobile Home: use the unused vertical room for real 48dp touch targets,
    not desktop's 33dp footer. Suppress redundant group captions on the
    minimum supported height; shared geometry remains the hit-test owner. */
-static void geometry_mobile_home(int width, int height, AppGeometry *g) {
+bool geometry_mobile_home(int width, int height, AppGeometry *g) {
+  if (!g || width<360 || height<320) return false;
+  if (height<600) {
+    if (width<600) return false;
+    const int margin=6,gap=6,left_w=(width-24)/2+48;
+    const int right_w=width-24-left_w;
+    int left=margin,right=left+left_w+12;
+    g->screen_language=(GeoRect){margin,6,width-64,48};
+    g->home_logo=(GeoRect){left,60,left_w,40};
+    g->home_new_label=(GeoRect){left,102,left_w,1};
+    g->home_mode_label=(GeoRect){left,104,left_w,18};
+    grid_gap((GeoRect){left,126,left_w,48},3,gap,g->home_mode,3);
+    g->home_difficulty_label=(GeoRect){left,180,left_w,18};
+    grid_gap((GeoRect){left,202,left_w,48},3,gap,g->home_difficulty,3);
+    g->home_primary[0]=(GeoRect){left,256,left_w,48};
+    g->home_continue_label=(GeoRect){right,58,right_w,1};
+    g->home_primary[1]=(GeoRect){right,60,right_w,54};
+    g->home_primary[2]=(GeoRect){right,120,right_w,54};
+    g->home_secondary[0]=(GeoRect){right,180,right_w,48};
+    GeoRect footer[4];
+    grid_gap((GeoRect){right,234,right_w,102},2,gap,footer,4);
+    for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+      g->home_secondary[i]=footer[i-1];
+    if (height<360) {
+      g->home_logo.h=24;
+      g->home_mode_label.y=88;g->home_difficulty_label.y=160;
+      for (int i=0;i<3;++i) {
+        g->home_mode[i].y=108;g->home_difficulty[i].y=180;
+      }
+      g->home_primary[0].y=234;
+      g->home_primary[1]=(GeoRect){right,60,right_w,48};
+      g->home_primary[2]=(GeoRect){right,112,right_w,48};
+      g->home_secondary[0].y=164;
+      grid_gap((GeoRect){right,216,right_w,100},2,4,footer,4);
+      for (int i=1;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+        g->home_secondary[i]=footer[i-1];
+    }
+    /* Center the complete action groups in taller landscape surfaces. */
+    int offset=height>360 ? (height-360)/2 : 0;
+    g->home_logo.y+=offset;g->home_new_label.y+=offset;
+    g->home_mode_label.y+=offset;g->home_difficulty_label.y+=offset;
+    g->home_continue_label.y+=offset;
+    for(int i=0;i<3;++i) {
+      g->home_mode[i].y+=offset;g->home_difficulty[i].y+=offset;
+      g->home_primary[i].y+=offset;
+    }
+    for(int i=0;i<GEOMETRY_HOME_SECONDARY_COUNT;++i)
+      g->home_secondary[i].y+=offset;
+    return true;
+  }
   const int margin = 6, gap = 6, w = width - 2 * margin;
   const bool roomy = height >= 700;
   const int caption_h = 1; /* Mobile action labels already name each group. */
+  /* Spend tall-phone headroom on real touch surfaces and section rhythm.
+     Shared geometry keeps touch, focus and semantics aligned with painting. */
+  const int breathing = height > 700 ? (height - 700) / 10 : 0;
+  const int control_extra = breathing / 2 < 8 ? breathing / 2 : 8;
+  const int control_h = 48 + control_extra;
   g->screen_language = (GeoRect){margin, 6, w - 52, 48};
 
   int y = 60;
   int logo_h = height >= 760 ? 80 : height >= 680 ? 64 : 40;
   g->home_logo = (GeoRect){margin, y, w, logo_h};
-  y += logo_h + 4;
+  y += logo_h + 4 + breathing;
   g->home_new_label = (GeoRect){margin, y, w, caption_h};
   y += caption_h + (roomy ? 2 : 0);
   g->home_mode_label = (GeoRect){margin, y, w, 18};
   y += 20;
-  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+  grid_gap((GeoRect){margin, y, w, control_h}, 3, gap,
            g->home_mode, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += 48 + 5;
+  y += control_h + 5 + breathing / 2;
   g->home_difficulty_label = (GeoRect){margin, y, w, 18};
   y += 20;
-  grid_gap((GeoRect){margin, y, w, 48}, 3, gap,
+  grid_gap((GeoRect){margin, y, w, control_h}, 3, gap,
            g->home_difficulty, GEOMETRY_HOME_SEGMENT_COUNT);
-  y += 48 + 7;
-  g->home_primary[0] = (GeoRect){margin, y, w, 48};
-  y += 48 + 6;
+  y += control_h + 7 + breathing / 2;
+  g->home_primary[0] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 6 + breathing;
   g->home_continue_label = (GeoRect){margin, y, w, caption_h};
   y += caption_h + (roomy ? 2 : 0);
-  g->home_primary[1] = (GeoRect){margin, y, w, 48};
-  y += 48 + 6;
-  g->home_primary[2] = (GeoRect){margin, y, w, 48};
-  y += 48 + 8;
-  g->home_secondary[0] = (GeoRect){margin, y, w, 48};
-  y += 48 + 8;
+  g->home_primary[1] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 6 + breathing;
+  g->home_primary[2] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 8 + breathing;
+  g->home_secondary[0] = (GeoRect){margin, y, w, control_h};
+  y += control_h + 8 + breathing;
 
   GeoRect secondary[GEOMETRY_HOME_SECONDARY_COUNT - 1];
-  grid_gap((GeoRect){margin, y, w, 102}, 2, gap, secondary,
+  grid_gap((GeoRect){margin, y, w, 2 * control_h + gap}, 2, gap, secondary,
            GEOMETRY_HOME_SECONDARY_COUNT - 1);
   for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i)
     g->home_secondary[i] = secondary[i - 1];
+  return true;
 }
 
 /* Android's physical surface has already had system insets removed by Java.
    Compose in dp here, keeping desktop's 360x640 minimum untouched. */
+bool geometry_mobile_landscape_play(int width, int height, GeometryMode mode,
+                                    AppGeometry *out) {
+  if (!out || width < 600 || height < 320 || height >= width ||
+      mode < GEOMETRY_MODE_CLASSIC || mode > GEOMETRY_MODE_TIME) return false;
+  AppGeometry g;
+  memset(&g,0,sizeof(g));
+  const int margin=6,gap=6;
+  int board=min_i(height-2*margin,width-330);
+  board-=board%9;
+  if (board<270) return false;
+  const int x=margin+board+12,w=width-x-margin;
+  const bool short_landscape=height<360;
+  const int stack_h=short_landscape ? 308 : 354;
+  const int y=(height-stack_h)/2;
+  const int trim=short_landscape ? 20 : 0;
+  g.play_compact=true;g.mobile_layout=true;
+  g.hud_count=mode==GEOMETRY_MODE_CLASSIC ? 5 : 6;
+  g.board=(GeoRect){margin,(height-board)/2,board,board};
+  g.sidebar=(GeoRect){x,y,w,stack_h};
+  g.play_title=(GeoRect){x,y,w,short_landscape ? 1 : 16};
+  g.play_language=(GeoRect){margin,1,1,1};
+  GeoRect top[5],edit[5],fields[6];
+  const int top_min[5]={54,54,66,48,48},edit_min[5]={48,48,60,48,66};
+  int extra=w-294,top_x=x,edit_x=x;
+  for (int i=0;i<5;++i) {
+    int grow=extra/5+(i<extra%5);
+    top[i]=(GeoRect){top_x,y+(short_landscape ? 4 : 20),top_min[i]+grow,48};
+    edit[i]=(GeoRect){edit_x,y+138-trim,edit_min[i]+grow,48};
+    top_x+=top[i].w+gap;edit_x+=edit[i].w+gap;
+  }
+  g.play_controls[PLAY_CONTROL_MENU]=top[0];
+  g.play_controls[PLAY_CONTROL_PAUSE]=top[1];
+  g.play_controls[PLAY_CONTROL_SAVE]=top[2];
+  g.play_controls[PLAY_CONTROL_MORE]=top[3];
+  int half=(w-gap)/2;
+  int hud_trim=short_landscape ? 16 : 0;
+  fields[0]=(GeoRect){x,y+74-hud_trim,half,20};
+  fields[1]=(GeoRect){x+half+gap,y+74-hud_trim,w-half-gap,20};
+  fields[2]=(GeoRect){x,y+94-hud_trim,half,20};
+  fields[3]=mode==GEOMETRY_MODE_CLASSIC ? (GeoRect){x,y+114-hud_trim,w,20}
+      : (GeoRect){x+half+gap,y+94-hud_trim,w-half-gap,20};
+  for (int i=0;i<4;++i) g.hud[i]=fields[i];
+  g.hud[5]=(GeoRect){x,y+114-hud_trim,w,20};
+  g.play_controls[PLAY_CONTROL_UNDO]=edit[0];
+  g.play_controls[PLAY_CONTROL_REDO]=edit[1];
+  g.play_controls[PLAY_CONTROL_CLEAR]=edit[2];
+  g.play_controls[PLAY_CONTROL_NOTES]=edit[3];
+  /* Strict/Free is actionable, so give it a full touch target rather than
+     the small informational HUD row used for time/mode/difficulty. */
+  g.hud[4]=edit[4];
+  g.palette_label=(GeoRect){x,y+191-trim,w,1};
+  int key_w=(w-4*gap)/5;
+  for (int i=0;i<5;++i)
+    g.palette[i]=(GeoRect){x+i*(key_w+gap),y+192-trim,key_w,48};
+  int second_x=x+(w-(4*key_w+3*gap))/2;
+  for (int i=5;i<GEOMETRY_PALETTE_COUNT;++i)
+    g.palette[i]=(GeoRect){second_x+(i-5)*(key_w+gap),y+246-trim,key_w,48};
+  g.progress=(GeoRect){x,y+300-trim,w,24};
+  /* As on minimum portrait, a transient toast replaces progress. */
+  g.status=short_landscape ? g.progress : (GeoRect){x,y+330,w,24};
+  int panel_w=min_i(width-24,460);
+  g.more_panel=(GeoRect){(width-panel_w)/2,(height-252)/2,panel_w,252};
+  int item_w=(panel_w-24-gap)/2;
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i)
+    g.more_items[i]=(GeoRect){g.more_panel.x+12+(i%2)*(item_w+gap),
+        g.more_panel.y+56+(i/2)*56,item_w,48};
+  const int more_controls[GEOMETRY_MORE_COUNT]={PLAY_CONTROL_RESTART,
+      PLAY_CONTROL_HINT,PLAY_CONTROL_VERIFY,PLAY_CONTROL_SETTINGS,
+      PLAY_CONTROL_HELP,PLAY_CONTROL_ABOUT};
+  for (int i=0;i<GEOMETRY_MORE_COUNT;++i)
+    g.play_controls[more_controls[i]]=g.more_items[i];
+  g.actions[PLAY_ACTION_MENU]=top[0];
+  g.actions[PLAY_ACTION_PAUSE]=top[1];
+  g.actions[PLAY_ACTION_RESTART]=g.more_items[MORE_RESTART];
+  g.actions[PLAY_ACTION_HINT]=g.more_items[MORE_HINT];
+  g.actions[PLAY_ACTION_NOTES]=edit[3];
+  g.actions[PLAY_ACTION_VERIFY]=g.more_items[MORE_VERIFY];
+  g.actions[PLAY_ACTION_AUDIO]=top[4];
+  g.actions[PLAY_ACTION_HELP]=g.more_items[MORE_HELP];
+  g.actions[PLAY_ACTION_ABOUT]=g.more_items[MORE_ABOUT];
+  *out=g;
+  return true;
+}
+
+static void mobile_result_pause(int width,int height,AppGeometry *g) {
+  int x=12,w=width-24;
+  if (height<600) {
+    int left=(w-12)*40/100,right=w-left-12;
+    g->end_logo=(GeoRect){x,76,left,48};
+    g->end_heading=(GeoRect){x,132,left,48};
+    g->end_summary=(GeoRect){x+left+12,66,right,160};
+    grid_gap((GeoRect){x,height-60,w,48},2,6,g->end_buttons,2);
+  } else {
+    g->end_logo=(GeoRect){x,72,w,60};
+    g->end_heading=(GeoRect){x,140,w,46};
+    g->end_summary=(GeoRect){x,194,w,144};
+    grid_gap((GeoRect){x,height-114,w,102},1,6,g->end_buttons,2);
+  }
+  w=min_i(width-24,460);x=(width-w)/2;
+  int top=max_i(66,(height-230)/2);
+  g->pause_logo=(GeoRect){x,top,w,60};
+  g->pause_heading=(GeoRect){x,top+68,w,40};
+  grid_gap((GeoRect){x,top+120,w,102},1,6,g->pause_buttons,2);
+}
+
 bool geometry_compute_mobile(int width, int height, GeometryMode mode,
                              AppGeometry *g) {
-  if (!g || width < 360 || height < 600) return false;
-  if (width >= 640) return geometry_compute(width, height, mode, g);
+  if (!g || !geometry_mobile_size_supported(width,height)) return false;
+  if (height<600) {
+    if (!geometry_mobile_landscape_play(width,height,mode,g) ||
+        !geometry_mobile_home(width,height,g)) return false;
+    GeometryInfo help,about;
+    if (!geometry_mobile_info(width,height,false,&help) ||
+        !geometry_mobile_info(width,height,true,&about)) return false;
+    g->info_heading=help.heading;g->info_body=help.body;g->back_button=help.back;
+    g->about_logo=about.heading;g->about_body=about.body;
+    /* Mobile citation scrolls with the About text, not with the buttons. */
+    g->about_study_reference=about.body;
+    g->about_back=about.back;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+      g->about_links[i]=about.links[i];
+    mobile_result_pause(width,height,g);
+    set_compatibility_aliases(g);
+    return geometry_play_valid(g,width,height);
+  }
+  if (width >= 640) {
+    if (!geometry_compute(width,height,mode,g)) return false;
+    g->mobile_layout=true;
+    if (!geometry_mobile_home(width,height,g)) return false;
+    mobile_result_pause(width,height,g);set_compatibility_aliases(g);
+    return geometry_play_valid(g,width,height);
+  }
 
   const int seed_height = height < 640 ? 640 : height;
   if (!geometry_compute(width, seed_height, mode, g)) return false;
   /* Recompose the other screens at current inset-adjusted usable height. */
   common_screens(width, height, true, g);
-  geometry_mobile_home(width, height, g);
+  g->mobile_layout=true;mobile_result_pause(width,height,g);
+  if (!geometry_mobile_home(width, height, g)) return false;
 
   const int margin = 6, gap = 6, shell_w = width - 2 * margin;
   const int logo_h = height >= 720 ? 36 : height >= 660 ? 28 : 20;
@@ -1126,9 +1493,9 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
   int bottom = g->status.y + g->status.h;
   g->sidebar = (GeoRect){margin, edit_y, shell_w, bottom - edit_y};
 
-  const int panel_w = shell_w - 20, panel_h = 252;
+  const int panel_w = min_i(shell_w - 20,460), panel_h = 252;
   const int panel_x = (width - panel_w) / 2;
-  const int panel_y = height - panel_h - (height >= 700 ? 24 : 10);
+  const int panel_y = (height - panel_h)/2;
   g->more_panel = (GeoRect){panel_x, panel_y, panel_w, panel_h};
   const int item_w = (panel_w - 24 - gap) / 2;
   for (int i = 0; i < GEOMETRY_MORE_COUNT; ++i)

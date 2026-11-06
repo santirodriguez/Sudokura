@@ -186,6 +186,7 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     if (!game) return outcome;
     game_restart(game);
     state->mistakes = 0;
+    state->attempt_started = false;
     state->strikes = 0;
     state->notes_mode = false;
     state->undo_count = 0;
@@ -240,6 +241,10 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
       action.kind == APP_ACTION_CLEAR) {
     GameEdit edit;
     outcome.input = apply_cell_action(game, state, action, &edit);
+    if (action.kind == APP_ACTION_PLACE && action.row>=0 && action.row<9 &&
+        action.column>=0 && action.column<9 && action.value >= 1 && action.value <= 9 &&
+        outcome.input != GAME_INPUT_LOCKED)
+      state->attempt_started = true;
     outcome.changed =
         outcome.input == GAME_INPUT_CORRECT ||
         outcome.input == GAME_INPUT_WRONG ||
@@ -267,6 +272,7 @@ AppActionOutcome app_apply_action(Game *game, AppState *state,
     GameEdit edit;
     outcome.changed =
         game_hint_recorded(game, action.row, action.column, &edit);
+    if(outcome.changed)state->attempt_started=true;
     outcome.revealed = outcome.changed;
     outcome.no_effect = !outcome.changed;
     if (outcome.changed) {

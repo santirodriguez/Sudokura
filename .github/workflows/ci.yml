@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
 
 permissions:
@@ -15,6 +17,77 @@ env:
   SUDOKURA_SOURCE_COMMIT: ${{ github.sha }}
 
 jobs:
+  android-changes:
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      github.ref == 'refs/heads/release/1.3.9' ||
+      github.ref == 'refs/heads/release/1.4.0' ||
+      github.ref == 'refs/heads/store-prep/1.4-next' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+      github.head_ref == 'release/1.3.9' ||
+      github.head_ref == 'release/1.4.0'
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.paths.outputs.build }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - id: paths
+        name: Select Android build inputs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          with open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8') as stream:
+              event = json.load(stream)
+          base = (event.get('pull_request', {}).get('base', {}).get('sha')
+                  if os.environ['GITHUB_EVENT_NAME'] == 'pull_request'
+                  else event.get('before'))
+          changed = None
+          if (isinstance(base, str) and len(base) == 40 and
+                  set(base) <= set('0123456789abcdef') and set(base) != {'0'}):
+              try:
+                  changed = subprocess.check_output([
+                      'git', 'diff', '--name-only', '-z', base, 'HEAD'
+                  ], stderr=subprocess.DEVNULL).decode('utf-8').split('\0')
+              except subprocess.CalledProcessError:
+                  pass
+          prefixes = ('android/', 'src/', 'assets/audio/',
+                      'assets/branding/source/', 'assets/flags/raster/')
+          files = {'Makefile', 'scripts/generate_assets.go',
+                   'scripts/generate_assets.py', 'scripts/validate_assets.py',
+                   '.github/workflows/ci.yml',
+                   '.github/workflows/android-preview.yml'}
+          # A missing/new-branch base must build rather than silently skip.
+          build = changed is None or any(
+              path.startswith(prefixes) or path in files for path in changed)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+              stream.write(f'build={str(build).lower()}\n')
+          PY
+
+  android:
+    needs: android-changes
+    if: needs.android-changes.outputs.build == 'true'
+    uses: ./.github/workflows/android-preview.yml
+    secrets:
+      SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
+      SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
+
+  # Feature and final pre-merge UI candidates need source-exact Android debug
+  # builds, without passing release-signing secrets to these branches.
+  android-ui-debug:
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/feature/unified-ui' ||
+       github.ref == 'refs/heads/release-prep/1.4.0-unified-ui')
+    uses: ./.github/workflows/android-preview.yml
+    with:
+      source_commit: ${{ github.sha }}
+
   linux:
     runs-on: ubuntu-22.04
     steps:
@@ -132,13 +205,28 @@ jobs:
   linux-ubuntu24:
     needs: linux
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: phase7-linux-candidate
           path: candidate
-      - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
+      - name: Install Ubuntu runtime validation dependencies
+        run: |
+          # Bound external apt/mirror stalls instead of trapping the entire CI.
+          sudo timeout --signal=TERM --kill-after=10s 180s \
+            apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 update
+          # Weston has a large optional multimedia/VA/remote-desktop
+          # dependency graph on Ubuntu 24.04. The runtime probe uses its
+          # X11 backend and does not require those recommended add-ons.
+          sudo timeout --signal=TERM --kill-after=10s 480s \
+            env DEBIAN_FRONTEND=noninteractive apt-get \
+              -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 \
+              install -y --no-install-recommends \
+              binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
       - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage ubuntu24 required
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}
@@ -258,7 +346,15 @@ jobs:
           retention-days: 7
 
   release-bundle:
-    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos]
+    needs: [linux, linux-ubuntu24, linux-fedora44, windows, macos, android]
+    if: >-
+      always() && !cancelled() &&
+      needs.linux.result == 'success' && needs['linux-ubuntu24'].result == 'success' &&
+      needs['linux-fedora44'].result == 'success' && needs.windows.result == 'success' &&
+      needs.macos.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped')
+    env:
+      INCLUDE_ANDROID: ${{ needs.android.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -276,14 +372,22 @@ jobs:
         with:
           name: phase7-macos-arm64
           path: artifacts
-      - name: Validate public release bundle
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: env.INCLUDE_ANDROID == 'true'
+        with:
+          name: sudokura-android-signed-github
+          path: artifacts
+      - name: Validate internal release candidate bundle
         run: |
           python3 tests/test_release_bundle.py
+          python3 tests/test_android_release_manifest.py
+          extra=()
+          if [ "$INCLUDE_ANDROID" = true ]; then extra+=(--include-android); fi
           version=$(./scripts/version.sh)
           python3 scripts/release_bundle.py build \
             --artifacts-dir artifacts \
             --version "$version" \
-            --source-commit "$GITHUB_SHA"
+            --source-commit "$GITHUB_SHA" "${extra[@]}"
           cat artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -293,6 +397,7 @@ jobs:
             artifacts/Sudokura-*-Windows-x64-Portable.exe
             artifacts/Sudokura-*-Linux-x64.AppImage
             artifacts/Sudokura-*-macOS-arm64.dmg
+            artifacts/Sudokura-*-Android-arm64.apk
             artifacts/SHA256SUMS.txt
             artifacts/Sudokura-*-Build-Info.json
             artifacts/artifact-manifest-*.json
@@ -320,6 +425,7 @@ jobs:
           ./scripts/validate_screenshots.py ui-review | tee ui-review/VALIDATION.txt
           python3 tests/test_screenshot_validator.py ui-review
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
         with:
           name: phase5-ui-review
           path: ui-review
@@ -416,3 +522,101 @@ jobs:
             deterministic-v138.txt
             deterministic-v139.txt
           retention-days: 14
+
+  android-runtime:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[android-runtime]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Prepare isolated 16 KiB emulator inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/test_emulator_runtime.py
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu-core libpulse0 libxkbfile1 libnss3 libx11-xcb1
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          sudo chmod u+rw /dev/kvm
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          (yes || true) | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" \
+            "ndk;28.2.13676358" "cmake;3.22.1" "emulator" \
+            "system-images;android-35;google_apis_ps16k;x86_64"
+          mkdir -p android-runtime-output
+          cp "$ANDROID_HOME/system-images/android-35/google_apis_ps16k/x86_64/source.properties" android-runtime-output/image-source.properties
+          "$ANDROID_HOME/emulator/emulator" -version > android-runtime-output/emulator-version.txt
+          python3 android/scripts/prepare_sources.py
+          make assets
+      - name: Build test-only prototype and native parity executable
+        run: |
+          bash android/gradlew --no-daemon :app:assemblePrototypeDebug \
+            -PsudokuraEmulatorTest=true \
+            -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+            -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
+          APK=android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk
+          python3 android/scripts/audit_elf.py \
+            "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            "$APK" --abi x86_64 > android-runtime-output/elf-audit.txt
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK" > android-runtime-output/zipalign.txt
+          make tests/test_deterministic_parity WERROR=-Werror
+          ./tests/test_deterministic_parity > android-runtime-output/parity-host.txt
+      - name: Execute 16 KiB prototype runtime and deterministic parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/sudokura-runtime-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force --name sudokura-16k --device pixel_2 \
+            --path "$ANDROID_AVD_HOME/sudokura-16k.avd" \
+            --package "system-images;android-35;google_apis_ps16k;x86_64"
+          test -s "$ANDROID_AVD_HOME/sudokura-16k.avd/config.ini"
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' \
+            "$ANDROID_AVD_HOME/sudokura-16k.avd" > "$ANDROID_AVD_HOME/sudokura-16k.ini"
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee android-runtime-output/avd-list.txt
+          grep -Fxq sudokura-16k android-runtime-output/avd-list.txt
+          "$ANDROID_HOME/emulator/emulator" -avd sudokura-16k -port 5554 \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 4096 -cores 2 \
+            > android-runtime-output/emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'timeout 15 adb -s emulator-5554 logcat -d > android-runtime-output/final-logcat.txt || true; kill "$emulator_pid" || true' EXIT
+          boot_deadline=$((SECONDS + 180))
+          until timeout 5 adb -s emulator-5554 get-state 2>/dev/null | grep -Fxq device; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$boot_deadline" ]; then
+              tail -60 android-runtime-output/emulator.log
+              exit 1
+            fi
+            sleep 2
+          done
+          timeout 30 adb -s emulator-5554 root
+          timeout 90 adb -s emulator-5554 wait-for-device
+          python3 android/scripts/emulator_runtime.py --adb "$ANDROID_HOME/platform-tools/adb" \
+            --apk android/app/build/outputs/apk/prototype/debug/app-prototype-debug.apk \
+            --source "$GITHUB_SHA" --output android-runtime-output
+          parity=$(find android/app -type f -name sudokura-parity -path '*/x86_64/*' -print -quit)
+          test -n "$parity"
+          test -x "$parity"
+          adb -s emulator-5554 push "$parity" /data/local/tmp/sudokura-parity
+          adb -s emulator-5554 shell chmod 700 /data/local/tmp/sudokura-parity
+          adb -s emulator-5554 exec-out /data/local/tmp/sudokura-parity > android-runtime-output/parity-android.txt
+          cmp android-runtime-output/parity-host.txt android-runtime-output/parity-android.txt
+          printf 'x86_64_fixture_parity=PASS\nproduction_arm64_acceptance=NOT_ESTABLISHED\n' > android-runtime-output/parity-result.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: android-16k-runtime-diagnostics
+          path: android-runtime-output/
+          retention-days: 7

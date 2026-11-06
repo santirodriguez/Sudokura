@@ -3,7 +3,7 @@ static SDL_Rect pressed_paint_rect(SDL_Rect r,bool pressed){if(pressed&&r.h>4){r
 static void render_pause_overlay(Gfx*g,const UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();draw_rect(g->ren,0,0,g->width,g->height,th.bg);AppGeometry a;if(!get_geometry(g,ui,&a))return;GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
   draw_wordmark(g,sdl_rect(a.pause_logo));(void)draw_fitted_text(g,tr(ui->language,T_PAUSED),th.title,sdl_rect(a.pause_heading),fonts.heading,16);
-  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=ui_pointer_pressed(resume),menu_pressed=ui_pointer_pressed(menu);SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
+  SDL_Rect resume=sdl_rect(a.pause_buttons[0]),menu=sdl_rect(a.pause_buttons[1]);bool resume_pressed=ui_pointer_pressed(resume),menu_pressed=ui_pointer_pressed(menu);SDL_Rect resume_paint=pressed_paint_rect(resume,resume_pressed),menu_paint=pressed_paint_rect(menu,menu_pressed);draw_round_rect(g->ren,resume_paint,7,resume_pressed?th.sel:th.title);(void)draw_fitted_text(g,tr(ui->language,T_RESUME),th.bg,resume_paint,fonts.control+2,g->mobile_layout?13:10);draw_round_rect(g->ren,menu_paint,7,menu_pressed?th.sel:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_MENU),th.btnfg,menu_paint,fonts.control,g->mobile_layout?13:10);draw_focus_ring(g->ren,pause_keyboard_focus==0?resume:menu,th.sel_outline);
 }
 
 static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
@@ -27,28 +27,70 @@ static void help_draw_scrolled_texture(Gfx*g,SDL_Texture*texture,
   SDL_RenderCopy(g->ren,texture,&source,&dest);
 }
 
+static void draw_info_scroll_controls(Gfx *g,UI *ui,Theme th) {
+  if (help_scroll_max_px<=0) return;
+  for (int i=0;i<2;++i) {
+    SDL_Rect r=ui_info_scroll_rect(g,ui,i!=0);
+    if (r.w<=0 || r.h<=0) continue;
+    bool enabled=i ? help_scroll_px<help_scroll_max_px : help_scroll_px>0;
+    draw_round_rect(g->ren,r,7,enabled ? th.btn : th.palette_bg);
+    (void)draw_fitted_text(g,i ? "v" : "^",enabled ? th.btnfg : th.dim,r,22,18);
+  }
+}
+
+/* The mobile reader and its semantic nodes share the painted paragraph
+   bounds. A stale render cache is withheld until the new layout is painted. */
+typedef struct { const char *text; SDL_Rect rect; int id; } UiInfoSemanticSpan;
+static UiInfoSemanticSpan ui_info_semantic_spans[16];
+static unsigned ui_info_semantic_count;
+static int ui_info_semantic_width,ui_info_semantic_height,ui_info_semantic_scroll;
+static Screen ui_info_semantic_screen;
+static Language ui_info_semantic_language;
+static void ui_info_semantic_begin(const Gfx *g,const UI *ui) {
+  ui_info_semantic_count=0;ui_info_semantic_width=g->width;
+  ui_info_semantic_height=g->height;ui_info_semantic_scroll=help_scroll_px;
+  ui_info_semantic_screen=ui->screen;ui_info_semantic_language=ui->language;
+}
+static void ui_info_semantic_add(SDL_Rect body,int offset,int height,
+                                  const char *text,int id) {
+  SDL_Rect rect={body.x,body.y+offset-help_scroll_px,body.w,height},clipped;
+  if (ui_info_semantic_count<16 && SDL_IntersectRect(&rect,&body,&clipped))
+    ui_info_semantic_spans[ui_info_semantic_count++]=(UiInfoSemanticSpan){text,clipped,id};
+}
+
 static void render_help(Gfx*g,UI*ui){
   Theme th=ui->dark_theme?theme_dark():theme_light();
   SDL_SetRenderDrawColor(g->ren,th.bg.r,th.bg.g,th.bg.b,255);
   SDL_RenderClear(g->ren);
   AppGeometry a;
   if(!get_geometry(g,ui,&a))return;
-  SDL_Rect heading=sdl_rect(a.info_heading),body=sdl_rect(a.info_body);
+  SDL_Rect heading=sdl_rect(a.info_heading),body=ui_info_body_rect(g,ui);
+  GeometryInfo mobile;
+  bool mobile_layout=ui_mobile_info_layout(g,ui,&mobile);
+  if (mobile_layout) heading=sdl_rect(mobile.heading);
   int tw=0,thh=0;
-  SDL_Texture*T=render_text(g,g->font_big,tr(ui->language,T_HELP),th.title,&tw,&thh);
+  SDL_Texture*T=render_text(g,mobile_layout ? cached_font(g,28) : g->font_big,
+                            tr(ui->language,T_HELP),th.title,&tw,&thh);
   if(T){
     SDL_Rect d={heading.x,heading.y,tw,thh};
     SDL_RenderCopy(g->ren,T,NULL,&d);
   }
 
-  const TextKey titles[]={
+  TextKey titles[]={
     T_HELP_GOAL_TITLE,T_HELP_MODES_TITLE,T_HELP_CONTROLS_TITLE,
     T_HELP_HINTS_TITLE,T_HELP_SHORTCUTS_TITLE
   };
-  const TextKey bodies[]={
+  TextKey bodies[]={
     T_HELP_GOAL_BODY,T_HELP_MODES_BODY,T_HELP_CONTROLS_BODY,
     T_HELP_HINTS_BODY,T_HELP_SHORTCUTS_BODY
   };
+  if (mobile_layout) {
+    titles[0]=T_HELP_TOUCH_TITLE;bodies[0]=T_HELP_TOUCH_BODY;
+    titles[1]=T_HELP_GOAL_TITLE;bodies[1]=T_HELP_GOAL_BODY;
+    titles[2]=T_HELP_MODES_TITLE;bodies[2]=T_HELP_MODES_BODY;
+    bodies[3]=T_HELP_TOUCH_HINTS;
+    titles[4]=T_HELP_TOUCH_SETTINGS_TITLE;bodies[4]=T_HELP_TOUCH_SETTINGS;
+  }
   enum{HELP_SECTION_COUNT=5};
   SDL_Texture*title_texture[HELP_SECTION_COUNT]={0};
   SDL_Texture*body_texture[HELP_SECTION_COUNT]={0};
@@ -68,13 +110,13 @@ static void render_help(Gfx*g,UI*ui){
   for(int i=0;i<HELP_SECTION_COUNT;i++){
     section_y[i]=content_h;
     title_texture[i]=render_text_wrapped(
-        g,g->font_body,tr(ui->language,titles[i]),th.title,text_w,
+        g,mobile_layout ? cached_font(g,20) : g->font_body,tr(ui->language,titles[i]),th.title,text_w,
         &title_w[i],&title_h[i]);
-    const char*body_text=i==HELP_SECTION_COUNT-1
+    const char*body_text=!mobile_layout && i==HELP_SECTION_COUNT-1
                               ?shortcut_text
                               :tr(ui->language,bodies[i]);
     body_texture[i]=render_text_wrapped(
-        g,g->font_body,body_text,th.dim,text_w,&body_w[i],&body_h[i]);
+        g,mobile_layout ? cached_font(g,18) : g->font_body,body_text,th.dim,text_w,&body_w[i],&body_h[i]);
     content_h+=title_h[i]+title_gap+body_h[i];
     if(i+1<HELP_SECTION_COUNT)content_h+=section_gap;
   }
@@ -84,11 +126,14 @@ static void render_help(Gfx*g,UI*ui){
   SDL_Rect previous;
   SDL_RenderGetClipRect(g->ren,&previous);
   SDL_RenderSetClipRect(g->ren,&body);
+  if (mobile_layout) ui_info_semantic_begin(g,ui);
   for(int i=0;i<HELP_SECTION_COUNT;i++){
     int y=section_y[i];
+    if (mobile_layout) ui_info_semantic_add(body,y,title_h[i],tr(ui->language,titles[i]),i*2);
     help_draw_scrolled_texture(g,title_texture[i],body,y,title_w[i],
                                title_h[i],help_scroll_px);
     y+=title_h[i]+title_gap;
+    if (mobile_layout) ui_info_semantic_add(body,y,body_h[i],tr(ui->language,bodies[i]),i*2+1);
     help_draw_scrolled_texture(g,body_texture[i],body,y,body_w[i],
                                body_h[i],help_scroll_px);
   }
@@ -107,6 +152,7 @@ static void render_help(Gfx*g,UI*ui){
     draw_round_rect(g->ren,(SDL_Rect){rail.x,thumb_y,rail.w,thumb_h},2,
                     th.sel_outline);
   }
+  draw_info_scroll_controls(g,ui,th);
   draw_back_button(g,ui,th,info_keyboard_focus==INFO_FOCUS_BACK);
 }
 
@@ -118,6 +164,7 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
   AppGeometry a;
   if(!get_geometry(g,ui,&a))return;
   GeometryFonts fonts=geometry_font_sizes(&a,g->width,g->height);
+  if(g->mobile_layout) draw_round_rect(g->ren,sdl_rect(a.end_summary),14,th.palette_bg);
   draw_wordmark(g,sdl_rect(a.end_logo));
   SDL_Rect heading=sdl_rect(a.end_heading),summary=sdl_rect(a.end_summary);
   const char*title=tr(ui->language,ui->result==RES_WIN?T_YOU_WIN:T_YOU_LOSE);
@@ -170,7 +217,7 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
   for(int i=0;i<4;i++){
     SDL_Rect row={summary.x,summary.y+i*row_h,summary.w,
                   i==3?summary.h-i*row_h:row_h};
-    (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,9);
+    (void)draw_fitted_text(g,lines[i],i==0?th.btnfg:th.dim,row,fonts.body,g->mobile_layout?13:9);
   }
 
   SDL_Rect b1=sdl_rect(a.end_buttons[0]),b2=sdl_rect(a.end_buttons[1]);
@@ -182,77 +229,11 @@ static void render_end(Gfx*g,const Game*game,UI*ui){
                       ?(ui->is_daily?T_ANOTHER_NORMAL:T_ANOTHER_GAME)
                       :T_RETRY_SAME;
   (void)draw_fitted_text(g,tr(ui->language,primary),th.bg,b1p,
-                         fonts.control+2,9);
+                         fonts.control+2,g->mobile_layout?13:9);
   draw_round_rect(g->ren,b2p,7,p2?th.sel:th.btn);
   (void)draw_fitted_text(g,tr(ui->language,T_HOME),th.btnfg,b2p,
-                         fonts.control,9);
+                         fonts.control,g->mobile_layout?13:9);
   draw_focus_ring(g->ren,result_keyboard_focus==0?b1:b2,th.sel_outline);
-}
-
-static void native_dialog_prepare(Gfx*g,const Game*game,UI*ui){
-  if(!g||!g->ren||!ui)return;
-  ui_audio_control_cancel_interaction();
-  app_render_ui(g,game,ui);
-  SDL_RenderPresent(g->ren);
-  g->dirty=false;
-}
-
-static int show_simple_message_box(Gfx*g,const Game*game,UI*ui,Uint32 flags,
-                                   const char*title,const char*msg){
-  if(!g||!g->win)return -1;
-  native_dialog_prepare(g,game,ui);
-  int status=SDL_ShowSimpleMessageBox(flags,title,msg,g->win);
-  window_focus_guard_reset();
-  return status;
-}
-
-static bool confirm_box(Gfx*g,const Game*game,UI*ui,const char*title,
-                        const char*msg,const char*ok_label,
-                        const char*cancel_label){
-  if(!g||!g->win)return false;
-  native_dialog_prepare(g,game,ui);
-  const SDL_MessageBoxButtonData buttons[]={{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,cancel_label},{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,ok_label?ok_label:"OK"}};
-  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_INFORMATION,g->win,title,msg,2,buttons,&scheme};int buttonid=-1;int status=SDL_ShowMessageBox(&data,&buttonid);window_focus_guard_reset();if(status<0)return false;return buttonid==1;
-}
-
-static int choice_box(Gfx*g,const Game*game,UI*ui,const char*title,
-                      const char*msg,const char*back_label,
-                      const char*retry_label,const char*discard_label){
-  if(!g||!g->win)return 0;
-  native_dialog_prepare(g,game,ui);
-  const SDL_MessageBoxButtonData buttons[]={
-    {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,back_label},
-    {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,retry_label},
-    {0,2,discard_label}
-  };
-  const SDL_MessageBoxColorScheme scheme={{{25,25,25},{200,200,200},{50,50,50},{60,120,220},{230,230,230}}};
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,g->win,title,msg,3,buttons,&scheme};
-  int buttonid=0;
-  int status=SDL_ShowMessageBox(&data,&buttonid);
-  window_focus_guard_reset();
-  if(status<0)return 0;
-  return buttonid;
-}
-
-/* Cancellation remains the default for destructive actions. */
-static bool confirm_destructive_box(Gfx *gfx,const Game *game,UI *ui,
-                                    const char *title,const char *message,
-                                    const char *delete_label) {
-  if(!gfx||!gfx->win)return false;
-  native_dialog_prepare(gfx,game,ui);
-  const SDL_MessageBoxButtonData buttons[]={
-    {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT |
-     SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,
-     tr(ui->language,T_CANCEL)},
-    {0,1,delete_label}
-  };
-  const SDL_MessageBoxData data={SDL_MESSAGEBOX_WARNING,gfx->win,
-      title,message,2,buttons,NULL};
-  int pressed=0;
-  int status=SDL_ShowMessageBox(&data,&pressed);
-  window_focus_guard_reset();
-  return status==0&&pressed==1;
 }
 
 static void app_render_base(Gfx*g,const Game*game,UI*ui){
@@ -363,10 +344,16 @@ static bool gfx_refresh_metrics(Gfx*g){
   logical_w = viewport.width_dp;
   logical_h = viewport.height_dp;
   ui_touch_slop = viewport.touch_slop_dp;
+  if (g->width!=logical_w || g->height!=logical_h)
+    fprintf(stderr,"Android usable surface %dx%dpx -> %dx%ddp density=%.3f\n",
+            output_w,output_h,logical_w,logical_h,(double)density);
 #endif
   DesktopMetrics next;
   if(!desktop_metrics_compute(logical_w,logical_h,output_w,output_h,&next))
     return false;
+#if defined(__ANDROID__)
+  next.scale_milli=viewport.scale_milli;
+#endif
   int old_scale=g->metrics.scale_milli;
   g->metrics=next;g->width=logical_w;g->height=logical_h;
   g->output_width=output_w;g->output_height=output_h;
@@ -374,7 +361,10 @@ static bool gfx_refresh_metrics(Gfx*g){
     fprintf(stderr,"SDL_RenderSetLogicalSize: %s\n",SDL_GetError());
     return false;
   }
-  if(old_scale>0&&old_scale!=next.scale_milli&&g->font_path[0]&&
+  /* A failed font reopen clears the cache. Retrying at the same scale must
+     rebuild it instead of treating a now-empty cache as usable. */
+  if(g->font_path[0] &&
+     ((old_scale>0 && old_scale!=next.scale_milli) || !g->font_big) &&
      !gfx_open_fonts(g))
     return false;
   g->dirty=true;
@@ -440,6 +430,9 @@ static void app_shutdown_base(Gfx*g){
 static bool app_init_base(Gfx*g,const char*font_cli){
   memset(g,0,sizeof(*g));g->width=SUDOKURA_DEFAULT_WINDOW_WIDTH;
   g->height=SUDOKURA_DEFAULT_WINDOW_HEIGHT;g->dirty=true;
+#if defined(__ANDROID__)
+  g->mobile_layout=true;
+#endif
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,"1");
   SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS,"0");
   SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS,"0");
@@ -509,19 +502,20 @@ static bool make_directory(const char*path){char part[PATH_MAX];size_t length=st
   if(mkdir(part,0755)!=0&&errno!=EEXIST)return false;
 #endif
 }part[i]=saved;}return true;}
-static void apply_window_resize(Gfx*g,int requested_width,int requested_height){
-  if(!g||!g->win)return;
+static bool apply_window_resize(Gfx*g,int requested_width,int requested_height){
+  if(!g||!g->win)return false;
 #if defined(__ANDROID__)
   (void)requested_width;
   (void)requested_height;
   /* Wait for the real SurfaceView dimensions; never force desktop minimums. */
-  (void)gfx_refresh_metrics(g);
-  return;
-#endif
+  return gfx_refresh_metrics(g);
+#else
   int width=0,height=0;
   bool changed=geometry_normalize_window_size(requested_width,requested_height,
                                                &width,&height);
   if(changed)SDL_SetWindowSize(g->win,width,height);
-  (void)gfx_refresh_metrics(g);
+  if(!gfx_refresh_metrics(g))return false;
   gfx_capture_restored_bounds(g);
+  return true;
+#endif
 }

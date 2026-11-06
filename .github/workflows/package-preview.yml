@@ -7,19 +7,16 @@ on:
         description: Commit, branch, or tag to package without publishing
         required: true
         type: string
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: package-preview-${{ github.event.pull_request.number || inputs.ref || github.ref }}
+  group: package-preview-${{ inputs.ref }}
   cancel-in-progress: true
 
 env:
-  PREVIEW_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
+  PREVIEW_REF: ${{ inputs.ref }}
   SUDOKURA_ARTIFACT_KIND: preview
 
 jobs:

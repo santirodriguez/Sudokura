@@ -41,6 +41,42 @@ static bool window_event_requires_focus_pause(const Gfx *gfx,
       desktop_window_event(event->event), desktop_window_state(gfx->win));
 }
 
+/* Android SDL 2.32.10 reports SurfaceView rotations as RESIZED. Desktop
+   keeps using SIZE_CHANGED; refresh the mobile viewport for either event. */
+static bool window_event_changes_surface_metrics(const Gfx *gfx, Uint8 event) {
+  return event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+         (gfx && gfx->mobile_layout && event == SDL_WINDOWEVENT_RESIZED);
+}
+
+static bool app_handle_surface_resize(Gfx *gfx, UI *ui,
+                                      const SDL_WindowEvent *event) {
+  if (!gfx || !ui || !event) return false;
+  if (gfx->mobile_layout) gfx->surface_repaint_until_ms=now_ms()+1500u;
+  if (gfx->mobile_layout && event->event == SDL_WINDOWEVENT_RESIZED)
+    return app_refresh_renderer_metrics(gfx, ui);
+  return app_resize_renderer_metrics(gfx, ui, event->data1, event->data2);
+}
+
+/* Surface output can settle after the resize notification. Idle screens
+   need a bounded repaint window too; never retry an unavailable renderer. */
+static bool app_settle_mobile_surface(Gfx *gfx, UI *ui) {
+  if (!gfx || !gfx->mobile_layout || app_suspended || !gfx->renderer_ready ||
+      now_ms()>=gfx->surface_repaint_until_ms) return false;
+  int w=0,h=0;
+  if (SDL_GetRendererOutputSize(gfx->ren,&w,&h)!=0 || w<=0 || h<=0) {
+    gfx->surface_repaint_until_ms=0;
+    app_mark_renderer_unavailable(gfx,ui);
+    return false;
+  }
+  if ((w!=gfx->output_width || h!=gfx->output_height) &&
+      !app_refresh_renderer_metrics(gfx,ui)) {
+    gfx->surface_repaint_until_ms=0;
+    return false;
+  }
+  gfx->dirty=true;
+  return true;
+}
+
 static bool home_focus_available(const UI *ui, int focus) {
   return focus != HOME_FOCUS_CONTINUE || ui->has_session;
 }
@@ -79,6 +115,105 @@ static void ui_android_haptic(void) {
 static void ui_android_haptic(void) {}
 #endif
 
+/* Only the native event owner reads game/persistence state. The Android UI
+   submits a one-shot command bound to the currently visible fallback. */
+static SDL_atomic_t renderer_recovery_token;
+static SDL_atomic_t renderer_recovery_command;
+static int renderer_recovery_generation;
+static bool renderer_recovery_visible;
+static bool renderer_recovery_save_failed;
+static bool renderer_recovery_published_save_failed;
+static Language renderer_recovery_language = LANG_EN;
+
+static void renderer_recovery_submit(int generation, bool exit_requested) {
+  if (generation <= 0 || generation > 0x3fffffff ||
+      SDL_AtomicGet(&renderer_recovery_token) != generation) return;
+  (void)SDL_AtomicCAS(&renderer_recovery_command, 0,
+                    generation * 2 + (exit_requested ? 1 : 0));
+}
+
+#if defined(__ANDROID__)
+JNIEXPORT void JNICALL
+Java_org_sudokura_prototype_PrototypeActivity_nativeRendererRecovery(
+    JNIEnv *env, jclass klass, jint generation, jboolean exit_requested) {
+  (void)env;
+  (void)klass;
+  renderer_recovery_submit(generation, exit_requested == JNI_TRUE);
+}
+#endif
+
+static bool renderer_recovery_publish(bool visible, Language language) {
+#if defined(__ANDROID__)
+  JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  if (!env) return false;
+  jobject activity = (jobject)SDL_AndroidGetActivity();
+  if (!activity) return false;
+  jclass klass = (*env)->GetObjectClass(env, activity);
+  bool sent = false;
+  if (klass) {
+    jmethodID method = (*env)->GetMethodID(env, klass,
+        "showSudokuraRendererRecovery",
+        "(IZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    if (!method) {
+      if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+      (*env)->DeleteLocalRef(env, klass);
+      (*env)->DeleteLocalRef(env, activity);
+      return false;
+    }
+    char message[1024];
+    snprintf(message, sizeof(message), "%s%s%s",
+             tr(language, T_RENDERER_RECOVERY),
+             renderer_recovery_save_failed ? "\n\n" : "",
+             renderer_recovery_save_failed ? tr(language, T_SAVE_FAILED) : "");
+    jstring body = (*env)->NewStringUTF(env, message);
+    jstring retry = body ? (*env)->NewStringUTF(env, tr(language, T_RETRY)) : NULL;
+    jstring quit = retry ? (*env)->NewStringUTF(env, tr(language, T_QUIT)) : NULL;
+    if (body && retry && quit && !(*env)->ExceptionCheck(env)) {
+      (*env)->CallVoidMethod(env, activity, method,
+                            renderer_recovery_generation,
+                            visible ? JNI_TRUE : JNI_FALSE, body, retry, quit);
+      sent = !(*env)->ExceptionCheck(env);
+    }
+    if (body) (*env)->DeleteLocalRef(env, body);
+    if (retry) (*env)->DeleteLocalRef(env, retry);
+    if (quit) (*env)->DeleteLocalRef(env, quit);
+    (*env)->DeleteLocalRef(env, klass);
+  }
+  if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+  (*env)->DeleteLocalRef(env, activity);
+  return sent;
+#else
+  (void)visible;
+  (void)language;
+  return true;
+#endif
+}
+
+static void renderer_recovery_sync(const Gfx *gfx, const UI *ui, bool force) {
+  bool visible = gfx && ui && !gfx->renderer_ready && !app_suspended;
+  Language language = ui ? ui->language : LANG_EN;
+  if (!force && visible == renderer_recovery_visible &&
+      (!visible || (language == renderer_recovery_language &&
+                   renderer_recovery_save_failed ==
+                       renderer_recovery_published_save_failed))) return;
+  SDL_AtomicSet(&renderer_recovery_token, 0);
+  SDL_AtomicSet(&renderer_recovery_command, 0);
+  renderer_recovery_generation =
+      renderer_recovery_generation >= 0x3fffffff
+          ? 1 : renderer_recovery_generation + 1;
+  if (visible)
+    SDL_AtomicSet(&renderer_recovery_token, renderer_recovery_generation);
+  if (renderer_recovery_publish(visible, language)) {
+    renderer_recovery_visible = visible;
+    renderer_recovery_language = language;
+    renderer_recovery_published_save_failed = renderer_recovery_save_failed;
+    if (!visible)
+      renderer_recovery_save_failed = false;
+  } else {
+    SDL_AtomicSet(&renderer_recovery_token, 0);
+  }
+}
+
 static void ui_button_click(void) {
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (ui_touch_replayed) ui_android_haptic();
@@ -103,7 +238,8 @@ static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
         if (ui->has_session) rect = sdl_rect(g.home_primary[1]);
         break;
       case HOME_FOCUS_DAILY: rect = sdl_rect(g.home_primary[2]); break;
-      case HOME_FOCUS_GAMES: rect = sdl_rect(g.home_secondary[0]); break;
+      case HOME_FOCUS_GAMES: rect = home_collection_rect(&g,false); break;
+      case HOME_FOCUS_JOURNEY: rect = home_collection_rect(&g,true); break;
       case HOME_FOCUS_HELP: rect = sdl_rect(g.home_secondary[1]); break;
       case HOME_FOCUS_ABOUT: rect = sdl_rect(g.home_secondary[2]); break;
       case HOME_FOCUS_SETTINGS: rect = sdl_rect(g.home_secondary[3]); break;
@@ -121,70 +257,90 @@ static void ui_keyboard_button_feedback(const Gfx *gfx, const Game *game,
 }
 
 
-typedef enum {
-  SAVE_GATE_BACK = 0,
-  SAVE_GATE_SAVED,
-  SAVE_GATE_DISCARD
-} SaveGateResult;
-
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g);
 
-static SaveGateResult resolve_unsaved(Persistence *p, Gfx *g,
-                                      const Game *game, UI *ui,
-                                      unsigned dirty_mask,
-                                      TextKey prompt_key) {
-  if (!p || !g || !ui ||
-      (p->save_policy.dirty_mask & dirty_mask) == 0)
-    return SAVE_GATE_SAVED;
-  if (persistence_retry_current(p, game, ui)) return SAVE_GATE_SAVED;
-
-  bool owns_modal_pause = clock_pause(ui, PAUSE_MODAL);
-  for (;;) {
-    int choice = choice_box(g, game, ui, tr(ui->language, T_UNSAVED_TITLE),
-                            tr(ui->language, prompt_key),
-                            tr(ui->language, T_BACK),
-                            tr(ui->language, T_RETRY_SAVE),
-                            tr(ui->language, T_DISCARD));
-    if (choice == 0) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_BACK;
-    }
-    if (choice == 2) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_DISCARD;
-    }
-    if (persistence_retry_current(p, game, ui)) {
-      if (owns_modal_pause) (void)clock_resume(ui, PAUSE_MODAL);
-      return SAVE_GATE_SAVED;
-    }
-  }
+static bool ui_modal_open_home(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  AppModalRequest request = {
+      .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_HOME,
+      .binding = ui_modal_current_binding(p, ui),
+      .title = T_UNSAVED_TITLE, .body = T_UNSAVED_HOME,
+      .buttons = {T_BACK, T_RETRY_SAVE}, .button_count = 2};
+  return ui_modal_open_request(gfx, ui, &request);
 }
+
+static bool ui_modal_open_exit(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  if (p->daily_activation_unresolved)
+    return games_daily_activation_offer(p,ui,gfx);
+  AppModalRequest request = {
+      .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_EXIT,
+      .binding = ui_modal_current_binding(p, ui),
+      .title = T_UNSAVED_TITLE, .body = T_UNSAVED_EXIT,
+      .buttons = {T_BACK, T_RETRY_SAVE, T_DISCARD}, .button_count = 3,
+      .destructive_buttons = 4u};
+  if (p->load_activation_unresolved) {
+    request.button_count=2;request.destructive_buttons=0;
+  }
+  ui_pointer_cancel();
+  ui_touch_cancel();
+  return ui_modal_open_request(gfx, ui, &request);
+}
+
 
 /* Keep the live session and terminal archive in memory until every
    required persistence domain is acknowledged. Home has no discard path:
    explicit discarding remains available through the Exit gate. */
+/* User navigation resolves an attempt; OS backgrounding only checkpoints. */
+static bool journey_leave_prompt(Persistence *p, UI *ui, Gfx *gfx, bool exiting) {
+  if (!ui->session_open || ui->result!=RES_NONE || !ui->attempt_started ||
+      ui->screen!=SCR_PLAY) return false;
+  AppModalRequest request={.kind=APP_MODAL_CONFIRM,
+      .action=exiting?APP_MODAL_JOURNEY_EXIT:APP_MODAL_JOURNEY_HOME,
+      .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+      .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,
+      .destructive_buttons=4u};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
+static bool journey_continue_daily(const Persistence *p) {
+  return p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+      p->profile.daily.value.session.status==SESSION_ACTIVE &&
+      (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+       p->profile.normal.value.session.status!=SESSION_ACTIVE);
+}
+
+static bool journey_switch_target_daily;
+static bool journey_switch_source_daily;
+static bool journey_switch_rollover;
+static GameAttemptId journey_switch_id;
+static uint64_t journey_switch_revision;
+static bool journey_other_auto_offer(Persistence *p,UI *ui,Gfx *gfx,bool target_daily) {
+  ProfileSlot *other=target_daily?&p->profile.normal:&p->profile.daily;
+  if (!other->present || other->value.explicitly_saved || other->value.session.status!=SESSION_ACTIVE) return false;
+  if (!other->value.started) {
+    if(journey_interrupt_slot(p,ui,!target_daily))return false;
+    (void)ui_modal_message(gfx,ui,T_STORAGE_ERROR,T_SAVE_FAILED);return true;
+  }
+  journey_switch_target_daily=target_daily;
+  journey_switch_source_daily=!target_daily;journey_switch_rollover=false;
+  journey_switch_id=other->attempt_id;journey_switch_revision=other->revision;
+  AppModalRequest request={.kind=APP_MODAL_CONFIRM,.action=APP_MODAL_JOURNEY_SWITCH,
+    .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+    .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,.destructive_buttons=4u};
+  (void)ui_modal_open_request(gfx,ui,&request);return true;
+}
+
 static bool go_home_checked(Persistence *p, const Game *game, UI *ui, Gfx *gfx) {
   if (!p || !p->enabled || !game || !ui || !gfx) return false;
   bool checkpointed = ui->session_open
       ? checkpoint_current_session(p, game, ui)
       : persistence_flush(p);
   if (!save_policy_transition_ready(&p->save_policy, checkpointed)) {
-    bool modal_owned = clock_pause(ui, PAUSE_MODAL);
-    bool retry = confirm_box(gfx, game, ui,
-                             tr(ui->language, T_UNSAVED_TITLE),
-                             tr(ui->language, T_UNSAVED_HOME),
-                             tr(ui->language, T_RETRY_SAVE),
-                             tr(ui->language, T_BACK));
-    bool saved = retry && persistence_retry_current(p, game, ui);
-    if (retry && !saved)
-      (void)show_simple_message_box(gfx, game, ui,
-                                    SDL_MESSAGEBOX_WARNING,
-                                    tr(ui->language, T_STORAGE_ERROR),
-                                    tr(ui->language, T_SAVE_FAILED));
-    if (modal_owned) (void)clock_resume(ui, PAUSE_MODAL);
-    if (!save_policy_transition_ready(&p->save_policy, saved))
-      return false;
+    (void)ui_modal_open_home(p, ui, gfx);
+    return false;
   }
+  if(journey_leave_prompt(p,ui,gfx,false))return false;
   go_home(p, game, ui);
   return true;
 }
@@ -251,64 +407,62 @@ static bool reveal_selected_cell(Persistence *p, Game *game, UI *ui) {
   return true;
 }
 
-static bool replace_saved_session_confirmed(Persistence *p,
-                                            const Game *game, UI *ui, Gfx *g,
-                                            bool daily) {
-  if (!p) return true;
-  unsigned dirty_bit = daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
-  SaveGateResult gate =
-      resolve_unsaved(p, g, game, ui, dirty_bit, T_UNSAVED_REPLACE);
-  if (gate == SAVE_GATE_BACK) return false;
-  if (gate == SAVE_GATE_DISCARD) return true;
-
-  const ProfileSlot *slot = daily ? &p->profile.daily : &p->profile.normal;
-  const SessionState *saved = profile_slot_session(slot);
-  if (!saved || !session_has_meaningful_progress_runtime(saved)) return true;
-  if (slot->retained)
-    return confirm_box(g, game, ui, tr(ui->language, T_NEW_GAME),
-                       tr(ui->language, T_NEW_PROMPT), tr(ui->language, T_NEW),
-                       tr(ui->language, T_CANCEL));
-  int choice = choice_box(g, game, ui, tr(ui->language, T_GAMES_KEEP_TITLE),
-                          tr(ui->language, T_GAMES_NEW_PROMPT),
-                          tr(ui->language, T_CANCEL),
-                          tr(ui->language, T_GAMES_SAVE_CONTINUE),
-                          tr(ui->language, T_DISCARD));
-  if (choice == 0) return false;
-  if (choice == 1 && !games_browser_save_hot(p, daily)) {
-    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
-                                  tr(ui->language, T_STORAGE_ERROR),
-                                  tr(ui->language, T_SAVE_FAILED));
-    return false;
-  }
-  return true;
-}
-
-static bool restart_current_session_confirmed(Persistence *p,
-                                              const Game *game, UI *ui,
-                                              Gfx *g) {
-  if (!p || !game || !ui || !g) return false;
-  unsigned dirty_bit = ui->is_daily ? SAVE_DIRTY_DAILY : SAVE_DIRTY_NORMAL;
-  SaveGateResult gate =
-      resolve_unsaved(p, g, game, ui, dirty_bit, T_UNSAVED_REPLACE);
-  if (gate == SAVE_GATE_BACK) return false;
-
-  if (!game_has_meaningful_progress(game, ui->mistakes, ui->strikes))
-    return true;
-  clock_pause(ui, PAUSE_MODAL);
-  bool confirmed =
-      confirm_box(g, game, ui, tr(ui->language, T_RESTART),
-                  tr(ui->language, T_RESTART_PROMPT),
-                  tr(ui->language, T_RESTART), tr(ui->language, T_CANCEL));
-  clock_resume(ui, PAUSE_MODAL);
-  return confirmed;
-}
-
 typedef struct {
   Gfx *gfx;
   Game *game;
   UI *ui;
   unsigned rendered_attempt;
 } GenerationUiContext;
+
+/* Inspect, do not consume, events owned by the main loop. A bounded full
+   snapshot cancels conservatively rather than drawing past a hidden event. */
+static bool generation_context_interrupted(const Gfx *gfx) {
+  if (!gfx || !gfx->renderer_ready || !gfx->win || app_suspended ||
+      SDL_HasEvent(SDL_RENDER_DEVICE_RESET) ||
+      SDL_HasEvent(SDL_RENDER_TARGETS_RESET)) return true;
+  SDL_Event pending[32];
+  int count=SDL_PeepEvents(pending,32,SDL_PEEKEVENT,
+                            SDL_WINDOWEVENT,SDL_WINDOWEVENT);
+  if (count<0 || count==32) return true;
+  Uint32 window_id=SDL_GetWindowID(gfx->win);
+  for (int i=0;i<count;++i) {
+    if (pending[i].window.windowID!=window_id) continue;
+    switch (pending[i].window.event) {
+      case SDL_WINDOWEVENT_FOCUS_LOST:
+      case SDL_WINDOWEVENT_HIDDEN:
+      case SDL_WINDOWEVENT_MINIMIZED:
+      case SDL_WINDOWEVENT_SIZE_CHANGED:
+      case SDL_WINDOWEVENT_RESIZED:
+      case SDL_WINDOWEVENT_MOVED:
+      case SDL_WINDOWEVENT_MAXIMIZED:
+      case SDL_WINDOWEVENT_RESTORED:
+      case SDL_WINDOWEVENT_DISPLAY_CHANGED:
+        return true;
+      default: break;
+    }
+  }
+  return false;
+}
+
+static bool generation_back_pending(void) {
+  SDL_Event pending[32];
+  int count=SDL_PeepEvents(pending,32,SDL_PEEKEVENT,SDL_KEYDOWN,SDL_KEYDOWN);
+  if (count<0 || count==32) return true;
+  for (int i=0;i<count;++i)
+    if (!pending[i].key.repeat &&
+        (pending[i].key.keysym.sym==SDLK_ESCAPE ||
+         pending[i].key.keysym.sym==SDLK_AC_BACK)) return true;
+  return false;
+}
+
+static bool generation_cancel_context(bool lost_context) {
+  ui_modal_invalidate();
+  ui_pointer_cancel();ui_touch_cancel();ui_audio_control_cancel_interaction();
+  if (lost_context) audio_set_focus_paused(true);
+  /* Leave focus pause/checkpoint/renderer changes to the queued event's
+     existing owner; pre-acquiring its pause would skip its checked save. */
+  return false;
+}
 
 static bool generation_ui_continue(void *userdata, unsigned attempt,
                                    unsigned max_attempts) {
@@ -322,15 +476,24 @@ static bool generation_ui_continue(void *userdata, unsigned attempt,
   while ((count = SDL_PeepEvents(pending_app, 8, SDL_GETEVENT,
                                  SDL_APP_TERMINATING,
                                  SDL_APP_DIDENTERFOREGROUND)) > 0) {
-    for (int i = 0; i < count; ++i)
+    bool interrupted=false;
+    for (int i = 0; i < count; ++i) {
       (void)ui_handle_android_lifecycle_event(&pending_app[i]);
-    if (app_suspended) return false;
+      interrupted=interrupted || app_suspended ||
+          pending_app[i].type==SDL_APP_TERMINATING;
+    }
+    /* Process the complete fetched batch, but never continue a candidate
+       after background even if foreground followed in that same batch. */
+    if (interrupted) return generation_cancel_context(true);
   }
-  if (count < 0 || app_suspended) return false;
+  if (count < 0 || app_suspended) return generation_cancel_context(true);
 #endif
-  if (SDL_HasEvent(SDL_QUIT)) return false;
+  if (generation_context_interrupted(context->gfx))
+    return generation_cancel_context(true);
+  if (SDL_HasEvent(SDL_QUIT) || generation_back_pending())
+    return generation_cancel_context(false);
   const Uint8 *keys = SDL_GetKeyboardState(NULL);
-  if (keys && keys[SDL_SCANCODE_ESCAPE]) return false;
+  if (keys && keys[SDL_SCANCODE_ESCAPE]) return generation_cancel_context(false);
 
   unsigned shown_attempt = attempt + 1u;
   if (context->rendered_attempt != shown_attempt) {
@@ -351,7 +514,7 @@ static GameGenerationResult generate_normal_with_ui(
   ui->generation_attempt = 1;
   ui->generation_max_attempts =
       game_generation_attempt_budget(p->preferences.difficulty);
-  app_frame(g, game, ui);
+  /* The first generation callback handles queued context loss before draw. */
   GameGenerationResult result = start_new_session(p, game, ui, &control);
   if (result == GAME_GENERATION_CANCELLED &&
       !SDL_HasEvent(SDL_QUIT))
@@ -372,7 +535,7 @@ static GameGenerationResult generate_daily_with_ui(
   ui->generation_attempt = 1;
   ui->generation_max_attempts =
       game_generation_attempt_budget(DIFFICULTY_MEDIUM);
-  app_frame(g, game, ui);
+  /* The first generation callback handles queued context loss before draw. */
   GameGenerationResult result =
       start_daily_session(p, game, ui, year, month, day, &control);
   if (result == GAME_GENERATION_CANCELLED &&
@@ -386,25 +549,19 @@ static GameGenerationResult generate_daily_with_ui(
 
 static bool start_new_game_with_ui(Persistence *p, Game *game, UI *ui,
                                    Gfx *g) {
-  for (;;) {
-    GameGenerationResult result = generate_normal_with_ui(p, game, ui, g);
-    if (result == GAME_GENERATION_OK) return true;
-    if (result == GAME_GENERATION_CANCELLED) {
-      show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
-      return false;
-    }
-    if (result != GAME_GENERATION_EXHAUSTED) {
-      (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_ERROR,
-                                    tr(ui->language, T_GENERATION_FAILED),
-                                    tr(ui->language, T_PROFILE_IO_ERROR));
-      return false;
-    }
-    bool retry = confirm_box(g, game, ui, tr(ui->language, T_GENERATION_FAILED),
-                             tr(ui->language, T_GENERATION_FAILED_BODY),
-                             tr(ui->language, T_RETRY),
-                             tr(ui->language, T_CANCEL));
-    if (!retry) return false;
+  GameGenerationResult result = generate_normal_with_ui(p, game, ui, g);
+  if (result == GAME_GENERATION_OK) return true;
+  if (result == GAME_GENERATION_CANCELLED) {
+    show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
+    return false;
   }
+  if (result != GAME_GENERATION_EXHAUSTED) {
+    (void)ui_modal_message(g, ui, T_GENERATION_FAILED, T_PROFILE_IO_ERROR);
+    return false;
+  }
+  /* The old session is still valid. Retry requires a fresh SDL choice. */
+  (void)new_game_open_generation_retry(p, ui, g);
+  return false;
 }
 
 static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
@@ -416,18 +573,14 @@ static bool start_daily_game_with_ui(Persistence *p, Game *game, UI *ui,
     show_toast(ui, tr(ui->language, T_GENERATION_CANCELLED));
     return false;
   }
-  (void)show_simple_message_box(
-      g, game, ui, SDL_MESSAGEBOX_WARNING,
-      tr(ui->language, T_GENERATION_FAILED),
-      tr(ui->language, T_GENERATION_FAILED_BODY));
+  (void)ui_modal_message(g, ui, T_GENERATION_FAILED,
+                         T_GENERATION_FAILED_BODY);
   return false;
 }
 
 static void home_new_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (replace_saved_session_confirmed(p, game, ui, g, false)) {
-    victory_animation_reset();
-    (void)start_new_game_with_ui(p, game, ui, g);
-  }
+  if(journey_other_auto_offer(p,ui,g,false))return;
+  new_game_requested(p, game, ui, g);
 }
 
 typedef struct {
@@ -438,6 +591,101 @@ typedef struct {
   bool active;
 } HomeDailyScan;
 static HomeDailyScan home_daily_scan;
+
+/* The UI owner snapshots today's date and the departing Daily slot before
+   offering a choice. A queued decision cannot silently cross midnight. */
+typedef struct {
+  bool active, slot_present;
+  int year, month, day;
+  int older_year, older_month, older_day;
+  GameAttemptId slot_id;
+  uint64_t revision;
+} HomeDailyIntent;
+static HomeDailyIntent home_daily_intent;
+
+/* A completed no-match scan may defer only its departing-slot retention.
+   Never store a profile candidate or skip the checked retention writer. */
+typedef struct {
+  bool active, slot_present, slot_retained;
+  GameAttemptId slot_id;
+  uint64_t revision;
+  int year, month, day;
+} HomeDailyRollover;
+static HomeDailyRollover home_daily_rollover;
+
+/* Explicit recovery of one validated previous Daily archive copy. Never
+   bind a catalogue row position or infer identity from the active board. */
+typedef struct {
+  bool active, hot_present;
+  GameLibraryEntry entry;
+  GameAttemptId hot_id;
+  uint64_t hot_revision;
+  int year, month, day;
+} HomeDailyRecovery;
+static HomeDailyRecovery home_daily_recovery;
+
+static AppModalBinding home_daily_recovery_modal_binding(
+    const Persistence *p, const UI *ui) {
+  AppModalBinding binding=ui_modal_current_binding(p,ui);
+  binding.key_hi=binding.key_lo=binding.revision=0;
+  if (home_daily_recovery.active) {
+    binding.key_hi=home_daily_recovery.entry.id.high;
+    binding.key_lo=home_daily_recovery.entry.id.low;
+    binding.revision=home_daily_recovery.entry.revision;
+  }
+  return binding;
+}
+
+static bool home_daily_recovery_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_recovery.active || persistence_activation_blocked(p))
+    return false;
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) ||
+      y!=home_daily_recovery.year || m!=home_daily_recovery.month ||
+      d!=home_daily_recovery.day)
+    return false;
+  const ProfileSlot *hot=&p->profile.daily;
+  return hot->present==home_daily_recovery.hot_present &&
+      (!hot->present ||
+       (game_attempt_id_equal(hot->attempt_id,home_daily_recovery.hot_id) &&
+        hot->revision==home_daily_recovery.hot_revision));
+}
+
+static bool home_daily_intent_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_intent.active || persistence_activation_blocked(p))
+    return false;
+  int y=0,m=0,d=0;
+  if (!local_date(&y,&m,&d) || y!=home_daily_intent.year ||
+      m!=home_daily_intent.month || d!=home_daily_intent.day)
+    return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  return slot->present==home_daily_intent.slot_present &&
+      (!slot->present ||
+       (game_attempt_id_equal(slot->attempt_id,home_daily_intent.slot_id) &&
+        slot->revision==home_daily_intent.revision));
+}
+
+static HomeDailyIntent home_daily_capture_intent(const Persistence *p,
+                                                  int y,int m,int d) {
+  HomeDailyIntent intent={0};
+  intent.active=true;
+  intent.year=y;intent.month=m;intent.day=d;
+  if (p && p->profile.daily.present) {
+    const ProfileSlot *slot=&p->profile.daily;
+    intent.slot_present=true;
+    intent.slot_id=slot->attempt_id;
+    intent.revision=slot->revision;
+    const SessionState *saved=profile_slot_session(slot);
+    if (saved) {
+      intent.older_year=saved->daily_year;
+      intent.older_month=saved->daily_month;
+      intent.older_day=saved->daily_day;
+    }
+  }
+  return intent;
+}
 
 static bool ui_pointer_busy(void) { return home_daily_scan.active; }
 
@@ -453,9 +701,167 @@ static bool home_daily_visit(const GameLibraryEntry *entry, void *context) {
   return true;
 }
 static void home_daily_warning(Game *game, UI *ui, Gfx *gfx, TextKey key) {
-  (void)show_simple_message_box(gfx, game, ui, SDL_MESSAGEBOX_WARNING,
-                                tr(ui->language, T_DAILY),
-                                tr(ui->language, key));
+  (void)game;
+  (void)ui_modal_message(gfx, ui, T_DAILY, key);
+}
+
+/* The chosen calendar date and hot-slot revision must still be current
+   before any retry; the modal binding independently guards its UI generation. */
+static bool home_daily_rollover_valid(const Persistence *p, const UI *ui) {
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE ||
+      !home_daily_rollover.active || persistence_activation_blocked(p))
+    return false;
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day) ||
+      year!=home_daily_rollover.year ||
+      month!=home_daily_rollover.month ||
+      day!=home_daily_rollover.day)
+    return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  return slot->present==home_daily_rollover.slot_present &&
+      (!slot->present ||
+       (game_attempt_id_equal(slot->attempt_id,home_daily_rollover.slot_id) &&
+        slot->revision==home_daily_rollover.revision &&
+        slot->retained==home_daily_rollover.slot_retained));
+}
+
+/* The retained writer may advance the same slot revision during this exact
+   owner-thread operation. Adopt only that monotonic transition; never an ID
+   replacement, revision rollback or loss of a previously retained link. */
+static bool home_daily_rollover_refresh_after_write(const Persistence *p) {
+  if (!p || !home_daily_rollover.active) return false;
+  const ProfileSlot *slot=&p->profile.daily;
+  if (slot->present!=home_daily_rollover.slot_present) return false;
+  if (slot->present) {
+    if (!game_attempt_id_equal(slot->attempt_id,home_daily_rollover.slot_id) ||
+        slot->revision<home_daily_rollover.revision ||
+        (home_daily_rollover.slot_retained && !slot->retained))
+      return false;
+    home_daily_rollover.revision=slot->revision;
+    home_daily_rollover.slot_retained=slot->retained;
+  }
+  return true;
+}
+
+static void home_daily_rollover_attempt(Persistence *p, Game *game, UI *ui,
+                                        Gfx *gfx, bool retry) {
+  if (!p || !game || !ui || !gfx || !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    return;
+  }
+  const int year=home_daily_rollover.year;
+  const int month=home_daily_rollover.month;
+  const int day=home_daily_rollover.day;
+  /* Preserve the existing pending-keep retry semantics, including a
+     previous write whose rename succeeded without an acknowledged sync. */
+  if (retry && (p->capture_failed || p->keep_pending_mask))
+    (void)persistence_retry_current(p,game,ui);
+  if (!home_daily_rollover_refresh_after_write(p)) {
+    home_daily_rollover.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  bool retained=games_browser_retain_daily_for_rollover(p);
+  if (!home_daily_rollover_refresh_after_write(p) ||
+      !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  if (retained && !p->capture_failed && p->keep_pending_mask==0 &&
+      !save_policy_dirty(&p->save_policy)) {
+    home_daily_rollover.active=false;
+    victory_animation_reset();
+    (void)start_daily_game_with_ui(p,game,ui,gfx,year,month,day);
+    return;
+  }
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,
+      .action=APP_MODAL_DAILY_ROLLOVER_RETRY,
+      .binding=ui_modal_daily_binding(p,ui),
+      .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  if (!ui_modal_open_request(gfx,ui,&request)) {
+    home_daily_rollover.active=false;
+    show_toast(ui,tr(ui->language,T_SAVE_FAILED));
+  }
+}
+
+static void home_daily_rollover_begin(Persistence *p, Game *game,
+                                      UI *ui, Gfx *gfx,
+                                      int year, int month, int day) {
+  home_daily_rollover=(HomeDailyRollover){0};
+  if (!p || !p->enabled || !ui || ui->screen!=SCR_TITLE) return;
+  home_daily_rollover.active=true;
+  home_daily_rollover.year=year;
+  home_daily_rollover.month=month;
+  home_daily_rollover.day=day;
+  const ProfileSlot *slot=&p->profile.daily;
+  home_daily_rollover.slot_present=slot->present;
+  if (slot->present) {
+    home_daily_rollover.slot_id=slot->attempt_id;
+    home_daily_rollover.revision=slot->revision;
+    home_daily_rollover.slot_retained=slot->retained;
+  }
+  home_daily_rollover_attempt(p,game,ui,gfx,false);
+}
+
+/* Retry executes only from an exact, still-valid SDL-owner result. */
+static void home_daily_rollover_dispatch(Persistence *p, Game *game,
+                                         UI *ui, Gfx *gfx,
+                                         const AppModalResult *choice) {
+  if (!choice || choice->action!=APP_MODAL_DAILY_ROLLOVER_RETRY)
+    return;
+  if (choice->resolution!=APP_MODAL_CHOSEN || choice->button!=1 ||
+      !app_modal_binding_equal(choice->binding,
+                              ui_modal_daily_binding(p,ui)) ||
+      !home_daily_rollover_valid(p,ui)) {
+    home_daily_rollover.active=false;
+    return;
+  }
+  home_daily_rollover_attempt(p,game,ui,gfx,true);
+}
+
+/* Read-only canonical preview before offering recovery. The selected
+   previous copy is revalidated again after explicit confirmation. */
+static bool home_daily_offer_recovery(Persistence *p, UI *ui, Gfx *gfx,
+                                      const GameLibraryEntry *entry,
+                                      int year,int month,int day) {
+  if (!p || !ui || !gfx || !game_library_entry_recoverable(entry) ||
+      !game_library_is_original_daily_on(entry,year,month,day))
+    return false;
+  GameLibraryRecord previous;
+  if (game_library_load_previous(p->profile_directory,entry->id,&previous)
+          != STORE_OK ||
+      previous.revision!=entry->revision ||
+      previous.kind!=entry->kind ||
+      previous.result.status!=entry->result.status ||
+      previous.practice || !previous.original_daily ||
+      !previous.result.is_daily || previous.result.practice ||
+      previous.result.daily_year!=(uint16_t)year ||
+      previous.result.daily_month!=(uint8_t)month ||
+      previous.result.daily_day!=(uint8_t)day)
+    return false;
+  HomeDailyRecovery pending={0};
+  pending.active=true;
+  pending.entry=*entry;
+  pending.year=year;pending.month=month;pending.day=day;
+  pending.hot_present=p->profile.daily.present;
+  if (pending.hot_present) {
+    pending.hot_id=p->profile.daily.attempt_id;
+    pending.hot_revision=p->profile.daily.revision;
+  }
+  home_daily_recovery=pending;
+  AppModalRequest request={
+      .kind=APP_MODAL_CONFIRM,
+      .action=APP_MODAL_DAILY_RECOVER_PREVIOUS,
+      .binding=home_daily_recovery_modal_binding(p,ui),
+      .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
+      .buttons={T_CANCEL,T_RECOVER},.button_count=2,
+      .destructive_buttons=2u};
+  if (ui_modal_open_request(gfx,ui,&request)) return true;
+  home_daily_recovery.active=false;
+  return false;
 }
 static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
   const HomeDailyScan scan = home_daily_scan;
@@ -504,29 +910,14 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
         home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
         return;
       }
-      /* Never roll back to a previous copy without an explicit decision. */
-      bool recover=confirm_box(gfx,game,ui,
-              tr(ui->language,T_DAILY),
-              tr(ui->language,T_DAILY_RECOVER_PREVIOUS),
-              tr(ui->language,T_RECOVER),tr(ui->language,T_CANCEL));
-      if(!recover)return;
-      GameLibraryRecord recovered;
-      if (game_library_recover_previous(p->profile_directory,entry.id,
-                                        &recovered)!=STORE_OK ||
-          !recovered.original_daily || recovered.practice ||
-          recovered.result.daily_year!=(uint16_t)y ||
-          recovered.result.daily_month!=(uint8_t)m ||
-          recovered.result.daily_day!=(uint8_t)d) {
+      /* Consent is asynchronous; the current hot slot and the validated
+         previous archive are checked again before any disk mutation. */
+      if (!home_daily_offer_recovery(p,ui,gfx,&entry,y,m,d))
         home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
-        return;
-      }
-      entry.status=STORE_OK;
-      entry.kind=recovered.kind;
-      entry.result=recovered.result;
-      entry.revision=recovered.revision;
+      return;
     }
     if (entry.result.status==SESSION_ACTIVE) {
-      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,y,m,d);
+      (void)games_browser_resume_daily(p,game,ui,gfx,entry.id,entry.revision,y,m,d);
     } else {
       /* The original finished Daily remains read-only; no new attempt. */
       if (!games_browser_open_focused(p,game,ui,gfx,entry.id,true))
@@ -534,13 +925,77 @@ static void home_daily_finish(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
     }
     return;
   }
-  /* All older Daily attempts, including an empty autosave, remain
-     durably recoverable before today's new original is generated. */
-  if (!games_browser_retain_daily_with_retry(p,game,ui,gfx))
-    return;
-  victory_animation_reset();
-  (void)start_daily_game_with_ui(p,game,ui,gfx,y,m,d);
+  /* Preserve the departing original with one checked write per SDL event.
+     A failed retention leaves Home active with safe Back/Retry. */
+  home_daily_rollover_begin(p,game,ui,gfx,y,m,d);
 }
+/* Only an explicitly chosen, still-bound modal may restore the backup.
+   An incompatible/healthy newer primary or changed backup aborts safely. */
+static void home_daily_recover_confirmed(Persistence *p, Game *game,
+                                         UI *ui, Gfx *gfx,
+                                         const AppModalResult *choice) {
+  if (!p || !game || !ui || !gfx || !choice ||
+      choice->resolution!=APP_MODAL_CHOSEN ||
+      choice->action!=APP_MODAL_DAILY_RECOVER_PREVIOUS ||
+      choice->button!=1)
+    return;
+  if (!home_daily_recovery_valid(p,ui) ||
+      !app_modal_binding_equal(choice->binding,
+          home_daily_recovery_modal_binding(p,ui))) {
+    home_daily_recovery.active=false;
+    return;
+  }
+  HomeDailyRecovery pending=home_daily_recovery;
+  home_daily_recovery.active=false;
+  if (!game_library_entry_recoverable(&pending.entry) ||
+      !game_library_is_original_daily_on(&pending.entry,
+          pending.year,pending.month,pending.day)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord current;
+  StoreStatus primary=game_library_load(
+      p->profile_directory,pending.entry.id,&current);
+  if (primary!=(pending.entry.only_backup ? STORE_NOT_FOUND : STORE_CORRUPT)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord previous;
+  if (game_library_load_previous(
+          p->profile_directory,pending.entry.id,&previous)!=STORE_OK ||
+      previous.revision!=pending.entry.revision ||
+      previous.kind!=pending.entry.kind ||
+      previous.result.status!=pending.entry.result.status ||
+      previous.practice || !previous.original_daily ||
+      !previous.result.is_daily || previous.result.practice ||
+      previous.result.daily_year!=(uint16_t)pending.year ||
+      previous.result.daily_month!=(uint8_t)pending.month ||
+      previous.result.daily_day!=(uint8_t)pending.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  GameLibraryRecord recovered;
+  if (game_library_recover_previous(
+          p->profile_directory,pending.entry.id,&recovered)!=STORE_OK ||
+      recovered.revision!=previous.revision ||
+      recovered.kind!=previous.kind ||
+      recovered.result.status!=previous.result.status ||
+      !recovered.original_daily || recovered.practice ||
+      recovered.result.daily_year!=(uint16_t)pending.year ||
+      recovered.result.daily_month!=(uint8_t)pending.month ||
+      recovered.result.daily_day!=(uint8_t)pending.day) {
+    home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+    return;
+  }
+  if (recovered.result.status==SESSION_ACTIVE) {
+    (void)games_browser_resume_daily(p,game,ui,gfx,pending.entry.id,recovered.revision,
+                                     pending.year,pending.month,pending.day);
+  } else if (!games_browser_open_focused(
+                 p,game,ui,gfx,pending.entry.id,true)) {
+    home_daily_warning(game,ui,gfx,T_GAMES_UNAVAILABLE);
+  }
+}
+
 static void home_daily_scan_pump(Persistence *p, Game *game,
                                  UI *ui, Gfx *gfx) {
   if (!home_daily_scan.active) return;
@@ -550,45 +1005,146 @@ static void home_daily_scan_pump(Persistence *p, Game *game,
   if (finished || home_daily_scan.status!=STORE_OK)
     home_daily_finish(p,game,ui,gfx);
 }
-static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *g) {
-  if (!p || !p->enabled || !game || !ui || !g || ui->screen!=SCR_TITLE) return;
-  if (home_daily_scan.active) { home_daily_cancel(); return; }
-  int year=0,month=0,day=0;
-  if (!local_date(&year,&month,&day)) {
-    home_daily_warning(game,ui,g,T_DAILY_DATE_CHANGED);
+/* The pre-scan checkpoint is separate from backup recovery and the
+   checked post-scan retention retry. */
+static void home_daily_begin_scan(Persistence *p, Game *game, UI *ui,
+                                  Gfx *gfx) {
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
     return;
   }
-  const SessionState *saved=profile_slot_session(&p->profile.daily);
-  if (saved && session_can_continue_runtime(saved) &&
-      !saved_daily_matches(p,year,month,day)) {
-    char date[64],message[384];
-    (void)snprintf(date,sizeof(date),"%04d-%02d-%02d",
-                   saved->daily_year,saved->daily_month,saved->daily_day);
-    (void)snprintf(message,sizeof(message),"%s\n%.*s",date,250,
-                   tr(ui->language,T_DAILY_CHOOSE_PROMPT));
-    int choice=choice_box(g,game,ui,tr(ui->language,T_DAILY_CHOOSE_TITLE),
-                          message,tr(ui->language,T_CANCEL),
-                          tr(ui->language,T_DAILY_OLDER),
-                          tr(ui->language,T_DAILY_TODAY));
-    if(choice==0)return;
-    if(choice==1) {
-      victory_animation_reset();
-      restore_saved_session(p,game,ui,true);
-      return;
-    }
-  }
-  if (games_browser_checkpoint_gate(
-          p,game,ui,g,true,false,true,T_DAILY_SAVE_RETRY_PROMPT) !=
-      GAMES_CHECKPOINT_READY)
-    return;
+  int year=home_daily_intent.year;
+  int month=home_daily_intent.month;
+  int day=home_daily_intent.day;
+  home_daily_intent.active=false;
   memset(&home_daily_scan,0,sizeof(home_daily_scan));
   home_daily_scan.year=year;home_daily_scan.month=month;home_daily_scan.day=day;
   home_daily_scan.status=game_library_scan_begin(
       p->profile_directory,&home_daily_scan.cursor);
   home_daily_scan.active=true;
   daily_lookup_scanning=true;
-  if(home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
-    home_daily_finish(p,game,ui,g);
+  if (home_daily_scan.status!=STORE_OK || home_daily_scan.cursor.finished)
+    home_daily_finish(p,game,ui,gfx);
+}
+
+static bool home_daily_open_checkpoint(Persistence *p, UI *ui, Gfx *gfx) {
+  AppModalRequest request={
+      .kind=APP_MODAL_RECOVERY,.action=APP_MODAL_DAILY_CHECKPOINT,
+      .binding=ui_modal_daily_binding(p,ui),
+      .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+      .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+  return ui_modal_open_request(gfx,ui,&request);
+}
+
+static void home_daily_checkpoint(Persistence *p, Game *game, UI *ui,
+                                  Gfx *gfx, bool retry) {
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  if (persistence_activation_blocked(p)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_GAMES_ACTION_FAILED);
+    return;
+  }
+  /* Preserve the verified Daily write and its post-rename idempotence.
+     A failed retry owns only one SDL event, never a nested input loop. */
+  bool saved=retry && (p->capture_failed || p->keep_pending_mask)
+      ? persistence_retry_current(p,game,ui)
+      : games_browser_daily_flush_verified(p);
+  bool ready=saved && !p->capture_failed && !p->keep_pending_mask &&
+             !save_policy_dirty(&p->save_policy);
+  if (!home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+  } else if (ready) {
+    home_daily_begin_scan(p,game,ui,gfx);
+  } else {
+    (void)home_daily_open_checkpoint(p,ui,gfx);
+  }
+}
+
+static void home_daily_game(Persistence *p, Game *game, UI *ui, Gfx *gfx) {
+  if(p && ui && gfx && ui->screen==SCR_TITLE && journey_other_auto_offer(p,ui,gfx,true))return;
+  if (!p || !p->enabled || !game || !ui || !gfx || ui->screen!=SCR_TITLE)
+    return;
+  if (p->daily_activation_unresolved) {
+    (void)games_daily_activation_offer(p,ui,gfx);
+    return;
+  }
+  home_daily_recovery.active=false;
+  home_daily_rollover.active=false;
+  if (home_daily_scan.active) { home_daily_cancel(); return; }
+  int year=0,month=0,day=0;
+  if (!local_date(&year,&month,&day)) {
+    home_daily_warning(game,ui,gfx,T_DAILY_DATE_CHANGED);
+    return;
+  }
+  const SessionState *saved=profile_slot_session(&p->profile.daily);
+  HomeDailyIntent intent=home_daily_capture_intent(p,year,month,day);
+  if (saved && session_can_continue_runtime(saved) &&
+      !saved_daily_matches(p,year,month,day)) {
+    AppModalRequest request={
+        .kind=APP_MODAL_CONFIRM,.action=APP_MODAL_DAILY,
+        .binding=ui_modal_daily_binding(p,ui),
+        .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
+        .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
+        .button_count=3};
+    if (ui_modal_open_request(gfx,ui,&request))
+      home_daily_intent=intent;
+    return;
+  }
+  home_daily_intent=intent;
+  home_daily_checkpoint(p,game,ui,gfx,false);
+}
+
+static void home_daily_dispatch(Persistence *p, Game *game, UI *ui,
+                                Gfx *gfx, const AppModalResult *choice) {
+  if (!p || !game || !ui || !gfx || !choice ||
+      choice->resolution!=APP_MODAL_CHOSEN ||
+      (choice->action!=APP_MODAL_DAILY &&
+       choice->action!=APP_MODAL_DAILY_CHECKPOINT))
+    return;
+  if (!app_modal_binding_equal(choice->binding,
+        ui_modal_daily_binding(p,ui)) ||
+      !home_daily_intent_valid(p,ui)) {
+    home_daily_intent.active=false;
+    return;
+  }
+  if (choice->action==APP_MODAL_DAILY && choice->button==1) {
+    const SessionState *saved=profile_slot_session(&p->profile.daily);
+    if (!saved || !session_can_continue_runtime(saved) ||
+        !saved->is_daily ||
+        saved->daily_year!=home_daily_intent.older_year ||
+        saved->daily_month!=home_daily_intent.older_month ||
+        saved->daily_day!=home_daily_intent.older_day ||
+        saved_daily_matches(p,home_daily_intent.year,
+                           home_daily_intent.month,home_daily_intent.day)) {
+      home_daily_intent.active=false;
+      home_daily_warning(game,ui,gfx,T_DAILY_READ_ERROR);
+      return;
+    }
+    home_daily_intent.active=false;
+    victory_animation_reset();
+    restore_saved_session(p,game,ui,true);
+  } else if ((choice->action==APP_MODAL_DAILY && choice->button==2) ||
+             (choice->action==APP_MODAL_DAILY_CHECKPOINT &&
+              choice->button==1)) {
+    const ProfileSlot *older=&p->profile.daily;
+    if(choice->action==APP_MODAL_DAILY && older->present && !older->value.explicitly_saved &&
+        older->value.session.status==SESSION_ACTIVE && older->value.started) {
+      journey_switch_target_daily=true;journey_switch_source_daily=true;journey_switch_rollover=true;
+      journey_switch_id=older->attempt_id;journey_switch_revision=older->revision;
+      AppModalRequest request={.kind=APP_MODAL_CONFIRM,.action=APP_MODAL_JOURNEY_SWITCH,
+        .binding=ui_modal_current_binding(p,ui),.title=T_JOURNEY,.body=T_LEAVE_ATTEMPT,
+        .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},.button_count=3,.destructive_buttons=4u};
+      (void)ui_modal_open_request(gfx,ui,&request);return;
+    }
+    home_daily_checkpoint(p,game,ui,gfx,
+                          choice->action==APP_MODAL_DAILY_CHECKPOINT);
+  }
 }
 
 static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
@@ -610,11 +1166,14 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
     case HOME_FOCUS_CONTINUE:
       if (ui->has_session) {
         victory_animation_reset();
-        restore_saved_session(p, game, ui, false);
+        restore_saved_session(p, game, ui, journey_continue_daily(p));
       }
       break;
     case HOME_FOCUS_DAILY:
       home_daily_game(p, game, ui, g);
+      break;
+    case HOME_FOCUS_JOURNEY:
+      if(games_browser_open(p,game,ui,g)) games_browser_change_view(p,g,JOURNEY_WON);
       break;
     case HOME_FOCUS_GAMES:
       (void)games_browser_open(p, game, ui, g);
@@ -639,12 +1198,11 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
 }
 
 static const char *about_url(int index) {
-  static const char *const urls[3] = {
-      "https://github.com/santirodriguez",
+  static const char *const urls[2] = {
       "https://github.com/santirodriguez/Sudokura",
-      "https://santiagorodriguez.com",
+      "https://sudokura.cajapersonal.org/",
   };
-  return index >= 0 && index < 3 ? urls[index] : NULL;
+  return index >= 0 && index < 2 ? urls[index] : NULL;
 }
 
 static void open_about_url(Gfx *g, const Game *game, UI *ui, int index) {
@@ -652,9 +1210,8 @@ static void open_about_url(Gfx *g, const Game *game, UI *ui, int index) {
   if (!url) return;
   ui_button_click();
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    (void)show_simple_message_box(g, game, ui, SDL_MESSAGEBOX_WARNING,
-                                  tr(ui->language, T_ABOUT),
-                                  tr(ui->language, T_LINK_ERROR));
+    (void)game;
+    (void)ui_modal_message(g, ui, T_ABOUT, T_LINK_ERROR);
   }
 }
 
@@ -667,17 +1224,17 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   if(!ui||!g)return false;
   if(info_keyboard_focus==INFO_FOCUS_BACK){ui_button_click();return_from_info(p,game,ui);return true;}
   if(ui->screen!=SCR_ABOUT)return false;
-  if(info_keyboard_focus==INFO_FOCUS_STUDY){ui_open_url("https://doi.org/10.1002/gps.5085");return true;}
   int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
-  if(link>=0&&link<3){open_about_url(g,game,ui,link);return true;}
-  if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
+  if(link>=0&&link<2){open_about_url(g,game,ui,link);return true;}
+  if(link==2){ui_open_url(ui_support_url(ui->language));return true;}
+  if(link==3){ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);return true;}
   return false;
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
   ui_button_click();victory_animation_reset();
   if(result_keyboard_focus==1){go_home_checked(p,game,ui,g);return;}
-  if(ui->result==RES_WIN){if(replace_saved_session_confirmed(p,game,ui,g,false))(void)start_new_game_with_ui(p,game,ui,g);}
-  else if(restart_current_session_confirmed(p,game,ui,g))restart_current_session(p,game,ui);
+  if(ui->result==RES_WIN){new_game_requested(p,game,ui,g);}
+  else restart_requested(p,game,ui,g);
 }
 static void activate_pause_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   ui_button_click();
@@ -701,7 +1258,7 @@ static bool activate_play_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
     case PLAY_FOCUS_SAVE:ui_button_click();(void)games_browser_save_current(p,game,ui,g);return true;
     case PLAY_FOCUS_UNDO:
     case PLAY_FOCUS_REDO:{AppActionKind kind=play_keyboard_focus==PLAY_FOCUS_REDO?APP_ACTION_REDO:APP_ACTION_UNDO;ui_button_click();if(apply_history_action(game,ui,kind)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;}
-    case PLAY_FOCUS_RESTART:ui_button_click();if(restart_current_session_confirmed(p,game,ui,g)){victory_animation_reset();restart_current_session(p,game,ui);}return true;
+    case PLAY_FOCUS_RESTART:ui_button_click();restart_requested(p,game,ui,g);return true;
     case PLAY_FOCUS_CLEAR:ui_button_click();if(clear_selected_available(game,ui)&&apply_player_input(game,ui,ui->sel_r,ui->sel_c,0,false)){clear_hint_preview(ui);(void)stage_current_session(p,game,ui);}return true;
     case PLAY_FOCUS_HINT:ui_button_click();(void)prepare_hint_preview(game,ui);if(ui->hint_preview_active)hint_focus_reset(ui);return true;
     case PLAY_FOCUS_NOTES:ui_button_click();ui->notes_mode=!ui->notes_mode;show_toast(ui,tr(ui->language,ui->notes_mode?T_NOTES_ON:T_NOTES_OFF));(void)stage_current_session(p,game,ui);return true;
@@ -738,10 +1295,7 @@ static bool ui_more_activate_action(Persistence *p, Game *game, UI *ui,
   switch (action) {
     case MORE_RESTART:
       ui_button_click();
-      if (restart_current_session_confirmed(p,game,ui,gfx)) {
-        victory_animation_reset();
-        restart_current_session(p,game,ui);
-      }
+      restart_requested(p,game,ui,gfx);
       break;
     case MORE_HINT:
       ui_button_click();
@@ -798,20 +1352,14 @@ static bool settle_terminal(Persistence *persistence, Game *game, UI *ui) {
   return true;
 }
 
-static const char *persistence_startup_error(const Persistence *p,
-                                             Language language) {
-  if (!p) return tr(language, T_PROFILE_IO_ERROR);
-  if (p->lock_status == STORE_LOCK_BUSY)
-    return tr(language, T_PROFILE_IN_USE);
-  if (p->lock_status != STORE_LOCK_ACQUIRED)
-    return tr(language, T_PROFILE_IO_ERROR);
-  if (p->profile_status == STORE_CORRUPT)
-    return tr(language, T_PROFILE_CORRUPT);
-  if (p->profile_status == STORE_INCOMPATIBLE)
-    return tr(language, T_PROFILE_INCOMPATIBLE);
-  if (p->profile_status != STORE_OK)
-    return tr(language, T_PROFILE_IO_ERROR);
-  return NULL;
+static TextKey persistence_startup_error_key(const Persistence *p) {
+  if (!p) return T_PROFILE_IO_ERROR;
+  if (p->lock_status==STORE_LOCK_BUSY) return T_PROFILE_IN_USE;
+  if (p->lock_status!=STORE_LOCK_ACQUIRED) return T_PROFILE_IO_ERROR;
+  if (p->profile_status==STORE_CORRUPT) return T_PROFILE_CORRUPT;
+  if (p->profile_status==STORE_INCOMPATIBLE) return T_PROFILE_INCOMPATIBLE;
+  if (p->profile_status!=STORE_OK) return T_PROFILE_IO_ERROR;
+  return T_COUNT;
 }
 
 #if !defined(__ANDROID__)
@@ -842,12 +1390,14 @@ static bool saved_window_display(const Preferences *preferences,
 }
 #endif
 
-static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
+static void apply_window_preferences(Gfx *g, const Preferences *preferences,
+                                     UI *ui) {
 #if defined(__ANDROID__)
-  (void)g; (void)preferences; /* Host SurfaceView owns its own dimensions. */
+  (void)g; (void)preferences; (void)ui;
+  /* Host SurfaceView owns its own dimensions. */
   return;
 #else
-  if (!g || !g->win || !preferences) return;
+  if (!g || !g->win || !preferences || !ui) return;
   int display = 0;
   SDL_Rect usable = {0, 0, 0, 0};
   bool saved_visible = saved_window_display(preferences, &display, &usable);
@@ -870,12 +1420,17 @@ static void apply_window_preferences(Gfx *g, const Preferences *preferences) {
                           SDL_WINDOWPOS_CENTERED_DISPLAY(display));
   }
   SDL_PumpEvents();
-  (void)gfx_refresh_metrics(g);
-  gfx_capture_restored_bounds(g);
+  if (!app_refresh_renderer_metrics(g, ui))
+    fprintf(stderr, "restored window metrics unavailable: %s\n",
+            SDL_GetError());
+  else
+    gfx_capture_restored_bounds(g);
   if (preferences->window_maximized) {
     SDL_MaximizeWindow(g->win);
     SDL_PumpEvents();
-    (void)gfx_refresh_metrics(g);
+    if (!app_refresh_renderer_metrics(g, ui))
+      fprintf(stderr, "maximized window metrics unavailable: %s\n",
+              SDL_GetError());
   }
 #endif
 }
@@ -899,11 +1454,66 @@ static void capture_window_preferences(Persistence *p, Gfx *g, UI *ui) {
 
 static bool request_exit(Persistence *p, const Game *game, UI *ui, Gfx *g) {
   if (!p || !ui || !g) return true;
-  if (ui->session_open && game) (void)stage_current_session(p, game, ui);
+  if (ui_modal.active || ui_modal_has_pending()) return false;
+  if (ui->session_open && game && !stage_current_session(p, game, ui)) {
+    /* Keep the live attempt available for Retry after any capture failure.
+       Never offer Abandon while its current checkpoint is unresolved. */
+    (void)ui_modal_open_exit(p, ui, g);
+    return false;
+  }
+  if (ui->session_open && ui->screen == SCR_PLAY &&
+      ui->result == RES_NONE && ui->attempt_started) {
+    /* An unavailable confirmation must not authorize leaving the attempt. */
+    (void)journey_leave_prompt(p, ui, g, true);
+    return false;
+  }
   capture_window_preferences(p, g, ui);
-  SaveGateResult gate =
-      resolve_unsaved(p, g, game, ui, UINT_MAX, T_UNSAVED_EXIT);
-  return gate != SAVE_GATE_BACK;
+  if (p->save_policy.dirty_mask == 0 ||
+      persistence_retry_current(p, game, ui))
+    return true;
+  /* A failed save must never spin inside SDL_ShowMessageBox or discard state.
+     The main pump owns the Retry/Discard/Back continuation. */
+  (void)ui_modal_open_exit(p, ui, g);
+  return false;
+}
+
+/* When no renderer exists, a normal Exit modal would be invisible. Only
+   leave after the established durable save gate confirms safe persistence. */
+static bool renderer_unavailable_safe_exit(Persistence *p, const Game *game,
+                                            UI *ui, Gfx *gfx) {
+  if (!p || !ui || !gfx) return false;
+  if (ui->session_open && game &&
+      !stage_current_session(p, game, ui)) {
+    renderer_recovery_save_failed = true;
+    return false;
+  }
+  capture_window_preferences(p, gfx, ui);
+  if (p->save_policy.dirty_mask == 0 ||
+      persistence_retry_current(p, game, ui))
+    return true;
+  fprintf(stderr, "renderer unavailable: exit deferred; unsaved data retained\n");
+  renderer_recovery_save_failed = true;
+  return false;
+}
+
+static void renderer_recovery_dispatch(Persistence *p, const Game *game,
+                                      UI *ui, Gfx *gfx, bool *running,
+                                      int *exit_status) {
+  int command = SDL_AtomicSet(&renderer_recovery_command, 0);
+  if (!command || command / 2 != SDL_AtomicGet(&renderer_recovery_token) ||
+      app_suspended || gfx->renderer_ready) return;
+  SDL_AtomicSet(&renderer_recovery_token, 0);
+  if ((command & 1) == 0) {
+    (void)app_restore_renderer_resources(gfx, ui);
+  } else if (startup_recovery_active || startup_loading_active) {
+    *running = false;
+    *exit_status = 1;
+  } else if (renderer_unavailable_safe_exit(p, game, ui, gfx)) {
+    *running = false;
+  } else {
+    renderer_recovery_save_failed = true;
+  }
+  renderer_recovery_sync(*running ? gfx : NULL, ui, true);
 }
 
 static double wall_clock_ms(void){
@@ -938,7 +1548,7 @@ static long desktop_benchmark_rss_kb(void){
 }
 
 static int desktop_wait_timeout_ms(const Gfx*g,const UI*ui){
-  if(!g||!ui)return 250;
+  if(!g||!ui||!g->renderer_ready)return 250;
   if(victory_animation_active||ui->toast_on)return g->software_renderer?34:16;
   if(ui->screen==SCR_PLAY&&ui->session_open&&ui->result==RES_NONE&&
      !app_pause_hides_play(ui)&&!ui->reduced_motion)
@@ -1291,7 +1901,7 @@ static int run_desktop_benchmark(Gfx*g,Game*game,UI*ui,double process_start_ms){
 }
 
 static void app_render_startup_splash(Gfx *gfx, Language language) {
-  if (!gfx || !gfx->ren) return;
+  if (!gfx || !gfx->ren || !gfx->renderer_ready || app_suspended) return;
   SDL_SetRenderDrawColor(gfx->ren,16,19,30,255);
   SDL_RenderClear(gfx->ren);
   int width=gfx->width<640?gfx->width-36:520;
@@ -1320,7 +1930,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   bool saved_more = ui_more_open, saved_more_owner = ui_more_modal_owned;
   int saved_more_focus = ui_more_focus;
   bool passed = false;
-  SDL_Event event = {0};
+  SDL_Event event; SDL_zero(event);
   settings_open = false;
   audio_control_popup_open = false;
   ui->screen = SCR_TITLE;
@@ -1333,7 +1943,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   SDL_Rect first = sdl_rect(geo.home_primary[0]);
   SDL_Rect second = sdl_rect(geo.home_primary[1]);
 #define PRESS_AT(rect) do { \
-  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN; \
+  SDL_zero(event); event.type = SDL_MOUSEBUTTONDOWN; \
   event.button.button = SDL_BUTTON_LEFT; \
   event.button.x = (rect).x + (rect).w / 2; \
   event.button.y = (rect).y + (rect).h / 2; \
@@ -1351,7 +1961,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   event.button.y = second.y + second.h / 2;
   RELEASE_OK(false);
   PRESS_AT(first);
-  SDL_Event motion = {0};
+  SDL_Event motion; SDL_zero(motion);
   motion.type = SDL_MOUSEMOTION;
   motion.motion.state = SDL_BUTTON_LMASK;
   motion.motion.x = -10; motion.motion.y = -10;
@@ -1366,7 +1976,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
       SDL_WINDOWEVENT_SIZE_CHANGED, SDL_WINDOWEVENT_LEAVE};
   for (size_t i = 0; i < sizeof(cancellations); ++i) {
     PRESS_AT(first);
-    SDL_Event window = {0};
+    SDL_Event window; SDL_zero(window);
     window.type = SDL_WINDOWEVENT; window.window.event = cancellations[i];
     (void)ui_pointer_prepare(&window);
     RELEASE_OK(false);
@@ -1393,8 +2003,8 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->result = RES_WIN;
   RELEASE_OK(false);
   ui->result = RES_NONE;
-  Layout board_layout = compute_layout(gfx->width, gfx->height, ui->mode);
-  event = (SDL_Event){0}; event.type = SDL_MOUSEBUTTONDOWN;
+  Layout board_layout = compute_layout(gfx, ui->mode);
+  SDL_zero(event); event.type = SDL_MOUSEBUTTONDOWN;
   event.button.button = SDL_BUTTON_LEFT;
   event.button.x = board_layout.board.x + board_layout.board.w / 2;
   event.button.y = board_layout.board.y + board_layout.board.h / 2;
@@ -1462,7 +2072,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   games_browser.scanning = false;
 
   /* Exercise More through the real routing gate without invoking dialogs. */
-  if (gfx->width < 640) {
+  if (gfx->mobile_layout || gfx->width < 640) {
     ui->screen = SCR_PLAY;
     ui->result = RES_NONE;
     ui->pause_reasons = 0;
@@ -1479,7 +2089,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
     RELEASE_OK(true);
-    SDL_Event key = {0};
+    SDL_Event key; SDL_zero(key);
     key.type = SDL_KEYDOWN;
     key.key.keysym.sym = SDLK_TAB;
     key.key.keysym.mod = KMOD_NONE; /* Unmodified Tab must move forward. */
@@ -1529,7 +2139,7 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
     ui_more_open_panel(ui);
     if (!ui_more_open) UI_SMOKE_FAIL();
     PRESS_AT(restart);
-    SDL_Event window = {0};
+    SDL_Event window; SDL_zero(window);
     window.type = SDL_WINDOWEVENT;
     window.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
     (void)ui_prepare_event(&window);
@@ -1547,20 +2157,20 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   if (!touch_window) UI_SMOKE_FAIL();
   float touch_x = (first.x + first.w / 2.0f) / gfx->width;
   float touch_y = (first.y + first.h / 2.0f) / gfx->height;
-  SDL_Event finger = {0};
+  SDL_Event finger; SDL_zero(finger);
   finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONDOWN ||
       ui_pointer_prepare(&finger) || !ui_pointer_capture.active) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 70; finger.tfinger.fingerId = 80;
   finger.tfinger.x = touch_x; finger.tfinger.y = touch_y;
   if (!ui_touch_prepare(&finger) || finger.type != SDL_MOUSEBUTTONUP ||
       !ui_pointer_prepare(&finger) || ui_pointer_capture.active) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_MOUSEBUTTONUP;
+  SDL_zero(finger); finger.type = SDL_MOUSEBUTTONUP;
   finger.button.which = SDL_TOUCH_MOUSEID;
   if (ui_touch_prepare(&finger)) UI_SMOKE_FAIL();
 
@@ -1569,21 +2179,21 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   if (!get_geometry(gfx, ui, &geo)) UI_SMOKE_FAIL();
   SDL_Rect body = sdl_rect(geo.info_body);
   int sx = body.x + body.w / 2, sy = body.y + body.h / 2;
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  SDL_zero(finger); finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)sy / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
       ui_scroll_kind != UI_SCROLL_HELP) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERMOTION;
+  SDL_zero(finger); finger.type = SDL_FINGERMOTION;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
   finger.tfinger.y = (float)(sy - 20) / gfx->height;
   if (!ui_touch_prepare(&finger) || ui_pointer_prepare(&finger) ||
       !ui_scroll_gesture.dragging) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 91; finger.tfinger.fingerId = 92;
   finger.tfinger.x = (float)sx / gfx->width;
@@ -1595,16 +2205,16 @@ static bool ui_pointer_smoke_check(Gfx *gfx, UI *ui) {
   ui->screen = SCR_PLAY; ui->session_open = true;
   ui->result = RES_NONE; ui->pause_reasons = 0;
   ui_pointer_reconcile();
-  Layout touch_board = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout touch_board = compute_layout(gfx, ui->mode);
   int bx = touch_board.board.x + touch_board.board.w / 2;
   int by = touch_board.board.y + touch_board.board.h / 2;
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERDOWN;
+  SDL_zero(finger); finger.type = SDL_FINGERDOWN;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
   finger.tfinger.x = (float)bx / gfx->width;
   finger.tfinger.y = (float)by / gfx->height;
   if (ui_touch_prepare(&finger) || !ui_touch_board_pending) UI_SMOKE_FAIL();
-  finger = (SDL_Event){0}; finger.type = SDL_FINGERUP;
+  SDL_zero(finger); finger.type = SDL_FINGERUP;
   finger.tfinger.windowID = touch_window;
   finger.tfinger.touchId = 93; finger.tfinger.fingerId = 94;
   finger.tfinger.x = (float)bx / gfx->width;
@@ -1633,6 +2243,173 @@ done:
   return passed;
 }
 #undef UI_SMOKE_FAIL
+
+typedef struct {
+  bool previous, fatal, failed, attempted, opened, routing;
+  StoreStatus primary_status;
+  GameMigrationRecoveryRoute route;
+  TextKey error;
+  AppModalBinding binding;
+  ProfileData backup;
+} StartupRecovery;
+static StartupRecovery startup_recovery;
+
+/* Observe pending context only. The outer main pump consumes it before any
+   retry; no nested dispatcher or writer is entered by a storage callback. */
+static bool startup_storage_continue(void *context) {
+  Gfx *gfx=(Gfx *)context;
+  SDL_PumpEvents();
+  return !generation_context_interrupted(gfx) && !generation_back_pending() &&
+      !SDL_HasEvent(SDL_QUIT) &&
+      !SDL_HasEvents(SDL_APP_TERMINATING,SDL_APP_DIDENTERFOREGROUND);
+}
+
+static void startup_apply_ready_preferences(Persistence *p, UI *ui, Gfx *gfx) {
+  ui->language=p->preferences.language;
+  ui->dark_theme=p->preferences.dark_theme;
+  ui->reduced_motion=p->preferences.reduced_motion;
+  ui->strict_mode=p->preferences.strict_mode;
+  ui->auto_remove_peer_notes=p->preferences.auto_remove_peer_notes;
+  ui->mode=p->preferences.mode;
+  home_difficulty=p->preferences.difficulty;
+  set_mode_params(ui);
+  apply_window_preferences(gfx,&p->preferences,ui);
+  refresh_resume_info(p,ui);
+  home_focus=ui->normal_resume.can_continue ? HOME_FOCUS_CONTINUE : HOME_FOCUS_NEW;
+  SDL_SetWindowTitle(gfx->win,SUDOKURA_NAME_VERSION);
+}
+
+static bool startup_recovery_open(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!startup_recovery_active || !p || !ui || !gfx || app_suspended ||
+      !gfx->renderer_ready || startup_recovery.routing) return false;
+  TextKey body=startup_recovery.previous ? T_PROFILE_RECOVER_PROMPT :
+      (startup_recovery.route==GAME_MIGRATION_RECOVERY_IMPORT ?
+       T_PROFILE_RECOVER_IMPORT_PROMPT : T_PROFILE_RECOVER_COLLECTION_PROMPT);
+  if (startup_recovery.failed) body=T_PROFILE_IO_ERROR;
+  if (startup_recovery.fatal) body=startup_recovery.error;
+  AppModalRequest request={
+      .kind=startup_recovery.fatal ? APP_MODAL_MESSAGE : APP_MODAL_RECOVERY,
+      .action=startup_recovery.fatal ? APP_MODAL_ACTION_NONE : APP_MODAL_RECOVER_PROFILE,
+      .binding=ui_modal_current_binding(p,ui),
+      .title=T_STORAGE_ERROR,.body=body,
+      .buttons={T_QUIT,startup_recovery.failed ? T_RETRY_SAVE : T_RECOVER},
+      .button_count=startup_recovery.fatal ? 1u : 2u,
+      .destructive_buttons=startup_recovery.fatal ? 0u : 2u};
+  if (!ui_modal_open_request(gfx,ui,&request)) return false;
+  startup_recovery.binding=request.binding;
+  startup_recovery.opened=true;
+  return true;
+}
+
+static void startup_recovery_begin(Persistence *p, UI *ui, Gfx *gfx) {
+  startup_recovery=(StartupRecovery){0};
+  startup_recovery_active=false;
+  if (p->lock_status==STORE_LOCK_ACQUIRED &&
+      (p->profile_status==STORE_CORRUPT || p->profile_status==STORE_NOT_FOUND) &&
+      profile_load_file(p->profile_backup_path,&startup_recovery.backup)==STORE_OK) {
+    startup_recovery.previous=true;
+    startup_recovery.primary_status=p->profile_status;
+    startup_recovery_active=true;
+  } else if (p->lock_status==STORE_LOCK_ACQUIRED && !p->enabled &&
+             p->profile_status==STORE_IO_ERROR) {
+    startup_recovery.routing=true;
+    startup_recovery_active=true;
+  } else {
+    startup_recovery.error=persistence_startup_error_key(p);
+    startup_recovery.fatal=startup_recovery.error!=T_COUNT;
+    startup_recovery_active=startup_recovery.fatal;
+  }
+  if (startup_recovery_active) {
+    audio_set_focus_paused(true);
+    (void)startup_recovery_open(p,ui,gfx);
+  }
+}
+
+/* Consent names a verified backup, never whatever backup happens to exist
+   later. A failed prior rename may be retried only for that same candidate. */
+static bool startup_recovery_target_valid(const Persistence *p) {
+  if (!p || p->enabled || p->lock_status!=STORE_LOCK_ACQUIRED ||
+      !startup_recovery_active || startup_recovery.fatal) return false;
+  if (startup_recovery.previous) {
+    ProfileData backup,primary;
+    if (profile_load_file(p->profile_backup_path,&backup)!=STORE_OK ||
+        !profile_encoded_equal(&backup,&startup_recovery.backup)) return false;
+    StoreStatus status=profile_load_file(p->profile_path,&primary);
+    return status==startup_recovery.primary_status ||
+        (startup_recovery.attempted && status==STORE_OK &&
+         profile_encoded_equal(&primary,&startup_recovery.backup));
+  }
+  /* The action revalidates the current route with cancellation enabled. */
+  return startup_recovery.route==GAME_MIGRATION_RECOVERY_IMPORT ||
+         startup_recovery.route==GAME_MIGRATION_RECOVERY_COLLECTION;
+}
+
+static void startup_recovery_dispatch(Persistence *p, UI *ui, Gfx *gfx,
+                                       const AppModalResult *choice) {
+  if (!p || !ui || !gfx || app_suspended || !gfx->renderer_ready ||
+      ui_modal.active || ui_modal_has_pending() ||
+      !choice || choice->action!=APP_MODAL_RECOVER_PROFILE ||
+      choice->resolution!=APP_MODAL_CHOSEN || choice->button!=1 ||
+      !startup_recovery_active || startup_recovery.fatal ||
+      !app_modal_binding_equal(choice->binding,startup_recovery.binding) ||
+      !app_modal_binding_equal(choice->binding,ui_modal_current_binding(p,ui)))
+    return;
+  if (!startup_storage_continue(gfx)) {
+    ui_modal_invalidate();
+    startup_recovery.opened=false;
+    return;
+  }
+  StoreStatus status=STORE_IO_ERROR;
+  if (startup_recovery_target_valid(p)) {
+    if (!startup_storage_continue(gfx)) {
+      status=STORE_CANCELLED;
+    } else {
+      startup_recovery.attempted=true;
+      status=startup_recovery.previous ? persistence_restore_previous(p) :
+          persistence_restore_missing_hot(p,startup_recovery.route,
+                                          startup_storage_continue,gfx);
+    }
+  }
+  if (status==STORE_OK) {
+    startup_recovery_active=false;
+    startup_recovery=(StartupRecovery){0};
+    startup_loading_active=true;
+    audio_set_focus_paused(true);
+  } else if (status==STORE_CANCELLED) {
+    ui_modal_invalidate();
+    startup_recovery.opened=false;
+  } else {
+    startup_recovery.failed=true;
+    startup_recovery.opened=false;
+    (void)startup_recovery_open(p,ui,gfx);
+  }
+}
+
+/* Default Quit/Back closes the app without writing. Lifecycle/layout
+   invalidation advances generation: reopen consent instead of treating that
+   cancellation as a user Quit. No nested SDL polling or background writes. */
+static bool startup_recovery_poll(Persistence *p, UI *ui, Gfx *gfx) {
+  if (!startup_recovery_active || ui_modal.active || ui_modal_has_pending())
+    return true;
+  if (!startup_storage_continue(gfx)) return true;
+  if (startup_recovery.routing) {
+    StoreStatus status=persistence_missing_hot_recovery_route(
+        p,&startup_recovery.route,startup_storage_continue,gfx);
+    if (status==STORE_CANCELLED) return true;
+    startup_recovery.routing=false;
+    if (status!=STORE_OK) {
+      startup_recovery.error=persistence_startup_error_key(p);
+      startup_recovery.fatal=true;
+    }
+  }
+  if (startup_recovery.opened &&
+      startup_recovery.binding.generation==ui_modal_generation) return false;
+  startup_recovery.opened=false;
+  if (app_suspended || !gfx->renderer_ready) return true;
+  return startup_recovery_open(p,ui,gfx);
+}
+
+#include "accessibility_ui.inc"
 
 int main(int argc, char **argv) {
   double process_start_ms=wall_clock_ms();
@@ -1683,6 +2460,7 @@ int main(int argc, char **argv) {
     ui.screen = SCR_PLAY;
     app_frame(&g, &game, &ui);
     if (smoke_test) {
+      if(!journey_browser_smoke()) { fprintf(stderr,"Journey family/filter regression\n");app_shutdown(&g);return 1; }
       Persistence settings_persistence;
       memset(&settings_persistence, 0, sizeof(settings_persistence));
       settings_persistence.enabled = true;
@@ -1690,6 +2468,106 @@ int main(int argc, char **argv) {
       settings_persistence.profile.preferences =
           settings_persistence.preferences;
       save_policy_init(&settings_persistence.save_policy);
+
+      /* A failed capture cannot abandon a live attempt. Retry must recover
+         its actual progress before the exit confirmation can be offered. */
+      {
+        Persistence probe = {0};
+        UI exit_ui;
+        Game exit_game = game;
+        app_state_init(&exit_ui);
+        app_clock_reset(&exit_ui, now_ms());
+        exit_ui.screen = SCR_PLAY;
+        exit_ui.session_open = true;
+        exit_ui.has_session = true;
+        exit_ui.attempt_started = true;
+        int entry = -1, note = -1;
+        for (int cell = 0; cell < 81; ++cell) {
+          if (!exit_game.fixed[cell]) {
+            if (entry < 0) entry = cell;
+            else { note = cell; break; }
+          }
+        }
+        if (entry < 0 || note < 0 ||
+            !game_place(&exit_game, entry / 9, entry % 9,
+                        exit_game.solution[entry], false) ||
+            !game_toggle_note(&exit_game, note / 9, note % 9, 3)) {
+          fprintf(stderr, "exit save gate fixture progress regression\n");
+          app_shutdown(&g); return 1;
+        }
+        probe.enabled = true;
+        preferences_defaults(&probe.preferences);
+        profile_defaults(&probe.profile);
+        probe.profile.preferences = probe.preferences;
+        save_policy_init(&probe.save_policy);
+        SessionState initial;
+        if (!capture_session(&initial, &exit_game, &exit_ui, now_ms()) ||
+            !profile_slot_set(&probe.profile.normal, &initial, false)) {
+          fprintf(stderr, "exit save gate fixture session regression\n");
+          app_shutdown(&g); return 1;
+        }
+        probe.active_attempt_id = (GameAttemptId){177, 178};
+        probe.profile.normal.attempt_id = probe.active_attempt_id;
+        probe.profile.normal.revision = 4;
+        unsigned long long nonce = (unsigned long long)SDL_GetPerformanceCounter();
+        char path[PATH_MAX], backup[PATH_MAX];
+        snprintf(path, sizeof(path), ".sudokura-exit-smoke-%llu.dat", nonce);
+        snprintf(backup, sizeof(backup), ".sudokura-exit-smoke-%llu.dat.bak", nonce);
+        if (store_file_exists(path) || store_file_exists(backup)) {
+          fprintf(stderr, "exit save gate fixture path collision\n");
+          app_shutdown(&g); return 1;
+        }
+        snprintf(probe.profile_path, sizeof(probe.profile_path),
+                 ".sudokura-exit-smoke-%llu-missing/profile.dat", nonce);
+        snprintf(probe.profile_backup_path, sizeof(probe.profile_backup_path),
+                 ".sudokura-exit-smoke-%llu-missing/profile.dat.bak", nonce);
+        probe.profile.codec_version = 0; /* Inject capture failure. */
+        bool guarded = !request_exit(&probe, &exit_game, &exit_ui, &g) &&
+            probe.capture_failed && exit_ui.session_open &&
+            probe.profile.normal.value.session.status == SESSION_ACTIVE &&
+            ui_modal.active && ui_modal.request.action == APP_MODAL_EXIT &&
+            ui_modal.request.button_count == 3;
+        ui_modal_cancel_current(); /* Back must preserve the attempt. */
+        bool capture_retry_failed =
+            !persistence_retry_current(&probe, &exit_game, &exit_ui) &&
+            probe.capture_failed && exit_ui.session_open;
+        probe.profile.codec_version = SUDOKURA_PROFILE_CONTENT_VERSION;
+        bool disk_retry_failed =
+            !persistence_retry_current(&probe, &exit_game, &exit_ui) &&
+            !probe.capture_failed && exit_ui.session_open &&
+            save_policy_dirty(&probe.save_policy);
+        snprintf(probe.profile_path, sizeof(probe.profile_path), "%s", path);
+        snprintf(probe.profile_backup_path, sizeof(probe.profile_backup_path),
+                 "%s", backup);
+        bool recovered = persistence_retry_current(&probe, &exit_game, &exit_ui);
+        ProfileData disk;
+        bool preserved = recovered &&
+            profile_load_file(path, &disk) == STORE_OK &&
+            disk.normal.present && disk.normal.value.started &&
+            disk.normal.value.session.status == SESSION_ACTIVE &&
+            disk.normal.value.session.game.puzzle[entry] ==
+                exit_game.puzzle[entry] &&
+            disk.normal.value.session.game.notes[note] ==
+                exit_game.notes[note] &&
+            !probe.capture_failed && !save_policy_dirty(&probe.save_policy);
+        bool confirmed = preserved &&
+            !request_exit(&probe, &exit_game, &exit_ui, &g) &&
+            ui_modal.active &&
+            ui_modal.request.action == APP_MODAL_JOURNEY_EXIT &&
+            ui_modal.request.button_count == 3 &&
+            exit_ui.session_open && exit_ui.result == RES_NONE;
+        ui_modal_cancel_current();
+        (void)store_remove_file(path);
+        (void)store_remove_file(backup);
+        if (!guarded || !capture_retry_failed || !disk_retry_failed ||
+            !preserved || !confirmed) {
+          fprintf(stderr, "exit capture/retry/journey regression:"
+                  " guard=%d capture=%d disk=%d saved=%d modal=%d\n",
+                  guarded, capture_retry_failed, disk_retry_failed,
+                  preserved, confirmed);
+          app_shutdown(&g); return 1;
+        }
+      }
 
       audio_persistence = &settings_persistence;
       audio_gfx = &g;
@@ -1714,6 +2592,82 @@ int main(int argc, char **argv) {
         app_shutdown(&g);
         return 1;
       }
+      /* Run the actual mobile layout adapters, renderer and SDL capture on
+         host CI too; this does not emulate Android density or TalkBack. */
+      UI mobile_saved_ui=ui;
+      bool mobile_saved_layout=g.mobile_layout;
+      const int shell_sizes[][2]={{360,600},{600,320},{600,360},{800,480}};
+      g.mobile_layout=true;
+      for (unsigned size=0;size<sizeof(shell_sizes)/sizeof(shell_sizes[0]);++size) {
+        SDL_WindowEvent mobile_resize; SDL_zero(mobile_resize);
+        mobile_resize.type=SDL_WINDOWEVENT;mobile_resize.windowID=SDL_GetWindowID(g.win);
+        mobile_resize.event=SDL_WINDOWEVENT_RESIZED;
+        mobile_resize.data1=shell_sizes[size][0];
+        mobile_resize.data2=shell_sizes[size][1];
+        if (!window_event_changes_surface_metrics(&g,mobile_resize.event) ||
+            !app_handle_surface_resize(&g,&ui,&mobile_resize)) {
+          app_shutdown(&g);return 1;
+        }
+        /* Deliver the notification before the output actually changes. */
+        SDL_SetWindowSize(g.win,shell_sizes[size][0],shell_sizes[size][1]);
+        SDL_PumpEvents();
+        if (!app_settle_mobile_surface(&g,&ui) ||
+            g.width!=shell_sizes[size][0] || g.height!=shell_sizes[size][1]) {
+          fprintf(stderr,"mobile RESIZED surface metrics regression at %dx%d\n",
+                  shell_sizes[size][0],shell_sizes[size][1]);
+          app_shutdown(&g);return 1;
+        }
+        for (int mode=MODE_CLASSIC;mode<=MODE_TIME;++mode) {
+          ui.mode=(Mode)mode;ui.session_open=true;ui.has_session=true;
+          ui.pause_reasons=0;ui.result=RES_NONE;
+          if (!ui_pointer_smoke_check(&g,&ui) ||
+              !ui_a11y_smoke(&settings_persistence,&game,&ui,&g)) {
+            fprintf(stderr,"mobile shell pointer regression at %dx%d mode=%d\n",g.width,g.height,mode);
+            app_shutdown(&g);return 1;
+          }
+          for (int language=0;language<LANG_COUNT;++language)
+            for (int dark=0;dark<2;++dark) {
+              ui.language=(Language)language;ui.dark_theme=dark!=0;
+              const int screens[]={SCR_TITLE,SCR_PLAY,SCR_HELP,SCR_ABOUT,
+                                    APP_SCREEN_SETTINGS,APP_SCREEN_GAMES,SCR_END};
+              for (unsigned screen=0;screen<sizeof(screens)/sizeof(screens[0]);++screen) {
+                ui.screen=screens[screen];ui.pause_reasons=0;
+                settings_open=ui.screen==APP_SCREEN_SETTINGS;
+                ui.result=ui.screen==SCR_END ? RES_WIN : RES_NONE;
+                if (ui.screen==SCR_HELP || ui.screen==SCR_ABOUT) help_scroll_reset();
+                app_render_ui(&g,&game,&ui);
+                if (ui.screen==SCR_HELP || ui.screen==SCR_ABOUT) {
+                  GeometryInfo info;
+                  if (!geometry_mobile_info(g.width,g.height,ui.screen==SCR_ABOUT,&info)) {
+                    app_shutdown(&g);return 1;
+                  }
+                  if (help_scroll_max_px>0 && help_scroll_px==0) {
+                    PointerTarget target=ui_pointer_resolve(info.down.x+24,info.down.y+24);
+                    if (target.action!=137) {app_shutdown(&g);return 1;}
+                  }
+                  if (ui.screen==SCR_ABOUT) {
+                    GeoRect link=info.links[GEOMETRY_ABOUT_LINK_COUNT-1];
+                    PointerTarget target=ui_pointer_resolve(link.x+link.w/2,
+                                                          link.y+link.h/2);
+                    if (target.action!=131+GEOMETRY_ABOUT_LINK_COUNT-1) {
+                      app_shutdown(&g);return 1;
+                    }
+                  }
+                }
+                SDL_RenderPresent(g.ren);
+              }
+              ui.screen=SCR_PLAY;ui.result=RES_NONE;ui.pause_reasons=PAUSE_FOCUS;
+              app_render_ui(&g,&game,&ui);
+              ui.pause_reasons=0;ui.hint_preview_active=true;
+              ui.hint_preview.status=HUMAN_HINT_STALLED;
+              app_render_ui(&g,&game,&ui);
+              SDL_RenderPresent(g.ren);
+              ui.hint_preview_active=false;
+            }
+        }
+      }
+      ui=mobile_saved_ui;g.mobile_layout=mobile_saved_layout;settings_open=false;
+      help_scroll_reset();ui_pointer_cancel();ui_touch_cancel();
       SDL_SetWindowSize(g.win, original_w, original_h);
       SDL_SetWindowMinimumSize(g.win, min_w, min_h);
       SDL_PumpEvents();
@@ -1788,6 +2742,22 @@ int main(int argc, char **argv) {
       }
 
       SettingsPanelLayout settings_layout = ui_settings_panel_layout(&g);
+      const int mobile_settings_sizes[][2]={{360,600},{600,320},{600,360},{800,480}};
+      for (unsigned size=0;size<sizeof(mobile_settings_sizes)/sizeof(mobile_settings_sizes[0]);++size) {
+        Gfx probe=g;
+        probe.width=mobile_settings_sizes[size][0];
+        probe.height=mobile_settings_sizes[size][1];
+        SettingsPanelLayout mobile=ui_mobile_settings_layout(&probe);
+        if (!mobile.card.w) {app_shutdown(&g);return 1;}
+        for (int focus=SETTINGS_FOCUS_THEME;focus<SETTINGS_FOCUS_COUNT;++focus) {
+          SDL_Rect r=ui_settings_focus_rect(mobile,(SettingsKeyboardFocus)focus);
+          if (r.w<48 || r.h<48 ||
+              !geometry_rect_in_bounds((GeoRect){r.x,r.y,r.w,r.h},probe.width,probe.height)) {
+            fprintf(stderr,"mobile settings SDL focus bounds regression\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+      }
       SDL_Rect focus_rect =
           ui_settings_focus_rect(settings_layout, settings_keyboard_focus);
       if (focus_rect.x != settings_layout.auto_notes.x ||
@@ -1832,6 +2802,1810 @@ int main(int argc, char **argv) {
         app_shutdown(&g);
         return 1;
       }
+      /* SDL owner regression for Restart: no real profile or game mutation. */
+      {
+        ProfileSlot old_slot=settings_persistence.profile.normal;
+        SavePolicy old_policy=settings_persistence.save_policy;
+        GameAttemptId old_attempt=settings_persistence.active_attempt_id;
+        unsigned old_keep=settings_persistence.keep_pending_mask;
+        bool old_capture=settings_persistence.capture_failed;
+        bool old_unresolved=settings_persistence.replay_activation_unresolved;
+        Screen old_screen=ui.screen;
+        bool old_session=ui.session_open;
+        bool old_daily=ui.is_daily;
+        Result old_result=ui.result;
+        unsigned old_pauses=ui.pause_reasons;
+        ui.screen=SCR_PLAY;ui.session_open=true;ui.is_daily=false;
+        ui.result=RES_NONE;ui.pause_reasons=PAUSE_MANUAL;
+        settings_persistence.active_attempt_id=(GameAttemptId){73,74};
+        settings_persistence.profile.normal.present=true;
+        settings_persistence.profile.normal.retained=false;
+        settings_persistence.profile.normal.attempt_id=
+            settings_persistence.active_attempt_id;
+        settings_persistence.profile.normal.revision=8;
+        settings_persistence.profile.normal.value.session.status=SESSION_ACTIVE;
+        settings_persistence.keep_pending_mask=0;
+        settings_persistence.capture_failed=false;
+        settings_persistence.replay_activation_unresolved=false;
+        save_policy_init(&settings_persistence.save_policy);
+        save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_NORMAL,100);
+        SDL_Event restart_event; SDL_zero(restart_event);
+        restart_event.type=SDL_KEYDOWN;
+        restart_event.key.type=SDL_KEYDOWN;
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        if (!restart_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=3 || ui_modal.focus!=0 ||
+            ui.pause_reasons!=(PAUSE_MANUAL|PAUSE_MODAL) ||
+            ui_prepare_event(&restart_event) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MANUAL) {
+          fprintf(stderr,"Restart recovery default-Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!restart_open_save(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Restart recovery reentry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        restart_event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&restart_event);
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&restart_event);
+        AppModalResult restart_choice={0};
+        if (!ui_modal_take_result(&restart_choice) ||
+            restart_choice.action!=APP_MODAL_RESTART_SAVE ||
+            restart_choice.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_MANUAL) {
+          fprintf(stderr,"Restart Retry one-shot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!restart_open_save(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Restart Discard setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        restart_event.key.keysym.sym=SDLK_TAB;
+        restart_event.key.keysym.mod=KMOD_SHIFT;
+        (void)ui_prepare_event(&restart_event);
+        restart_event.key.keysym.mod=KMOD_NONE;
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&restart_event);
+        if (!ui_modal_take_result(&restart_choice) ||
+            restart_choice.action!=APP_MODAL_RESTART_SAVE ||
+            restart_choice.button!=2 || ui.pause_reasons!=PAUSE_MANUAL) {
+          fprintf(stderr,"Restart explicit Discard regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!restart_open_confirm(&settings_persistence,&ui,&g,true)) {
+          fprintf(stderr,"Restart confirm setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.normal.revision;
+        restart_event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&restart_event);
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&restart_event);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_MANUAL) {
+          fprintf(stderr,"Restart stale revision regression\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.normal.revision;
+        if (!restart_open_confirm(&settings_persistence,&ui,&g,true)) {
+          fprintf(stderr,"Restart confirm cancel setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&restart_event);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_MANUAL) {
+          fprintf(stderr,"Restart confirmation default-Cancel regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!restart_open_confirm(&settings_persistence,&ui,&g,true)) {
+          fprintf(stderr,"Restart queued confirmation setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        restart_event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&restart_event);
+        restart_event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&restart_event);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Restart queued choice setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_MANUAL|PAUSE_FOCUS)) {
+          fprintf(stderr,"Restart focus cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        save_policy_mark(&settings_persistence.save_policy,
+                         SAVE_DIRTY_PREFERENCES,200);
+        if (restart_discard_allowed(&settings_persistence,&ui) ||
+            !restart_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=2 ||
+            ui_modal.request.destructive_buttons!=0) {
+          fprintf(stderr,"Restart unrelated-dirty gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        settings_persistence.profile.normal=old_slot;
+        settings_persistence.save_policy=old_policy;
+        settings_persistence.active_attempt_id=old_attempt;
+        settings_persistence.keep_pending_mask=old_keep;
+        settings_persistence.capture_failed=old_capture;
+        settings_persistence.replay_activation_unresolved=old_unresolved;
+        ui.screen=old_screen;ui.session_open=old_session;
+        ui.is_daily=old_daily;ui.result=old_result;
+        ui.pause_reasons=old_pauses;
+      }
+      /* New uses the SDL owner and the normal hot-slot identity, not
+         the active ID (which can be absent while Home is visible). */
+      {
+        ProfileSlot saved_normal=settings_persistence.profile.normal;
+        SavePolicy saved_policy=settings_persistence.save_policy;
+        unsigned saved_keep=settings_persistence.keep_pending_mask;
+        bool saved_capture=settings_persistence.capture_failed;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.profile.normal.present=true;
+        settings_persistence.profile.normal.retained=false;
+        settings_persistence.profile.normal.attempt_id=(GameAttemptId){95,96};
+        settings_persistence.profile.normal.revision=7;
+        settings_persistence.profile.normal.value.session.status=SESSION_ACTIVE;
+        settings_persistence.keep_pending_mask=0;
+        settings_persistence.capture_failed=false;
+        settings_persistence.replay_activation_unresolved=false;
+        save_policy_init(&settings_persistence.save_policy);
+        SDL_Event new_key; SDL_zero(new_key);
+        new_key.type=SDL_KEYDOWN;new_key.key.type=SDL_KEYDOWN;
+        new_key.key.keysym.sym=SDLK_RETURN;
+        if (!new_game_open_keep(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0 || ui_modal.request.button_count!=3 ||
+            ui_prepare_event(&new_key) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New modal default cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!new_game_open_keep(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New keep modal open regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        AppModalResult new_result={0};
+        if (!ui_modal_take_result(&new_result) ||
+            new_result.action!=APP_MODAL_NEW_KEEP ||
+            new_result.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New keep choice one-shot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!new_game_open_confirm(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New bound confirm setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.normal.revision;
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New stale normal slot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.normal.revision;
+        if (!new_game_open_confirm(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"New queued confirm setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&new_key);
+        new_key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&new_key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"New queued choice setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"New background choice cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        save_policy_mark(&settings_persistence.save_policy,
+                         SAVE_DIRTY_NORMAL,100);
+        if (!new_game_discard_allowed(&settings_persistence) ||
+            !new_game_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=3) {
+          fprintf(stderr,"New isolated Discard gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        save_policy_mark(&settings_persistence.save_policy,
+                         SAVE_DIRTY_PREFERENCES,200);
+        if (new_game_discard_allowed(&settings_persistence) ||
+            !new_game_open_save(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=2) {
+          fprintf(stderr,"New cross-domain Discard gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        if (!new_game_open_generation_retry(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0) {
+          fprintf(stderr,"New generation Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        new_key.key.keysym.sym=SDLK_RETURN;
+        if (ui_prepare_event(&new_key) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"New generation default Cancel regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.profile.normal=saved_normal;
+        settings_persistence.save_policy=saved_policy;
+        settings_persistence.keep_pending_mask=saved_keep;
+        settings_persistence.capture_failed=saved_capture;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Native SDL Daily modal events against a disposable in-memory slot. */
+      {
+        ProfileSlot before_slot=settings_persistence.profile.daily;
+        HomeDailyIntent before_intent=home_daily_intent;
+        Screen before_screen=ui.screen;
+        unsigned before_pause=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily smoke date missing\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){51,52};
+        settings_persistence.profile.daily.revision=4;
+        home_daily_intent=home_daily_capture_intent(&settings_persistence,y,m,d);
+        AppModalRequest request={
+            .kind=APP_MODAL_CONFIRM,.action=APP_MODAL_DAILY,
+            .binding=ui_modal_daily_binding(&settings_persistence,&ui),
+            .title=T_DAILY_CHOOSE_TITLE,.body=T_DAILY_CHOOSE_PROMPT,
+            .buttons={T_CANCEL,T_DAILY_OLDER,T_DAILY_TODAY},
+            .button_count=3};
+        SDL_Event event; SDL_zero(event);
+        event.type=SDL_KEYDOWN;event.key.type=SDL_KEYDOWN;
+        event.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_intent_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&request) ||
+            ui_prepare_event(&event) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL default Cancel failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily SDL choice reopen failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        AppModalResult choice={0};
+        if (!ui_modal_take_result(&choice) ||
+            choice.action!=APP_MODAL_DAILY || choice.button!=1 ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL older one-shot failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily SDL stale setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            home_daily_intent_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily SDL stale revision accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        ++home_daily_intent.day;
+        if (home_daily_intent_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily SDL changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_intent.day;
+        if (!home_daily_open_checkpoint(&settings_persistence,&ui,&g) ||
+            ui_modal.focus!=0 || ui_modal.request.button_count!=2 ||
+            ui_modal.request.destructive_buttons!=0) {
+          fprintf(stderr,"Daily SDL checkpoint setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_RETURN;
+        if (ui_prepare_event(&event) || ui_modal.active ||
+            ui_modal_has_pending() || ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily SDL checkpoint Back failed\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!home_daily_open_checkpoint(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily SDL Retry setup failed\n");
+          app_shutdown(&g);return 1;
+        }
+        event.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&event);
+        event.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&event);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily SDL Retry selection failed\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily SDL focus cancellation failed\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        settings_persistence.profile.daily=before_slot;
+        home_daily_intent=before_intent;
+        ui.screen=before_screen;ui.pause_reasons=before_pause;
+      }
+      /* Daily prior-copy recovery stays bound to its selected archive and
+         hot pointer. Synthetic modal events never write any game files. */
+      {
+        HomeDailyRecovery saved_recovery=home_daily_recovery;
+        ProfileSlot saved_daily=settings_persistence.profile.daily;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily recovery smoke date unavailable\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.enabled=true;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){61,62};
+        settings_persistence.profile.daily.revision=14;
+        home_daily_recovery=(HomeDailyRecovery){0};
+        home_daily_recovery.active=true;
+        home_daily_recovery.hot_present=true;
+        home_daily_recovery.hot_id=settings_persistence.profile.daily.attempt_id;
+        home_daily_recovery.hot_revision=14;
+        home_daily_recovery.entry.id=(GameAttemptId){63,64};
+        home_daily_recovery.entry.revision=7;
+        home_daily_recovery.entry.status=STORE_CORRUPT;
+        home_daily_recovery.entry.previous_status=STORE_OK;
+        home_daily_recovery.year=y;
+        home_daily_recovery.month=m;
+        home_daily_recovery.day=d;
+        AppModalRequest request={
+            .kind=APP_MODAL_CONFIRM,
+            .action=APP_MODAL_DAILY_RECOVER_PREVIOUS,
+            .binding=home_daily_recovery_modal_binding(
+                &settings_persistence,&ui),
+            .title=T_DAILY,.body=T_DAILY_RECOVER_PREVIOUS,
+            .buttons={T_CANCEL,T_RECOVER},.button_count=2,
+            .destructive_buttons=2u};
+        SDL_Event key; SDL_zero(key);
+        key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_recovery_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&request) ||
+            ui_modal.focus!=0 || ui_prepare_event(&key) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily recovery default-Cancel regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery choice setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        AppModalResult recovery_choice={0};
+        if (!ui_modal_take_result(&recovery_choice) ||
+            recovery_choice.action!=APP_MODAL_DAILY_RECOVER_PREVIOUS ||
+            recovery_choice.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily recovery explicit choice regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery stale setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_take_result(&recovery_choice) ||
+            home_daily_recovery_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily recovery stale hot-slot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        home_daily_recover_confirmed(
+            &settings_persistence,&game,&ui,&g,&recovery_choice);
+        if (home_daily_recovery.active) {
+          fprintf(stderr,"Daily recovery stale action retained\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        home_daily_recovery.active=true;
+        ++home_daily_recovery.day;
+        if (home_daily_recovery_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily recovery changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_recovery.day;
+        request.binding=home_daily_recovery_modal_binding(
+            &settings_persistence,&ui);
+        if (!ui_modal_open_request(&g,&ui,&request)) {
+          fprintf(stderr,"Daily recovery focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily recovery pending choice regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily recovery focus invalidation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        home_daily_recovery=saved_recovery;
+        settings_persistence.profile.daily=saved_daily;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Home Daily rollover retry uses the real SDL event owner. The old
+         slot is synthetic: no archive/profile writes occur in this smoke. */
+      {
+        HomeDailyRollover saved_rollover=home_daily_rollover;
+        ProfileSlot saved_daily=settings_persistence.profile.daily;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        Screen saved_screen=ui.screen;
+        unsigned saved_pauses=ui.pause_reasons;
+        int y=0,m=0,d=0;
+        if (!local_date(&y,&m,&d)) {
+          fprintf(stderr,"Daily rollover smoke date unavailable\n");
+          app_shutdown(&g);return 1;
+        }
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME;
+        settings_persistence.enabled=true;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.profile.daily.present=true;
+        settings_persistence.profile.daily.retained=false;
+        settings_persistence.profile.daily.attempt_id=(GameAttemptId){71,72};
+        settings_persistence.profile.daily.revision=8;
+        home_daily_rollover=(HomeDailyRollover){0};
+        home_daily_rollover.active=true;
+        home_daily_rollover.slot_present=true;
+        home_daily_rollover.slot_id=(GameAttemptId){71,72};
+        home_daily_rollover.revision=8;
+        home_daily_rollover.year=y;
+        home_daily_rollover.month=m;
+        home_daily_rollover.day=d;
+        AppModalRequest retry_request={
+            .kind=APP_MODAL_RECOVERY,
+            .action=APP_MODAL_DAILY_ROLLOVER_RETRY,
+            .binding=ui_modal_daily_binding(&settings_persistence,&ui),
+            .title=T_UNSAVED_TITLE,.body=T_DAILY_SAVE_RETRY_PROMPT,
+            .buttons={T_BACK,T_RETRY_SAVE},.button_count=2};
+        SDL_Event key; SDL_zero(key);
+        key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        if (!home_daily_rollover_valid(&settings_persistence,&ui) ||
+            !ui_modal_open_request(&g,&ui,&retry_request) ||
+            ui_modal.focus!=0 || ui_prepare_event(&key) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily rollover default Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        AppModalResult retry_choice={0};
+        if (!ui_modal_take_result(&retry_choice) ||
+            retry_choice.action!=APP_MODAL_DAILY_ROLLOVER_RETRY ||
+            retry_choice.button!=1 || ui_modal_has_pending() ||
+            ui.pause_reasons!=PAUSE_HOME) {
+          fprintf(stderr,"Daily rollover Retry one-shot regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover stale setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover stale revision accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.profile.daily.retained=true;
+        if (!home_daily_rollover_refresh_after_write(&settings_persistence) ||
+            !home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover own retention revision rejected\n");
+          app_shutdown(&g);return 1;
+        }
+        --settings_persistence.profile.daily.revision;
+        if (home_daily_rollover_refresh_after_write(&settings_persistence)) {
+          fprintf(stderr,"Daily rollover revision rollback accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        ++settings_persistence.profile.daily.revision;
+        ++home_daily_rollover.day;
+        if (home_daily_rollover_valid(&settings_persistence,&ui)) {
+          fprintf(stderr,"Daily rollover changed date accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        --home_daily_rollover.day;
+        retry_request.binding=ui_modal_daily_binding(
+            &settings_persistence,&ui);
+        if (!ui_modal_open_request(&g,&ui,&retry_request)) {
+          fprintf(stderr,"Daily rollover focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;
+        (void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (!ui_modal_has_pending()) {
+          fprintf(stderr,"Daily rollover queued Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_pause(&ui,PAUSE_FOCUS);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily rollover background cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        (void)clock_resume(&ui,PAUSE_FOCUS);
+        home_daily_rollover=saved_rollover;
+        settings_persistence.profile.daily=saved_daily;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Daily Retry uses the real SDL owner; this fixture never writes disk. */
+      {
+        GamesDailyActivation saved_activation=games_daily_activation;
+        bool old_guard=settings_persistence.daily_activation_unresolved;
+        Screen old_screen=ui.screen;
+        unsigned old_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME|PAUSE_FOCUS;
+        games_daily_activation=(GamesDailyActivation){0};
+        games_daily_activation.active=true;
+        games_daily_activation.previous=settings_persistence.profile;
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation modal setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;
+        (void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation default Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation Retry setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult choice={0};
+        if (!ui_modal_take_result(&choice) ||
+            choice.action!=APP_MODAL_DAILY_ACTIVATE_RETRY || choice.button!=1 ||
+            ui_modal_take_result(&choice) ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation one-shot Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        /* A changed generation must prevent even entry to the writer. */
+        ui_modal_invalidate();
+        games_daily_activation_dispatch(&settings_persistence,&game,&ui,&g,&choice);
+        if (ui.screen!=SCR_TITLE || ui_modal.active || ui_modal_has_pending()) {
+          fprintf(stderr,"Daily activation stale continuation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_daily_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Daily activation focus setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        ui_modal_invalidate();
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Daily activation queued focus cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.daily_activation_unresolved=true;
+        if (!persistence_activation_blocked(&settings_persistence) ||
+            persistence_flush(&settings_persistence) ||
+            persistence_retry_current(&settings_persistence,&game,&ui) ||
+            games_browser_daily_flush_verified(&settings_persistence) ||
+            games_browser_save_hot(&settings_persistence,true) ||
+            games_browser_commit_profile(&settings_persistence,&game,&ui,
+                &g,true,&settings_persistence.profile,true) ||
+            new_game_discard_allowed(&settings_persistence)) {
+          fprintf(stderr,"Daily unresolved activation writer guard regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.daily_activation_unresolved=old_guard;
+        games_daily_activation=saved_activation;
+        ui.screen=old_screen;ui.pause_reasons=old_pauses;
+      }
+      /* Load gates use actual SDL dispatch with synthetic rows. No saved
+         record is modified by these identity/cancellation checks. */
+      {
+        GamesBrowser saved_browser=games_browser;
+        GamesLoadGate saved_gate=games_load_gate;
+        GamesLoadActivation saved_activation=games_load_activation;
+        bool saved_load_guard=settings_persistence.load_activation_unresolved;
+        ProfileSlot saved_normal=settings_persistence.profile.normal;
+        SavePolicy saved_policy=settings_persistence.save_policy;
+        bool saved_enabled=settings_persistence.enabled;
+        bool saved_capture=settings_persistence.capture_failed;
+        bool saved_replay=settings_persistence.replay_activation_unresolved;
+        bool saved_daily=settings_persistence.daily_activation_unresolved;
+        unsigned saved_keep=settings_persistence.keep_pending_mask;
+        Screen saved_screen=ui.screen;unsigned saved_pauses=ui.pause_reasons;
+        games_browser=(GamesBrowser){0};
+        games_browser.rows=calloc(2,sizeof(*games_browser.rows));
+        if (!games_browser.rows) { app_shutdown(&g);return 1; }
+        games_browser.count=games_browser.capacity=2;
+        for (size_t i=0;i<2;++i) {
+          games_browser.rows[i].entry.id=(GameAttemptId){61,62+i};
+          games_browser.rows[i].entry.revision=8;
+          games_browser.rows[i].entry.status=STORE_OK;
+          games_browser.rows[i].entry.kind=GAME_RECORD_EXACT;
+          games_browser.rows[i].entry.result.status=SESSION_ACTIVE;
+        }
+        ui.screen=APP_SCREEN_GAMES;ui.pause_reasons=PAUSE_MODAL|PAUSE_FOCUS;
+        settings_persistence.enabled=true;
+        settings_persistence.capture_failed=false;
+        settings_persistence.replay_activation_unresolved=false;
+        settings_persistence.daily_activation_unresolved=false;
+        settings_persistence.keep_pending_mask=0;
+        ProfileSlot *departing=&settings_persistence.profile.normal;
+        *departing=(ProfileSlot){0};departing->present=true;
+        departing->attempt_id=(GameAttemptId){71,72};departing->revision=7;
+        departing->value.session.status=SESSION_ACTIVE;
+        save_policy_init(&settings_persistence.save_policy);
+        save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_NORMAL,now_ms());
+        save_policy_record_result(&settings_persistence.save_policy,STORE_IO_ERROR,now_ms());
+        AppModalBinding selected;
+        if (!games_browser_modal_binding(&settings_persistence,&ui,&selected) ||
+            !games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load scoped Discard setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        departing->attempt_id=(GameAttemptId){selected.key_hi,selected.key_lo};
+        if (games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load same-attempt Discard accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        departing->attempt_id=(GameAttemptId){71,72};
+        save_policy_mark(&settings_persistence.save_policy,SAVE_DIRTY_PREFERENCES,now_ms());
+        if (games_browser_load_discard_allowed(&settings_persistence,false,selected)) {
+          fprintf(stderr,"Load unrelated dirty domain discarded\n");
+          app_shutdown(&g);return 1;
+        }
+        const AppModalAction stages[]={APP_MODAL_LOAD_CHECKPOINT,
+            APP_MODAL_LOAD_KEEP,APP_MODAL_LOAD_RETAIN_RETRY};
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        for (size_t i=0;i<sizeof(stages)/sizeof(stages[0]);++i) {
+          (void)games_browser_modal_binding(&settings_persistence,&ui,&selected);
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            fprintf(stderr,"Load modal stage setup regression\n");
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          if (ui_modal.active || ui_modal_has_pending() ||
+              ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+            fprintf(stderr,"Load safe default cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          AppModalResult choice={0};
+          if (!ui_modal_take_result(&choice) || choice.action!=stages[i] ||
+              choice.button!=1 || ui_modal_take_result(&choice)) {
+            fprintf(stderr,"Load explicit one-shot selection regression\n");
+            app_shutdown(&g);return 1;
+          }
+          ++departing->revision;
+          if (games_browser_load_chosen(&settings_persistence,&game,&ui,&g,&choice) ||
+              games_load_gate.action!=APP_MODAL_ACTION_NONE) {
+            fprintf(stderr,"Load stale departing revision accepted\n");
+            app_shutdown(&g);return 1;
+          }
+          --departing->revision;
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          games_browser.selected=1;
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          if (ui_modal.active || ui_modal_has_pending()) {
+            fprintf(stderr,"Load changed selected record accepted\n");
+            app_shutdown(&g);return 1;
+          }
+          games_browser.selected=0;
+          if (!games_browser_load_offer(&settings_persistence,&ui,&g,
+                                         selected,false,stages[i])) {
+            app_shutdown(&g);return 1;
+          }
+          key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+          key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+          ui_modal_invalidate();
+          if (ui_modal.active || ui_modal_has_pending() ||
+              ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+            fprintf(stderr,"Load queued focus cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        (void)games_browser_modal_binding(&settings_persistence,&ui,&selected);
+        games_load_activation=(GamesLoadActivation){.prepared=true,.binding=selected};
+        if (!games_browser_load_activation_offer(&settings_persistence,&ui,&g)) {
+          fprintf(stderr,"Load activation modal setup regression\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+          fprintf(stderr,"Load activation safe Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!games_browser_load_activation_offer(&settings_persistence,&ui,&g)) {
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult activation_choice={0};
+        if (!ui_modal_take_result(&activation_choice) ||
+            activation_choice.action!=APP_MODAL_LOAD_ACTIVATE_RETRY ||
+            activation_choice.button!=1 || ui_modal_has_pending()) {
+          fprintf(stderr,"Load activation explicit Retry regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_invalidate();
+        games_browser_load_activation_dispatch(&settings_persistence,&game,
+                                                 &ui,&g,&activation_choice);
+        if (ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+          fprintf(stderr,"Load activation stale generation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        settings_persistence.load_activation_unresolved=true;
+        games_load_activation.prepared=false; /* Retry must not touch storage. */
+        if (persistence_flush(&settings_persistence) ||
+            persistence_retry_current(&settings_persistence,&game,&ui) ||
+            games_browser_save_hot(&settings_persistence,false) ||
+            games_browser_daily_flush_verified(&settings_persistence) ||
+            new_game_discard_allowed(&settings_persistence) ||
+            !ui_modal_open_exit(&settings_persistence,&ui,&g) ||
+            ui_modal.request.button_count!=2 ||
+            ui_modal.request.destructive_buttons!=0) {
+          fprintf(stderr,"Load unresolved activation write/Discard regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        games_load_activation=saved_activation;
+        settings_persistence.load_activation_unresolved=saved_load_guard;
+        free(games_browser.rows);games_browser=saved_browser;
+        games_load_gate=saved_gate;
+        settings_persistence.profile.normal=saved_normal;
+        settings_persistence.save_policy=saved_policy;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.capture_failed=saved_capture;
+        settings_persistence.replay_activation_unresolved=saved_replay;
+        settings_persistence.daily_activation_unresolved=saved_daily;
+        settings_persistence.keep_pending_mask=saved_keep;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Startup consent runs through the same SDL owner. The disabled
+         persistence probe has no paths; this smoke never recovers disk data. */
+      {
+        StartupRecovery saved_startup=startup_recovery;
+        bool saved_active=startup_recovery_active;
+        bool saved_loading=startup_loading_active;
+        bool saved_enabled=settings_persistence.enabled;
+        StoreStatus saved_status=settings_persistence.profile_status;
+        StoreLockStatus saved_lock=settings_persistence.lock_status;
+        Screen saved_screen=ui.screen;unsigned saved_pauses=ui.pause_reasons;
+        ui.screen=SCR_TITLE;ui.pause_reasons=PAUSE_HOME|PAUSE_FOCUS;
+        settings_persistence.enabled=false;
+        settings_persistence.profile_status=STORE_IO_ERROR;
+        settings_persistence.lock_status=STORE_LOCK_BUSY;
+        startup_loading_active=true;
+        SDL_Event loading_key; SDL_zero(loading_key);
+        loading_key.type=SDL_KEYDOWN;loading_key.key.type=SDL_KEYDOWN;
+        loading_key.key.keysym.sym=SDLK_n;
+        if (ui_prepare_event(&loading_key)) {
+          fprintf(stderr,"Startup loading input leakage regression\n");
+          app_shutdown(&g);return 1;
+        }
+        loading_key.key.keysym.sym=SDLK_ESCAPE;
+        if (!ui_prepare_event(&loading_key)) {
+          fprintf(stderr,"Startup loading safe Back regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_FlushEvent(SDL_WINDOWEVENT);SDL_FlushEvent(SDL_KEYDOWN);
+        SDL_Event loading_window; SDL_zero(loading_window);
+        loading_window.type=SDL_WINDOWEVENT;
+        loading_window.window.windowID=SDL_GetWindowID(g.win);
+        loading_window.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+        Persistence loading_probe={0};
+        loading_probe.startup_stage=PERSISTENCE_STARTUP_LOAD;
+        if (SDL_PushEvent(&loading_window)!=1 ||
+            persistence_startup_step(&loading_probe,startup_storage_continue,&g) ||
+            loading_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD ||
+            loading_probe.enabled || !SDL_HasEvent(SDL_WINDOWEVENT)) {
+          fprintf(stderr,"Startup loading queued-context cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (SDL_PeepEvents(&loading_window,1,SDL_GETEVENT,
+                          SDL_WINDOWEVENT,SDL_WINDOWEVENT)!=1) {
+          app_shutdown(&g);return 1;
+        }
+        app_suspended=true;
+        if (persistence_startup_step(&loading_probe,startup_storage_continue,&g) ||
+            loading_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD) {
+          fprintf(stderr,"Startup loading background work regression\n");
+          app_shutdown(&g);return 1;
+        }
+        app_suspended=false;
+        startup_loading_active=saved_loading;
+        Persistence restore_probe={0};
+        ProfileData restore_snapshot;
+        profile_defaults(&restore_snapshot);
+        restore_snapshot.preferences.language=LANG_CA;
+        restore_probe.enabled=true; /* Queueing must revoke write access. */
+        restore_probe.active_attempt_id=(GameAttemptId){1,2};
+        restore_probe.load_activation_unresolved=true;
+        persistence_queue_restored(&restore_probe,&restore_snapshot);
+        if (restore_probe.enabled ||
+            restore_probe.startup_stage!=PERSISTENCE_STARTUP_LOAD ||
+            restore_probe.profile_status!=STORE_OK ||
+            game_attempt_id_valid(restore_probe.active_attempt_id) ||
+            restore_probe.load_activation_unresolved ||
+            !profile_encoded_equal(&restore_probe.profile,&restore_snapshot)) {
+          fprintf(stderr,"Startup restored profile publication gate regression\n");
+          app_shutdown(&g);return 1;
+        }
+        startup_recovery_begin(&settings_persistence,&ui,&g);
+        if (!startup_recovery_active || !startup_recovery.fatal ||
+            !ui_modal.active || ui_modal.focus!=0) {
+          fprintf(stderr,"Startup locked-profile modal regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event key; SDL_zero(key);key.type=SDL_KEYDOWN;key.key.type=SDL_KEYDOWN;
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        if (startup_recovery_poll(&settings_persistence,&ui,&g) ||
+            ui_modal.active || ui_modal_has_pending() ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS)) {
+          fprintf(stderr,"Startup safe Quit regression\n");
+          app_shutdown(&g);return 1;
+        }
+        startup_recovery=(StartupRecovery){.previous=true};
+        if (!startup_recovery_open(&settings_persistence,&ui,&g)) {
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_TAB;(void)ui_prepare_event(&key);
+        key.key.keysym.sym=SDLK_RETURN;(void)ui_prepare_event(&key);
+        AppModalResult recovery_choice={0};
+        if (!ui_modal_take_result(&recovery_choice) ||
+            recovery_choice.action!=APP_MODAL_RECOVER_PROFILE ||
+            recovery_choice.button!=1 || ui_modal_has_pending()) {
+          fprintf(stderr,"Startup explicit one-shot Recover regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_invalidate();
+        startup_recovery_dispatch(&settings_persistence,&ui,&g,&recovery_choice);
+        if (settings_persistence.enabled || ui_modal.active ||
+            ui_modal_has_pending()) {
+          fprintf(stderr,"Startup stale Recover accepted\n");
+          app_shutdown(&g);return 1;
+        }
+        key.key.keysym.sym=SDLK_n;
+        if (ui_prepare_event(&key) || ui.screen!=SCR_TITLE ||
+            settings_persistence.enabled) {
+          fprintf(stderr,"Startup Home input leaked through canceled consent\n");
+          app_shutdown(&g);return 1;
+        }
+        bool saved_ready=g.renderer_ready;
+        g.renderer_ready=false;
+        if (!startup_recovery_poll(&settings_persistence,&ui,&g) || ui_modal.active) {
+          fprintf(stderr,"Startup unavailable renderer recovery regression\n");
+          app_shutdown(&g);return 1;
+        }
+        g.renderer_ready=saved_ready;
+        if (!startup_recovery_poll(&settings_persistence,&ui,&g) ||
+            !ui_modal.active || ui_modal.focus!=0 ||
+            ui.pause_reasons!=(PAUSE_HOME|PAUSE_FOCUS|PAUSE_MODAL)) {
+          fprintf(stderr,"Startup lifecycle consent reopening regression\n");
+          app_shutdown(&g);return 1;
+        }
+        ui_modal_cancel_current();
+        startup_recovery=saved_startup;startup_recovery_active=saved_active;
+        settings_persistence.enabled=saved_enabled;
+        settings_persistence.profile_status=saved_status;
+        settings_persistence.lock_status=saved_lock;
+        ui.screen=saved_screen;ui.pause_reasons=saved_pauses;
+      }
+      /* Generation peeks context events without swallowing the main owner's
+         focus/checkpoint/renderer work. All events here are synthetic. */
+      {
+        UI saved_ui=ui;
+        Game previous=game;
+        GameAttemptId saved_attempt=settings_persistence.active_attempt_id;
+        uint64_t normal_revision=settings_persistence.profile.normal.revision;
+        uint64_t daily_revision=settings_persistence.profile.daily.revision;
+        ui.screen=SCR_PLAY;ui.session_open=true;ui.result=RES_NONE;
+        ui.pause_reasons=PAUSE_MANUAL;ui.generation_attempt=7;
+        SDL_FlushEvent(SDL_WINDOWEVENT); /* Isolated smoke setup noise. */
+        SDL_FlushEvents(SDL_KEYDOWN,SDL_KEYUP);
+        const Uint8 changes[]={SDL_WINDOWEVENT_FOCUS_LOST,SDL_WINDOWEVENT_HIDDEN,
+            SDL_WINDOWEVENT_MINIMIZED,SDL_WINDOWEVENT_SIZE_CHANGED,
+            SDL_WINDOWEVENT_DISPLAY_CHANGED};
+        for (size_t i=0;i<sizeof(changes)/sizeof(changes[0]);++i) {
+          SDL_Event queued; SDL_zero(queued);queued.type=SDL_WINDOWEVENT;
+          queued.window.type=SDL_WINDOWEVENT;
+          queued.window.windowID=SDL_GetWindowID(g.win);
+          queued.window.event=changes[i];queued.window.data1=140;
+          GenerationUiContext context={&g,&game,&ui,0};
+          if (SDL_PushEvent(&queued)!=1 || generation_ui_continue(&context,0,4) ||
+              context.rendered_attempt!=0 || ui.generation_attempt!=7 ||
+              ui.pause_reasons!=PAUSE_MANUAL || memcmp(&game,&previous,sizeof(game))) {
+            fprintf(stderr,"Generation queued context cancellation regression\n");
+            app_shutdown(&g);return 1;
+          }
+          SDL_Event retained; SDL_zero(retained);
+          if (SDL_PeepEvents(&retained,1,SDL_GETEVENT,SDL_WINDOWEVENT,
+                              SDL_WINDOWEVENT)!=1 ||
+              retained.window.event!=changes[i] || retained.window.data1!=140) {
+            fprintf(stderr,"Generation swallowed owner window event\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        const Uint32 resets[]={SDL_RENDER_DEVICE_RESET,SDL_RENDER_TARGETS_RESET};
+        for (size_t i=0;i<sizeof(resets)/sizeof(resets[0]);++i) {
+          SDL_Event queued; SDL_zero(queued);queued.type=resets[i];
+          GenerationUiContext context={&g,&game,&ui,0};
+          if (SDL_PushEvent(&queued)!=1 || generation_ui_continue(&context,0,4) ||
+              context.rendered_attempt || !g.renderer_ready) {
+            fprintf(stderr,"Generation rendered across queued renderer reset\n");
+            app_shutdown(&g);return 1;
+          }
+          if (SDL_PeepEvents(&queued,1,SDL_GETEVENT,resets[i],resets[i])!=1) {
+            fprintf(stderr,"Generation consumed renderer reset\n");
+            app_shutdown(&g);return 1;
+          }
+        }
+        SDL_Event back; SDL_zero(back);back.type=SDL_KEYDOWN;back.key.type=SDL_KEYDOWN;
+        back.key.keysym.sym=SDLK_AC_BACK;
+        GenerationUiContext context={&g,&game,&ui,0};
+        if (SDL_PushEvent(&back)!=1 || generation_ui_continue(&context,0,4) ||
+            context.rendered_attempt ||
+            SDL_PeepEvents(&back,1,SDL_GETEVENT,SDL_KEYDOWN,SDL_KEYDOWN)!=1) {
+          fprintf(stderr,"Generation queued Back cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        SDL_Event other; SDL_zero(other);other.type=SDL_WINDOWEVENT;other.window.type=SDL_WINDOWEVENT;
+        other.window.windowID=SDL_GetWindowID(g.win)+1;
+        other.window.event=SDL_WINDOWEVENT_FOCUS_LOST;
+        context=(GenerationUiContext){&g,&game,&ui,1};
+        if (SDL_PushEvent(&other)!=1 || !generation_ui_continue(&context,0,4) ||
+            SDL_PeepEvents(&other,1,SDL_GETEVENT,SDL_WINDOWEVENT,SDL_WINDOWEVENT)!=1) {
+          fprintf(stderr,"Generation unrelated window cancellation regression\n");
+          app_shutdown(&g);return 1;
+        }
+        if (!game_attempt_id_equal(saved_attempt,settings_persistence.active_attempt_id) ||
+            normal_revision!=settings_persistence.profile.normal.revision ||
+            daily_revision!=settings_persistence.profile.daily.revision ||
+            memcmp(&game,&previous,sizeof(game))) {
+          fprintf(stderr,"Generation cancellation mutated live identity or progress\n");
+          app_shutdown(&g);return 1;
+        }
+        ui=saved_ui;
+        app_tick(&g,&game,&ui);
+      }
+      /* Real SDL event preparation/dispatch, without writing any profile.
+         Default Enter cancels; Retry and Discard need deliberate selection. */
+      ui.screen = SCR_PLAY;
+      ui.session_open = true;
+      ui.pause_reasons = 0;
+      AppModalRequest test_modal = {
+          .kind = APP_MODAL_RECOVERY, .action = APP_MODAL_EXIT,
+          .binding = ui_modal_current_binding(&settings_persistence, &ui),
+          .title = T_UNSAVED_TITLE, .body = T_UNSAVED_EXIT,
+          .buttons = {T_BACK, T_RETRY_SAVE, T_DISCARD},
+          .button_count = 3, .destructive_buttons = 4u};
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal request regression\n");
+        app_shutdown(&g); return 1;
+      }
+      app_frame(&g, &game, &ui);
+      SDL_Event modal_event; SDL_zero(modal_event);
+      modal_event.type = SDL_KEYDOWN;
+      modal_event.key.type = SDL_KEYDOWN;
+      modal_event.key.keysym.sym = SDLK_RETURN;
+      modal_event.key.keysym.scancode = SDL_SCANCODE_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding = ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal reopen regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym = SDLK_TAB;
+      if (ui_prepare_event(&modal_event) || ui_modal.focus != 1) {
+        fprintf(stderr, "SDL modal keyboard focus regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym = SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active) {
+        fprintf(stderr, "SDL modal keyboard completion regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalResult smoke_result;
+      if (!ui_modal_take_result(&smoke_result) ||
+          smoke_result.action != APP_MODAL_EXIT ||
+          smoke_result.button != 1 || ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal once-only Retry regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal pointer setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      UiModalLayout modal_layout = ui_modal_layout(&g,3);
+      /* Scroll controls must not choose an action, steal decision focus,
+         release the modal pause or mutate the underlying game. */
+      unsigned scroll_focus=ui_modal.focus;
+      unsigned scroll_pause=ui.pause_reasons;
+      Game scroll_game_before=game;
+      ui_modal_scroll_max_px=300;
+      SDL_Event scroll_event; SDL_zero(scroll_event);
+      scroll_event.type=SDL_FINGERDOWN;
+      scroll_event.tfinger.type=SDL_FINGERDOWN;
+      scroll_event.tfinger.touchId=71;scroll_event.tfinger.fingerId=72;
+      scroll_event.tfinger.x=(float)(modal_layout.scroll_down.x+24)/g.width;
+      scroll_event.tfinger.y=(float)(modal_layout.scroll_down.y+24)/g.height;
+      if (ui_prepare_event(&scroll_event) || ui_modal_scroll_px!=0) {
+        fprintf(stderr,"modal scroll press activation regression\n");
+        app_shutdown(&g);return 1;
+      }
+      scroll_event.type=SDL_FINGERUP;scroll_event.tfinger.type=SDL_FINGERUP;
+      if (ui_prepare_event(&scroll_event) || ui_modal_scroll_px<=0 ||
+          !ui_modal.active || ui_modal_has_pending() ||
+          ui_modal.focus!=scroll_focus || ui.pause_reasons!=scroll_pause ||
+          memcmp(&game,&scroll_game_before,sizeof(game))!=0) {
+        fprintf(stderr,"modal touch scrolling changed decision/game regression\n");
+        app_shutdown(&g);return 1;
+      }
+      int scrolled=ui_modal_scroll_px;
+      SDL_Event duplicate; SDL_zero(duplicate);
+      duplicate.type=SDL_MOUSEBUTTONDOWN;
+      duplicate.button.type=SDL_MOUSEBUTTONDOWN;
+      duplicate.button.which=SDL_TOUCH_MOUSEID;
+      duplicate.button.button=SDL_BUTTON_LEFT;
+      duplicate.button.x=modal_layout.scroll_down.x+24;
+      duplicate.button.y=modal_layout.scroll_down.y+24;
+      (void)ui_prepare_event(&duplicate);
+      duplicate.type=SDL_MOUSEBUTTONUP;duplicate.button.type=SDL_MOUSEBUTTONUP;
+      (void)ui_prepare_event(&duplicate);
+      if (ui_modal_scroll_px!=scrolled || !ui_modal.active || ui_modal_has_pending()) {
+        fprintf(stderr,"modal synthetic mouse scroll duplication regression\n");
+        app_shutdown(&g);return 1;
+      }
+      scroll_event.type=SDL_FINGERDOWN;scroll_event.tfinger.type=SDL_FINGERDOWN;
+      (void)ui_prepare_event(&scroll_event);
+      scroll_event.type=SDL_FINGERMOTION;scroll_event.tfinger.type=SDL_FINGERMOTION;
+      scroll_event.tfinger.x=0.0f;scroll_event.tfinger.y=0.0f;
+      (void)ui_prepare_event(&scroll_event);
+      scroll_event.type=SDL_FINGERUP;scroll_event.tfinger.type=SDL_FINGERUP;
+      (void)ui_prepare_event(&scroll_event);
+      if (ui_modal_scroll_px!=scrolled || ui_modal_has_pending()) {
+        fprintf(stderr,"modal scroll canceled release regression\n");
+        app_shutdown(&g);return 1;
+      }
+      help_scroll_max_px=200;help_scroll_set(70);
+      help_scroll_by(INT64_MAX);
+      if (help_scroll_px!=200) {app_shutdown(&g);return 1;}
+      help_scroll_by(INT64_MIN);
+      if (help_scroll_px!=0) {app_shutdown(&g);return 1;}
+      help_scroll_reset();
+      ui_modal_scroll_by(INT64_MAX);
+      if (ui_modal_scroll_px!=ui_modal_scroll_max_px) {
+        app_shutdown(&g);return 1;
+      }
+      ui_modal_scroll_by(INT64_MIN);
+      if (ui_modal_scroll_px!=0) {app_shutdown(&g);return 1;}
+      ui_modal_scroll_max_px=0;
+      int tx=modal_layout.buttons[2].x+modal_layout.buttons[2].w/2;
+      int ty=modal_layout.buttons[2].y+modal_layout.buttons[2].h/2;
+      SDL_zero(modal_event);
+      modal_event.type = SDL_MOUSEBUTTONDOWN;
+      modal_event.button.type = SDL_MOUSEBUTTONDOWN;
+      modal_event.button.button = SDL_BUTTON_LEFT;
+      modal_event.button.x=tx;modal_event.button.y=ty;
+      if (ui_prepare_event(&modal_event) || !ui_modal.active ||
+          ui_modal_has_pending()) {
+        fprintf(stderr, "SDL modal pointer-down regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.type = SDL_MOUSEBUTTONUP;
+      modal_event.button.type = SDL_MOUSEBUTTONUP;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.button != 2 || smoke_result.action != APP_MODAL_EXIT ||
+          ui.pause_reasons != 0) {
+        fprintf(stderr, "SDL modal pointer-release regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal touch setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      SDL_zero(modal_event);
+      modal_event.type=SDL_FINGERDOWN;
+      modal_event.tfinger.type=SDL_FINGERDOWN;
+      modal_event.tfinger.touchId=42;
+      modal_event.tfinger.fingerId=43;
+      modal_event.tfinger.x=(float)tx/g.width;
+      modal_event.tfinger.y=(float)ty/g.height;
+      if (ui_prepare_event(&modal_event) || !ui_modal.active ||
+          ui_modal_has_pending()) {
+        fprintf(stderr, "SDL modal touch-down regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.type=SDL_FINGERUP;
+      modal_event.tfinger.type=SDL_FINGERUP;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.button != 2 || smoke_result.action != APP_MODAL_EXIT) {
+        fprintf(stderr, "SDL modal touch-release regression\n");
+        app_shutdown(&g); return 1;
+      }
+      test_modal.binding=ui_modal_current_binding(&settings_persistence,&ui);
+      if (!ui_modal_open_request(&g, &ui, &test_modal)) {
+        fprintf(stderr, "SDL modal lifecycle setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui, PAUSE_FOCUS);
+      ui_modal_invalidate();
+      if (ui_modal.active || ui_modal_has_pending() ||
+          ui.pause_reasons != PAUSE_FOCUS) {
+        fprintf(stderr, "SDL modal focus-pause ownership regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui, PAUSE_FOCUS);
+      if (!ui_modal_message(&g, &ui, T_ABOUT, T_LINK_ERROR)) {
+        fprintf(stderr, "SDL modal message setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      app_frame(&g, &game, &ui);
+      SDL_zero(modal_event);
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_ESCAPE;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=0) {
+        fprintf(stderr, "SDL modal message Back regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!ui_modal_open_home(&settings_persistence,&ui,&g)) {
+        fprintf(stderr, "SDL modal Home setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.action!=APP_MODAL_HOME ||
+          smoke_result.button!=1 || ui.pause_reasons!=0) {
+        fprintf(stderr, "SDL modal Home Retry regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* Simulated library rows exercise native-owner SDL dispatch. No
+         record is recovered or modified in this smoke fixture. */
+      GamesBrowser saved_library_browser = games_browser;
+      GamesRow modal_rows[2] = {0};
+      modal_rows[0].entry.id = (GameAttemptId){1, 101};
+      modal_rows[0].entry.revision = 7;
+      modal_rows[0].entry.status = STORE_CORRUPT;
+      modal_rows[0].entry.previous_status = STORE_OK;
+      modal_rows[1].entry.id = (GameAttemptId){1, 202};
+      modal_rows[1].entry.revision = 8;
+      modal_rows[1].entry.status = STORE_CORRUPT;
+      modal_rows[1].entry.previous_status = STORE_OK;
+      games_browser = (GamesBrowser){.rows=modal_rows, .count=2,
+                                    .capacity=2, .selected=0};
+      ui.screen = APP_SCREEN_GAMES;
+      ui.pause_reasons = PAUSE_MODAL;
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      SDL_zero(modal_event);
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr, "library stale-selection confirmation regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery modal reopen regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr, "library recovery safe-Back regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_recover_selected(&settings_persistence, &game, &ui,
+                                          &g)) {
+        fprintf(stderr, "library recovery confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          smoke_result.action!=APP_MODAL_RECOVER_RECORD ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr, "library recovery one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* Replay acceptance is bound to a finished record, not its row. */
+      modal_rows[0].entry.status=STORE_OK;
+      modal_rows[0].entry.kind=GAME_RECORD_EXACT;
+      modal_rows[0].entry.result.status=SESSION_WON;
+      modal_rows[1].entry.status=STORE_OK;
+      modal_rows[1].entry.kind=GAME_RECORD_EXACT;
+      modal_rows[1].entry.result.status=SESSION_WON;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay safe-default regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay stale-selection setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay stale-revision setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ++modal_rows[0].entry.revision;
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Replay stale-revision regression\n");
+        app_shutdown(&g); return 1;
+      }
+      --modal_rows[0].entry.revision;
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Replay confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_REPLAY ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr,"library Replay one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* A choice accepted by SDL is still transient until the main owner
+         dispatches it. A subsequent focus/resize event must discard it. */
+      if (!games_browser_replay_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"Replay queued cancellation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || !ui_modal_has_pending()) {
+        fprintf(stderr,"Replay queued acceptance setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui, PAUSE_FOCUS);
+      ui_modal_invalidate(); /* Focus loss before main-owner continuation. */
+      if (ui_modal_has_pending() || ui_modal.active ||
+          ui.pause_reasons != (PAUSE_MODAL | PAUSE_FOCUS)) {
+        fprintf(stderr,"Replay queued choice survived focus loss\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui, PAUSE_FOCUS);
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete stale setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete stale-revision setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      ++modal_rows[0].entry.revision;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"library Delete stale-revision regression\n");
+        app_shutdown(&g); return 1;
+      }
+      --modal_rows[0].entry.revision;
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"library Delete confirmation setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_DELETE ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,
+              ui_modal_dispatch_binding(&settings_persistence,&ui,
+                                        smoke_result.action))) {
+        fprintf(stderr,"library Delete one-shot event regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_delete_selected(&settings_persistence,&game,&ui,&g)) {
+        fprintf(stderr,"mixed-pointer modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      UiModalLayout ml=ui_modal_layout(&g,2);
+      int mx=ml.buttons[1].x+ml.buttons[1].w/2;
+      int my=ml.buttons[1].y+ml.buttons[1].h/2;
+      SDL_zero(modal_event);
+      modal_event.type=SDL_FINGERDOWN;
+      modal_event.tfinger.type=SDL_FINGERDOWN;
+      modal_event.tfinger.touchId=9;
+      modal_event.tfinger.fingerId=10;
+      modal_event.tfinger.x=(float)mx/g.width;
+      modal_event.tfinger.y=(float)my/g.height;
+      (void)ui_prepare_event(&modal_event);
+      SDL_zero(modal_event);
+      modal_event.type=SDL_MOUSEBUTTONUP;
+      modal_event.button.type=SDL_MOUSEBUTTONUP;
+      modal_event.button.button=SDL_BUTTON_LEFT;
+      modal_event.button.x=mx;
+      modal_event.button.y=my;
+      (void)ui_prepare_event(&modal_event);
+      if (!ui_modal.active || ui_modal_has_pending()) {
+        fprintf(stderr,"mixed-pointer false-confirm regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ui_modal_cancel_current();
+      AppModalBinding conflict_binding;
+      if (!games_browser_modal_binding(&settings_persistence,&ui,
+                                       &conflict_binding)) {
+        fprintf(stderr,"Replay pending identity regression\n");
+        app_shutdown(&g); return 1;
+      }
+      GameReplayIntent mock_pending={
+          .source_id=modal_rows[0].entry.id,
+          .attempt_id=(GameAttemptId){55,66},
+          .state=GAME_REPLAY_PREPARED};
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_OTHER)) {
+        fprintf(stderr,"Replay pending modal setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      SDL_zero(modal_event);
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay pending safe-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_CONFLICT)) {
+        fprintf(stderr,"Replay pending conflict setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      games_browser.selected=1;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay pending stale-selection regression\n");
+        app_shutdown(&g); return 1;
+      }
+      games_browser.selected=0;
+      if (!games_browser_pending_dialog(&settings_persistence,&ui,&g,
+                                         conflict_binding,mock_pending,
+                                         T_GAMES_REPLAY_PENDING_CONFLICT)) {
+        fprintf(stderr,"Replay pending choice setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      (void)ui_prepare_event(&modal_event);
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) ||
+          !ui_modal_take_result(&smoke_result) ||
+          ui_modal_has_pending() ||
+          smoke_result.action!=APP_MODAL_REPLAY_CONFLICT ||
+          smoke_result.button!=1 || ui.pause_reasons!=PAUSE_MODAL ||
+          !games_replay_conflict.armed) {
+        fprintf(stderr,"Replay pending one-shot regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalBinding invalid_pending_binding=smoke_result.binding;
+      ++invalid_pending_binding.revision;
+      if (games_browser_pending_accepted(&settings_persistence,&game,&ui,
+                                         &g,invalid_pending_binding) ||
+          games_replay_conflict.armed) {
+        fprintf(stderr,"Replay pending stale continuation regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* Terminal records cannot enter Replay's departing-save gate. */
+      ProfileSlot replay_keep_slot={0};
+      replay_keep_slot.present=true;
+      replay_keep_slot.value.started=true;
+      replay_keep_slot.value.session.status=SESSION_WON;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay terminal-win keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.session.status=SESSION_INTERRUPTED;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay terminal-interrupted keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.session.status=SESSION_ACTIVE;
+      if (!games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay active unsaved keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      replay_keep_slot.value.explicitly_saved=true;
+      if (games_browser_replay_keep_required(&replay_keep_slot)) {
+        fprintf(stderr,"Replay active saved keep regression\n");
+        app_shutdown(&g); return 1;
+      }
+      AppModalBinding save_gate_binding;
+      if (!games_browser_modal_binding(&settings_persistence,&ui,
+                                       &save_gate_binding) ||
+          !games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_CHECKPOINT,false)) {
+        fprintf(stderr,"Replay checkpoint gate setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      SDL_zero(modal_event);
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      if (ui_prepare_event(&modal_event) || ui_modal.active ||
+          ui_modal_has_pending() || ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay checkpoint default-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_KEEP,true)) {
+        fprintf(stderr,"Replay retention gate setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* Use explicit event-local modifiers. Shift+Tab must wrap back,
+         ordinary Tab forward, and arrows must select Discard deliberately. */
+      if (ui_modal.focus!=0) {
+        fprintf(stderr,"Replay retention initial focus regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_TAB;
+      modal_event.key.keysym.mod=KMOD_SHIFT;
+      (void)ui_prepare_event(&modal_event);
+      if (ui_modal.focus!=2) {
+        fprintf(stderr,"Replay retention reverse-tab regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.mod=KMOD_NONE;
+      (void)ui_prepare_event(&modal_event);
+      if (ui_modal.focus!=0) {
+        fprintf(stderr,"Replay retention forward-tab regression\n");
+        app_shutdown(&g); return 1;
+      }
+      modal_event.key.keysym.sym=SDLK_RIGHT;
+      (void)ui_prepare_event(&modal_event);
+      unsigned first_replay_focus=ui_modal.focus;
+      (void)ui_prepare_event(&modal_event);
+      unsigned second_replay_focus=ui_modal.focus;
+      modal_event.key.keysym.sym=SDLK_RETURN;
+      bool replay_enter_leaked=ui_prepare_event(&modal_event);
+      bool replay_choice_ready=ui_modal_take_result(&smoke_result);
+      if (first_replay_focus!=1 || second_replay_focus!=2 ||
+          replay_enter_leaked || !replay_choice_ready ||
+          smoke_result.action!=APP_MODAL_REPLAY_KEEP ||
+          smoke_result.button!=2 || ui.pause_reasons!=PAUSE_MODAL ||
+          !app_modal_binding_equal(smoke_result.binding,save_gate_binding)) {
+        fprintf(stderr,"Replay retention explicit-choice regression: "
+                "first_focus=%u second_focus=%u entered=%d ready=%d "
+                "resolution=%u action=%u button=%u pause=%u\n",
+                first_replay_focus,second_replay_focus,
+                replay_enter_leaked,replay_choice_ready,
+                (unsigned)smoke_result.resolution,
+                (unsigned)smoke_result.action,smoke_result.button,
+                ui.pause_reasons);
+        app_shutdown(&g); return 1;
+      }
+      AppModalBinding stale_gate_binding=smoke_result.binding;
+      ++stale_gate_binding.revision;
+      if (games_browser_replay_gate_chosen(
+              &settings_persistence,&game,&ui,&g,stale_gate_binding,
+              APP_MODAL_REPLAY_KEEP,smoke_result.button) ||
+          games_replay_gate.action!=APP_MODAL_ACTION_NONE) {
+        fprintf(stderr,"Replay retention stale-continuation regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!games_browser_replay_offer(&settings_persistence,&ui,&g,
+              save_gate_binding,APP_MODAL_REPLAY_RETAIN_RETRY,false)) {
+        fprintf(stderr,"Replay retention Retry setup regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_pause(&ui,PAUSE_FOCUS);
+      ui_modal_invalidate();
+      if (ui_modal.active || ui_modal_has_pending() ||
+          ui.pause_reasons!=(PAUSE_MODAL|PAUSE_FOCUS)) {
+        fprintf(stderr,"Replay save lifecycle-cancel regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui,PAUSE_FOCUS);
+      /* An unresolved post-rename activation must never be overwritten
+         by ordinary periodic/manual retry paths on the native owner. */
+      bool prior_activation_guard=settings_persistence.replay_activation_unresolved;
+      settings_persistence.replay_activation_unresolved=true;
+      if (persistence_flush(&settings_persistence) ||
+          persistence_retry_current(&settings_persistence,&game,&ui) ||
+          games_browser_daily_flush_verified(&settings_persistence) ||
+          games_browser_commit_profile(&settings_persistence,&game,&ui,
+              &g,false,&settings_persistence.profile,false)) {
+        fprintf(stderr,"Replay uncertain-profile checkpoint regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (games_browser_activate(&settings_persistence,&game,&ui,&g) ||
+          !ui_modal.active) {
+        fprintf(stderr,"Replay uncertain-profile Discard gate regression\n");
+        app_shutdown(&g); return 1;
+      }
+      ui_modal_cancel_current();
+      if (ui.pause_reasons!=PAUSE_MODAL) {
+        fprintf(stderr,"Replay uncertain-profile pause regression\n");
+        app_shutdown(&g); return 1;
+      }
+      settings_persistence.replay_activation_unresolved=prior_activation_guard;
+
+      /* Inject an absent renderer handle without destroying the real SDL
+         renderer; assert blocked input/frame and explicit one-shot restore. */
+      SDL_Renderer *saved_renderer=g.ren;
+      g.ren=NULL;
+      bool failed_restore=app_restore_renderer_resources(&g,&ui);
+      g.ren=saved_renderer;
+      if (failed_restore || g.renderer_ready || g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer unavailable transition regression\n");
+        app_shutdown(&g); return 1;
+      }
+      SDL_zero(modal_event);
+      modal_event.type=SDL_MOUSEBUTTONDOWN;
+      modal_event.button.type=SDL_MOUSEBUTTONDOWN;
+      modal_event.button.button=SDL_BUTTON_LEFT;
+      if (ui_prepare_event(&modal_event) || ui_modal_has_pending()) {
+        fprintf(stderr,"renderer unavailable input leakage regression\n");
+        app_shutdown(&g); return 1;
+      }
+      g.dirty=true;
+      app_frame(&g,&game,&ui);
+      if (g.dirty || g.renderer_ready) {
+        fprintf(stderr,"renderer unavailable draw regression\n");
+        app_shutdown(&g); return 1;
+      }
+      Game recovery_game_before=game;
+      bool recovery_running=true;
+      int recovery_exit_status=0;
+      renderer_recovery_sync(&g,&ui,true);
+      int first_token=SDL_AtomicGet(&renderer_recovery_token);
+      renderer_recovery_submit(first_token+1,true);
+      if (!first_token || SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback stale-action regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(first_token,false);
+      renderer_recovery_submit(first_token,true); /* First choice wins. */
+      g.ren=NULL;
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      g.ren=saved_renderer;
+      int retry_token=SDL_AtomicGet(&renderer_recovery_token);
+      if (!recovery_running || g.renderer_ready || retry_token==first_token ||
+          !retry_token || SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback failed-retry regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(retry_token,false);
+      app_suspended=true;
+      renderer_recovery_sync(&g,&ui,false);
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      if (g.renderer_ready || SDL_AtomicGet(&renderer_recovery_token)) {
+        fprintf(stderr,"renderer fallback background-choice regression\n");
+        app_shutdown(&g);return 1;
+      }
+      app_suspended=false;
+      renderer_recovery_sync(&g,&ui,false);
+      renderer_recovery_submit(retry_token,true); /* Old surface consent. */
+      int foreground_token=SDL_AtomicGet(&renderer_recovery_token);
+      renderer_recovery_submit(foreground_token,false);
+      renderer_recovery_dispatch(NULL,&game,&ui,&g,&recovery_running,
+                                 &recovery_exit_status);
+      if (!recovery_running || recovery_exit_status || !g.renderer_ready ||
+          SDL_AtomicGet(&renderer_recovery_token) ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0 ||
+          memcmp(&game,&recovery_game_before,sizeof(game))!=0) {
+        fprintf(stderr,"renderer fallback foreground-retry regression\n");
+        app_shutdown(&g);return 1;
+      }
+      renderer_recovery_submit(foreground_token,true);
+      if (SDL_AtomicGet(&renderer_recovery_command)) {
+        fprintf(stderr,"renderer fallback recovered-action regression\n");
+        app_shutdown(&g);return 1;
+      }
+      app_mark_renderer_unavailable(&g,&ui);
+      SDL_zero(modal_event);
+      modal_event.type=SDL_KEYDOWN;
+      modal_event.key.type=SDL_KEYDOWN;
+      modal_event.key.keysym.sym=SDLK_r;
+      if (ui_prepare_event(&modal_event) || !g.renderer_ready ||
+          !g.dirty || (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer explicit restore regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* Route an actual failed resize metrics call through the same
+         fail-closed state; restoration must not release focus pause. */
+      g.ren=NULL;
+      bool bad_resize=app_resize_renderer_metrics(&g,&ui,g.width,g.height);
+      g.ren=saved_renderer;
+      if (bad_resize || g.renderer_ready || g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer failed-resize gate regression\n");
+        app_shutdown(&g); return 1;
+      }
+      if (!app_refresh_renderer_metrics(&g,&ui) ||
+          !g.renderer_ready || !g.dirty ||
+          (ui.pause_reasons & PAUSE_FOCUS)==0) {
+        fprintf(stderr,"renderer resize restoration regression\n");
+        app_shutdown(&g); return 1;
+      }
+      /* A missing font alias simulates the cache emptied by a failed
+         font reopen: same-scale metrics retry must repopulate the cache. */
+      g.font_big=NULL;
+      if (!app_refresh_renderer_metrics(&g,&ui) || !g.font_big ||
+          !g.renderer_ready) {
+        fprintf(stderr,"renderer same-scale font recovery regression\n");
+        app_shutdown(&g); return 1;
+      }
+      (void)clock_resume(&ui,PAUSE_FOCUS);
+      games_browser=saved_library_browser;
+      ui.pause_reasons=0;
+      ui.screen=SCR_PLAY;
       audio_persistence = NULL;
     }
     if (screenshot_dir) {
@@ -1842,15 +4616,17 @@ int main(int argc, char **argv) {
         REVIEW_GAMES_EMPTY, REVIEW_GAMES_ACTIVE, REVIEW_GAMES_UNAVAILABLE,
         REVIEW_GAMES_RECOVER, REVIEW_GAMES_FINISHED, REVIEW_GAMES_DETAIL,
         REVIEW_HOME_DAILY_LOADING, REVIEW_HOME_DAILY_OLDER,
-        REVIEW_HOME_DAILY_FINISHED, REVIEW_STATE_COUNT
+        REVIEW_HOME_DAILY_FINISHED, REVIEW_JOURNEY_EMPTY, REVIEW_RETRY_EMPTY,
+        REVIEW_LEAVE_DIALOG, REVIEW_STATE_COUNT
       };
-      const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080}};
+      const int sizes[][2]={{640,480},{1024,768},{1366,768},{360,640},{1920,1080},{412,892}};
       const char*state_names[REVIEW_STATE_COUNT]={
         "home-empty","home-save","notes","conflict","hint","save-error",
         "result-save-error","pause","loss","win","help","settings","about",
         "games-empty","games-active","games-unavailable",
         "games-recover","games-finished","games-detail",
-        "home-daily-loading","home-daily-older","home-daily-finished"
+        "home-daily-loading","home-daily-older","home-daily-finished",
+        "journey-empty","retry-empty","leave-dialog"
       };
       if(!make_directory(screenshot_dir)){
         fprintf(stderr,"cannot create screenshot directory: %s\n",screenshot_dir);
@@ -1880,6 +4656,9 @@ int main(int argc, char **argv) {
             fclose(manifest);app_shutdown(&g);return 1;
           }
 
+          g.mobile_layout=n==5;
+          ui_modal_cancel_current();
+          ui_modal_pending=(AppModalResult){0};
           game=review_base;app_state_init(&ui);set_mode_params(&ui);
           ui.session_open=true;ui.has_session=false;
           ui.language=(Language)((n+state)%LANG_COUNT);
@@ -1931,8 +4710,23 @@ int main(int argc, char **argv) {
                 ui.daily_resume.today=state==REVIEW_HOME_DAILY_FINISHED;
               }
               break;
+            case REVIEW_LEAVE_DIALOG:{
+              ui.screen=SCR_TITLE;
+              AppModalRequest request={.kind=APP_MODAL_CONFIRM,
+                  .action=APP_MODAL_NEW_KEEP,.binding=ui_modal_new_game_binding(&review_persistence,&ui),
+                  .title=T_GAMES_KEEP_TITLE,.body=T_GAMES_NEW_PROMPT,
+                  .buttons={T_CANCEL,T_LEAVE_SAVE,T_LEAVE_ABANDON},
+                  .button_count=3,.destructive_buttons=4};
+              if(!ui_modal_open_request(&g,&ui,&request)) { fclose(manifest);app_shutdown(&g);return 1; }
+              (void)app_modal_focus(&ui_modal,ui_modal.serial,2);
+              focus="abandon";focus_rect=ui_modal_layout(&g,3).buttons[2];break;
+            }
+            case REVIEW_JOURNEY_EMPTY:
+            case REVIEW_RETRY_EMPTY:
             case REVIEW_GAMES_EMPTY:{
               ui.screen=APP_SCREEN_GAMES;
+              games_browser.view=state==REVIEW_JOURNEY_EMPTY?JOURNEY_WON:
+                  state==REVIEW_RETRY_EMPTY?JOURNEY_RETRY:GAMES_SAVED;
               games_browser.focus=2;
               GamesBrowserLayout lay=games_browser_layout(&g);
               focus="games-back";focus_rect=lay.back;break;
@@ -1960,10 +4754,12 @@ int main(int argc, char **argv) {
               entry.result.elapsed_ms=754000;
               entry.result.practice=state==REVIEW_GAMES_DETAIL;
               entry.result.assisted=finished;
+              games_browser.view=finished?JOURNEY_WON:GAMES_SAVED;
               entry.finished_utc=finished?UINT64_C(1791916200):0;
               if(!games_browser_push(&entry,false)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
+              if(finished) { games_browser.rows[0].attempts=3;games_browser.rows[0].setbacks=2; }
               games_browser.preview_valid=state!=REVIEW_GAMES_UNAVAILABLE &&
                   state!=REVIEW_GAMES_RECOVER;
               games_browser.preview.game=game;
@@ -2057,7 +4853,7 @@ int main(int argc, char **argv) {
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);break;
             }
             case REVIEW_ABOUT:
-              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_0;focus="about-github";
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_0;focus="about-repository";
               focus_rect=sdl_rect(geometry.about_links[0]);break;
           }
 
@@ -2083,6 +4879,7 @@ int main(int argc, char **argv) {
         }
       }
 
+      ui_modal_cancel_current();g.mobile_layout=false;
       daily_lookup_scanning=false;
       free(games_browser.rows);
       memset(&games_browser,0,sizeof(games_browser));
@@ -2159,14 +4956,15 @@ int main(int argc, char **argv) {
               focus="audio-button";focus_rect=sdl_rect(audio_geo.button);
               app_render_ui(&g,&game,&ui);
               SDL_RenderPresent(g.ren);
-              native_dialog_prepare(&g,&game,&ui);
+              ui_audio_control_cancel_interaction();
+              app_frame(&g,&game,&ui);
             }else{
-              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_2;
               AppGeometry geometry;
               if(!get_geometry(&g,&ui,&geometry)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
-              focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
+              focus="about-support";focus_rect=sdl_rect(geometry.about_links[2]);
             }
 
             if(strcmp(audit_state,"dialog-prep"))
@@ -2302,96 +5100,25 @@ int main(int argc, char **argv) {
   double profile_start_ms=wall_clock_ms();
   Persistence persistence;
   persistence_init(&persistence);
-  double profile_end_ms=wall_clock_ms();
-  ui.language = persistence.preferences.language;
-  if ((persistence.profile_status == STORE_CORRUPT ||
-       persistence.profile_status == STORE_NOT_FOUND) &&
-      persistence_previous_available(&persistence)) {
-    bool recover = confirm_box(&g, &game, &ui, tr(ui.language, T_STORAGE_ERROR),
-                               tr(ui.language, T_PROFILE_RECOVER_PROMPT),
-                               tr(ui.language, T_RECOVER),
-                               tr(ui.language, T_QUIT));
-    if (!recover) {
-      app_shutdown(&g);
-      return 1;
-    }
-    if (!persistence_recover_previous(&persistence)) {
-      (void)show_simple_message_box(
-          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-          tr(ui.language, T_STORAGE_ERROR),
-          tr(ui.language, T_PROFILE_IO_ERROR));
-      app_shutdown(&g);
-      return 1;
-    }
-    ui.language = persistence.preferences.language;
-    audio_apply_preferences(&persistence);
-  }
-  GameMigrationRecoveryRoute missing_route = GAME_MIGRATION_RECOVERY_NONE;
-  if (persistence_missing_hot_recovery_available(&persistence,
-                                                  &missing_route)) {
-    /* Explicit user consent is required before publishing any recovered
-       hot profile. Native Cancel/Escape always quits without a write. */
-    TextKey prompt = missing_route == GAME_MIGRATION_RECOVERY_IMPORT
-        ? T_PROFILE_RECOVER_IMPORT_PROMPT
-        : T_PROFILE_RECOVER_COLLECTION_PROMPT;
-    if (!confirm_box(&g, &game, &ui,
-                     tr(ui.language, T_STORAGE_ERROR),
-                     tr(ui.language, prompt),
-                     tr(ui.language, T_RECOVER),
-                     tr(ui.language, T_QUIT))) {
-      app_shutdown(&g);
-      return 1;
-    }
-    if (!persistence_recover_missing_hot(&persistence, missing_route)) {
-      (void)show_simple_message_box(
-          &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-          tr(ui.language, T_STORAGE_ERROR),
-          tr(ui.language, T_PROFILE_IO_ERROR));
-      app_shutdown(&g);
-      return 1;
-    }
-    ui.language = persistence.preferences.language;
-    audio_apply_preferences(&persistence);
-  }
-  const char *startup_error =
-      persistence_startup_error(&persistence, ui.language);
-  if (startup_error) {
-    (void)show_simple_message_box(
-        &g, &game, &ui, SDL_MESSAGEBOX_ERROR,
-        tr(ui.language, T_STORAGE_ERROR), startup_error);
-    app_shutdown(&g);
-    return 1;
-  }
-  ui.dark_theme = persistence.preferences.dark_theme;
-  ui.reduced_motion = persistence.preferences.reduced_motion;
-  ui.strict_mode = persistence.preferences.strict_mode;
-  ui.auto_remove_peer_notes = persistence.preferences.auto_remove_peer_notes;
-  ui.mode = persistence.preferences.mode;
-  home_difficulty = persistence.preferences.difficulty;
-  set_mode_params(&ui);
-  apply_window_preferences(&g, &persistence.preferences);
-  refresh_resume_info(&persistence, &ui);
-  home_focus = ui.normal_resume.can_continue
-                   ? HOME_FOCUS_CONTINUE
-                   : HOME_FOCUS_NEW;
-  SDL_SetWindowTitle(g.win,SUDOKURA_NAME_VERSION);
-  if (startup_timings) {
-    double ready_ms=wall_clock_ms();
-    fprintf(stderr,
-        "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
-        initialized_at_ms-process_start_ms,
-        profile_end_ms-profile_start_ms,ready_ms-process_start_ms);
-  }
+  audio_gfx=&g;audio_game=&game;audio_ui=&ui;
+  startup_loading_active=true;
+  audio_set_focus_paused(true);
   window_focus_guard_reset();
 
   bool running = true;
+  int exit_status = 0;
   SDL_Event e;
   while (running) {
+    renderer_recovery_sync(&g, &ui, false);
+    ui_a11y_refresh(&persistence,&game,&ui,&g);
 #if defined(__ANDROID__)
     if (app_suspended) {
       SDL_Event system_event;
       if (SDL_WaitEventTimeout(&system_event, 250)) {
-        if (system_event.type == SDL_QUIT) running = false;
+        if (system_event.type == SDL_QUIT) {
+          running=false;
+          if (startup_recovery_active || startup_loading_active) exit_status=1;
+        }
         else (void)ui_prepare_event(&system_event);
       }
       continue;
@@ -2399,10 +5126,15 @@ int main(int argc, char **argv) {
 #endif
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     ui_pointer_reconcile();
-    int wait_ms=(g.dirty || (ui.screen == APP_SCREEN_GAMES &&
-                             games_browser.scanning) || home_daily_scan.active)
+    int wait_ms=(g.dirty || ((startup_loading_active || startup_recovery.routing) &&
+                            g.renderer_ready) ||
+                            (!ui_modal.active &&
+                            ((ui.screen == APP_SCREEN_GAMES &&
+                               games_browser.scanning) || home_daily_scan.active || journey_home_summary.scanning)))
                     ? 0 : desktop_wait_timeout_ms(&g,&ui);
     int button_feedback_wait = ui_feedback_remaining(&ui);
+    if (g.mobile_layout && g.renderer_ready &&
+        now_ms()<g.surface_repaint_until_ms && wait_ms>16) wait_ms=16;
     if (button_feedback_wait > 0 &&
         (wait_ms < 0 || wait_ms > button_feedback_wait))
       wait_ms = button_feedback_wait;
@@ -2414,9 +5146,16 @@ int main(int argc, char **argv) {
         ui_pointer_cancel();
         continue;
       }
+      if ((startup_recovery_active || startup_loading_active) &&
+          (e.type==SDL_QUIT || (e.type==SDL_KEYDOWN &&
+                               e.key.keysym.sym==SDLK_ESCAPE))) {
+        running=false;exit_status=1;continue;
+      }
       if (e.type == SDL_QUIT) {
         if (app_suspended) { running = false; continue; }
-        if (request_exit(&persistence, &game, &ui, &g))
+        if ((!g.renderer_ready
+                ? renderer_unavailable_safe_exit(&persistence,&game,&ui,&g)
+                : request_exit(&persistence, &game, &ui, &g)))
           running = false;
         continue;
       }
@@ -2432,40 +5171,62 @@ int main(int argc, char **argv) {
       }
       if (e.type == SDL_RENDER_DEVICE_RESET ||
           e.type == SDL_RENDER_TARGETS_RESET) {
-        (void)gfx_refresh_metrics(&g);
-        if (!app_rebuild_renderer_resources(&g))
+        ui_modal_invalidate();
+        if (!app_restore_renderer_resources(&g, &ui))
           fprintf(stderr, "renderer resource rebuild failed: %s\n",
                   SDL_GetError());
         continue;
       }
       if (e.type == SDL_WINDOWEVENT) {
-        if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-          apply_window_resize(&g, e.window.data1, e.window.data2);
-          capture_window_preferences(&persistence, &g, &ui);
+        if (window_event_changes_surface_metrics(&g,e.window.event)) {
+          if (app_handle_surface_resize(&g,&ui,&e.window))
+            capture_window_preferences(&persistence, &g, &ui);
+          else
+            fprintf(stderr, "window resize metrics unavailable: %s\n",
+                    SDL_GetError());
         } else if (e.window.event == SDL_WINDOWEVENT_MOVED ||
                    e.window.event == SDL_WINDOWEVENT_MAXIMIZED ||
                    e.window.event == SDL_WINDOWEVENT_RESTORED) {
-          (void)gfx_refresh_metrics(&g);
-          gfx_capture_restored_bounds(&g);
-          capture_window_preferences(&persistence, &g, &ui);
+          if (app_refresh_renderer_metrics(&g, &ui)) {
+            gfx_capture_restored_bounds(&g);
+            capture_window_preferences(&persistence, &g, &ui);
+          } else {
+            fprintf(stderr, "window metrics unavailable: %s\n",
+                    SDL_GetError());
+          }
 #if SDL_VERSION_ATLEAST(2,0,18)
         } else if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
-          (void)gfx_refresh_metrics(&g);
-          if (!app_rebuild_renderer_resources(&g))
+          if (!app_restore_renderer_resources(&g, &ui))
             fprintf(stderr, "display-scale resource rebuild failed: %s\n",
                     SDL_GetError());
-          capture_window_preferences(&persistence, &g, &ui);
+          else
+            capture_window_preferences(&persistence, &g, &ui);
 #endif
         } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
-          g.dirty = true;
+          if (g.mobile_layout) g.surface_repaint_until_ms=now_ms()+1500u;
+          if (g.renderer_ready) g.dirty = true;
         } else if (ui.session_open && ui.result == RES_NONE &&
                    window_event_requires_focus_pause(&g, &e.window)) {
           if (clock_pause(&ui, PAUSE_FOCUS))
             (void)checkpoint_current_session(&persistence, &game, &ui);
         }
+        if ((ui_modal.active || ui_modal_has_pending()) &&
+            (window_event_changes_surface_metrics(&g,e.window.event) ||
+             e.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+             e.window.event == SDL_WINDOWEVENT_MINIMIZED ||
+             e.window.event == SDL_WINDOWEVENT_HIDDEN ||
+             e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED))
+          ui_modal_invalidate();
         /* Focus recovery intentionally leaves PAUSE_FOCUS set. The board stays
            hidden until the player explicitly resumes, so a stopped Time
            Attack clock cannot be used to inspect the puzzle. */
+        continue;
+      }
+      if (!g.renderer_ready) {
+        if (e.type == SDL_KEYDOWN && !e.key.repeat &&
+            e.key.keysym.sym == SDLK_ESCAPE &&
+            renderer_unavailable_safe_exit(&persistence,&game,&ui,&g))
+          running = false;
         continue;
       }
       if (e.type == SDL_KEYDOWN) {
@@ -2571,7 +5332,7 @@ int main(int argc, char **argv) {
           if (k == SDLK_ESCAPE) {
             ui_button_click();
             return_from_info(&persistence, &game, &ui);
-          } else if (ui.screen == SCR_HELP &&
+          } else if (ui_info_scroll_enabled(&g,&ui) &&
                      (k == SDLK_UP || k == SDLK_DOWN ||
                       k == SDLK_PAGEUP || k == SDLK_PAGEDOWN ||
                       k == SDLK_HOME || k == SDLK_END)) {
@@ -2594,8 +5355,7 @@ int main(int argc, char **argv) {
               open_about_url(&g, &game, &ui, 0);
             else if (k == SDLK_2 || k == SDLK_KP_2)
               open_about_url(&g, &game, &ui, 1);
-            else if (k == SDLK_3 || k == SDLK_KP_3)
-              open_about_url(&g, &game, &ui, 2);
+
           }
           continue;
         }
@@ -2629,7 +5389,7 @@ int main(int argc, char **argv) {
 
         bool shifted = (mod & KMOD_SHIFT) != 0;
         int r = ui.sel_r, c = ui.sel_c;
-        InputPlayShortcut play_shortcut = g.width < 640 &&
+        InputPlayShortcut play_shortcut = (g.mobile_layout || g.width < 640) &&
                 hint_panel_interactive(&ui) ? INPUT_PLAY_NONE :
                 input_play_shortcut(k, mod);
         if (play_shortcut == INPUT_PLAY_UNDO ||
@@ -2678,7 +5438,7 @@ int main(int argc, char **argv) {
             continue;
           }
         }
-        if (g.width < 640 && hint_panel_interactive(&ui)) continue;
+        if ((g.mobile_layout || g.width < 640) && hint_panel_interactive(&ui)) continue;
         if (k == SDLK_TAB) {
           play_move_focus(&game, &ui, shifted ? -1 : 1);
           continue;
@@ -2755,8 +5515,8 @@ int main(int argc, char **argv) {
         games_browser_wheel(&persistence, &g, direction);
         continue;
       }
-      if (e.type == SDL_MOUSEWHEEL && ui.screen == SCR_HELP) {
-        int wheel=e.wheel.y;
+      if (e.type == SDL_MOUSEWHEEL && ui_info_scroll_enabled(&g,&ui)) {
+        int64_t wheel=e.wheel.y;
         if(e.wheel.direction==SDL_MOUSEWHEEL_FLIPPED)wheel=-wheel;
         help_scroll_by(-wheel*48);
         continue;
@@ -2855,12 +5615,14 @@ int main(int argc, char **argv) {
             ui_button_click();
             home_focus = HOME_FOCUS_CONTINUE;
             victory_animation_reset();
-            restore_saved_session(&persistence, &game, &ui, false);
+            restore_saved_session(&persistence, &game, &ui, journey_continue_daily(&persistence));
           } else if (point_in(sdl_rect(a.home_primary[2]), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_DAILY;
             home_daily_game(&persistence, &game, &ui, &g);
-          } else if (point_in(sdl_rect(a.home_secondary[0]), x, y)) {
+          } else if (point_in(home_collection_rect(&a,true), x, y)) {
+            home_focus=HOME_FOCUS_JOURNEY;home_activate(&persistence,&game,&ui,&g,&running);
+          } else if (point_in(home_collection_rect(&a,false), x, y)) {
             ui_button_click();
             home_focus = HOME_FOCUS_GAMES;
             (void)games_browser_open(&persistence, &game, &ui, &g);
@@ -2895,11 +5657,9 @@ int main(int argc, char **argv) {
             ui_button_click();
             victory_animation_reset();
             if (ui.result == RES_WIN) {
-              if (replace_saved_session_confirmed(&persistence, &game, &ui, &g, false))
-                (void)start_new_game_with_ui(&persistence, &game, &ui, &g);
-            } else if (restart_current_session_confirmed(
-                           &persistence, &game, &ui, &g)) {
-              restart_current_session(&persistence, &game, &ui);
+              new_game_requested(&persistence,&game,&ui,&g);
+            } else {
+              restart_requested(&persistence,&game,&ui,&g);
             }
           } else if (point_in(sdl_rect(a.end_buttons[1]), x, y)) {
             result_keyboard_focus=1;
@@ -2913,10 +5673,16 @@ int main(int argc, char **argv) {
           if (!left) continue;
           AppGeometry a;
           if (!get_geometry(&g, &ui, &a)) continue;
+          if (point_in(ui_info_scroll_rect(&g,&ui,false),x,y)) {
+            help_scroll_by(-180);continue;
+          }
+          if (point_in(ui_info_scroll_rect(&g,&ui,true),x,y)) {
+            help_scroll_by(180);continue;
+          }
           if (ui.screen == SCR_ABOUT) {
             bool opened = false;
-            for (int i = 0; i < 3; ++i) {
-              if (point_in(sdl_rect(a.about_links[i]), x, y)) {
+            for (int i = 0; i < 2; ++i) {
+              if (point_in(ui_info_link_rect(&g,&ui,i), x, y)) {
                 info_keyboard_focus=INFO_FOCUS_LINK_0+i;
                 open_about_url(&g, &game, &ui, i);
                 opened = true;
@@ -2951,7 +5717,7 @@ int main(int argc, char **argv) {
           continue;
         }
 
-        Layout layout = compute_layout(g.width, g.height, ui.mode);
+        Layout layout = compute_layout(&g, ui.mode);
         int gx = layout.board.x, gy = layout.board.y, side = layout.board.w;
         int cell = side / 9;
         if (side <= 0 || cell <= 0) continue;
@@ -3066,11 +5832,8 @@ int main(int argc, char **argv) {
               } else {
                 audio_play_effect(AUDIO_EFFECT_BLOCKED);
               }
-            } else if (point_in(restart_rect, x, y) &&
-                       restart_current_session_confirmed(
-                           &persistence, &game, &ui, &g)) {
-              victory_animation_reset();
-              restart_current_session(&persistence, &game, &ui);
+            } else if (point_in(restart_rect, x, y)) {
+              restart_requested(&persistence,&game,&ui,&g);
             }
           } else if (point_in(controls.btn[PLAY_ACTION_HINT], x, y)) {
             play_keyboard_focus=PLAY_FOCUS_HINT;
@@ -3124,37 +5887,203 @@ int main(int argc, char **argv) {
       }
     }
 
+    /* Semantic commands wait behind queued lifecycle, resize and pointer
+       events, then revalidate against the current native screen/attempt. */
+    (void)ui_a11y_dispatch(&persistence,&game,&ui,&g,&running);
+    if (!running) break;
+
+    /* Consume one modal choice only after queued lifecycle/window events. */
+    AppModalResult modal_result;
+    if (ui_modal_take_result(&modal_result)) {
+      startup_recovery_dispatch(&persistence,&ui,&g,&modal_result);
+      if (modal_result.resolution==APP_MODAL_CHOSEN && modal_result.button>0 &&
+          app_modal_binding_equal(modal_result.binding,ui_modal_current_binding(&persistence,&ui)) &&
+          (modal_result.action==APP_MODAL_JOURNEY_HOME || modal_result.action==APP_MODAL_JOURNEY_EXIT)) {
+        bool ok=modal_result.button==1
+          ? games_browser_save_hot(&persistence,ui.is_daily)
+          : journey_interrupt_slot(&persistence,&ui,ui.is_daily);
+        if(ok)ok=persistence_flush(&persistence);
+        if(ok) {
+          if(modal_result.action==APP_MODAL_JOURNEY_EXIT)running=false;
+          else go_home(&persistence,&game,&ui);
+        }else (void)ui_modal_message(&g,&ui,T_STORAGE_ERROR,T_SAVE_FAILED);
+      }
+      if (modal_result.resolution==APP_MODAL_CHOSEN && modal_result.button>0 &&
+          modal_result.action==APP_MODAL_JOURNEY_SWITCH &&
+          app_modal_binding_equal(modal_result.binding,ui_modal_current_binding(&persistence,&ui))) {
+        bool daily=journey_switch_source_daily;
+        const ProfileSlot *slot=daily?&persistence.profile.daily:&persistence.profile.normal;
+        if(slot->present && game_attempt_id_equal(slot->attempt_id,journey_switch_id) && slot->revision==journey_switch_revision) {
+          bool ok=modal_result.button==1?games_browser_save_hot(&persistence,daily):journey_interrupt_slot(&persistence,&ui,daily);
+          if(ok)ok=persistence_flush(&persistence);
+          if(ok) {
+            if(journey_switch_rollover)home_daily_checkpoint(&persistence,&game,&ui,&g,false);
+            else if(journey_switch_target_daily)home_daily_game(&persistence,&game,&ui,&g);
+            else home_new_game(&persistence,&game,&ui,&g);
+          }else (void)ui_modal_message(&g,&ui,T_STORAGE_ERROR,T_SAVE_FAILED);
+        }
+      }
+
+      AppModalBinding current = ui_modal_dispatch_binding(
+          &persistence, &ui, modal_result.action);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          app_modal_binding_equal(modal_result.binding, current) &&
+          modal_result.action == APP_MODAL_EXIT) {
+        if (modal_result.button == 2) {
+          running = false;  /* Explicit Discard only. */
+        } else if (modal_result.button == 1) {
+          if (persistence_retry_current(&persistence, &game, &ui)) {
+            /* After recovery, a started attempt still needs its explicit
+               Save/Abandon/Cancel decision rather than an implicit exit. */
+            if (request_exit(&persistence, &game, &ui, &g)) running = false;
+          } else {
+            (void)ui_modal_open_exit(&persistence, &ui, &g);
+          }
+        }
+      } else if (modal_result.resolution == APP_MODAL_CHOSEN &&
+                 app_modal_binding_equal(modal_result.binding, current) &&
+                 modal_result.action == APP_MODAL_HOME &&
+                 modal_result.button == 1) {
+        bool saved = persistence_retry_current(&persistence, &game, &ui);
+        if (save_policy_transition_ready(&persistence.save_policy, saved))
+          go_home(&persistence, &game, &ui);
+        else
+          (void)ui_modal_open_home(&persistence, &ui, &g);
+      }
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_RECOVER_RECORD &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_recover_confirmed(&persistence, &game, &ui,
+                                              &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_REPLAY &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_replay_confirmed(&persistence, &game, &ui,
+                                             &g, modal_result.binding,false);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_REPLAY_CONFLICT &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_pending_accepted(&persistence, &game, &ui,
+                                             &g, modal_result.binding);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          app_modal_binding_equal(modal_result.binding,current) &&
+          (modal_result.action == APP_MODAL_REPLAY_CHECKPOINT ||
+           modal_result.action == APP_MODAL_REPLAY_KEEP ||
+           modal_result.action == APP_MODAL_REPLAY_RETAIN_RETRY ||
+           modal_result.action == APP_MODAL_REPLAY_ACTIVATE_RETRY))
+        (void)games_browser_replay_gate_chosen(
+            &persistence,&game,&ui,&g,modal_result.binding,
+            modal_result.action,modal_result.button);
+      if (modal_result.resolution == APP_MODAL_CHOSEN &&
+          modal_result.action == APP_MODAL_DELETE &&
+          modal_result.button == 1 &&
+          app_modal_binding_equal(modal_result.binding, current))
+        (void)games_browser_delete_confirmed(&persistence, &game, &ui,
+                                             &g, modal_result.binding);
+      (void)games_browser_load_chosen(&persistence,&game,&ui,&g,&modal_result);
+      games_browser_load_activation_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      restart_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      new_game_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_recover_confirmed(&persistence,&game,&ui,&g,&modal_result);
+      home_daily_rollover_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      games_daily_activation_dispatch(&persistence,&game,&ui,&g,&modal_result);
+      if (!running) break;
+      g.dirty = true;
+    }
+
+    /* Drain lifecycle/reset events before accepting a native fallback choice. */
+    renderer_recovery_sync(&g, &ui, false);
+    renderer_recovery_dispatch(&persistence, &game, &ui, &g,
+                               &running, &exit_status);
+    if (!running) break;
+    if (startup_loading_active) {
+      if (app_suspended || !g.renderer_ready) {
+        g.dirty=false;
+        continue;
+      }
+      bool finished=persistence_startup_step(
+          &persistence,startup_storage_continue,&g);
+      bool context_ready=startup_storage_continue(&g);
+      if (!finished || !context_ready) {
+        if (context_ready && g.dirty)
+          app_render_startup_splash(&g,ui.language);
+        g.dirty=false;
+        continue;
+      }
+      startup_loading_active=false;
+      /* Publish writable state only after pending lifecycle/context has been
+         handled, so default startup UI cannot rewrite loaded preferences. */
+      persistence.enabled=persistence.lock_status==STORE_LOCK_ACQUIRED &&
+                          persistence.profile_status==STORE_OK;
+      audio_apply_preferences(&persistence);
+      startup_apply_ready_preferences(&persistence,&ui,&g);
+      startup_recovery_begin(&persistence,&ui,&g);
+      g.dirty=true;
+      if (startup_timings) {
+        double ready_ms=wall_clock_ms();
+        fprintf(stderr,
+            "startup app_init_ms=%.1f profile_ms=%.1f ui_ready_ms=%.1f\n",
+            initialized_at_ms-process_start_ms,
+            ready_ms-profile_start_ms,ready_ms-process_start_ms);
+      }
+    }
+    if (!startup_recovery_poll(&persistence,&ui,&g)) {
+      exit_status=1;running=false;break;
+    }
+    if (startup_recovery.routing) {
+      if (g.dirty && startup_storage_continue(&g))
+        app_render_startup_splash(&g,ui.language);
+      g.dirty=false;
+      continue;
+    }
 #if defined(__ANDROID__)
     if (app_suspended) continue; /* No scans, rendering or audio. */
 #endif
+    renderer_recovery_sync(&g, &ui, false);
+    if (!g.renderer_ready) {
+      g.dirty = false; /* Suspended rendering must not hot-loop or scan. */
+      continue;
+    }
     ui_scroll_flush_preview();
-    if (ui.screen == APP_SCREEN_GAMES &&
+    if(!ui_modal.active && journey_home_pump(&persistence,&ui))g.dirty=true;
+    if (!ui_modal.active && ui.screen == APP_SCREEN_GAMES &&
         games_browser_scan_pump(&persistence, &g)) g.dirty = true;
-    if (home_daily_scan.active) {
+    if (!ui_modal.active && home_daily_scan.active) {
       home_daily_scan_pump(&persistence,&game,&ui,&g);
       g.dirty=true;
     }
     if(settle_terminal(&persistence,&game,&ui))g.dirty=true;
     uint64_t checkpoint_now = now_ms();
-    if (ui.session_open && ui.result == RES_NONE && ui.pause_reasons == 0 &&
+    if (!ui_modal.active && ui.session_open && ui.result == RES_NONE &&
+        ui.pause_reasons == 0 &&
         checkpoint_now - persistence.last_periodic_checkpoint_ms >=
             SUDOKURA_AUTOSAVE_MAX_MS) {
       (void)checkpoint_current_session(&persistence, &game, &ui);
       g.dirty=true;
-    } else if (save_policy_checkpoint_due(&persistence.save_policy,
+    } else if (!ui_modal.active &&
+               save_policy_checkpoint_due(&persistence.save_policy,
                                           checkpoint_now)) {
       (void)persistence_flush(&persistence);
       g.dirty=true;
     }
+    if (ui_modal.active && ui.screen != ui_modal.request.binding.screen)
+      ui_modal_invalidate();
+    (void)app_settle_mobile_surface(&g,&ui);
     if(desktop_dynamic_frame_due(&ui))g.dirty=true;
     if(ui_feedback_finish(&ui))g.dirty=true;
     if(g.dirty)app_frame(&g,&game,&ui);
     else app_tick(&g,&game,&ui);
+    ui_a11y_refresh(&persistence,&game,&ui,&g);
   }
 
   home_daily_cancel();
+  renderer_recovery_sync(NULL, &ui, true);
   game_library_scan_close(&games_browser.scanner);
   free(games_browser.rows);
   app_shutdown(&g);
-  return 0;
+  return exit_status;
 }

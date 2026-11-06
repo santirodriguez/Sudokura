@@ -69,3 +69,8 @@
 # Python test and validation cache (generated locally).
 __pycache__/
 *.py[cod]
+
+# Private Android signing material belongs outside the repository.
+*.jks
+*.keystore
+*.p12

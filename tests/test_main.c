@@ -127,6 +127,13 @@ static bool cancel_generation(void *userdata, unsigned attempt,
   return false;
 }
 
+static bool cancel_during_candidate(void *userdata, unsigned attempt,
+                                    unsigned max_attempts) {
+  (void)attempt;(void)max_attempts;
+  unsigned *checks=userdata;
+  return (*checks)++==0;
+}
+
 static void test_generator_stress(void) {
   for (uint64_t seed = 1; seed <= 30; ++seed) {
     GameDifficulty difficulty =
@@ -146,10 +153,20 @@ static void test_generator_stress(void) {
   }
 
   Game cancelled;
+  assert(game_new_difficulty_revision(&cancelled,42,DIFFICULTY_MEDIUM,
+                                      SUDOKURA_GENERATOR_REVISION_LEGACY));
+  Game previous=cancelled;
   GameGenerationControl control = {cancel_generation, NULL};
   assert(game_generate_difficulty(&cancelled, 1, DIFFICULTY_HARD,
                                   SUDOKURA_GENERATOR_REVISION,
                                   &control) == GAME_GENERATION_CANCELLED);
+  assert(!memcmp(&cancelled,&previous,sizeof(previous)));
+  unsigned checks=0;
+  control=(GameGenerationControl){cancel_during_candidate,&checks};
+  assert(game_generate_difficulty(&cancelled,1,DIFFICULTY_HARD,
+                                  SUDOKURA_GENERATOR_REVISION,&control)==
+         GAME_GENERATION_CANCELLED);
+  assert(checks==2 && !memcmp(&cancelled,&previous,sizeof(previous)));
   assert(game_generation_attempt_budget(DIFFICULTY_EASY) > 0);
   assert(game_generation_attempt_budget(DIFFICULTY_MEDIUM) > 0);
   assert(game_generation_attempt_budget(DIFFICULTY_HARD) > 0);
@@ -426,7 +443,7 @@ static void test_window_size_normalization(void) {
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key) assert(tr((Language)language, (TextKey)key)[0]);
-  assert(!strcmp(SUDOKURA_VERSION, "1.3.9"));
+  assert(!strcmp(SUDOKURA_VERSION, "1.4.0"));
 }
 
 int main(void) {

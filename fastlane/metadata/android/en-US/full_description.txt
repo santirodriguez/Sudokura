@@ -1,0 +1,21 @@
+A little time for a good puzzle.
+
+Some days you want a quick Easy. Other days that one 7 just will not reveal itself. Sudokura gives you a clean, welcoming Sudoku board, with the right tools close at hand and no complicated setup.
+
+FOUR WAYS TO PLAY
+• Classic: settle into a puzzle at your own pace.
+• Strikes: three mistakes and the game is over. Choose wisely.
+• Time Attack: race the clock, one square at a time.
+• Daily Puzzle: a dated challenge to come back to each day.
+
+Pick Easy, Medium or Hard. Add pencil notes, Undo and Redo, or use Hint and Verify when you want a little help. Switch between light and dark themes, with optional music and sound effects.
+
+YOUR PUZZLES HAVE A STORY
+Save progress in Saved Games and continue when you're ready. Your journey remembers solved puzzles, results and earlier attempts. Lost or interrupted a game? Try again brings back the same puzzle without erasing what came before.
+
+Made for touchscreens, in portrait or landscape, and available in English, Español and Català.
+
+YOUR GAME, YOUR DEVICE
+Sudokura has no accounts, ads or analytics. Puzzles and history stay on your device; cloud sync, automatic Android backup and device transfer aren't provided.
+
+Requires Android 9+ on ARM64. Keep any installation containing saved progress: app signatures can differ between distribution channels, so switching stores may prevent an in-place update. Free and open source (GPLv3).

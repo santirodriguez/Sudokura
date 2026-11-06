@@ -1,5 +1,6 @@
 #define SUDOKURA_STORE_TESTING 1
 #include "game_library.h"
+#include "journey.h"
 #include "seed.h"
 #include "store_io.h"
 
@@ -230,10 +231,10 @@ static void test_codec_and_atomic_decode(void) {
   assert(game_library_decode(bytes, count, &output) == STORE_CORRUPT);
   assert(memcmp(&output, &unchanged, sizeof(output)) == 0);
   bytes[count - 1] ^= 0x45;
-  bytes[8] = 2;
+  bytes[8] = SUDOKURA_GAME_RECORD_VERSION+1;
   assert(game_library_decode(bytes, count, &output) == STORE_INCOMPATIBLE);
   assert(memcmp(&output, &unchanged, sizeof(output)) == 0);
-  bytes[8] = 1;
+  bytes[8] = SUDOKURA_GAME_RECORD_VERSION;
   assert(game_library_decode(bytes, count - 1, &output) == STORE_CORRUPT);
 
   ProfileResult won = {
@@ -770,7 +771,7 @@ static void test_mixed_record_health_and_oversized_future_envelope(void) {
 
   unsigned char oversized[SUDOKURA_GAME_RECORD_MAX_BYTES + 16u] = {0};
   memcpy(oversized, "SUDOGAME", 8u);
-  oversized[8] = 2u; /* recognized, unsupported container */
+  oversized[8] = SUDOKURA_GAME_RECORD_VERSION+1u; /* unsupported container */
   assert(store_atomic_write(future_path, NULL, oversized,
                             sizeof(oversized)) == STORE_OK);
   assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
@@ -782,7 +783,7 @@ static void test_mixed_record_health_and_oversized_future_envelope(void) {
   assert(record.revision == 1);
 
   oversized[8] = 1u;
-  oversized[20] = 2u; /* recognized, unsupported payload */
+  oversized[20] = 3u; /* unsupported payload */
   assert(store_atomic_write(future_path, NULL, oversized,
                             sizeof(oversized)) == STORE_OK);
   assert(game_library_load(root, future, &record) == STORE_INCOMPATIBLE);
@@ -1740,6 +1741,10 @@ static void test_daily_lookup_previous_copy_and_uncertainty(void) {
   assert(lookup.matching_attempts == 1 && !lookup.uncertain);
   assert(lookup.match.status == STORE_CORRUPT);
   assert(lookup.match.previous_status == STORE_OK);
+  /* A read-only preview must leave the damaged primary intact. */
+  assert(game_library_load_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1 && previous.original_daily);
+  assert(game_library_load(root, id, &record) == STORE_CORRUPT);
   assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
   assert(previous.revision == 1 && previous.original_daily);
   assert(game_library_load(root, id, &record) == STORE_OK);
@@ -1751,6 +1756,9 @@ static void test_daily_lookup_previous_copy_and_uncertainty(void) {
   assert(lookup.matching_attempts == 1 && !lookup.uncertain);
   assert(lookup.match.status == STORE_NOT_FOUND);
   assert(lookup.match.previous_status == STORE_OK);
+  assert(game_library_load_previous(root, id, &previous) == STORE_OK);
+  assert(previous.revision == 1 && previous.original_daily);
+  assert(game_library_load(root, id, &record) == STORE_NOT_FOUND);
   assert(game_library_recover_previous(root, id, &previous) == STORE_OK);
 
   /* Damaged unknown entries must not be silently classified as other dates. */
@@ -2139,7 +2147,219 @@ static void test_replay_intent_survives_failed_cuts(void) {
   cleanup();
 }
 
+/* A deferred Replay activation must preserve the old live profile and
+   stable reserved attempt through pre-rename and post-rename save failures. */
+static void test_replay_activation_interrupted_and_retried(void) {
+  prepare();
+  char games_directory[160];
+  int directory_size=snprintf(games_directory,sizeof(games_directory),
+                              "%s/games",root);
+  assert(directory_size>0 && (size_t)directory_size<sizeof(games_directory));
+  assert(store_ensure_directory(games_directory)==STORE_OK);
+  char primary[160], backup[160];
+  int n=snprintf(primary,sizeof(primary),"%s/games/replay-activation.dat",root);
+  assert(n>0 && (size_t)n<sizeof(primary));
+  n=snprintf(backup,sizeof(backup),"%s/games/replay-activation.dat.bak",root);
+  assert(n>0 && (size_t)n<sizeof(backup));
+
+  ProfileData previous;
+  profile_defaults(&previous);
+  previous.normal.present=true;
+  previous.normal.retained=false;
+  previous.normal.attempt_id=make_id(9971);
+  previous.normal.revision=3;
+  previous.normal.value=make_session(SESSION_ACTIVE);
+  assert(profile_validate(&previous));
+  assert(profile_save_runtime_file(primary,backup,&previous)==STORE_OK);
+
+  GameAttemptId source_id=make_id(9972),practice_id=make_id(9973);
+  ProfileSession finished=make_session(SESSION_WON);
+  GameLibraryRecord source,replay,disk_replay;
+  assert(game_library_make_exact(&source,source_id,1,&finished,true));
+  assert(game_library_save(root,&source)==STORE_OK);
+  GameReplayIntent pending={source_id,practice_id,GAME_REPLAY_PREPARED};
+  assert(game_library_replay_intent_write(root,&pending)==STORE_OK);
+  assert(game_library_prepare_replay(&replay,&source,practice_id));
+  GameLibraryHotCache cache={0};
+  assert(game_library_save_runtime(root,&replay,&cache)==STORE_OK);
+
+  ProfileData candidate=previous;
+  candidate.normal.present=true;
+  candidate.normal.retained=true;
+  candidate.normal.attempt_id=practice_id;
+  candidate.normal.revision=replay.revision;
+  candidate.normal.value=replay.exact;
+  assert(profile_validate(&candidate));
+  ProfileData disk,back;
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  store_test_fail_parent_sync_at(primary);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  GameReplayIntent observed={0};
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK);
+  assert(observed.state==GAME_REPLAY_PREPARED &&
+         game_attempt_id_equal(observed.attempt_id,practice_id));
+  assert(game_library_load(root,practice_id,&disk_replay)==STORE_OK);
+  assert(game_library_replay_pending_matches(&source,&disk_replay));
+
+  /* If restoring itself fails, an uncertain primary must not silently
+     rotate away the known-good previous profile. */
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==
+         STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+
+  /* Safe Back restores the recognized previous hot pointer without moving
+     the backup or losing the separate Prepared Replay reservation. */
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==
+         STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK &&
+         observed.state==GAME_REPLAY_PREPARED);
+
+  /* Later Retry reuses the same practice ID even when preferences changed
+     while the earlier attempt was pending; old backup stays intact. */
+  ProfileData adjusted=candidate;
+  adjusted.preferences.music_volume =
+      adjusted.preferences.music_volume==42 ? 43 : 42;
+  assert(profile_validate(&adjusted));
+  assert(profile_save_runtime_verified(primary,backup,&adjusted)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&adjusted)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&adjusted));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_load(root,practice_id,&disk_replay)==STORE_OK);
+  assert(game_library_replay_pending_matches(&source,&disk_replay));
+  pending.state=GAME_REPLAY_COMMITTED;
+  assert(game_library_replay_intent_write(root,&pending)==STORE_OK);
+  assert(game_library_replay_intent_load(root,&observed)==STORE_OK &&
+         observed.state==GAME_REPLAY_COMMITTED &&
+         game_attempt_id_equal(observed.attempt_id,practice_id));
+  cleanup();
+}
+
+/* Daily activation changes only its hot pointer; interrupted candidates
+   are recognized exactly and never rotate an acknowledged previous copy. */
+static void test_daily_activation_interrupted_and_retried(void) {
+  prepare();
+  ProfileData previous;
+  profile_defaults(&previous);
+  previous.normal.present=true;
+  previous.normal.attempt_id=make_id(9981);
+  previous.normal.revision=4;
+  previous.normal.value=make_session(SESSION_ACTIVE);
+  previous.daily.present=true;
+  previous.daily.retained=true;
+  previous.daily.attempt_id=make_id(9982);
+  previous.daily.revision=8;
+  previous.daily.value=daily_fixture(2026,10,28,SESSION_ACTIVE);
+  GameLibraryRecord departing,target,loaded;
+  assert(game_library_make_exact(&departing,previous.daily.attempt_id,
+                                8,&previous.daily.value,true));
+  assert(game_library_save(root,&departing)==STORE_OK);
+  ProfileSession today=daily_fixture(2026,10,29,SESSION_ACTIVE);
+  assert(game_library_make_exact(&target,make_id(9983),12,&today,true));
+  assert(game_library_save(root,&target)==STORE_OK);
+  const char *primary=".sudokura-library-test/games/daily-activation.dat";
+  const char *backup=".sudokura-library-test/games/daily-activation.dat.bak";
+  assert(profile_validate(&previous));
+  assert(profile_save_runtime_file(primary,backup,&previous)==STORE_OK);
+  ProfileData candidate=previous;
+  candidate.daily.attempt_id=target.id;
+  candidate.daily.revision=target.revision;
+  candidate.daily.value=target.exact;
+  assert(profile_validate(&candidate));
+  ProfileData disk,back;
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  store_test_fail_parent_sync_at(primary);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  store_test_set_fault(STORE_TEST_FAULT_REPLACE);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_IO_ERROR);
+  store_test_set_fault(STORE_TEST_FAULT_NONE);
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&previous));
+
+  /* A different valid primary is not permission to restore over it. */
+  ProfileData foreign=previous;
+  ++foreign.daily.revision;
+  assert(profile_save_runtime_file(primary,NULL,&foreign)==STORE_OK);
+  assert(profile_restore_runtime_activation(primary,&previous,&candidate)==STORE_CORRUPT);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&foreign));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  /* Explicit fixture reset; product recovery never resets unknown data. */
+  assert(profile_save_runtime_file(primary,NULL,&previous)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_OK);
+  assert(profile_save_runtime_verified(primary,backup,&candidate)==STORE_OK);
+  assert(profile_load_file(primary,&disk)==STORE_OK);
+  assert(profile_encoded_equal(&disk,&candidate));
+  assert(profile_load_file(backup,&back)==STORE_OK);
+  assert(profile_encoded_equal(&back,&previous));
+  assert(game_library_load(root,departing.id,&loaded)==STORE_OK);
+  assert(loaded.revision==departing.revision);
+  assert(game_library_load(root,target.id,&loaded)==STORE_OK);
+  assert(loaded.revision==target.revision);
+  cleanup();
+}
+
+static void test_interrupted_journey_and_replay(void) {
+  prepare();
+  ProfileSession played=make_session(SESSION_INTERRUPTED);
+  played.started=true;
+  GameLibraryRecord first,replay,output;
+  assert(game_library_make_exact(&first,make_id(19001),1,&played,true));
+  GameLibraryHotCache cache={0};
+  assert(game_library_save_runtime_at(root,&first,&cache,100)==STORE_OK);
+  assert(game_library_load(root,first.id,&output)==STORE_OK);
+  assert(output.exact.started && output.result.status==SESSION_INTERRUPTED);
+  assert(game_library_prepare_replay(&replay,&output,make_id(19002)));
+  assert(!replay.exact.started && !replay.exact.explicitly_saved);
+  assert(game_attempt_id_equal(replay.parent,first.id));
+  GameLibraryEntry entries[3]={0};
+  entries[0].id=first.id;entries[0].result=first.result;
+  entries[1].id=replay.id;entries[1].parent=first.id;entries[1].result=replay.result;
+  entries[2]=entries[1];entries[2].id=make_id(19003);entries[2].parent=replay.id;
+  assert(game_attempt_id_equal(journey_root(entries,3,2),first.id));
+  entries[0].parent=entries[2].id;
+  assert(game_attempt_id_equal(journey_root(entries,3,2),entries[2].id));
+  cleanup();
+}
+
 int main(void) {
+  test_interrupted_journey_and_replay();
+  test_daily_activation_interrupted_and_retried();
   cleanup();
   prepare();
   test_hex_and_collision();
@@ -2151,6 +2371,7 @@ int main(void) {
   test_daily_rollover_retains_distinct_attempts();
   test_replay_and_selective_reference_pruning();
   test_replay_intent_survives_failed_cuts();
+  test_replay_activation_interrupted_and_retried();
   test_replay_linked_selection_respects_source();
   test_long_paths_fail_closed();
   test_codec_and_atomic_decode();

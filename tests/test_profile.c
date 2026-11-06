@@ -846,7 +846,72 @@ static void test_oversized_future_profile_headers(void) {
   cleanup();
 }
 
+typedef struct { unsigned calls,cancel_at; } ImportCancellation;
+
+static bool import_continue(void *context) {
+  ImportCancellation *probe=(ImportCancellation *)context;
+  return ++probe->calls!=probe->cancel_at;
+}
+
+static void prepare_cancelled_import(const SessionState *state) {
+  cleanup();
+  Preferences preferences;
+  preferences_defaults(&preferences);
+  preferences.language=LANG_ES;
+  assert(preferences_save_file(legacy_preferences_path,&preferences));
+  write_legacy_audio();
+  assert(session_save_file(legacy_session_path,state));
+}
+
+static void test_cancelled_v12_import_preserves_sources(void) {
+  SessionState session=legacy_normal_state();
+  ProfileLegacyPaths paths=legacy_paths();
+  prepare_cancelled_import(&session);
+  ProfileData loaded;
+  ImportCancellation count={0};
+  assert(profile_load_or_migrate_v12_controlled(profile_path,profile_backup_path,
+      &paths,&loaded,NULL,import_continue,&count)==STORE_OK);
+  for (unsigned stop=1;stop<=count.calls;++stop) {
+    prepare_cancelled_import(&session);
+    profile_defaults(&loaded);
+    loaded.preferences.language=LANG_CA;
+    ProfileData before=loaded;
+    unsigned char original[4096],preserved[4096];
+    size_t original_size=0,preserved_size=0;
+    assert(store_read_file(legacy_session_path,original,sizeof(original),&original_size)==STORE_OK);
+    ImportCancellation cancel={0,stop};
+    bool migrated=true;
+    assert(profile_load_or_migrate_v12_controlled(profile_path,profile_backup_path,
+        &paths,&loaded,&migrated,import_continue,&cancel)==STORE_CANCELLED);
+    assert(!migrated && profile_encoded_equal(&loaded,&before));
+    assert(!store_file_exists(profile_path));
+    assert(store_read_file(legacy_session_path,preserved,sizeof(preserved),&preserved_size)==STORE_OK);
+    assert(original_size==preserved_size && memcmp(original,preserved,original_size)==0);
+    assert(profile_load_or_migrate_v12(profile_path,profile_backup_path,&paths,
+        &loaded,&migrated)==STORE_OK);
+    assert(migrated && loaded.preferences.language==LANG_ES);
+    assert_migrated_session_equal(&session,profile_slot_session(&loaded.normal));
+  }
+  cleanup();
+}
+
+static void test_v4_activity_and_v3_compatibility(void) {
+  ProfileSlot slot;SessionState state=normal_state();
+  assert(profile_slot_set(&slot,&state,true));
+  slot.value.started=true;slot.value.explicitly_saved=true;
+  unsigned char bytes[8192];size_t size=0;
+  assert(profile_session_encode_blob(&slot.value,bytes,sizeof(bytes),&size));
+  ProfileSession decoded;
+  assert(profile_session_decode_blob(bytes,size,false,&decoded)==STORE_OK);
+  assert(decoded.started && decoded.explicitly_saved);
+  /* Remove the v4 activity flags to recreate an immutable v3 session. */
+  bytes[0]=3;bytes[1]=0;memmove(bytes+44,bytes+45,size-45);--size;
+  assert(profile_session_decode_blob(bytes,size,false,&decoded)==STORE_OK);
+  assert(decoded.started); /* The old session contains a digit/mistake. */
+}
+
 int main(void) {
+  test_v4_activity_and_v3_compatibility();
   cleanup();
   test_profile_roundtrip();
   cleanup();
@@ -862,6 +927,7 @@ int main(void) {
   cleanup();
   test_v12_fixture_matrix();
   test_v12_migration_and_one_time_import();
+  test_cancelled_v12_import_preserves_sources();
   test_daily_uses_separate_slot();
   test_corrupt_legacy_inputs_fail_closed();
   test_incompatible_legacy_is_preserved();

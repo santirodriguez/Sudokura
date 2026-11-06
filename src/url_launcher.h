@@ -1,6 +1,8 @@
 #ifndef SUDOKURA_URL_LAUNCHER_H
 #define SUDOKURA_URL_LAUNCHER_H
 
+#define SUDOKURA_PRIVACY_POLICY_URL "https://sudokura.cajapersonal.org/#privacy"
+
 #include <stdbool.h>
 
 typedef enum {

@@ -2,9 +2,9 @@
    main gameplay event loop. */
 static const char *ui_support_url(Language language) {
   static const char *const urls[LANG_COUNT] = {
-      "https://santiagorodriguez.com/donate/",
-      "https://santiagorodriguez.com/donaciones/",
-      "https://santiagorodriguez.com/donacions/",
+      "https://cajapersonal.org/donate/",
+      "https://cajapersonal.org/donaciones/",
+      "https://cajapersonal.org/donacions/",
   };
   if (language < 0 || language >= LANG_COUNT) language = LANG_EN;
   return urls[language];
@@ -14,10 +14,7 @@ static void ui_open_url(const char *url) {
   if (!url || !audio_gfx || !audio_game || !audio_ui) return;
   audio_play_effect(AUDIO_EFFECT_CLICK);
   if (url_launcher_open(url) != URL_LAUNCH_OK) {
-    (void)show_simple_message_box(audio_gfx, audio_game, audio_ui,
-                                  SDL_MESSAGEBOX_WARNING,
-                                  tr(audio_ui->language, T_ABOUT),
-                                  tr(audio_ui->language, T_LINK_ERROR));
+    (void)ui_modal_message(audio_gfx, audio_ui, T_ABOUT, T_LINK_ERROR);
   }
 }
 
@@ -374,7 +371,7 @@ static void ui_pointer_reconcile(void) {
   if (!audio_ui || !audio_gfx) { ui_pointer_cancel(); return; }
   if (ui_more_open && (audio_ui->screen != SCR_PLAY ||
                        audio_ui->result != RES_NONE ||
-                       audio_gfx->width >= 640))
+                       !ui_compact_play_layout(audio_gfx,audio_ui)))
     ui_more_close(audio_ui);
   uint64_t context[] = {
       audio_ui->screen, audio_ui->pause_reasons, audio_ui->result,
@@ -439,6 +436,7 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
   if (ui->screen == APP_SCREEN_GAMES) {
     GamesBrowserLayout a = games_browser_layout(gfx);
     TARGET(30, a.back, true);
+    for(int i=0;i<3;++i) TARGET(36+i,a.tabs[i],true);
     if (games_browser.scanning) return (PointerTarget){0};
     if (!games_browser.detail_open) {
       SDL_Rect pages[] = {a.page_previous,a.page_next};
@@ -493,15 +491,19 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
     }
     for (int i = 0; i < 3; ++i)
       TARGET(100 + i, sdl_rect(a.home_primary[i]), i != 1 || ui->has_session);
-    for (int i = 0; i < 5; ++i)
+    TARGET(115,home_collection_rect(&a,true),true);
+    TARGET(110,home_collection_rect(&a,false),true);
+    for (int i = 1; i < 5; ++i)
       TARGET(110 + i, sdl_rect(a.home_secondary[i]), true);
   } else if (ui->screen == SCR_END) {
     for (int i = 0; i < 2; ++i) TARGET(120 + i, sdl_rect(a.end_buttons[i]), true);
   } else if (ui->screen == SCR_HELP || ui->screen == SCR_ABOUT) {
     TARGET(130, back_rect(gfx, ui), true);
+    TARGET(136,ui_info_scroll_rect(gfx,ui,false),help_scroll_px>0);
+    TARGET(137,ui_info_scroll_rect(gfx,ui,true),help_scroll_px<help_scroll_max_px);
     if (ui->screen == SCR_ABOUT) {
-      for (int i = 0; i < 4; ++i) TARGET(131 + i, sdl_rect(a.about_links[i]), true);
-      TARGET(135, sdl_rect(a.about_study_link), true);
+      for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
+        TARGET(131 + i, ui_info_link_rect(gfx,ui,i), true);
     }
   } else if (ui->pause_reasons) {
     if (ui->pause_reasons & PAUSE_USER_VISIBLE)
@@ -515,16 +517,14 @@ static PointerTarget ui_pointer_resolve(int x, int y) {
   return (PointerTarget){0};
 }
 
-/* Scroll owns only the Help body or an enabled library row. Action buttons,
+/* Scroll owns only the information body or an enabled library row. Action buttons,
    Back, paging, and disabled/scanning list surfaces never start a drag. */
 static void ui_scroll_start(int x, int y) {
   if (!audio_gfx || !audio_ui || settings_open || ui_more_open ||
       audio_control_popup_open)
     return;
-  if (audio_ui->screen == SCR_HELP) {
-    AppGeometry geometry;
-    if (get_geometry(audio_gfx, audio_ui, &geometry) &&
-        point_in(sdl_rect(geometry.info_body), x, y)) {
+  if (ui_info_scroll_enabled(audio_gfx,audio_ui)) {
+    if (point_in(ui_info_body_rect(audio_gfx,audio_ui), x, y)) {
       ui_scroll_kind = UI_SCROLL_HELP;
       touch_scroll_begin(&ui_scroll_gesture, x, y);
     }
@@ -571,7 +571,7 @@ static bool ui_scroll_motion(int x, int y) {
   if (!motion.scrolling) return false;
   ui_pointer_cancel();
   if (ui_scroll_kind == UI_SCROLL_HELP) {
-    help_scroll_by(-motion.delta_y);
+    help_scroll_by(-(int64_t)motion.delta_y);
   } else if (ui_scroll_kind == UI_SCROLL_LIBRARY && audio_gfx) {
     if (!ui_scroll_started_selection) {
       games_browser.selected = ui_scroll_start_index;
@@ -604,8 +604,7 @@ static bool ui_touch_board_cell(int x, int y, int *row, int *column) {
       !app_play_interactions_allowed(audio_ui) ||
       hint_panel_blocks_point(audio_gfx, audio_ui, x, y))
     return false;
-  Layout layout = compute_layout(audio_gfx->width, audio_gfx->height,
-                                 audio_ui->mode);
+  Layout layout = compute_layout(audio_gfx, audio_ui->mode);
   if (!point_in(layout.board, x, y)) return false;
   int side = layout.board.w;
   int cell = side / 9;
@@ -684,7 +683,7 @@ static bool ui_touch_prepare(SDL_Event *event) {
     return false;
   }
 
-  SDL_Event mapped = {0};
+  SDL_Event mapped; SDL_zero(mapped);
   ui_touch_replayed = true;
   if (phase == TOUCH_INPUT_MOTION) {
     mapped.type = SDL_MOUSEMOTION;
@@ -765,7 +764,7 @@ static bool ui_pointer_prepare(SDL_Event *event) {
     if (!settings_open && !audio_control_popup_open &&
         audio_ui->screen == SCR_PLAY && app_play_interactions_allowed(audio_ui) &&
         !hint_panel_blocks_point(audio_gfx, audio_ui, x, y)) {
-      Layout a = compute_layout(audio_gfx->width, audio_gfx->height, audio_ui->mode);
+      Layout a = compute_layout(audio_gfx, audio_ui->mode);
       return point_in(a.board, x, y);
     }
     return false;
@@ -853,6 +852,7 @@ static bool ui_handle_android_lifecycle_event(const SDL_Event *event) {
     ui_audio_control_cancel_interaction();
     if (audio_ui && audio_ui->session_open && audio_ui->result == RES_NONE)
       (void)clock_pause(audio_ui, PAUSE_FOCUS);
+    ui_modal_invalidate();
   }
   if (e.silence_audio) audio_set_focus_paused(true);
   if (e.checkpoint) {
@@ -871,12 +871,10 @@ static bool ui_handle_android_lifecycle_event(const SDL_Event *event) {
     if (!saved) fprintf(stderr, "Android background checkpoint failed\n");
   }
   if (e.restore_surface) {
-    bool restored = audio_gfx && gfx_refresh_metrics(audio_gfx);
-    if (restored) restored = app_rebuild_renderer_resources(audio_gfx);
+    bool restored = app_restore_renderer_resources(audio_gfx, audio_ui);
     if (!restored)
       fprintf(stderr, "Android foreground renderer restore failed: %s\n",
               SDL_GetError());
-    if (audio_gfx) audio_gfx->dirty = true;
     if (app_lifecycle_checkpoint_failed && audio_ui)
       show_toast(audio_ui, tr(audio_ui->language, T_SAVE_FAILED));
     /* PAUSE_FOCUS remains until explicit Resume. */
@@ -903,8 +901,50 @@ static bool ui_prepare_event(SDL_Event *event) {
     event->key.keysym.mod = KMOD_NONE;
   }
 #endif
+  if (audio_gfx && !audio_gfx->renderer_ready) {
+    /* Fail closed while the renderer is unavailable: input cannot mutate a
+       hidden board or complete a queued destructive modal. */
+    if (event->type == SDL_KEYDOWN && !event->key.repeat) {
+      SDL_Keycode key = event->key.keysym.sym;
+      if (key == SDLK_r) {
+        (void)app_restore_renderer_resources(audio_gfx, audio_ui);
+        return false;
+      }
+      if (key == SDLK_ESCAPE || key == SDLK_AC_BACK) {
+        event->key.keysym.sym = SDLK_ESCAPE;
+        return true; /* The main owner attempts checked exit without a modal. */
+      }
+    }
+    return event->type == SDL_QUIT || event->type == SDL_WINDOWEVENT ||
+           event->type == SDL_RENDER_DEVICE_RESET ||
+           event->type == SDL_RENDER_TARGETS_RESET;
+  }
   if(audio_gfx)audio_gfx->dirty=true;
+  /* Preserve lifecycle, window and renderer-reset events even if a modal
+     choice is waiting for the main-loop continuation. */
+  if (ui_modal_has_pending() && event->type != SDL_WINDOWEVENT &&
+      event->type != SDL_RENDER_DEVICE_RESET &&
+      event->type != SDL_RENDER_TARGETS_RESET) return false;
+  if (ui_modal.active &&
+      (event->type == SDL_FINGERDOWN || event->type == SDL_FINGERMOTION ||
+       event->type == SDL_FINGERUP)) {
+    (void)ui_modal_handle_event(event);
+    return false;
+  }
+  if (startup_loading_active && event->type==SDL_KEYDOWN &&
+      !event->key.repeat && event->key.keysym.sym==SDLK_ESCAPE) return true;
+  if ((startup_recovery_active || startup_loading_active) && !ui_modal.active &&
+      event->type!=SDL_QUIT && event->type!=SDL_WINDOWEVENT &&
+      event->type!=SDL_RENDER_DEVICE_RESET && event->type!=SDL_RENDER_TARGETS_RESET &&
+      event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)
+    return false;
   if (!ui_touch_prepare(event)) return false;
+  if (ui_modal_handle_event(event)) return false;
+  if ((startup_recovery_active || startup_loading_active) && event->type!=SDL_QUIT &&
+      event->type!=SDL_WINDOWEVENT && event->type!=SDL_RENDER_DEVICE_RESET &&
+      event->type!=SDL_RENDER_TARGETS_RESET &&
+      event->type!=SDL_AUDIODEVICEREMOVED && event->type!=SDL_AUDIODEVICEADDED)
+    return false;
   if (!ui_pointer_prepare(event)) return false;
   if (ui_handle_more_panel_event(event)) return false;
   if(event->type==SDL_WINDOWEVENT)ui_audio_control_cancel_interaction();
@@ -928,8 +968,9 @@ static bool ui_prepare_event(SDL_Event *event) {
       return false;
     int digit = input_digit_value(key, event->key.keysym.scancode);
 
-    if (audio_ui && audio_ui->screen == SCR_ABOUT && digit == 4) {
-      ui_open_url(ui_support_url(audio_ui->language));
+    if (audio_ui && audio_ui->screen == SCR_ABOUT && (digit == 3 || digit == 4)) {
+      ui_open_url(digit == 3 ? ui_support_url(audio_ui->language)
+                             : SUDOKURA_PRIVACY_POLICY_URL);
       return false;
     }
 
@@ -943,17 +984,17 @@ static bool ui_prepare_event(SDL_Event *event) {
     int x = event->button.x, y = event->button.y;
     AppGeometry geometry;
     if (get_geometry(audio_gfx, audio_ui, &geometry)) {
-      if (point_in(sdl_rect(geometry.about_study_link), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,2), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
-          info_keyboard_focus = INFO_FOCUS_STUDY;
-          ui_open_url("https://doi.org/10.1002/gps.5085");
+          info_keyboard_focus = INFO_FOCUS_LINK_2;
+          ui_open_url(ui_support_url(audio_ui->language));
         }
         return false;
       }
-      if (point_in(sdl_rect(geometry.about_links[3]), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,3), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
           info_keyboard_focus = INFO_FOCUS_LINK_3;
-          ui_open_url(ui_support_url(audio_ui->language));
+          ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);
         }
         return false;
       }

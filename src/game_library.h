@@ -9,7 +9,8 @@
 #include <stdint.h>
 
 #define SUDOKURA_GAME_RECORD_MAX_BYTES 8192u
-#define SUDOKURA_GAME_RECORD_VERSION 1u
+#define SUDOKURA_GAME_RECORD_VERSION_LEGACY 1u
+#define SUDOKURA_GAME_RECORD_VERSION 2u
 
 typedef enum {
   GAME_RECORD_EXACT = 1,
@@ -37,9 +38,10 @@ typedef struct {
 } GameLibraryRecord;
 
 typedef struct {
-  GameAttemptId id;
+  GameAttemptId id, parent;
   StoreStatus status;
   bool only_backup;
+  bool explicitly_saved;
   /* Metadata/CRC status of .bak; STORE_OK still requires full canonical
      validation before an explicit recovery. */
   StoreStatus previous_status;
@@ -86,6 +88,10 @@ StoreStatus game_library_peek(const unsigned char *bytes, size_t size,
                               GameLibraryEntry *entry);
 StoreStatus game_library_load(const char *root, GameAttemptId id,
                               GameLibraryRecord *record);
+/* Canonically validate a prior copy without restoring it or writing files.
+   Use before asking the user to authorize a Daily recovery. */
+StoreStatus game_library_load_previous(const char *root, GameAttemptId id,
+                                       GameLibraryRecord *record);
 /* Decide a same-attempt Load without rolling back a newer hot revision.
    The record is a canonically validated exact record from game_library_load.
    On a conflict, callers must leave both profile and live board untouched. */

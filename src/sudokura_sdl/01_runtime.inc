@@ -6,7 +6,7 @@
     - Autosave, Continue and independent pause reasons
     - Dark/Light theme and offline language selector
     - Optional SDL2_mixer music, jingles and subtle UI feedback
-    Author: santirodriguez — https://santiagorodriguez.com
+    Author: santirodriguez — https://github.com/santirodriguez
     License: GPLv3
     Build:
       install make, gcc, pkg-config, SDL2, SDL2_ttf and SDL2_mixer development files
@@ -99,7 +99,10 @@ typedef struct {
   int output_width, output_height;
   DesktopMetrics metrics;
   bool software_renderer;
+  bool mobile_layout;
+  bool renderer_ready;
   bool dirty;
+  uint64_t surface_repaint_until_ms;
   char font_path[PATH_MAX];
   int restored_x, restored_y, restored_width, restored_height;
   bool restored_bounds_valid;
@@ -107,9 +110,7 @@ typedef struct {
 
 /* Shared native gesture policy; on Android slop comes from ViewConfiguration. */
 static int ui_touch_slop = 8;
-#if defined(__ANDROID__)
 static bool ui_keyboard_focus_visible = false;
-#endif
 static bool app_suspended = false;
 #if defined(__ANDROID__)
 static AndroidLifecycle app_lifecycle_state;
@@ -156,6 +157,7 @@ typedef AppState UI;
 #define RES_NONE APP_RESULT_NONE
 #define RES_WIN APP_RESULT_WIN
 #define RES_LOSE APP_RESULT_LOSE
+#define RES_INTERRUPTED APP_RESULT_INTERRUPTED
 #define PAUSE_MANUAL APP_PAUSE_MANUAL
 #define PAUSE_FOCUS APP_PAUSE_FOCUS
 #define PAUSE_MODAL APP_PAUSE_MODAL
@@ -171,8 +173,16 @@ typedef struct {
   uint8_t month, day;
 } GameReplayOrigin;
 
+typedef enum {
+  PERSISTENCE_STARTUP_DONE = 0,
+  PERSISTENCE_STARTUP_LOAD,
+  PERSISTENCE_STARTUP_UPGRADE,
+  PERSISTENCE_STARTUP_RECONCILE
+} PersistenceStartupStage;
+
 typedef struct {
   bool enabled;
+  PersistenceStartupStage startup_stage;
   Preferences preferences;
   SessionState saved;
   ProfileData profile;
@@ -196,14 +206,29 @@ typedef struct {
   bool capture_failed;
   /* An interrupted first Save still owes its retained record/profile link. */
   unsigned keep_pending_mask;
+  /* An uncertain post-rename Replay activation blocks unrelated saves. */
+  bool replay_activation_unresolved;
+  /* Failed Daily rollback blocks every unrelated checkpoint. */
+  bool daily_activation_unresolved;
+  bool load_activation_unresolved;
+  Preferences replay_activation_expected_preferences;
   uint64_t last_periodic_checkpoint_ms;
 } Persistence;
 
+static bool persistence_activation_blocked(const Persistence *p) {
+  return p && (p->replay_activation_unresolved ||
+               p->daily_activation_unresolved || p->load_activation_unresolved);
+}
+
 /* Defined later in games_ui.inc; also used by the global Retry action. */
 static bool games_browser_save_hot(Persistence *p, bool daily);
+static bool games_browser_load_restore(Persistence *p);
 
 /* Home Daily scan runs incrementally. Rendering reads only this state. */
 static bool daily_lookup_scanning = false;
+/* Startup recovery owns Home until explicit consent or Quit. */
+static bool startup_recovery_active = false;
+static bool startup_loading_active = false;
 
 /* Native message boxes can enqueue transient focus events. The SDL shell
    advances this guard after each modal so those older events cannot pause a
@@ -241,7 +266,7 @@ static void set_mode_params(UI*ui){
 static void begin_fresh_play(UI*ui){
   ui->screen=SCR_PLAY; ui->prev_screen=SCR_PLAY; ui->result=RES_NONE;
   ui->mistakes=0; ui->strikes=0; ui->notes_mode=false; ui->session_open=true;
-  ui->undo_count=0; ui->redo_count=0;
+  ui->undo_count=0; ui->redo_count=0;ui->attempt_started=false;
   set_mode_params(ui); clock_reset(ui);
 }
 static void victory_animation_start(void);
@@ -282,7 +307,8 @@ static bool apply_player_input(Game*game,UI*ui,int row,int column,int value,bool
   uint64_t action_ms=now_ms();
   AppActionOutcome outcome=app_apply_action(
       game,ui,action,app_clock_elapsed_s(ui,action_ms));
-  return apply_action_outcome(ui,outcome,action_ms);
+  bool changed=apply_action_outcome(ui,outcome,action_ms);
+  return changed || (action.kind==APP_ACTION_PLACE && ui->attempt_started);
 }
 
 static bool apply_history_action(Game*game,UI*ui,AppActionKind kind){
@@ -437,6 +463,13 @@ static void resume_info_from_slot(AppResumeInfo*out,const ProfileSlot*slot,
   }
 }
 
+static bool journey_auto_daily(const Persistence *p) {
+  return p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+      p->profile.daily.value.session.status==SESSION_ACTIVE &&
+      (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+       p->profile.normal.value.session.status!=SESSION_ACTIVE);
+}
+
 static void refresh_resume_info(Persistence*p,UI*ui){
   if(!ui)return;
   memset(&ui->normal_resume,0,sizeof(ui->normal_resume));
@@ -444,6 +477,11 @@ static void refresh_resume_info(Persistence*p,UI*ui){
   if(p&&p->enabled){
     resume_info_from_slot(&ui->normal_resume,&p->profile.normal,false);
     resume_info_from_slot(&ui->daily_resume,&p->profile.daily,true);
+    if (p->profile.daily.present && !p->profile.daily.value.explicitly_saved &&
+        p->profile.daily.value.session.status==SESSION_ACTIVE &&
+        (!p->profile.normal.present || p->profile.normal.value.explicitly_saved ||
+         p->profile.normal.value.session.status!=SESSION_ACTIVE))
+      resume_info_from_slot(&ui->normal_resume,&p->profile.daily,true);
   }
   ui->has_session=ui->normal_resume.can_continue;
 }
@@ -485,6 +523,14 @@ static void refresh_result_summary(Persistence*p,const SessionState*session,
   ui->result_best_time_ms=summary.best_time_ms;
 }
 
+static bool journey_home_dirty=true;
+static struct {
+  GameLibraryScanCursor cursor;
+  bool scanning, available;
+  uint64_t latest_utc;
+  ProfileResult latest;
+} journey_home_summary;
+
 static bool record_terminal_result(Persistence*p,const SessionState*session,
                                    bool assisted,GameAttemptId id,UI*ui){
   if(!p||!p->enabled||!session||session->status==SESSION_ACTIVE)return false;
@@ -495,6 +541,7 @@ static bool record_terminal_result(Persistence*p,const SessionState*session,
       game_attempt_id_equal(p->active_replay.id,id);
   bool inserted=false;
   if(!profile_record_result(&p->profile,&result,&inserted))return false;
+  if(inserted)journey_home_dirty=true;
   if(inserted)
     save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
   refresh_result_summary(p,session,assisted,ui);
@@ -520,20 +567,23 @@ static void persistence_refresh_normal(Persistence*p){
 
 static StoreStatus persistence_write_profile_callback(void*context){
   Persistence*p=(Persistence*)context;
-  if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask)return STORE_IO_ERROR;
+  if(!p||!p->enabled||p->capture_failed||p->keep_pending_mask||
+     persistence_activation_blocked(p))return STORE_IO_ERROR;
   p->profile.preferences=p->preferences;
   return profile_save_runtime_file(
       p->profile_path,p->profile_backup_path,&p->profile);
 }
 
 static bool persistence_write_profile(Persistence*p){
-  if(!p||!p->enabled||p->capture_failed)return false;
+  if(!p||!p->enabled||p->capture_failed||
+     persistence_activation_blocked(p))return false;
   return save_policy_checkpoint_now(
       &p->save_policy,persistence_write_profile_callback,p,now_ms());
 }
 
 static bool persistence_flush(Persistence*p){
-  if(!p||!p->enabled||p->keep_pending_mask)return false;
+  if(!p||!p->enabled||p->keep_pending_mask||
+     persistence_activation_blocked(p))return false;
   if(!save_policy_dirty(&p->save_policy))return true;
   return persistence_write_profile(p);
 }
@@ -542,82 +592,68 @@ static bool persistence_has_save_error(const Persistence*p){
   return p&&save_policy_has_error(&p->save_policy);
 }
 
-static bool persistence_recover_previous(Persistence*p){
-  if(!p||p->lock_status!=STORE_LOCK_ACQUIRED)return false;
-  ProfileData recovered;
-  StoreStatus status=profile_recover_previous(
-      p->profile_path,p->profile_backup_path,&recovered);
-  if(status==STORE_OK)
-    status=game_migration_upgrade(
-        p->profile_directory,p->profile_path,p->profile_backup_path,
-        &recovered,NULL);
-  if(status==STORE_OK)
-    status=game_migration_reconcile(
-        p->profile_directory,p->profile_path,p->profile_backup_path,
-        &recovered);
-  p->profile_status=status;
-  if(status!=STORE_OK)return false;
-  p->profile=recovered;
-  p->preferences=recovered.preferences;
+/* A checked restore is the start of startup continuation, never permission
+   to expose a partially migrated profile or enable unrelated writes. */
+static void persistence_queue_restored(Persistence *p, const ProfileData *restored) {
+  p->profile=*restored;
+  p->profile_status=STORE_OK;
+  p->enabled=false;
+  p->startup_stage=PERSISTENCE_STARTUP_LOAD;
   p->active_attempt_id=(GameAttemptId){0,0};
   memset(&p->active_replay,0,sizeof(p->active_replay));
   p->capture_failed=false;
-  persistence_refresh_normal(p);
-  save_policy_init(&p->save_policy);
-  p->last_periodic_checkpoint_ms=now_ms();
-  p->enabled=true;
-  return true;
+  p->replay_activation_unresolved=false;
+  p->daily_activation_unresolved=false;
+  p->load_activation_unresolved=false;
 }
 
-static bool persistence_previous_available(const Persistence*p){
-  if(!p)return false;
-  ProfileData previous;
-  return profile_load_file(p->profile_backup_path,&previous)==STORE_OK;
+static StoreStatus persistence_restore_previous(Persistence *p) {
+  if (!p || p->enabled || p->lock_status!=STORE_LOCK_ACQUIRED)
+    return STORE_IO_ERROR;
+  ProfileData restored;
+  StoreStatus status=profile_recover_previous(
+      p->profile_path,p->profile_backup_path,&restored);
+  p->profile_status=status;
+  if (status==STORE_OK) persistence_queue_restored(p,&restored);
+  return status;
 }
 
-/* Do not treat lost primary+backup as a new installation when durable
-   collection or migration evidence is still present. Offer an explicit
-   locked-writer recovery action; never silently create default profiles. */
-static bool persistence_missing_hot_recovery_available(
-    const Persistence *p, GameMigrationRecoveryRoute *route) {
-  if (!p || !route || p->lock_status != STORE_LOCK_ACQUIRED ||
-      p->enabled || p->profile_status != STORE_IO_ERROR)
-    return false;
-  return game_migration_missing_hot_route(
-      p->profile_directory, p->profile_path, p->profile_backup_path,
-      route) == STORE_OK;
+/* Missing copies must never be treated as a new installation when durable
+   collection or migration evidence exists. Routing is read-only/cancelable. */
+static StoreStatus persistence_missing_hot_recovery_route(
+    const Persistence *p, GameMigrationRecoveryRoute *route,
+    StoreContinue proceed, void *context) {
+  if (!p || !route || p->lock_status!=STORE_LOCK_ACQUIRED ||
+      p->enabled || p->profile_status!=STORE_IO_ERROR) return STORE_IO_ERROR;
+  return game_migration_missing_hot_route_controlled(
+      p->profile_directory,p->profile_path,p->profile_backup_path,
+      route,proceed,context);
 }
 
-static bool persistence_recover_missing_hot(
-    Persistence *p, GameMigrationRecoveryRoute requested) {
-  GameMigrationRecoveryRoute current = GAME_MIGRATION_RECOVERY_NONE;
-  if (!persistence_missing_hot_recovery_available(p, &current) ||
-      current != requested)
-    return false;
-  ProfileData recovered;
-  StoreStatus status = STORE_IO_ERROR;
-  if (requested == GAME_MIGRATION_RECOVERY_IMPORT) {
-    status = game_migration_recover_intent(
-        p->profile_directory, p->profile_path, p->profile_backup_path,
-        &recovered);
-  } else if (requested == GAME_MIGRATION_RECOVERY_COLLECTION) {
-    GameMigrationRecoverySummary summary = {0};
-    status = game_migration_recover_collection(
-        p->profile_directory, p->profile_path, p->profile_backup_path,
-        &recovered, &summary);
+static StoreStatus persistence_restore_missing_hot(
+    Persistence *p, GameMigrationRecoveryRoute requested,
+    StoreContinue proceed, void *context) {
+  GameMigrationRecoveryRoute current=GAME_MIGRATION_RECOVERY_NONE;
+  StoreStatus status=persistence_missing_hot_recovery_route(
+      p,&current,proceed,context);
+  if (status!=STORE_OK) return status;
+  if (current!=requested) return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
+  ProfileData restored;
+  status=STORE_IO_ERROR;
+  if (requested==GAME_MIGRATION_RECOVERY_IMPORT) {
+    status=game_migration_restore_intent(
+        p->profile_directory,p->profile_path,p->profile_backup_path,&restored);
+  } else if (requested==GAME_MIGRATION_RECOVERY_COLLECTION) {
+    GameMigrationRecoverySummary summary={0};
+    status=game_migration_recover_collection_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &restored,&summary,proceed,context);
   }
-  p->profile_status = status;
-  if (status != STORE_OK) return false;
-  p->profile = recovered;
-  p->preferences = recovered.preferences;
-  p->active_attempt_id = (GameAttemptId){0, 0};
-  memset(&p->active_replay, 0, sizeof(p->active_replay));
-  p->capture_failed = false;
-  persistence_refresh_normal(p);
-  save_policy_init(&p->save_policy);
-  p->last_periodic_checkpoint_ms = now_ms();
-  p->enabled = true;
-  return true;
+  if (status==STORE_CANCELLED) return status;
+  p->profile_status=status;
+  if (status==STORE_OK) persistence_queue_restored(p,&restored);
+  return status;
 }
 
 static void persistence_init_base(Persistence*p){
@@ -650,45 +686,72 @@ static void persistence_init_base(Persistence*p){
     SDL_free(base);
     return;
   }
-
-  /* Collection evidence means missing hot copies are not a fresh install. */
-  if(!store_file_exists(p->profile_path) &&
-     !store_file_exists(p->profile_backup_path) &&
-     game_migration_has_artifacts(base)){
-    p->profile_status=STORE_IO_ERROR;
-    SDL_free(base);
-    return;
-  }
-
-  ProfileLegacyPaths legacy={
-    .session_path=p->session_path,
-    .preferences_path=p->preferences_path,
-    .audio_levels_path=p->audio_levels_path,
-    .session_backup_path=p->session_v12_backup_path,
-    .preferences_backup_path=p->preferences_v12_backup_path,
-    .audio_levels_backup_path=p->audio_v12_backup_path
-  };
-  bool migrated=false;
-  p->profile_status=profile_load_or_migrate_v12(
-      p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated);
-  if(p->profile_status==STORE_OK){
-    bool upgraded=false;
-    p->profile_status=game_migration_upgrade(
-        base,p->profile_path,p->profile_backup_path,&p->profile,&upgraded);
-    if(p->profile_status==STORE_OK)
-      p->profile_status=game_migration_reconcile(
-          base,p->profile_path,p->profile_backup_path,&p->profile);
-    (void)upgraded;
-  }
-  (void)migrated;
+  p->startup_stage=PERSISTENCE_STARTUP_LOAD;
   SDL_free(base);
-  if(p->profile_status!=STORE_OK)return;
+}
 
-  p->enabled=true;
+/* One phase per main-loop turn. Cancellation leaves completed checkpoints
+   intact; reload them before retrying rather than trusting a stale hot copy. */
+static bool persistence_startup_step(Persistence *p, StoreContinue proceed,
+                                     void *context) {
+  if (!p || p->startup_stage==PERSISTENCE_STARTUP_DONE) return true;
+  if (proceed && !proceed(context)) return false;
+  StoreStatus status=STORE_IO_ERROR;
+  if (p->startup_stage==PERSISTENCE_STARTUP_LOAD) {
+
+    /* Collection evidence means missing hot copies are not a fresh install. */
+    if(!store_file_exists(p->profile_path) &&
+       !store_file_exists(p->profile_backup_path) &&
+       game_migration_has_artifacts(p->profile_directory)){
+      p->profile_status=STORE_IO_ERROR;
+      p->startup_stage=PERSISTENCE_STARTUP_DONE;
+      return true;
+    }
+
+    ProfileLegacyPaths legacy={
+      .session_path=p->session_path,
+      .preferences_path=p->preferences_path,
+      .audio_levels_path=p->audio_levels_path,
+      .session_backup_path=p->session_v12_backup_path,
+      .preferences_backup_path=p->preferences_v12_backup_path,
+      .audio_levels_backup_path=p->audio_v12_backup_path
+    };
+    bool migrated=false;
+    status=profile_load_or_migrate_v12_controlled(
+        p->profile_path,p->profile_backup_path,&legacy,&p->profile,&migrated,
+        proceed,context);
+    (void)migrated;
+  } else if (p->startup_stage==PERSISTENCE_STARTUP_UPGRADE) {
+    bool upgraded=false;
+    status=game_migration_upgrade_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &p->profile,&upgraded,proceed,context);
+    (void)upgraded;
+  } else if (p->startup_stage==PERSISTENCE_STARTUP_RECONCILE) {
+    status=game_migration_reconcile_controlled(
+        p->profile_directory,p->profile_path,p->profile_backup_path,
+        &p->profile,proceed,context);
+  }
+  if (status==STORE_CANCELLED) {
+    p->startup_stage=PERSISTENCE_STARTUP_LOAD;
+    return false;
+  }
+  p->profile_status=status;
+  if (status!=STORE_OK) {
+    p->startup_stage=PERSISTENCE_STARTUP_DONE;
+    return true;
+  }
+  if (p->startup_stage!=PERSISTENCE_STARTUP_RECONCILE) {
+    p->startup_stage=(PersistenceStartupStage)(p->startup_stage+1);
+    return false;
+  }
+
+  p->startup_stage=PERSISTENCE_STARTUP_DONE;
   p->preferences=p->profile.preferences;
   persistence_refresh_normal(p);
   save_policy_init(&p->save_policy);
   p->last_periodic_checkpoint_ms=now_ms();
+  return true;
 }
 
 static void persistence_stage_preferences(Persistence*p){
@@ -729,6 +792,7 @@ static bool capture_session(SessionState*out,const Game*game,const UI*ui,
   candidate.daily_day=ui->daily_day;
   if(ui->result==RES_WIN)candidate.status=SESSION_WON;
   else if(ui->result==RES_LOSE)candidate.status=SESSION_LOST;
+  else if(ui->result==RES_INTERRUPTED)candidate.status=SESSION_INTERRUPTED;
   else if(game_mode_lost(ui->mode,ui->strikes,ui->strikes_max,
                         (double)candidate.elapsed_ms/1000.0,
                         ui->time_limit_s))candidate.status=SESSION_LOST;
@@ -817,6 +881,7 @@ static bool persistence_apply_replay_origin(const Persistence*p,
 }
 
 static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
+  if(p && persistence_activation_blocked(p))return false;
   if(!p||!p->enabled||!game||!ui||!ui->session_open)return false;
   if(p->profile.codec_version!=SUDOKURA_PROFILE_CONTENT_VERSION){
     persistence_capture_failure(p,ui);
@@ -843,6 +908,8 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   GameAttemptId id=same_identity?slot->attempt_id:(GameAttemptId){0,0};
   uint64_t old_revision=same_identity?slot->revision:0;
   bool retained=same_identity&&slot->retained;
+  bool started=ui->attempt_started||(same_identity&&slot->value.started);
+  bool explicitly_saved=same_identity&&slot->value.explicitly_saved;
   bool terminal_repeat=same_identity &&
       slot->value.session.status!=SESSION_ACTIVE &&
       state.status==slot->value.session.status;
@@ -874,8 +941,11 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   /* A pending first Save must finish its own record transaction before
      a terminal result can publish a new retained hot pointer. */
   slot->retained=retained||
-      (state.status==SESSION_WON&&!keep_pending)||
+      (state.status!=SESSION_ACTIVE&&(started||state.status==SESSION_WON)&&!keep_pending)||
       p->active_replay.practice;
+  if(state.status==SESSION_LOST && !started) { slot->retained=false;explicitly_saved=false; }
+  slot->value.started=started;
+  slot->value.explicitly_saved=explicitly_saved;
   slot->value.undo_count=ui->undo_count;
   slot->value.redo_count=ui->redo_count;
   memcpy(slot->value.undo,ui->undo,sizeof(ui->undo));
@@ -894,7 +964,7 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
     }
   }
   if(!state.is_daily)p->saved=state;
-  if(state.status!=SESSION_ACTIVE &&
+  if(state.status!=SESSION_ACTIVE && (started||state.status==SESSION_WON) &&
      !record_terminal_result(p,&state,assisted,id,ui)){
     persistence_capture_failure(p,ui);
     return false;
@@ -908,7 +978,49 @@ static bool stage_current_session(Persistence*p,const Game*game,UI*ui){
   return state.status==SESSION_ACTIVE || persistence_flush(p);
 }
 
+/* Close the exact attempt only after its terminal archive is durable. A retry
+   retains its own ID/parent; opening or browsing a board is not a failed attempt. */
+static bool journey_interrupt_slot(Persistence *p, UI *ui, bool daily) {
+  if (!p || !p->enabled || persistence_activation_blocked(p)) return false;
+  ProfileSlot *slot=daily?&p->profile.daily:&p->profile.normal;
+  if (!slot->present) return true;
+  if (slot->value.session.status != SESSION_ACTIVE) return persistence_flush(p);
+  if (!slot->value.started) {
+    memset(slot,0,sizeof(*slot));
+  } else {
+    if (slot->revision==UINT64_MAX) return false;
+    ProfileSlot terminal=*slot;
+    terminal.value.session.status=SESSION_INTERRUPTED;
+    terminal.retained=true;++terminal.revision;
+    GameLibraryRecord record;
+    if (!game_library_make_exact_runtime(&record,terminal.attempt_id,
+          terminal.revision,&terminal.value,true)) return false;
+    if (slot->retained) {
+      GameLibraryRecord previous;
+      if (game_library_load(p->profile_directory,slot->attempt_id,&previous)!=STORE_OK) return false;
+      record.practice=previous.practice;record.result.practice=previous.practice;
+      record.parent=previous.parent;record.original_daily=previous.original_daily;
+      record.original_daily_year=previous.original_daily_year;
+      record.original_daily_month=previous.original_daily_month;
+      record.original_daily_day=previous.original_daily_day;
+    }
+    if (game_library_save_runtime(p->profile_directory,&record,
+          &p->game_cache[daily?1:0])!=STORE_OK) return false;
+    *slot=terminal;
+    bool inserted=false;
+    if (!profile_record_result(&p->profile,&record.result,&inserted)) return false;
+    save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
+  }
+  if (ui && ui->session_open && ui->is_daily==daily) {
+    ui->result=RES_INTERRUPTED;ui->session_open=false;
+  }
+  persistence_refresh_normal(p);refresh_resume_info(p,ui);
+  save_policy_mark(&p->save_policy,daily?SAVE_DIRTY_DAILY:SAVE_DIRTY_NORMAL,now_ms());
+  return persistence_flush(p);
+}
+
 static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
+  if(p && persistence_activation_blocked(p))return false;
   if(!stage_current_session(p,game,ui))return false;
   p->last_periodic_checkpoint_ms=now_ms();
   return persistence_flush(p);
@@ -916,6 +1028,8 @@ static bool checkpoint_current_session(Persistence*p,const Game*game,UI*ui){
 
 static bool persistence_retry_current(Persistence*p,const Game*game,UI*ui){
   if(!p)return false;
+  if(p->load_activation_unresolved && !games_browser_load_restore(p))return false;
+  if(persistence_activation_blocked(p))return false;
   if(p->capture_failed &&
      (!game||!ui||!ui->session_open||
       !stage_current_session(p,game,ui)))return false;
@@ -943,7 +1057,7 @@ static void persistence_begin_distinct_attempt(Persistence*p,bool daily){
 }
 
 static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
-  if(!p||!game||!ui)return;
+  if(!p||!game||!ui||persistence_activation_blocked(p))return;
   const ProfileSlot*slot=daily?&p->profile.daily:&p->profile.normal;
   const SessionState*s=profile_slot_session(slot);
   if(!s||!session_validate_runtime(s))return;
@@ -960,6 +1074,7 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
   bool normal_continue=session_can_continue_runtime(&p->saved);
   ui->has_session=true;
   ui->assisted=slot->value.assisted;ui->hint_preview_active=false;ui->hint_verify_required=false;
+  ui->attempt_started=slot->value.started;
   ui->undo_count=slot->value.undo_count;ui->redo_count=slot->value.redo_count;
   memcpy(ui->undo,slot->value.undo,sizeof(ui->undo));
   memcpy(ui->redo,slot->value.redo,sizeof(ui->redo));
@@ -979,7 +1094,8 @@ static void restore_saved_session(Persistence*p,Game*game,UI*ui,bool daily){
 
 static GameGenerationResult start_new_session_base(
     Persistence*p,Game*game,UI*ui,const GameGenerationControl*control){
-  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  if(!p||!game||!ui||persistence_activation_blocked(p))
+    return GAME_GENERATION_INVALID;
   Game generated;
   GameGenerationResult result=game_generate_difficulty(
       &generated,next_seed(),p->preferences.difficulty,
@@ -999,7 +1115,8 @@ static GameGenerationResult start_new_session_base(
 static GameGenerationResult start_daily_session_base(
     Persistence*p,Game*game,UI*ui,int year,int month,int day,
     const GameGenerationControl*control){
-  if(!p||!game||!ui)return GAME_GENERATION_INVALID;
+  if(!p||!game||!ui||persistence_activation_blocked(p))
+    return GAME_GENERATION_INVALID;
   uint64_t seed=0;
   if(!game_daily_seed_revision(year,month,day,SUDOKURA_GENERATOR_REVISION,&seed))
     return GAME_GENERATION_INVALID;
@@ -1026,18 +1143,28 @@ static bool saved_daily_matches(const Persistence*p,int year,int month,int day){
 }
 
 static void restart_current_session(Persistence*p,Game*game,UI*ui){
-  bool retry_after_loss=ui&&ui->result==RES_LOSE;
+  if(!p || persistence_activation_blocked(p))return;
+  bool previous_attempt=ui->attempt_started || ui->result==RES_LOSE;
+  GameLibraryRecord source;bool linked=false;
+  if(previous_attempt) {
+    if(ui->result==RES_NONE && (!stage_current_session(p,game,ui) ||
+         !journey_interrupt_slot(p,ui,ui->is_daily)))return;
+    const ProfileSlot *slot=ui->is_daily?&p->profile.daily:&p->profile.normal;
+    linked=slot->present && game_library_load(p->profile_directory,slot->attempt_id,&source)==STORE_OK &&
+           source.result.status!=SESSION_ACTIVE;
+    if(!linked && ui->attempt_started)return;
+  }
   AppAction restart_action={.kind=APP_ACTION_RESTART};
   AppActionOutcome outcome=app_apply_action(game,ui,restart_action,elapsed_time(ui));
   if(!outcome.changed)return;
-  if(retry_after_loss){
-    GameReplayOrigin replay=p->active_replay;
-    persistence_begin_distinct_attempt(p,ui->is_daily);
-    if(replay.practice){
-      p->active_replay=replay;
-      p->active_replay.id=(GameAttemptId){0,0};
-    }
+  if(linked) {
+    persistence_begin_distinct_attempt(p,false);
+    p->active_replay=(GameReplayOrigin){.practice=true,.parent=source.id,
+      .original_daily=source.original_daily,.year=source.original_daily_year,
+      .month=source.original_daily_month,.day=source.original_daily_day};
+    ui->is_daily=false;ui->daily_year=ui->daily_month=ui->daily_day=0;
   }
+  ui->attempt_started=false;ui->assisted=false;
   ui->sel_r=4;ui->sel_c=4;ui->hint_preview_active=false;
   memset(&ui->hint_preview,0,sizeof(ui->hint_preview));
   set_mode_params(ui);clock_reset(ui);

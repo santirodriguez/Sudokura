@@ -10,6 +10,11 @@
 StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
                                    const char *backup_path, ProfileData *profile,
                                    bool *upgraded);
+/* STORE_CANCELLED can follow a durable intent/pending-hot checkpoint. Reload
+   the primary before resuming; caller output is published only on STORE_OK. */
+StoreStatus game_migration_upgrade_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, bool *upgraded, StoreContinue proceed, void *context);
 
 /* If hot profile copies are lost, collection artifacts prevent fresh defaults. */
 bool game_migration_has_artifacts(const char *root);
@@ -36,22 +41,37 @@ typedef enum {
 StoreStatus game_migration_missing_hot_route(
     const char *root, const char *profile_path, const char *backup_path,
     GameMigrationRecoveryRoute *route);
+StoreStatus game_migration_missing_hot_route_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    GameMigrationRecoveryRoute *route, StoreContinue proceed, void *context);
 
 /* Read-only preview: recovered preferences default when both hot files are
    lost and no explicit immutable-intent recovery has been chosen. */
 StoreStatus game_migration_preview_collection(
     const char *root, ProfileData *candidate,
     GameMigrationRecoverySummary *summary);
+StoreStatus game_migration_preview_collection_controlled(
+    const char *root, ProfileData *candidate,
+    GameMigrationRecoverySummary *summary, StoreContinue proceed, void *context);
 
 /* Explicit recovery path when BOTH profile.dat and .bak are genuinely missing.
    Never silently re-import old migration sources over the collection. */
 StoreStatus game_migration_recover_collection(
     const char *root, const char *profile_path, const char *backup_path,
     ProfileData *profile, GameMigrationRecoverySummary *summary);
+StoreStatus game_migration_recover_collection_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, GameMigrationRecoverySummary *summary,
+    StoreContinue proceed, void *context);
 
 /* Separate explicit earlier-checkpoint option: validate immutable source
    and intent, then resume its original IDs and reconcile newer records. */
 StoreStatus game_migration_recover_intent(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile);
+/* Validate and publish only the frozen pending intent. The caller then runs
+   the normal startup load/upgrade/reconcile pipeline before enabling play. */
+StoreStatus game_migration_restore_intent(
     const char *root, const char *profile_path, const char *backup_path,
     ProfileData *profile);
 /* Apply newer durable records before publishing hot Continue state. */
@@ -59,5 +79,8 @@ StoreStatus game_migration_reconcile(const char *root,
                                      const char *profile_path,
                                      const char *backup_path,
                                      ProfileData *profile);
+StoreStatus game_migration_reconcile_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, StoreContinue proceed, void *context);
 
 #endif

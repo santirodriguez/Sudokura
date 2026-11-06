@@ -3,89 +3,98 @@
 <p align="center">
   <img src="assets/branding/source/sudokura-head.png" alt="Sudokura" width="480">
 </p>
-
+<p align="center"><strong>A little time for a good puzzle.</strong></p>
 <p align="center">
-  <strong>A little time for a good puzzle.</strong>
+  A clean grid. A satisfying challenge. Just enough help when you want it.<br>
+  Start with an easy one, come back for the Daily, or give that stubborn 7 another chance.
 </p>
-
 <p align="center">
-  Classic Sudoku, daily challenges, and just enough help when you need it.<br>
-  No accounts, no ads, no analytics. Just you and the grid.
-</p>
-
-<p align="center">
+  <a href="#pick-your-puzzle">Play your way</a> ·
+  <a href="#see-the-board">Screenshots</a> ·
   <a href="#download">Download</a> ·
-  <a href="#play-your-way">Features</a> ·
-  <a href="docs/images/README.md">Screenshots</a> ·
-  <a href="docs/RELEASE_NOTES_1.3.9.md">What's new</a>
+  <a href="docs/RELEASE_NOTES_1.4.0.md">What's new in 1.4.0</a> ·
+  <a href="docs/README.md">Docs</a>
 </p>
 
 ---
 
-## Download
-
-<p align="center">
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-Installer-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows installer"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-Portable-4567B4?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows portable EXE"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG"></a>
-</p>
-
-<p align="center">
-  <sub>Windows 11 x64 · Linux x86_64 · macOS 15+ Apple Silicon (experimental)</sub><br>
-  <sub>Buttons open the latest <strong>published</strong> release. Choose the file for your platform.</sub>
-</p>
-
-<details>
-<summary>Installation and download verification</summary>
-
-- **Windows:** choose the installer or the single-file, installation-free portable EXE. Unsigned Windows builds may trigger a SmartScreen reputation warning.
-- **Linux:** make the AppImage executable with <code>chmod +x Sudokura-*-Linux-x64.AppImage</code>. If FUSE is unavailable, launch with <code>--appimage-extract-and-run</code>.
-- **macOS:** the Apple Silicon DMG is experimental, ad-hoc signed, and not Apple-notarized.
-- **Integrity:** the [release page](https://github.com/santirodriguez/Sudokura/releases/latest) includes <code>SHA256SUMS.txt</code> and a matching Build-Info file.
-
-</details>
-
-## A familiar board, carefully made
-
-<p align="center">
-  <a href="docs/images/sudokura-v1.3.9.png">
-    <img src="docs/images/sudokura-v1.3.9.png" alt="Sudokura desktop gameplay: Sudoku board, notes, number keys and Save controls" width="900">
-  </a>
-  <br>
-  <sub>Regular desktop gameplay — the approved view remains unchanged in v1.3.9.</sub>
-</p>
+## Pick your puzzle
 
 <table>
 <tr>
-<td width="33%" valign="top">
-<strong>Thoughtful puzzles</strong><br><br>
-Easy, Medium, and Hard puzzles with unique solutions and difficulty based on human-solving techniques.
-</td>
-<td width="33%" valign="top">
-<strong>Comfortable controls</strong><br><br>
-Play with a keyboard, mouse, or desktop touchscreen. Notes, Undo/Redo, hints, and themes are close at hand.
-</td>
-<td width="33%" valign="top">
-<strong>Yours to keep</strong><br><br>
-Sudokura works offline. Your games, settings, and history stay in local storage, not on somebody else's server.
-</td>
+<td width="50%" valign="top"><strong>Classic</strong><br>Easy, Medium or Hard. A good board and all the time you need.</td>
+<td width="50%" valign="top"><strong>Daily Puzzle</strong><br>A dated challenge for your local day. Come back tomorrow for another grid.</td>
+</tr>
+<tr>
+<td valign="top"><strong>Strikes</strong><br>Three mistakes and it's over. Think twice about that tempting 9.</td>
+<td valign="top"><strong>Time Attack</strong><br>For when a little countdown makes every number more interesting.</td>
 </tr>
 </table>
 
-## Play your way
+**Easy to start, satisfying to master.** Tap a cell or use a keyboard. Make pencil notes, Undo or Redo, and call on **Hint** or **Verify** whenever you want a nudge. Pick a light or dark theme, choose optional music and sounds, and play in **English, Español, or Català**.
 
-- **Classic** — enjoy the puzzle at your own pace.
-- **Strikes** — every mistake counts.
-- **Time Attack** — solve against the clock.
-- **Daily Puzzle** — a consistent challenge for each local calendar day.
+## A consistent look for every puzzle
 
-Save and resume an attempt, collect finished games in **Saved Games**, or revisit a puzzle with Replay. Use Notes, Hint, Verify, Undo/Redo, and Restart whenever you need them.
+Sudokura 1.4.0 brings a unified dark/light interface to Home, About, the
+live board and number controls, Saved Games, Your journey, Settings, Help,
+Pause, Results and decision dialogs. Original vector icons, clearer button
+roles and responsive layouts make the same actions easier to find on
+desktop and Android. The visual refresh does not change puzzle generation,
+saved-game formats or the established recovery behavior.
 
-Choose light or dark themes, reduced motion, and optional music and sound effects. Available in **English, Español, and Català**.
+## See the board
+
+<p align="center">
+  <a href="docs/images/sudokura-v1.4.0.png">
+    <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura 1.4.0 Classic gameplay with entered numbers, a pencil note, number palette and Save controls" width="900">
+  </a>
+  <br>
+  <sub>Real Sudokura 1.4.0 gameplay on Linux, with the unified design, entered numbers, a pencil note and visible controls.</sub>
+</p>
+
+## Every attempt tells a story
+
+Need to stop mid-puzzle? **Save** and pick it back up in **Saved Games**. Finish one? **Your journey** keeps the result and your earlier attempts. Want another go at a lost or interrupted puzzle? **Try again** opens that same grid, without pretending the first attempt never happened.
+
+And if the 7 keeps hiding, those notes are there for a reason. No judgment.
+
+## Download
+
+<p align="center">
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows x64 — installer and portable EXE" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-arm64-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG" height="28"></a>
+  <a href="#android"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
+</p>
+<p align="center">
+  <sub>Windows installer or portable · Linux AppImage · macOS Apple Silicon · Android ARM64</sub>
+</p>
+<p align="center">
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/santirodriguez/Sudokura"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Add Sudokura to Obtainium" height="48"></a><br>
+  <sub>Follow Android releases with Obtainium. APK downloads begin with the published v1.4.0 release.</sub>
+</p>
+
+Buttons lead to the **latest published release**, not an unpublished build. See the [screenshot gallery](docs/images/README.md) and [release notes](docs/RELEASE_NOTES_1.4.0.md).
 
 <details>
-<summary>Keyboard shortcuts</summary>
+<summary><strong>Which download should I choose?</strong></summary>
+
+- **Windows:** Windows 11 x64. Installer or single-file portable EXE; unsigned builds can trigger a SmartScreen reputation warning.
+- **Linux:** x86_64 AppImage. Run `chmod +x Sudokura-*-Linux-x64.AppImage`; without FUSE, use `--appimage-extract-and-run`.
+- **macOS:** macOS 15+ Apple Silicon. Experimental, ad-hoc signed and not Apple-notarized.
+- **Android:** Android 9+ on ARM64. The signed APK requires a published v1.4.0 release; F-Droid and Google Play are separate channels.
+- **Verification:** Published packages include `SHA256SUMS.txt` and a matching Build-Info file.
+
+</details>
+
+## Small details, big difference
+
+- **Play it your way:** three difficulties, four modes, easy-to-reach controls and hints when you want one.
+- **Your progress stays yours:** no accounts, ads, analytics or cloud sync. Games, settings and history stay on your device.
+- **Make it comfortable:** dark and light themes, optional audio, keyboard, mouse and supported touch controls.
+
+<details>
+<summary><strong>Keyboard shortcuts</strong></summary>
 
 | Action | Shortcut |
 |---|---|
@@ -97,53 +106,72 @@ Choose light or dark themes, reduced motion, and optional music and sound effect
 | Theme / Language / Audio | T · L · V |
 | Help / About | F1 / F2 |
 
-All essential actions are also available through the interface.
+All essential actions are also accessible through the interface.
 
 </details>
 
-## Private, even when you take a break
+<details>
+<summary><strong>Saving, upgrades and recovery</strong></summary>
 
-Sudokura has no account, cloud sync, or telemetry. **Save** keeps the latest state of the same attempt, while the Saved Games library lets you load, inspect, replay, or delete retained games.
+**Save** keeps the current attempt. **Saved Games** holds explicit saves and one current autosave; **Your journey** keeps completed or interrupted history. Linked retries preserve earlier results. Backgrounding checkpoints progress without abandoning an attempt; leaving a played game offers Save, Abandon or Cancel. An untouched board doesn't count as a failed attempt.
 
-Existing compatible v1.2 and v1.3 desktop data keeps its migration and recovery safeguards. If you're moving between versions, **keep your complete game-data folder**. See [saves, recovery, and rollback](docs/REPORTING_ISSUES.md).
+Compatible v1.2 and v1.3 desktop data retains migration and recovery safeguards. **Back up the entire game-data folder** before an upgrade or rollback. See [saves and recovery](docs/REPORTING_ISSUES.md); copying only `profile.dat` is not enough.
 
-## Android is on its way
+</details>
 
-An early ARM64 prototype has been tested on a real phone, but **there is no public Android release yet**. The eventual plan is a signed APK on GitHub that Obtainium can follow, an application for F-Droid inclusion, and possibly Google Play. Each channel requires its own readiness and update-safety checks.
+## Android
 
-Read the [Android release roadmap](docs/ANDROID_RELEASE_PLAN.md) for current status and requirements. Debug previews are not a stable upgrade path.
+The familiar grid, made for thumbs. Sudokura 1.4.0 brings portrait and landscape play, touch controls, dated Daily puzzles and Your journey to Android.
 
-## Build & contribute
+<p align="center">
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Classic Sudoku with notes and visible controls" width="165"></a>
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Real dated Daily Sudoku puzzle with entered numbers and gameplay controls" width="165"></a>
+  <a href="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with a saved attempt" width="165"></a>
+</p>
+<p align="center"><sub>Real Android gameplay and saved progress. <a href="docs/images/README.md#android-phone-gallery">Explore all six approved phone captures.</a></sub></p>
 
-Sudokura is written in **C11**, using SDL2, SDL2_ttf, and SDL2_mixer.
+Requires **Android 9+ on ARM64**. Get the signed APK from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases/latest) **when v1.4.0 is published**, or follow the repository in Obtainium. F-Droid and Google Play availability will be announced separately.
 
 <details>
-<summary>Build from source</summary>
+<summary><strong>Android progress and compatibility</strong></summary>
 
-Install a C compiler, <code>pkg-config</code>, SDL2, SDL2_ttf, SDL2_mixer, Python 3, and Go.
+The signed production candidate has been tested on a real phone, including Save, force-stop and reopening with numbers and notes intact. Automatic cloud backup, device transfer and migration from private prototypes are not provided. **Keep the installation containing your progress:** another store's signing certificate can prevent an in-place update.
 
-~~~sh
+Full TalkBack navigation and actual 16 KiB page-size runtime compatibility remain unverified. Read [Android builds](android/README.md) and [installation/signing details](android/RELEASING.md).
+
+</details>
+
+## Behind the grid
+
+Sudokura is written in **C11** with SDL2, SDL2_ttf and SDL2_mixer. It's free and open source under the **[GPLv3](LICENSE)**.
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+Install a C compiler, `pkg-config`, SDL2, SDL2_ttf, SDL2_mixer, Python 3 and Go, then:
+
+```sh
 make assets
 make
 make test
 make test-ui
 ./sudokura
-~~~
+```
 
-More build and engineering details are in [Development](docs/DEVELOPMENT.md).
+More: [development](docs/DEVELOPMENT.md), [documentation](docs/README.md) and [bug reports](https://github.com/santirodriguez/Sudokura/issues).
 
 </details>
 
-Found a bug or have an idea? [Open an issue](https://github.com/santirodriguez/Sudokura/issues). For release history, screenshots, development notes, and troubleshooting, visit the [documentation index](docs/README.md).
-
 ## Support Sudokura
 
-Sudokura is a free, open-source game made by [Santiago Rodriguez](https://santiagorodriguez.com). If you enjoy playing it, you can support its continued development.
+Good puzzles take a little time to make, too. If you enjoy the game, you can [support its development](https://cajapersonal.org/donate/).
 
 <p align="center">
-  <a href="https://santiagorodriguez.com/donate/"><img src="docs/images/donate.svg" alt="Support Sudokura — Donate" height="46"></a>
+  <a href="https://cajapersonal.org/donate/"><img src="docs/images/donate.svg" alt="Support Sudokura — Donate" height="46"></a>
 </p>
 
-<sub>Music: Cozy Puzzle Jingle & Result by MintoDog ([CC0](https://opengameart.org/content/cozy-puzzle-jingle-result)) · Language flags by [lipis/flag-icons](https://github.com/lipis/flag-icons) (MIT)</sub>
+[English](https://cajapersonal.org/donate/) · [Español](https://cajapersonal.org/donaciones/) · [Català](https://cajapersonal.org/donacions/)
 
-**[GPLv3](LICENSE)** · © 2025–2026 [Santiago Rodriguez](https://santiagorodriguez.com/)
+<sub>Made by [Santiago Rodriguez](https://github.com/santirodriguez) · Music: Cozy Puzzle Jingle & Result by MintoDog ([CC0](https://opengameart.org/content/cozy-puzzle-jingle-result)) · Language flags by [lipis/flag-icons](https://github.com/lipis/flag-icons) (MIT)</sub>
+
+**[GPLv3](LICENSE)** · © 2025–2026 [Santiago Rodriguez](https://github.com/santirodriguez)

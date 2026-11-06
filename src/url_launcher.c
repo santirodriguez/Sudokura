@@ -11,13 +11,12 @@
 #include <string.h>
 
 static const char *const allowed_urls[] = {
-    "https://github.com/santirodriguez",
     "https://github.com/santirodriguez/Sudokura",
-    "https://santiagorodriguez.com",
-    "https://doi.org/10.1002/gps.5085",
-    "https://santiagorodriguez.com/donate/",
-    "https://santiagorodriguez.com/donaciones/",
-    "https://santiagorodriguez.com/donacions/",
+    "https://sudokura.cajapersonal.org/",
+    SUDOKURA_PRIVACY_POLICY_URL,
+    "https://cajapersonal.org/donate/",
+    "https://cajapersonal.org/donaciones/",
+    "https://cajapersonal.org/donacions/",
 };
 
 bool url_launcher_is_allowed(const char *url) {

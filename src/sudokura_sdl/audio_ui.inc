@@ -115,21 +115,80 @@ static void persistence_init(Persistence *persistence) {
 }
 
 static bool app_rebuild_renderer_resources(Gfx *gfx) {
-  if (!gfx || !gfx->ren) return false;
+  if (!gfx) return false;
+  gfx->renderer_ready = false;
+  gfx->dirty = false;
+  if (!gfx->ren) return false;
   text_cache_clear();
   if (!app_rebuild_base_textures(gfx)) return false;
   if (app_icon_texture) SDL_DestroyTexture(app_icon_texture);
   app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
                                        sudokura_icon_width,
                                        sudokura_icon_height);
-  if (!app_icon_texture)
+  if (!app_icon_texture) {
     fprintf(stderr, "compact icon texture: %s\n", SDL_GetError());
+    return false;
+  }
+  gfx->renderer_ready = true;
   gfx->dirty = true;
-  return app_icon_texture != NULL;
+  return true;
+}
+
+/* A failed metrics refresh is as unsafe as a failed texture rebuild:
+   invalidate any deferred action and keep the session concealed until retry. */
+static void app_mark_renderer_unavailable(Gfx *gfx, UI *ui) {
+  if (!gfx) return;
+  ui_modal_invalidate();
+  ui_pointer_cancel();
+  ui_touch_cancel();
+  gfx->renderer_ready = false;
+  gfx->dirty = false;
+  if (ui && ui->session_open && ui->result == RES_NONE)
+    (void)clock_pause(ui, PAUSE_FOCUS);
+  audio_set_focus_paused(true);
+  if (gfx->win)
+    SDL_SetWindowTitle(gfx->win,
+        tr(ui ? ui->language : LANG_EN, T_RENDERER_UNAVAILABLE));
+}
+
+/* Retry on explicit R or a legitimate surface/reset event, never a frame loop. */
+static bool app_restore_renderer_resources(Gfx *gfx, UI *ui) {
+  if (!gfx) return false;
+  gfx->renderer_ready = false;
+  bool restored = gfx_refresh_metrics(gfx) &&
+                  app_rebuild_renderer_resources(gfx);
+  if (!restored) {
+    app_mark_renderer_unavailable(gfx, ui);
+  } else if (gfx->win) {
+    SDL_SetWindowTitle(gfx->win, SUDOKURA_NAME_VERSION);
+  }
+  return restored;
+}
+
+/* Ordinary size/move changes retain valid textures, but metrics failures
+   must fail closed. Only an already-unavailable renderer is fully rebuilt. */
+static bool app_refresh_renderer_metrics(Gfx *gfx, UI *ui) {
+  if (!gfx) return false;
+  if (!gfx->renderer_ready)
+    return app_restore_renderer_resources(gfx, ui);
+  if (gfx_refresh_metrics(gfx)) return true;
+  app_mark_renderer_unavailable(gfx, ui);
+  return false;
+}
+
+static bool app_resize_renderer_metrics(Gfx *gfx, UI *ui,
+                                        int width, int height) {
+  if (!gfx) return false;
+  if (!apply_window_resize(gfx, width, height)) {
+    app_mark_renderer_unavailable(gfx, ui);
+    return false;
+  }
+  return gfx->renderer_ready || app_restore_renderer_resources(gfx, ui);
 }
 
 static bool app_init(Gfx *gfx, const char *font_cli) {
   if (!app_init_base(gfx, font_cli)) return false;
+  gfx->renderer_ready = true;
   audio_gfx = gfx;
   app_icon_texture = texture_from_rgba(gfx->ren, sudokura_icon_rgba,
                                        sudokura_icon_width,
@@ -158,29 +217,41 @@ static void app_shutdown(Gfx *gfx) {
 }
 
 static void app_tick(Gfx *gfx, Game *game, UI *ui) {
-  if (app_suspended) return;
+  if (app_suspended || !gfx || !gfx->renderer_ready) {
+    audio_set_focus_paused(true);
+    return;
+  }
   audio_gfx = gfx;
   audio_game = game;
   audio_ui = ui;
+  if (startup_recovery_active || startup_loading_active) {
+    audio_set_focus_paused(true);
+    return;
+  }
   audio_sync_ui(game, ui);
 }
 
 static void app_frame(Gfx *gfx, Game *game, UI *ui) {
+  if (!gfx || !gfx->renderer_ready) {
+    if (gfx) gfx->dirty = false;
+    return; /* Never render with missing or invalid resources. */
+  }
   if (app_suspended) return; /* No rendering on a suspended surface. */
 #if defined(__ANDROID__)
-  if (gfx->width < 360 || gfx->height < 600) {
-    /* A short rotated surface cannot contain a 270dp board and 48dp
-       controls. Retain the game and use the existing safe Android Back. */
+  if (!geometry_mobile_size_supported(gfx->width,gfx->height)) {
+    /* Below either supported usable-dp composition, preserve the attempt
+       behind a paused minimum-size message and retain safe Android Back. */
     if (ui && ui->session_open) (void)clock_pause(ui, PAUSE_FOCUS);
     audio_set_focus_paused(true);
     Theme theme = ui && ui->dark_theme ? theme_dark() : theme_light();
     SDL_SetRenderDrawColor(gfx->ren, theme.bg.r, theme.bg.g, theme.bg.b, 255);
     SDL_RenderClear(gfx->ren);
     if (ui && gfx->width > 48 && gfx->height > 48) {
-      SDL_Rect hint = {12, gfx->height / 2 - 30,
-                       gfx->width - 24, 60};
-      (void)draw_fitted_text(gfx, tr(ui->language, T_ROTATE_PORTRAIT),
-                             theme.btnfg, hint, 22, 12);
+      int message_h=gfx->height-24;
+      if (message_h>120) message_h=120;
+      SDL_Rect hint = {12,(gfx->height-message_h)/2,gfx->width-24,message_h};
+      (void)polish_draw_wrapped_fit(gfx,tr(ui->language,T_ROTATE_PORTRAIT),
+                                    theme.btnfg,hint,22,13,true);
     }
     SDL_RenderPresent(gfx->ren);
     gfx->dirty = false;

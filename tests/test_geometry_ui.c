@@ -29,7 +29,8 @@ int main(void) {
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
-      assert_inside(g.about_study, g.about_study_link);
+      assert_inside(g.about_study, g.about_study_reference);
+      assert(g.about_study_reference.h >= 20);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
       assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
@@ -187,12 +188,23 @@ int main(void) {
                g.board.y);
         assert(g.play_controls[PLAY_CONTROL_MORE].y ==
                g.play_controls[PLAY_CONTROL_SAVE].y);
-        for (int i = 1; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
-          assert(g.about_links[i].y > g.about_links[i - 1].y);
+        assert(g.about_links[0].y == g.about_links[1].y);
+        assert(g.about_links[2].y == g.about_links[3].y);
+        assert(g.about_links[2].y > g.about_links[0].y);
+        assert(g.about_back.x == g.about_links[0].x);
+        assert(g.about_back.w == g.about_links[1].x+
+               g.about_links[1].w-g.about_links[0].x);
+        assert(g.about_back.h == g.about_links[0].h);
+        assert(g.about_back.y > g.about_links[3].y+g.about_links[3].h);
       } else {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[2].y > g.about_links[0].y);
+        assert(g.about_back.x == g.about_links[0].x);
+        assert(g.about_back.w == g.about_links[1].x+
+               g.about_links[1].w-g.about_links[0].x);
+        assert(g.about_back.h == g.about_links[0].h);
+        assert(g.about_back.y > g.about_links[3].y+g.about_links[3].h);
         /* Wordmark, title and controls use separate vertical regions. */
         assert(g.play_language.h == 1);
         assert(g.play_title.h >= 32);

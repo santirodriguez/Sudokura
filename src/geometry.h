@@ -61,6 +61,7 @@ typedef struct {
   /* One semantic hit-box map for painting, focus, and pointer capture. */
   GeoRect play_controls[PLAY_CONTROL_COUNT];
   bool play_compact;
+  bool mobile_layout;
   GeoRect more_panel;
   GeoRect more_items[GEOMETRY_MORE_COUNT];
   GeoRect palette_label;
@@ -89,9 +90,10 @@ typedef struct {
   GeoRect about_meta;
   GeoRect about_fact;
   GeoRect about_study;
-  GeoRect about_study_link;
+  GeoRect about_study_reference;
   GeoRect about_credits;
   GeoRect about_links[GEOMETRY_ABOUT_LINK_COUNT];
+  GeoRect about_back;
 
   GeoRect end_logo;
   GeoRect end_heading;
@@ -121,6 +123,39 @@ typedef struct {
 } GeometryHintPanel;
 
 typedef struct {
+  GeoRect panel, title, body, buttons[3], scroll_up, scroll_down;
+} GeometryModal;
+
+bool geometry_modal(int width, int height, unsigned button_count,
+                    GeometryModal *out);
+
+typedef struct {
+  GeoRect card, title, theme, language, sound;
+  GeoRect music_label, music_minus, music_track, music_plus;
+  GeoRect fx_label, fx_minus, fx_track, fx_plus;
+  GeoRect reduced_motion, auto_notes, back;
+} GeometrySettings;
+
+bool geometry_mobile_settings(int width, int height, GeometrySettings *out);
+/* Compose Home fields in-place, preserving gameplay and other screens. */
+bool geometry_mobile_home(int width, int height, AppGeometry *out);
+
+typedef struct {
+  GeoRect heading, body, back, up, down, links[GEOMETRY_ABOUT_LINK_COUNT];
+} GeometryInfo;
+
+bool geometry_mobile_info(int width, int height, bool about, GeometryInfo *out);
+
+typedef struct {
+  GeoRect title, subtitle, list, detail, primary, back, replay, remove;
+  GeoRect page_previous, page_next, page_label;
+  int row_height, visible;
+  bool side_by_side;
+} GeometryLibrary;
+
+bool geometry_mobile_library(int width, int height, GeometryLibrary *out);
+
+typedef struct {
   int note, help, body, control, hud, cell, heading;
 } GeometryFonts;
 
@@ -133,8 +168,13 @@ typedef struct {
 
 bool geometry_compute(int width, int height, GeometryMode mode, AppGeometry *out);
 /* Mobile-only composition; never relaxes desktop window-size validation. */
+bool geometry_mobile_size_supported(int width_dp, int height_dp);
 bool geometry_compute_mobile(int width_dp, int height_dp, GeometryMode mode,
                              AppGeometry *out);
+/* Gameplay-only landscape composer. Secondary-screen fields remain zero;
+   compose those screens before routing the complete Android shell here. */
+bool geometry_mobile_landscape_play(int width_dp, int height_dp,
+                                    GeometryMode mode, AppGeometry *out);
 bool geometry_window_size_supported(int width, int height);
 bool geometry_normalize_window_size(int requested_width, int requested_height,
                                     int *normalized_width, int *normalized_height);

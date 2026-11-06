@@ -8,6 +8,7 @@
 typedef struct {
   int width_dp, height_dp;
   int touch_slop_dp;
+  int scale_milli;
   int surface_width_px, surface_height_px;
   float density;
 } AndroidViewport;

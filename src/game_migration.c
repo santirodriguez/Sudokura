@@ -258,8 +258,10 @@ static StoreStatus migrate_slot(const char *root, ProfileSlot *slot) {
 static bool same_result_metadata(const ProfileResult *a,
                                  const ProfileResult *b);
 
-static StoreStatus migrate_results(const char *root, ProfileData *pending) {
+static StoreStatus migrate_results(const char *root, ProfileData *pending,
+                                   StoreContinue proceed, void *context) {
   for (uint16_t i = 0; i < pending->result_count;) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     ProfileResult *r = &pending->results[i];
     StoreStatus receipt = game_library_receipt_status(root, r->attempt_id);
     if (receipt == STORE_OK) {
@@ -316,10 +318,18 @@ static bool needs_upgrade(const ProfileData *profile) {
 StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
                                    const char *backup_path, ProfileData *profile,
                                    bool *upgraded) {
+  return game_migration_upgrade_controlled(
+      root, profile_path, backup_path, profile, upgraded, NULL, NULL);
+}
+
+StoreStatus game_migration_upgrade_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, bool *upgraded, StoreContinue proceed, void *context) {
   if (upgraded) *upgraded = false;
   if (!root || !profile_path || !backup_path || !profile ||
       !profile_validate(profile))
     return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
 
   char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
   if (!join(intent_path, root, "profile.dat.v1.3.7-import.dat"))
@@ -365,10 +375,12 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
     pending.migration_pending = true;
     pending.migration_source_length = (uint32_t)current_count;
     pending.migration_source_crc = crc32_bytes(current, current_count);
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     status = ensure_source(root, profile_path, current, current_count,
                            &pending.migration_source_suffix);
     if (status != STORE_OK) return status;
     if (!allocate_ids(root, &pending)) return STORE_IO_ERROR;
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     status = profile_save_file(intent_path, NULL, &pending);
     if (status != STORE_OK) return status;
     ProfileData verified;
@@ -378,6 +390,7 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
   }
 
   /* The immutable intent fixes identity before any record or hot write. */
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   if (!profile->migration_pending ||
       !profile_encoded_equal(profile, &pending)) {
     status = profile_save_file(profile_path, backup_path, &pending);
@@ -389,15 +402,18 @@ StoreStatus game_migration_upgrade(const char *root, const char *profile_path,
   if (!profile_encoded_equal(&pending, &readback)) return STORE_CORRUPT;
 
   ProfileData complete = pending;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   status = migrate_slot(root, &complete.normal);
   if (status != STORE_OK) return status;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   status = migrate_slot(root, &complete.daily);
   if (status != STORE_OK) return status;
-  status = migrate_results(root, &complete);
+  status = migrate_results(root, &complete, proceed, context);
   if (status != STORE_OK) return status;
 
   complete.migration_pending = false;
   if (!profile_validate(&complete)) return STORE_CORRUPT;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   status = profile_save_file(profile_path, backup_path, &complete);
   if (status != STORE_OK) return status;
   status = profile_load_file(profile_path, &readback);
@@ -435,13 +451,22 @@ StoreStatus game_migration_reconcile(const char *root,
                                      const char *profile_path,
                                      const char *backup_path,
                                      ProfileData *profile) {
+  return game_migration_reconcile_controlled(
+      root, profile_path, backup_path, profile, NULL, NULL);
+}
+
+StoreStatus game_migration_reconcile_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, StoreContinue proceed, void *context) {
   if (!root || !profile_path || !backup_path || !profile ||
       !profile_validate(profile) || profile->migration_pending)
     return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   ProfileData staged = *profile;
   bool changed = false;
   ProfileSlot *slots[2] = {&staged.normal, &staged.daily};
   for (unsigned index = 0; index < 2; ++index) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     ProfileSlot *slot = slots[index];
     if (!slot->present || !slot->retained) continue;
     if (!game_attempt_id_valid(slot->attempt_id)) return STORE_CORRUPT;
@@ -483,6 +508,7 @@ StoreStatus game_migration_reconcile(const char *root,
     }
   }
   for (uint16_t i = 0; i < staged.result_count;) {
+    if (proceed && !proceed(context)) return STORE_CANCELLED;
     StoreStatus receipt = game_attempt_id_valid(staged.results[i].attempt_id)
         ? game_library_receipt_status(root, staged.results[i].attempt_id)
         : STORE_NOT_FOUND;
@@ -498,6 +524,7 @@ StoreStatus game_migration_reconcile(const char *root,
   }
   if (!changed) return STORE_OK;
   if (!profile_validate(&staged)) return STORE_CORRUPT;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   StoreStatus status = profile_save_file(profile_path, backup_path, &staged);
   if (status != STORE_OK) return status;
   ProfileData loaded;
@@ -524,10 +551,13 @@ typedef struct {
   const char *root;
   ProfileData staged;
   GameMigrationRecoverySummary summary;
+  StoreContinue proceed;
+  void *context;
 } RecoveryScan;
 
 static bool inspect_recovery_entry(const GameLibraryEntry *entry, void *ctx) {
   RecoveryScan *scan = (RecoveryScan *)ctx;
+  if (scan->proceed && !scan->proceed(scan->context)) return false;
   if (entry->only_backup) {
     ++scan->summary.previous_only_records;
     return true; /* Earlier copy needs explicit validation and confirmation. */
@@ -572,13 +602,33 @@ static bool inspect_recovery_entry(const GameLibraryEntry *entry, void *ctx) {
 StoreStatus game_migration_preview_collection(
     const char *root, ProfileData *candidate,
     GameMigrationRecoverySummary *summary) {
+  return game_migration_preview_collection_controlled(
+      root,candidate,summary,NULL,NULL);
+}
+
+StoreStatus game_migration_preview_collection_controlled(
+    const char *root, ProfileData *candidate,
+    GameMigrationRecoverySummary *summary, StoreContinue proceed, void *context) {
   if (!root || !candidate || !summary) return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   if (!game_migration_has_artifacts(root)) return STORE_NOT_FOUND;
   RecoveryScan scan;
   memset(&scan, 0, sizeof(scan));
   scan.root = root;
+  scan.proceed = proceed;
+  scan.context = context;
   profile_defaults(&scan.staged);
-  StoreStatus status = game_library_scan(root, inspect_recovery_entry, &scan);
+  GameLibraryScanCursor cursor={0};
+  StoreStatus status=game_library_scan_begin(root,&cursor);
+  bool finished=false;
+  while (status==STORE_OK && !finished) {
+    if (proceed && !proceed(context)) {
+      status=STORE_CANCELLED;
+      break;
+    }
+    status=game_library_scan_step(&cursor,16,inspect_recovery_entry,&scan,&finished);
+  }
+  game_library_scan_close(&cursor);
   if (status != STORE_OK) return status;
   if (!profile_validate(&scan.staged)) return STORE_CORRUPT;
   *candidate = scan.staged;
@@ -589,7 +639,15 @@ StoreStatus game_migration_preview_collection(
 StoreStatus game_migration_missing_hot_route(
     const char *root, const char *profile_path, const char *backup_path,
     GameMigrationRecoveryRoute *route) {
+  return game_migration_missing_hot_route_controlled(
+      root,profile_path,backup_path,route,NULL,NULL);
+}
+
+StoreStatus game_migration_missing_hot_route_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    GameMigrationRecoveryRoute *route, StoreContinue proceed, void *context) {
   if (!root || !route) return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   /* Reads through the storage API distinguish missing from unreadable. */
   StoreStatus status = missing_hot_pair(profile_path, backup_path);
   if (status != STORE_OK) return status;
@@ -610,7 +668,8 @@ StoreStatus game_migration_missing_hot_route(
 
   ProfileData preview;
   GameMigrationRecoverySummary summary = {0};
-  status = game_migration_preview_collection(root, &preview, &summary);
+  status = game_migration_preview_collection_controlled(
+      root,&preview,&summary,proceed,context);
   if (status != STORE_OK) return status;
   if (summary.compatible_records == 0u) return STORE_NOT_FOUND;
   *route = GAME_MIGRATION_RECOVERY_COLLECTION;
@@ -620,8 +679,17 @@ StoreStatus game_migration_missing_hot_route(
 StoreStatus game_migration_recover_collection(
     const char *root, const char *profile_path, const char *backup_path,
     ProfileData *profile, GameMigrationRecoverySummary *summary) {
+  return game_migration_recover_collection_controlled(
+      root,profile_path,backup_path,profile,summary,NULL,NULL);
+}
+
+StoreStatus game_migration_recover_collection_controlled(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile, GameMigrationRecoverySummary *summary,
+    StoreContinue proceed, void *context) {
   if (!root || !profile_path || !backup_path || !profile || !summary)
     return STORE_IO_ERROR;
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
   StoreStatus status = missing_hot_pair(profile_path, backup_path);
   if (status != STORE_OK) return status;
   char intent_path[SUDOKURA_STORE_PATH_CAPACITY];
@@ -636,13 +704,17 @@ StoreStatus game_migration_recover_collection(
 
   ProfileData rebuilt;
   GameMigrationRecoverySummary preview;
-  status = game_migration_preview_collection(root, &rebuilt, &preview);
+  status = game_migration_preview_collection_controlled(
+      root,&rebuilt,&preview,proceed,context);
   if (status != STORE_OK) return status;
   if (preview.compatible_records == 0u) {
     /* Backup-only, corrupt, receipt-only and orphan-file collections have
        no validated record to rebuild. Never publish silent defaults. */
     return STORE_IO_ERROR;
   }
+  if (proceed && !proceed(context)) return STORE_CANCELLED;
+  status=missing_hot_pair(profile_path,backup_path);
+  if (status!=STORE_OK) return status;
   status = profile_save_file(profile_path, NULL, &rebuilt);
   if (status != STORE_OK) return status;
   ProfileData checked;
@@ -655,6 +727,22 @@ StoreStatus game_migration_recover_collection(
 }
 
 StoreStatus game_migration_recover_intent(
+    const char *root, const char *profile_path, const char *backup_path,
+    ProfileData *profile) {
+  if (!profile) return STORE_IO_ERROR;
+  ProfileData restored;
+  StoreStatus status=game_migration_restore_intent(
+      root,profile_path,backup_path,&restored);
+  if (status!=STORE_OK) return status;
+  status=game_migration_upgrade(root,profile_path,backup_path,&restored,NULL);
+  if (status!=STORE_OK) return status;
+  status=game_migration_reconcile(root,profile_path,backup_path,&restored);
+  if (status!=STORE_OK) return status;
+  *profile=restored;
+  return STORE_OK;
+}
+
+StoreStatus game_migration_restore_intent(
     const char *root, const char *profile_path, const char *backup_path,
     ProfileData *profile) {
   if (!root || !profile_path || !backup_path || !profile)
@@ -684,12 +772,6 @@ StoreStatus game_migration_recover_intent(
   status = profile_load_file(profile_path, &restored);
   if (status != STORE_OK) return status;
   if (!profile_encoded_equal(&intent, &restored)) return STORE_CORRUPT;
-  status = game_migration_upgrade(root, profile_path, backup_path,
-                                  &restored, NULL);
-  if (status != STORE_OK) return status;
-  status = game_migration_reconcile(root, profile_path, backup_path,
-                                    &restored);
-  if (status != STORE_OK) return status;
   *profile = restored;
   return STORE_OK;
 }

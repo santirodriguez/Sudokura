@@ -128,12 +128,12 @@ static StoreStatus read_record_file(const char *path,
   if (got >= 10u && memcmp(prefix, "SUDOGAME", 8u) == 0) {
     uint16_t version = (uint16_t)(prefix[8] |
                                  (uint16_t)((uint16_t)prefix[9] << 8));
-    if (version != SUDOKURA_GAME_RECORD_VERSION)
+    if (version != SUDOKURA_GAME_RECORD_VERSION && version != SUDOKURA_GAME_RECORD_VERSION_LEGACY)
       return STORE_INCOMPATIBLE;
     if (got >= sizeof(prefix)) {
       uint16_t payload_version = (uint16_t)(prefix[20] |
                                (uint16_t)((uint16_t)prefix[21] << 8));
-      if (payload_version != 1u) return STORE_INCOMPATIBLE;
+      if (payload_version != 1u && payload_version != 2u) return STORE_INCOMPATIBLE;
     }
   }
   return STORE_CORRUPT;
@@ -179,6 +179,16 @@ StoreStatus game_library_load(const char *root, GameAttemptId id,
   if (receipt == STORE_OK) return STORE_NOT_FOUND;
   if (receipt != STORE_NOT_FOUND) return receipt;
   return load_from_suffix(root, id, ".dat", record);
+}
+
+StoreStatus game_library_load_previous(const char *root, GameAttemptId id,
+                                       GameLibraryRecord *record) {
+  if (!root || !record || !game_attempt_id_valid(id))
+    return STORE_IO_ERROR;
+  StoreStatus receipt = game_library_receipt_status(root, id);
+  if (receipt == STORE_OK) return STORE_NOT_FOUND;
+  if (receipt != STORE_NOT_FOUND) return receipt;
+  return load_from_suffix(root, id, ".dat.bak", record);
 }
 
 /* This runs only for a user-selected, canonically loaded full record,
@@ -746,6 +756,8 @@ bool game_library_prepare_replay(GameLibraryRecord *out,
   fresh.session.daily_year = 0;
   fresh.session.daily_month = 0;
   fresh.session.daily_day = 0;
+  fresh.started = false;
+  fresh.explicitly_saved = false;
   fresh.undo_count = 0;
   fresh.redo_count = 0;
   memset(fresh.undo, 0, sizeof(fresh.undo));
@@ -1016,6 +1028,8 @@ static bool visit_game_name(const char *name, void *context) {
     GameLibraryEntry decoded;
     item.status = inspect_record_file(file, id, &decoded);
     if (item.status == STORE_OK) {
+      item.parent = decoded.parent;
+      item.explicitly_saved = decoded.explicitly_saved;
       item.kind = decoded.kind;
       item.result = decoded.result;
       item.revision = decoded.revision;
@@ -1038,6 +1052,8 @@ static bool visit_game_name(const char *name, void *context) {
            is usable. The actual board still needs explicit recovery. */
         if (item.status != STORE_OK &&
             item.previous_status == STORE_OK) {
+          item.parent = previous_metadata.parent;
+          item.explicitly_saved = previous_metadata.explicitly_saved;
           item.kind = previous_metadata.kind;
           item.result = previous_metadata.result;
           item.revision = previous_metadata.revision;

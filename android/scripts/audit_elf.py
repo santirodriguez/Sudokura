@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Check PT_LOAD page alignment of every packaged arm64 shared library."""
+"""Check PT_LOAD page alignment of every packaged shared library for the selected ABI."""
 from pathlib import Path
+import argparse
 import re
 import subprocess
-import sys
 import zipfile
 import tempfile
 
-if len(sys.argv) != 3:
-    raise SystemExit("usage: audit_elf.py <llvm-readelf> <apk>")
-readelf, apk = sys.argv[1:]
+parser = argparse.ArgumentParser()
+parser.add_argument('readelf')
+parser.add_argument('apk')
+parser.add_argument('--abi', choices=['arm64-v8a', 'x86_64'], default='arm64-v8a')
+args = parser.parse_args()
+readelf, apk = args.readelf, args.apk
 checked = 0
 with tempfile.TemporaryDirectory(prefix="sudokura-elf-audit-") as temp:
     with zipfile.ZipFile(apk) as archive:
@@ -18,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="sudokura-elf-audit-") as temp:
         if not libraries:
             raise SystemExit("Missing native libraries")
         for name in libraries:
-            if not name.startswith("lib/arm64-v8a/"):
+            if not name.startswith(f"lib/{args.abi}/"):
                 raise SystemExit(f"Unexpected ABI: {name}")
             target = Path(temp) / Path(name).name
             target.write_bytes(archive.read(name))
@@ -37,5 +40,5 @@ with tempfile.TemporaryDirectory(prefix="sudokura-elf-audit-") as temp:
                     f"16 KiB PT_LOAD alignment failed: {name}: {load_alignments}")
             print(f"{name}: PT_LOAD alignments={load_alignments}")
             checked += 1
-print(f"ELF 16 KiB structural audit PASS: {checked} arm64 shared libraries")
+print(f"ELF 16 KiB structural audit PASS: {checked} {args.abi} shared libraries")
 print("Runtime on an actual 16 KiB Android device/emulator remains NOT VERIFIED")

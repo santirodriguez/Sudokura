@@ -4,13 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { RECORD_HEADER_BYTES = 18, RECORD_PAYLOAD_VERSION = 1 };
+enum { RECORD_HEADER_BYTES = 18, RECORD_PAYLOAD_VERSION = 2 };
 enum {
   RECORD_RETAINED = 1u << 0,
   RECORD_PRACTICE = 1u << 1,
   RECORD_ORIGINAL_DAILY = 1u << 2,
+  RECORD_EXPLICIT_SAVE = 1u << 3,
   RECORD_KNOWN_FLAGS = RECORD_RETAINED | RECORD_PRACTICE |
-                       RECORD_ORIGINAL_DAILY
+                       RECORD_ORIGINAL_DAILY | RECORD_EXPLICIT_SAVE
 };
 static const unsigned char record_magic[8] = {
     'S', 'U', 'D', 'O', 'G', 'A', 'M', 'E'};
@@ -137,7 +138,7 @@ static bool valid_summary(const ProfileResult *result) {
       result->difficulty < DIFFICULTY_EASY ||
       result->difficulty >= DIFFICULTY_COUNT ||
       result->mode < MODE_CLASSIC || result->mode > MODE_TIME ||
-      result->status < SESSION_ACTIVE || result->status > SESSION_LOST ||
+      result->status < SESSION_ACTIVE || result->status > SESSION_INTERRUPTED ||
       result->elapsed_ms > SUDOKURA_SESSION_MAX_ELAPSED_MS ||
       result->mistakes > UINT32_C(1000000) ||
       result->strikes > UINT32_C(1000000))
@@ -379,7 +380,8 @@ static bool encode_record(const GameLibraryRecord *record,
   w8(&w, (uint8_t)record->kind);
   uint8_t flags = (record->retained ? RECORD_RETAINED : 0) |
                   (record->practice ? RECORD_PRACTICE : 0) |
-                  (record->original_daily ? RECORD_ORIGINAL_DAILY : 0);
+                  (record->original_daily ? RECORD_ORIGINAL_DAILY : 0) |
+                  (record->exact.explicitly_saved ? RECORD_EXPLICIT_SAVE : 0);
   w8(&w, flags);
   w16(&w, RECORD_PAYLOAD_VERSION);
   w64(&w, record->id.high);
@@ -430,7 +432,8 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
       size > SUDOKURA_GAME_RECORD_MAX_BYTES ||
       memcmp(bytes, record_magic, sizeof(record_magic)) != 0)
     return STORE_CORRUPT;
-  if (load16(bytes + 8) != SUDOKURA_GAME_RECORD_VERSION)
+  if (load16(bytes + 8) != SUDOKURA_GAME_RECORD_VERSION &&
+      load16(bytes + 8) != SUDOKURA_GAME_RECORD_VERSION_LEGACY)
     return STORE_INCOMPATIBLE;
   uint32_t length = load32(bytes + 10);
   if (length > SUDOKURA_GAME_RECORD_MAX_BYTES - RECORD_HEADER_BYTES ||
@@ -446,7 +449,7 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
   uint8_t flags = r8(&r);
   uint16_t payload_version = r16(&r);
   if (!r.ok) return STORE_CORRUPT;
-  if (payload_version != RECORD_PAYLOAD_VERSION) return STORE_INCOMPATIBLE;
+  if (payload_version != RECORD_PAYLOAD_VERSION && payload_version != 1u) return STORE_INCOMPATIBLE;
   if ((flags & ~RECORD_KNOWN_FLAGS) != 0 ||
       (candidate.kind != GAME_RECORD_EXACT &&
        candidate.kind != GAME_RECORD_LEGACY_SUMMARY))
@@ -487,6 +490,8 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
           r.data + r.pos, session_size,
           candidate.result.is_daily, &candidate.exact);
       if (status != STORE_OK) return status;
+      if (payload_version>=2u && candidate.exact.explicitly_saved!=((flags&RECORD_EXPLICIT_SAVE)!=0))
+        return STORE_CORRUPT;
     }
     r.pos += session_size;
   } else if (session_size != 0)
@@ -502,6 +507,8 @@ static StoreStatus decode_record(const unsigned char *bytes, size_t size,
     GameLibraryEntry metadata;
     memset(&metadata, 0, sizeof(metadata));
     metadata.id = candidate.id;
+    metadata.parent = candidate.parent;
+    metadata.explicitly_saved = payload_version==1u || (flags & RECORD_EXPLICIT_SAVE)!=0;
     metadata.status = STORE_OK;
     metadata.kind = candidate.kind;
     metadata.result = candidate.result;

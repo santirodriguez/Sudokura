@@ -63,6 +63,11 @@ typedef enum {
   T_CHANGE_PROMPT,
   T_FONT_ERROR,
   T_FONT_OPEN_ERROR,
+  T_HELP_TOUCH_TITLE,
+  T_HELP_TOUCH_BODY,
+  T_HELP_TOUCH_HINTS,
+  T_HELP_TOUCH_SETTINGS_TITLE,
+  T_HELP_TOUCH_SETTINGS,
   T_HELP_BODY,
   T_HELP_GOAL_TITLE,
   T_HELP_GOAL_BODY,
@@ -120,11 +125,12 @@ typedef enum {
   T_ABOUT_FACT,
   T_ABOUT_STUDY_TITLE,
   T_ABOUT_STUDY,
-  T_ABOUT_STUDY_LINK,
+  T_ABOUT_STUDY_REFERENCE,
   T_GITHUB,
   T_REPOSITORY,
   T_WEBSITE,
   T_SUPPORT,
+  T_PRIVACY_POLICY,
   T_LINK_ERROR,
   T_STORAGE_ERROR,
   T_PROFILE_IN_USE,
@@ -132,6 +138,8 @@ typedef enum {
   T_PROFILE_INCOMPATIBLE,
   T_PROFILE_IO_ERROR,
   T_SAVE_FAILED,
+  T_RENDERER_UNAVAILABLE,
+  T_RENDERER_RECOVERY,
   T_SAVE,
   T_SAVED,
   T_SAVED_LIBRARY,
@@ -161,6 +169,7 @@ typedef enum {
   T_GAMES_LOAD,
   T_GAMES_VIEW,
   T_GAMES_REPLAY,
+  T_GAMES_REPLAY_START_PROMPT,
   T_GAMES_REPLAY_PENDING_OTHER,
   T_GAMES_REPLAY_PENDING_CONFLICT,
   T_GAMES_REPLAY_FINALIZE_FAILED,
@@ -215,10 +224,41 @@ typedef enum {
   T_TECH_NAKED_TRIPLE,
   T_TECH_X_WING,
   T_ROTATE_PORTRAIT,
+  T_A11Y_CELL_FMT,
+  T_A11Y_GIVEN,
+  T_A11Y_ENTERED,
+  T_A11Y_EMPTY,
+  T_A11Y_SELECTED,
+  T_A11Y_SCROLL_UP,
+  T_A11Y_SCROLL_DOWN,
+  T_JOURNEY,
+  T_JOURNEY_WON,
+  T_JOURNEY_RETRY,
+  T_JOURNEY_INTERRUPTED,
+  T_JOURNEY_RETRY_ACTION,
+  T_JOURNEY_ATTEMPTS,
+  T_JOURNEY_ATTEMPTS_FMT,
+  T_JOURNEY_HELP,
+  T_LEAVE_ATTEMPT,
+  T_LEAVE_SAVE,
+  T_LEAVE_ABANDON,
+  T_SAVED_ONLY_HELP,
+  T_JOURNEY_WON_EMPTY,
+  T_JOURNEY_RETRY_EMPTY,
   T_COUNT
 } TextKey;
 
 const char *tr(Language language, TextKey key);
 const char *language_name(Language language);
+
+/* Public product credit, separate from retained source/license authorship. */
+static inline const char *tr_publisher_credit(Language language) {
+  static const char *const credits[LANG_COUNT] = {
+    "By Caja Personal · GPLv3",
+    "Por Caja Personal · GPLv3",
+    "Per Caja Personal · GPLv3"
+  };
+  return credits[(unsigned)language < LANG_COUNT ? language : LANG_EN];
+}
 
 #endif

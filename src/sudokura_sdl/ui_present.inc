@@ -112,7 +112,8 @@ static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
 /* Lightweight line glyphs share the existing SDL renderer; no image library. */
 typedef enum {
   UI_GLYPH_FOLDER, UI_GLYPH_SAVE, UI_GLYPH_PLAY, UI_GLYPH_BACK,
-  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE
+  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE, UI_GLYPH_TROPHY,
+  UI_GLYPH_REPO, UI_GLYPH_GLOBE, UI_GLYPH_HEART, UI_GLYPH_SHIELD
 } UiGlyph;
 
 static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
@@ -124,7 +125,13 @@ static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
   int y = box.y + (box.h - side) / 2;
   int end_x = x + side - 2;
   int end_y = y + side - 2;
-  if (glyph == UI_GLYPH_FOLDER) {
+  if (glyph == UI_GLYPH_TROPHY) {
+    draw_round_rect(renderer,(SDL_Rect){x+side/4,y,side/2,side/2},3,color);
+    draw_line(renderer,x+side/2,y+side/2,x+side/2,y+3*side/4,color);
+    draw_line(renderer,x+side/4,y+side-2,x+3*side/4,y+side-2,color);
+    draw_line(renderer,x,y+side/5,x+side/4,y+side/2,color);
+    draw_line(renderer,x+side-1,y+side/5,x+3*side/4,y+side/2,color);
+  } else if (glyph == UI_GLYPH_FOLDER) {
     draw_line(renderer, x + 1,y + 5,x + side/2,y + 5,color);
     draw_line(renderer, x + 1,y + 5,x + 1,end_y - 1,color);
     draw_line(renderer, x + 1,end_y - 1,end_x,end_y - 1,color);
@@ -163,6 +170,42 @@ static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
     draw_line(renderer,end_x,y + side/2,x + side/2,end_y - 2,color);
     draw_line(renderer,x + side/2,end_y - 2,x + 2,y + side/2,color);
     draw_rect(renderer,x + side/2 - 1,y + side/2 - 1,3,3,color);
+  } else if (glyph == UI_GLYPH_REPO) {
+    draw_line(renderer,x+4,y+4,x+4,end_y-3,color);
+    draw_line(renderer,x+4,y+side/2,end_x-3,y+side/2,color);
+    draw_line(renderer,end_x-3,y+4,end_x-3,y+side/2,color);
+    draw_rect(renderer,x+2,y+2,5,5,color);
+    draw_rect(renderer,x+2,end_y-5,5,5,color);
+    draw_rect(renderer,end_x-5,y+2,5,5,color);
+  } else if (glyph == UI_GLYPH_GLOBE) {
+    draw_line(renderer,x+side/2,y+1,x+side-3,y+4,color);
+    draw_line(renderer,x+side-3,y+4,end_x,y+side/2,color);
+    draw_line(renderer,end_x,y+side/2,x+side-3,end_y-2,color);
+    draw_line(renderer,x+side-3,end_y-2,x+side/2,end_y,color);
+    draw_line(renderer,x+side/2,end_y,x+2,end_y-2,color);
+    draw_line(renderer,x+2,end_y-2,x,y+side/2,color);
+    draw_line(renderer,x,y+side/2,x+2,y+4,color);
+    draw_line(renderer,x+2,y+4,x+side/2,y+1,color);
+    draw_line(renderer,x+1,y+side/2,end_x,y+side/2,color);
+    draw_line(renderer,x+side/2,y+1,x+side/2,end_y,color);
+  } else if (glyph == UI_GLYPH_HEART) {
+    draw_line(renderer,x+side/2,y+side-2,x+2,y+side/2,color);
+    draw_line(renderer,x+2,y+side/2,x+1,y+5,color);
+    draw_line(renderer,x+1,y+5,x+4,y+2,color);
+    draw_line(renderer,x+4,y+2,x+side/2,y+5,color);
+    draw_line(renderer,x+side/2,y+5,x+side-5,y+2,color);
+    draw_line(renderer,x+side-5,y+2,x+side-2,y+5,color);
+    draw_line(renderer,x+side-2,y+5,x+side-3,y+side/2,color);
+    draw_line(renderer,x+side-3,y+side/2,x+side/2,y+side-2,color);
+  } else if (glyph == UI_GLYPH_SHIELD) {
+    draw_line(renderer,x+side/2,y+1,x+side-3,y+4,color);
+    draw_line(renderer,x+side-3,y+4,x+side-4,y+side-6,color);
+    draw_line(renderer,x+side-4,y+side-6,x+side/2,end_y,color);
+    draw_line(renderer,x+side/2,end_y,x+3,y+side-6,color);
+    draw_line(renderer,x+3,y+side-6,x+2,y+4,color);
+    draw_line(renderer,x+2,y+4,x+side/2,y+1,color);
+    draw_line(renderer,x+5,y+side/2,x+side/2-1,y+side/2+3,color);
+    draw_line(renderer,x+side/2-1,y+side/2+3,x+side-5,y+6,color);
   }
 }
 
@@ -205,7 +248,7 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
     if (!texture) continue;
     bool fits = tw <= rect.w - 4 && th <= rect.h - 2;
     if (fits) {
-      SDL_Rect dst = {rect.x + 4,
+      SDL_Rect dst = {centered ? rect.x + (rect.w - tw) / 2 : rect.x + 4,
                       centered ? rect.y + (rect.h - th) / 2 : rect.y + 1,
                       tw, th};
       SDL_RenderCopy(gfx->ren, texture, NULL, &dst);
@@ -231,6 +274,47 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
       visible_w, visible_h};
   SDL_RenderCopy(gfx->ren, texture, &source, &destination);
   return true;
+}
+
+/* About uses consistent outlined controls and native SDL line icons. */
+static void polish_about_action(Gfx *gfx, Theme theme, SDL_Rect rect,
+                                const char *label, UiGlyph glyph,
+                                bool mobile, bool secondary, int preferred) {
+  int mx=0,my=0;
+  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  bool hover=point_in(rect,mx,my);
+  SDL_Rect face=polish_button_face(gfx,theme,rect,
+      hover ? theme.hover : (secondary ? theme.palette_bg : theme.btn),
+      hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+  SDL_Rect icon,text_rect;
+  int side=mobile ? 16 : 18;
+  bool compact_label=face.w < 220;
+  if (compact_label) {
+    /* Share the narrow-control two-line treatment with compact desktop. */
+    side=13;
+    icon=(SDL_Rect){face.x+4,face.y+(face.h-side)/2,side,side};
+    text_rect=(SDL_Rect){face.x+20,face.y,face.w-24,face.h};
+  } else {
+    int inset=mobile ? 10 : 14;
+    icon=(SDL_Rect){face.x+inset,face.y+(face.h-side)/2,side,side};
+    text_rect=(SDL_Rect){face.x+inset+side+6,face.y,
+                         face.w-2*inset-side-6,face.h};
+  }
+  ui_draw_glyph(gfx->ren,icon,glyph,theme.btnfg);
+  if (mobile || compact_label)
+    (void)polish_draw_wrapped_fit(gfx,label,theme.btnfg,text_rect,
+                                  mobile ? 17 : preferred,mobile ? 13 : 10,true);
+  else
+    (void)draw_fitted_text(gfx,label,theme.btnfg,text_rect,preferred,10);
+}
+
+static void polish_about_back(Gfx *gfx, UI *ui, Theme theme,
+                              bool mobile, int preferred) {
+  SDL_Rect rect=back_rect(gfx,ui);
+  polish_about_action(gfx,theme,rect,tr(ui->language,T_BACK),
+                      UI_GLYPH_BACK,mobile,true,preferred);
+  if (info_keyboard_focus==INFO_FOCUS_BACK)
+    draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
 static int polish_home_bottom(const AppGeometry *geometry) {
@@ -297,18 +381,25 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
   const bool show_home_keyboard_focus = true;
 #endif
 
-  if (gfx->width >= 640) {
+  if (gfx->width >= 640 && !gfx->mobile_layout) {
     SDL_Rect card = {geometry.home_logo.x - 18, geometry.home_logo.y - 16,
                      geometry.home_logo.w + 36,
                      polish_home_bottom(&geometry) - geometry.home_logo.y + 32};
     draw_round_rect(gfx->ren, card, 14, theme.palette_bg);
   }
 
+  if(gfx->mobile_layout && gfx->height<600) {
+    SDL_Rect setup=sdl_rect(geometry.home_logo);
+    setup.x-=4;setup.y-=4;setup.w+=8;
+    setup.h=geometry.home_primary[0].y+geometry.home_primary[0].h-setup.y+4;
+    SDL_Rect resume=sdl_rect(geometry.home_primary[1]);
+    resume.x-=4;resume.y-=4;resume.w+=8;
+    resume.h=polish_home_bottom(&geometry)-resume.y+4;
+    draw_round_rect(gfx->ren,setup,14,theme.palette_bg);
+    draw_round_rect(gfx->ren,resume,14,theme.palette_bg);
+  }
   draw_wordmark(gfx, sdl_rect(geometry.home_logo));
-  bool show_group_captions = true;
-#if defined(__ANDROID__)
-  show_group_captions = gfx->width >= 640;
-#endif
+  bool show_group_captions = !gfx->mobile_layout || geometry.home_new_label.h>=18;
   if (show_group_captions)
     (void)draw_fitted_text(gfx, tr(ui->language, T_NEW_GAME), theme.title,
                          sdl_rect(geometry.home_new_label), fonts.help, 10);
@@ -405,27 +496,34 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
       gfx, theme, sdl_rect(geometry.home_primary[2]), daily_label, daily_detail,
       false, false, show_home_keyboard_focus && home_focus == HOME_FOCUS_DAILY, fonts.control);
 
-  SDL_Rect library = sdl_rect(geometry.home_secondary[0]);
+  SDL_Rect library = home_collection_rect(&geometry,false);
   bool library_hover = point_in(library,mx,my);
   SDL_Rect library_face = polish_quiet_face(
       gfx,theme,library,library_hover ? theme.hover : theme.btn,
       library_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
-  SDL_Rect folder = {library_face.x + 14,
-                     library_face.y + (library_face.h-20)/2,20,20};
-  ui_draw_glyph(gfx->ren,folder,UI_GLYPH_FOLDER,theme.title);
-  int label_w = library_face.w - 105;
-  if (label_w > 250) label_w = 250;
-  if (label_w < 60) label_w = 60;
-  SDL_Rect label = {folder.x + 32,library_face.y,
-                    label_w,library_face.h};
-  (void)draw_fitted_text(gfx,tr(ui->language,T_GAMES),
-                         theme.btnfg,label,fonts.control,11);
-  int arrow_x = library_face.x+library_face.w-23;
-  int arrow_y = library_face.y+library_face.h/2;
-  draw_line(gfx->ren,arrow_x-5,arrow_y-5,arrow_x,arrow_y,theme.dim);
-  draw_line(gfx->ren,arrow_x,arrow_y,arrow_x-5,arrow_y+5,theme.dim);
+  ui_draw_icon_label(gfx,library_face,tr(ui->language,T_GAMES),UI_GLYPH_FOLDER,theme.btnfg,fonts.control);
   if (show_home_keyboard_focus && home_focus == HOME_FOCUS_GAMES)
     draw_focus_ring(gfx->ren,library,theme.sel_outline);
+
+  SDL_Rect journey=home_collection_rect(&geometry,true);
+  SDL_Color celebrate=ui->dark_theme?(SDL_Color){230,185,86,255}:(SDL_Color){132,83,10,255};
+  SDL_Color surface=ui->dark_theme?(SDL_Color){58,47,29,255}:(SDL_Color){255,235,190,255};
+  bool journey_hover=point_in(journey,mx,my);
+  SDL_Rect journey_face=polish_quiet_face(gfx,theme,journey,
+      journey_hover?theme.hover:surface,journey_hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+  if(journey_home_summary.available) {
+    SDL_Rect trophy={journey_face.x+8,journey_face.y+8,20,20};
+    ui_draw_glyph(gfx->ren,trophy,UI_GLYPH_TROPHY,celebrate);
+    SDL_Rect title={journey_face.x+34,journey_face.y+2,journey_face.w-40,journey_face.h/2};
+    (void)draw_fitted_text(gfx,tr(ui->language,T_JOURNEY),celebrate,title,fonts.control,10);
+    const ProfileResult *last=&journey_home_summary.latest;
+    char summary[120];unsigned long long seconds=last->elapsed_ms/1000;
+    (void)snprintf(summary,sizeof(summary),"%02llu:%02llu · %u %s",seconds/60,seconds%60,last->mistakes,tr(ui->language,T_ERRORS));
+    title.y+=journey_face.h/2-1;title.h=journey_face.h/2;
+    (void)draw_fitted_text(gfx,summary,theme.btnfg,title,12,9);
+  }else ui_draw_icon_label(gfx,journey_face,tr(ui->language,T_JOURNEY),UI_GLYPH_TROPHY,celebrate,fonts.control);
+  if(show_home_keyboard_focus&&home_focus==HOME_FOCUS_JOURNEY)
+    draw_focus_ring(gfx->ren,journey,theme.sel_outline);
 
   const TextKey footer_keys[] = {T_HELP,T_ABOUT,T_SETTINGS,T_QUIT};
   for (int i = 1; i < GEOMETRY_HOME_SECONDARY_COUNT; ++i) {
@@ -439,7 +537,7 @@ static void polish_render_home(Gfx *gfx, UI *ui) {
 static void polish_render_play(Gfx *gfx, const Game *game, UI *ui) {
   if (!game || app_pause_hides_play(ui)) return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   SidebarRects controls;
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
@@ -502,7 +600,58 @@ static void polish_draw_smiley(Gfx *gfx, Theme theme, SDL_Rect box) {
             face.x + size * 2 / 3, mouth_y, theme.title);
 }
 
+/* Mobile copy keeps a fixed readable size and scrolls inside its own viewport. */
+static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
+  Theme theme=ui->dark_theme ? theme_dark() : theme_light();
+  SDL_SetRenderDrawColor(gfx->ren,theme.bg.r,theme.bg.g,theme.bg.b,255);
+  SDL_RenderClear(gfx->ren);
+  draw_wordmark(gfx,sdl_rect(layout.heading));
+  const char *sections[]={SUDOKURA_NAME_VERSION,tr(ui->language,T_ABOUT_BODY),
+      tr(ui->language,T_ABOUT_FACT_TITLE),tr(ui->language,T_ABOUT_FACT),
+      tr(ui->language,T_ABOUT_STUDY_TITLE),tr(ui->language,T_ABOUT_STUDY),
+      tr(ui->language,T_ABOUT_STUDY_REFERENCE),
+      tr(ui->language,T_ABOUT_SEEDS),tr(ui->language,T_ABOUT_STACK)};
+  SDL_Texture *textures[9]={0};
+  int widths[9]={0},heights[9]={0},offsets[9]={0},total=0;
+  SDL_Rect body=sdl_rect(layout.body);
+  for (int i=0;i<9;++i) {
+    offsets[i]=total;
+    textures[i]=render_text_wrapped(gfx,cached_font(gfx,i==6?14:18),sections[i],
+        (i==0 || i==2 || i==4) ? theme.title : theme.dim,
+        body.w-12,&widths[i],&heights[i]);
+    total+=heights[i]+(i==6?8:12);
+  }
+  help_scroll_max_px=total>body.h ? total-body.h : 0;
+  help_scroll_set(help_scroll_px);
+  SDL_Rect previous;
+  SDL_RenderGetClipRect(gfx->ren,&previous);
+  SDL_RenderSetClipRect(gfx->ren,&body);
+  ui_info_semantic_begin(gfx,ui);
+  for (int i=0;i<9;++i) {
+    ui_info_semantic_add(body,offsets[i],heights[i],sections[i],i);
+    help_draw_scrolled_texture(gfx,textures[i],body,offsets[i],widths[i],
+                               heights[i],help_scroll_px);
+  }
+  SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
+  const TextKey keys[]={T_REPOSITORY,T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
+  const UiGlyph glyphs[]={UI_GLYPH_REPO,UI_GLYPH_GLOBE,
+                          UI_GLYPH_HEART,UI_GLYPH_SHIELD};
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
+    SDL_Rect r=sdl_rect(layout.links[i]);
+    polish_about_action(gfx,theme,r,tr(ui->language,keys[i]),
+                        glyphs[i],true,false,17);
+    int focus=INFO_FOCUS_LINK_0+i;
+    if (info_keyboard_focus==focus) draw_focus_ring(gfx->ren,r,theme.sel_outline);
+  }
+  draw_info_scroll_controls(gfx,ui,theme);
+  polish_about_back(gfx,ui,theme,true,17);
+}
+
 static void polish_render_about(Gfx *gfx, UI *ui) {
+  GeometryInfo mobile;
+  if (ui_mobile_info_layout(gfx,ui,&mobile)) {
+    polish_render_mobile_about(gfx,ui,mobile);return;
+  }
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   SDL_SetRenderDrawColor(gfx->ren, theme.bg.r, theme.bg.g, theme.bg.b, 255);
   SDL_RenderClear(gfx->ren);
@@ -554,31 +703,23 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
 
   SDL_Rect study = sdl_rect(geometry.about_study);
   draw_round_rect(gfx->ren, study, 10, theme.btn);
-  SDL_Rect study_link = sdl_rect(geometry.about_study_link);
+  SDL_Rect study_reference = sdl_rect(geometry.about_study_reference);
   int study_title_h = study.h / 4;
   if (study_title_h < 12) study_title_h = 12;
   SDL_Rect study_title = {study.x + 9, study.y + 2, study.w - 18,
                           study_title_h};
   SDL_Rect study_copy = {study.x + 9, study.y + 2 + study_title_h,
                          study.w - 18,
-                         study_link.y - (study.y + 2 + study_title_h) - 2};
+                         study_reference.y - (study.y + 2 + study_title_h) - 2};
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_TITLE), theme.title,
                          study_title, fonts.help, 10);
   if (study_copy.h > 3)
     (void)polish_draw_wrapped_fit(gfx, tr(ui->language, T_ABOUT_STUDY),
                                   theme.dim, study_copy, fonts.help, 10, false);
 
-  int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
-  bool study_hover = point_in(study_link, mx, my);
-  bool study_pressed = study_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-  SDL_Rect study_face = polish_button_face(
-      gfx, theme, study_link, study_hover ? theme.hover : theme.palette_bg,
-      study_pressed, false);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_LINK), theme.btnfg,
-                         study_face, fonts.help, 10);
-  if(info_keyboard_focus==INFO_FOCUS_STUDY)
-    draw_focus_ring(gfx->ren,study_link,theme.sel_outline);
+  (void)draw_fitted_text(gfx,tr(ui->language,T_ABOUT_STUDY_REFERENCE),
+                          theme.dim,study_reference,
+                          fonts.help>13 ? fonts.help-2 : fonts.help,11);
 
   SDL_Rect credits = sdl_rect(geometry.about_credits);
   int credit_h = credits.h / 2;
@@ -591,22 +732,18 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
                          music, fonts.help, 10);
 
   const TextKey link_keys[GEOMETRY_ABOUT_LINK_COUNT] = {
-      T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT};
+      T_REPOSITORY, T_WEBSITE, T_SUPPORT, T_PRIVACY_POLICY};
+  const UiGlyph glyphs[GEOMETRY_ABOUT_LINK_COUNT] = {
+      UI_GLYPH_REPO, UI_GLYPH_GLOBE, UI_GLYPH_HEART, UI_GLYPH_SHIELD};
   for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i) {
     SDL_Rect rect = sdl_rect(geometry.about_links[i]);
-    bool hover = point_in(rect, mx, my);
-    bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-    SDL_Rect face = polish_button_face(
-        gfx, theme, rect, hover ? theme.hover : theme.btn, pressed, false);
-    char label[96];
-    snprintf(label, sizeof label, "%d · %s", i + 1,
-             tr(ui->language, link_keys[i]));
-    (void)draw_fitted_text(gfx, label, theme.btnfg, face, fonts.control, 10);
+    polish_about_action(gfx,theme,rect,tr(ui->language,link_keys[i]),
+                        glyphs[i],false,false,fonts.control);
     if(info_keyboard_focus==INFO_FOCUS_LINK_0+i)
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
 
-  draw_back_button(gfx, ui, theme, info_keyboard_focus==INFO_FOCUS_BACK);
+  polish_about_back(gfx,ui,theme,false,fonts.control);
 }
 
 static GameGenerationResult start_new_session(
@@ -717,8 +854,7 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
   bool play_surface = ui && ui->screen == SCR_PLAY;
   if (play_surface && get_geometry(gfx, ui, &geometry)) {
     layout.banner = sdl_rect(geometry.status);
-#if defined(__ANDROID__)
-    if (geometry.play_compact && layout.banner.h < 48) {
+    if (gfx->mobile_layout && geometry.play_compact && layout.banner.h < 48) {
       /* Save-failure Retry must remain an actual touch-sized action even
          on a 360x600dp screen; this banner is temporary and overlays
          the top of the board only while a checked save error exists. */
@@ -726,7 +862,6 @@ static StorageBannerLayout storage_banner_layout(const Gfx *gfx,
                                  geometry.board.y + 6,
                                  geometry.board.w - 12, 60};
     }
-#endif
     int inset = layout.banner.h <= 28 ? 2 : 4;
     int retry_w = layout.banner.w < 300 ? 88 : 118;
     layout.retry = (SDL_Rect){
@@ -883,9 +1018,30 @@ static SDL_Rect ui_settings_focus_rect(SettingsPanelLayout layout,
   }
 }
 
+static SettingsPanelLayout ui_mobile_settings_layout(const Gfx *gfx) {
+  SettingsPanelLayout layout;
+  memset(&layout, 0, sizeof(layout));
+  GeometrySettings mobile;
+  if (gfx && geometry_mobile_settings(gfx->width,gfx->height,&mobile)) {
+#define SETTINGS_RECT(field) layout.field=sdl_rect(mobile.field)
+    SETTINGS_RECT(card);SETTINGS_RECT(title);SETTINGS_RECT(theme);
+    SETTINGS_RECT(language);SETTINGS_RECT(sound);SETTINGS_RECT(music_label);
+    SETTINGS_RECT(music_minus);SETTINGS_RECT(music_track);SETTINGS_RECT(music_plus);
+    SETTINGS_RECT(fx_label);SETTINGS_RECT(fx_minus);SETTINGS_RECT(fx_track);
+    SETTINGS_RECT(fx_plus);SETTINGS_RECT(reduced_motion);
+    SETTINGS_RECT(auto_notes);SETTINGS_RECT(back);
+#undef SETTINGS_RECT
+  }
+  return layout;
+}
+
 static SettingsPanelLayout ui_settings_panel_layout(const Gfx *gfx) {
   SettingsPanelLayout layout;
   memset(&layout, 0, sizeof(layout));
+  if (gfx->mobile_layout) {
+    layout=ui_mobile_settings_layout(gfx);
+    if (layout.card.w) return layout;
+  }
   int margin = gfx->width < 640 ? 12 : 24;
   int width = gfx->width - margin * 2;
   if (width > 540) width = 540;
@@ -985,7 +1141,11 @@ static void rc2_settings_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   SDL_Color bg = active ? theme.title : (hover ? theme.hover : theme.btn);
   SDL_Color fg = active ? theme.bg : theme.btnfg;
   SDL_Rect face = polish_button_face(gfx, theme, rect, bg, pressed, false);
+#if defined(__ANDROID__)
+  (void)polish_draw_wrapped_fit(gfx,label,fg,face,preferred,13,true);
+#else
   (void)draw_fitted_text(gfx, label, fg, face, preferred, 9);
+#endif
 }
 
 static void rc2_render_settings_panel(Gfx *gfx, UI *ui) {
@@ -1085,7 +1245,7 @@ static HintPanelLayout hint_panel_layout(const Gfx *gfx, const UI *ui) {
   HintPanelLayout panel;
   memset(&panel, 0, sizeof(panel));
   if (!gfx || !ui) return panel;
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   GeometryHintPanel geo;
   if (!geometry_hint_panel(&layout.model, gfx->width, gfx->height, &geo))
     return panel;
@@ -1136,7 +1296,7 @@ static bool hint_panel_hit(const Gfx *gfx, const UI *ui, SDL_Rect rect,
 
 static bool hint_panel_blocks_point(const Gfx *gfx, const UI *ui, int x, int y) {
   if (!hint_panel_interactive(ui) || !gfx) return false;
-  if (gfx->width < 640)
+  if (gfx->mobile_layout || gfx->width < 640)
     return x >= 0 && y >= 0 && x < gfx->width && y < gfx->height;
   HintPanelLayout panel = hint_panel_layout(gfx, ui);
   return point_in(panel.card, x, y);
@@ -1209,7 +1369,10 @@ static void hint_panel_button(Gfx *gfx, Theme theme, SDL_Rect rect,
   SDL_Color foreground = primary ? theme.bg : theme.btnfg;
   SDL_Rect face =
       polish_button_face(gfx, theme, rect, background, pressed, false);
-  (void)draw_fitted_text(gfx, label, foreground, face, 16, 9);
+  if (gfx->mobile_layout)
+    (void)polish_draw_wrapped_fit(gfx,label,foreground,face,16,13,true);
+  else
+    (void)draw_fitted_text(gfx, label, foreground, face, 16, 9);
 }
 
 static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
@@ -1222,11 +1385,11 @@ static void rc2_render_hint_panel(Gfx *gfx, UI *ui) {
   SDL_RenderDrawRect(gfx->ren, &panel.card);
 
   (void)draw_fitted_text(gfx, tr(ui->language, T_HINT_PREVIEW), theme.title,
-                         panel.title, 20, 10);
+                         panel.title, 20, gfx->mobile_layout ? 16 : 10);
   char message[320];
   hint_preview_text(ui, message, sizeof(message));
   if (panel.body.h > 8)
-    (void)polish_draw_wrapped_fit(gfx, message, theme.btnfg, panel.body, 15, 9,
+    (void)polish_draw_wrapped_fit(gfx, message, theme.btnfg, panel.body, 15, gfx->mobile_layout ? 13 : 9,
                                   false);
 
   if (ui->hint_preview.status == HUMAN_HINT_LOGICAL)
@@ -1296,9 +1459,13 @@ typedef enum{
   PLAY_FOCUS_COUNT
 }PlayKeyboardFocus;
 static int play_keyboard_focus=-1;
+static bool ui_compact_play_layout(const Gfx *gfx,const UI *ui) {
+  AppGeometry geometry;
+  return get_geometry(gfx,ui,&geometry) && geometry.play_compact;
+}
 static bool play_focus_enabled(const Game*game,const UI*ui,int focus){
   if(!game||!ui||focus<0||focus>=PLAY_FOCUS_COUNT)return false;
-  bool compact = audio_gfx && audio_gfx->width < 640;
+  bool compact = ui_compact_play_layout(audio_gfx,ui);
   if (compact && (focus == PLAY_FOCUS_RESTART ||
                   focus == PLAY_FOCUS_HINT || focus == PLAY_FOCUS_VERIFY ||
                   focus == PLAY_FOCUS_SETTINGS || focus == PLAY_FOCUS_HELP))
@@ -1373,7 +1540,7 @@ static void ui_more_close(UI *ui) {
 static void ui_more_open_panel(UI *ui) {
   if (!ui || ui_more_open || ui->screen != SCR_PLAY ||
       !ui->session_open || ui->result != RES_NONE ||
-      !audio_gfx || audio_gfx->width >= 640) return;
+      !ui_compact_play_layout(audio_gfx,ui)) return;
   ui_more_modal_owned = clock_pause(ui, PAUSE_MODAL);
   ui_more_open = true;
   ui_more_focus = 0;
@@ -1389,7 +1556,7 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
   if (!gfx || !game || !play_surface || app_pause_hides_play(ui))
     return;
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
-  Layout layout = compute_layout(gfx->width, gfx->height, ui->mode);
+  Layout layout = compute_layout(gfx, ui->mode);
   SidebarRects controls;
   compute_sidebar_rects(&layout, &controls);
   GeometryFonts fonts = geometry_font_sizes(&layout.model, gfx->width, gfx->height);
@@ -1425,8 +1592,12 @@ static void rc2_render_play_controls(Gfx *gfx, const Game *game, UI *ui) {
           ? theme.bg : enabled ? theme.btnfg : theme.dim;
       SDL_Rect face = polish_quiet_face(gfx, theme, rect, background,
                                          pressed, !enabled);
-      (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
-                             foreground,face,fonts.control,10);
+      bool landscape=gfx->mobile_layout && gfx->height<600;
+      const char *label=tr(ui->language,gfx->mobile_layout && i==0 ? T_HOME_COMPACT : labels[i]);
+      if (landscape && (focus_keys[i]==PLAY_FOCUS_UNDO || focus_keys[i]==PLAY_FOCUS_REDO))
+        label=focus_keys[i]==PLAY_FOCUS_UNDO ? "↶" : "↷";
+      (void)draw_fitted_text(gfx,label,foreground,face,
+          landscape && i>=4 && i<=5 ? 24 : fonts.control,landscape ? 13 : 10);
       bool show_focus = true;
 #if defined(__ANDROID__)
       show_focus = ui_keyboard_focus_visible;
@@ -1559,30 +1730,16 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
   Theme theme = ui->dark_theme ? theme_dark() : theme_light();
   /* The paused puzzle remains fully hidden in every game mode. */
   draw_rect(gfx->ren,0,0,gfx->width,gfx->height,theme.bg);
-#if defined(__ANDROID__)
-  /* Show only an empty Android board silhouette, never actual numbers. */
-  SDL_Rect board=sdl_rect(geo.board);
-  SDL_BlendMode old_blend=SDL_BLENDMODE_NONE;
-  (void)SDL_GetRenderDrawBlendMode(gfx->ren,&old_blend);
-  (void)SDL_SetRenderDrawBlendMode(gfx->ren,SDL_BLENDMODE_BLEND);
-  (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
-                               theme.title.b,18);
-  (void)SDL_RenderFillRect(gfx->ren,&board);
-  for(int i=0;i<=9;++i){
-    Uint8 alpha=(Uint8)(i%3==0?54:24);
-    (void)SDL_SetRenderDrawColor(gfx->ren,theme.title.r,theme.title.g,
-                                 theme.title.b,alpha);
-    int x=board.x+board.w*i/9,y=board.y+board.h*i/9;
-    (void)SDL_RenderDrawLine(gfx->ren,x,board.y,x,board.y+board.h);
-    (void)SDL_RenderDrawLine(gfx->ren,board.x,y,board.x+board.w,y);
-  }
-  (void)SDL_SetRenderDrawBlendMode(gfx->ren,old_blend);
-#endif
   SDL_Rect panel=sdl_rect(geo.more_panel);
-  draw_round_rect(gfx->ren,panel,12,theme.btn);
-  SDL_Rect heading={panel.x+12,panel.y+15,panel.w-24,34};
+  SDL_Rect shadow=panel;shadow.y+=4;
+  draw_round_rect(gfx->ren,shadow,16,theme.palette_bg);
+  draw_round_rect(gfx->ren,panel,16,theme.btn);
+  SDL_Rect heading={panel.x+16,panel.y+12,panel.w-80,34};
   (void)draw_fitted_text(gfx,tr(ui->language,T_MORE),theme.btnfg,
                          heading,24,13);
+  /* The existing dismiss surface owns this full 48dp header target too. */
+  SDL_Rect close={panel.x+panel.w-60,panel.y+4,48,48};
+  (void)draw_fitted_text(gfx,"×",theme.dim,close,24,18);
   const TextKey labels[GEOMETRY_MORE_COUNT] = {
       T_RESTART,T_HINT,T_VERIFY,T_SETTINGS,T_HELP,T_ABOUT
   };
@@ -1595,7 +1752,7 @@ static void rc2_render_more_panel(Gfx *gfx, UI *ui) {
                        hover?theme.hover:theme.palette_bg,
                        ui_pointer_pressed(rect),false);
     (void)draw_fitted_text(gfx,tr(ui->language,labels[i]),
-                           theme.btnfg,face,17,10);
+                           theme.btnfg,face,17,gfx->mobile_layout ? 13 : 10);
     bool show_focus=true;
 #if defined(__ANDROID__)
     show_focus=ui_keyboard_focus_visible;
@@ -1744,6 +1901,7 @@ static void rc2_render_audio_control(Gfx *gfx, UI *ui) {
 }
 
 static void games_browser_render(Gfx *gfx, const Game *game, UI *ui);
+static void ui_modal_render(Gfx *gfx, UI *ui);
 
 static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   ui_feedback_render_screen = ui ? (int)ui->screen : -1;
@@ -1764,6 +1922,7 @@ static void app_render_ui(Gfx *gfx, const Game *game, UI *ui) {
   rc2_render_generation_overlay(gfx, ui);
   rc2_render_audio_control(gfx, ui);
   rc2_render_more_panel(gfx, ui);
+  ui_modal_render(gfx, ui);
 }
 
 static void go_home(Persistence *persistence, const Game *game, UI *ui) {

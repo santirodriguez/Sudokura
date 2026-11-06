@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.4.0]
+
+### A familiar puzzle, now on Android
+- Sudokura's first public Android version brings the C11/SDL2 game to touchscreens, with portrait/landscape layouts and clear controls. Choose Classic, Strikes, Time Attack or a dated Daily puzzle at Easy, Medium or Hard; English, Español and Català remain available.
+- Android production uses version 1.4.0 / versionCode 1 and `org.cajapersonal.sudokura`. Private debug prototypes keep their own identity and data. The app signing key differs from the Play upload key; store publication or seamless cross-store updates are not implied.
+- Full TalkBack journeys, measured device performance and actual 16 KiB runtime behavior remain unverified, despite structural and build audits.
+
+### A unified interface for every screen
+- Refreshed Home and About with shared navy/indigo dark and contrasted light
+  surfaces, original action icons, clearer focus/pressed/disabled states and
+  roomier tall-phone controls. Labels remain readable in English, Español
+  and Català.
+- Extended the same design across Sudoku gameplay, the number palette,
+  Save/Undo/Redo/Notes/More, Settings, Help, Saved Games, Your journey,
+  Pause, Results and SDL-owned confirmations/recovery dialogs. The existing
+  command, geometry and persistence owners remain unchanged.
+- The maintainer smoke-tested the new presentation on Linux and Android.
+  Specialized accessibility, page-size execution, independent build
+  reproducibility and production upgrade paths remain distinct gates.
+
+### The story behind every attempt
+- **Your journey** adds Achieved and Try again, completion details, per-attempt statistics and linked replay history. Winning a retry doesn't erase what happened before.
+- **Saved Games** separates explicit saves and the current autosave from completed and interrupted history. Leaving a played attempt offers Save, Abandon or Cancel; backgrounding checkpoints without abandoning. Notes and untouched-board navigation never turn into a lost game.
+- Preserved deterministic puzzle generation, Daily identities, migration readers, archive records beyond the 128-result cache and recovery safeguards.
+
+### Little fixes that make playing nicer
+- Improved dialogs, compact screens, button spacing, focus and Android lifecycle handling while preserving game and retained-record identities.
+- Replay no longer asks to save immutable completed/interrupted attempts. An active unsaved attempt still receives its proper retention choice, with regressions covering terminal and active states.
+- The mobile Daily heading displays its actual `YYYY-MM-DD` puzzle date. Maintainer phone testing covered Try again, explicit Save, force-stop and reopening with numbers and notes retained.
+- The release gallery now uses a genuine 1.4.0 desktop gameplay capture with the unified design and an approved six-image Android collection from the corresponding new UI. Earlier screenshot files remain historical.
+
+### Downloads and updating safely
+- Kept Windows installer/portable EXE, Linux AppImage and experimental macOS 15+ Apple Silicon DMG; added a signed Android ARM64 APK. The exact-source bundle includes five applications, shared checksums and Build-Info.
+- Android progress is local; backup/transfer and automatic prototype migration aren't supplied. Keep the installation containing progress when signatures don't match. Matching version numbers alone don't ensure cross-store updates.
+- APK identity, native alignment, signing receipts and unsigned Play AAB structure were validated. This is not a claim of full 16 KiB runtime, independent reproducibility or store approval.
+
 ## [1.3.9]
 
 ### Direct touch and safer scrolling
