@@ -275,11 +275,11 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   if (about_available_total > about_stack_h)
     about_top += (about_available_total - about_stack_h) / 3;
 
-  int about_logo_h = portrait ? 64 : (short_desktop ? 52 : (xl ? 96 : 80));
+  int about_logo_h = portrait ? 64 : (short_desktop ? 40 : (xl ? 96 : 80));
   g->about_logo = (GeoRect){about_x, about_top, about_w, about_logo_h};
 
-  int link_h = portrait ? 36 : (short_desktop ? 34 : (xl ? 46 : 42));
-  int link_gap = portrait ? 6 : 8;
+  int link_h = portrait ? 36 : (short_desktop ? 28 : (xl ? 46 : 42));
+  int link_gap = portrait || short_desktop ? 6 : 8;
   int links_h = 3*link_h + 2*link_gap;
   int links_y = about_top + about_stack_h - links_h;
   int half=(about_w-link_gap)/2;
@@ -290,8 +290,10 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->about_links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){
       about_x,links_y+2*(link_h+link_gap),about_w,link_h};
 
-  int content_top = g->about_logo.y + g->about_logo.h + 8;
-  int content_bottom = links_y - 8;
+  /* Keep the cards readable when short desktops need a third action row. */
+  int inner_gap = short_desktop ? 4 : 8;
+  int content_top = g->about_logo.y + g->about_logo.h + inner_gap;
+  int content_bottom = links_y - inner_gap;
   int content_h = content_bottom - content_top;
   int content_gap = short_desktop ? 3 : 6;
   int intro_h = portrait ? 56 : (short_desktop ? 40 : (xl ? 76 : 64));
