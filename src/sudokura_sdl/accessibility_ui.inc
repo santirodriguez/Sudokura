@@ -215,9 +215,9 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
         ui_a11y_text(s,g,A11Y_INFO_BODY+span->id,span->rect,span->text,scroll);
       }
     if (ui->screen==SCR_ABOUT) {
-      const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,
-                            T_SUPPORT,T_PRIVACY_POLICY};
-      for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
+      const TextKey keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT,
+                            T_PRIVACY_POLICY};
+      for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
         ADD(A11Y_INFO+1+i,ui_info_link_rect(g,ui,i),keys[i],true,false);
     }
     if (help_scroll_max_px>0) {
@@ -459,9 +459,9 @@ static bool ui_a11y_dispatch(Persistence *p,Game *game,UI *ui,Gfx *g,bool *runni
     pause_keyboard_focus=id-A11Y_PAUSE;activate_pause_focus(p,game,ui,g);
   } else if (id>=A11Y_RESULT && id<A11Y_RESULT+2) {
     result_keyboard_focus=id-A11Y_RESULT;activate_result_focus(p,game,ui,g);
-  } else if (id>=A11Y_INFO && id<A11Y_INFO+GEOMETRY_ABOUT_LINK_COUNT+2) {
+  } else if (id>=A11Y_INFO && id<A11Y_INFO+GEOMETRY_ABOUT_LINK_COUNT+1) {
     info_keyboard_focus=id==A11Y_INFO?INFO_FOCUS_BACK:
-        id==A11Y_INFO+1?INFO_FOCUS_STUDY:INFO_FOCUS_LINK_0+id-A11Y_INFO-2;
+        INFO_FOCUS_LINK_0+id-A11Y_INFO-1;
     (void)activate_info_focus(p,game,ui,g);
   } else if ((id>=A11Y_INFO_BODY && id<A11Y_INFO_BODY+60) ||
              id==A11Y_INFO_UP || id==A11Y_INFO_DOWN)
@@ -609,7 +609,7 @@ static bool ui_a11y_smoke(Persistence *p,Game *game,UI *ui,Gfx *g) {
         bool found=false;
         for (size_t a=0;a<ui_a11y_live.count;++a) {
           const AccessibilityNode *node=&ui_a11y_live.nodes[a];
-          if (node->id==A11Y_INFO+GEOMETRY_ABOUT_LINK_COUNT+1 &&
+          if (node->id==A11Y_INFO+GEOMETRY_ABOUT_LINK_COUNT &&
               strcmp(node->label,tr(ui->language,T_PRIVACY_POLICY))==0 &&
               (node->actions&ACCESSIBILITY_ACTIVATE)) found=true;
         }

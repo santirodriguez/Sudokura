@@ -15,7 +15,6 @@ static const char *const allowed_urls[] = {
     "https://github.com/santirodriguez/Sudokura",
     "https://sudokura.cajapersonal.org/",
     SUDOKURA_PRIVACY_POLICY_URL,
-    "https://doi.org/10.1002/gps.5085",
     "https://cajapersonal.org/donate/",
     "https://cajapersonal.org/donaciones/",
     "https://cajapersonal.org/donacions/",

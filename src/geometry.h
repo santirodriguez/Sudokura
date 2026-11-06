@@ -90,7 +90,7 @@ typedef struct {
   GeoRect about_meta;
   GeoRect about_fact;
   GeoRect about_study;
-  GeoRect about_study_link;
+  GeoRect about_study_reference;
   GeoRect about_credits;
   GeoRect about_links[GEOMETRY_ABOUT_LINK_COUNT];
 
@@ -140,7 +140,7 @@ bool geometry_mobile_settings(int width, int height, GeometrySettings *out);
 bool geometry_mobile_home(int width, int height, AppGeometry *out);
 
 typedef struct {
-  GeoRect heading, body, back, up, down, links[GEOMETRY_ABOUT_LINK_COUNT + 1];
+  GeoRect heading, body, back, up, down, links[GEOMETRY_ABOUT_LINK_COUNT];
 } GeometryInfo;
 
 bool geometry_mobile_info(int width, int height, bool about, GeometryInfo *out);

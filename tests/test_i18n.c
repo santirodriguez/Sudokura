@@ -48,6 +48,8 @@ int main(void) {
     assert(*tr((Language)language, T_HELP_HINTS_TITLE));
     assert(*tr((Language)language, T_HELP_SHORTCUTS_TITLE));
     assert(*tr((Language)language, T_PRIVACY_POLICY));
+    assert(strcmp(tr((Language)language,T_ABOUT_STUDY_REFERENCE),
+                  "Brooker et al. (2019)")==0);
     assert(*tr((Language)language, T_GAMES));
     assert(*tr((Language)language, T_GAMES_EMPTY));
     assert(*tr((Language)language, T_GAMES_LOADING));

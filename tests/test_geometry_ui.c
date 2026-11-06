@@ -29,7 +29,7 @@ int main(void) {
     for (int mode = GEOMETRY_MODE_CLASSIC; mode <= GEOMETRY_MODE_TIME; ++mode) {
       AppGeometry g;
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
-      assert_inside(g.about_study, g.about_study_link);
+      assert_inside(g.about_study, g.about_study_reference);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
       assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
@@ -190,11 +190,14 @@ int main(void) {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
         assert(g.about_links[4].y > g.about_links[3].y);
+        assert(g.about_links[4].x == g.about_logo.x);
+        assert(g.about_links[4].w == g.about_logo.w);
       } else {
         assert(g.about_links[0].y == g.about_links[1].y);
-        assert(g.about_links[1].y == g.about_links[2].y);
-        assert(g.about_links[3].y == g.about_links[4].y);
-        assert(g.about_links[3].y > g.about_links[2].y);
+        assert(g.about_links[2].y == g.about_links[3].y);
+        assert(g.about_links[4].y > g.about_links[3].y);
+        assert(g.about_links[4].x == g.about_logo.x);
+        assert(g.about_links[4].w == g.about_logo.w);
         /* Wordmark, title and controls use separate vertical regions. */
         assert(g.play_language.h == 1);
         assert(g.play_title.h >= 32);

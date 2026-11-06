@@ -207,10 +207,16 @@ static void check_auxiliary(int w,int h) {
     assert(geometry_mobile_info(w,h,about!=0,&g));
     assert(g.body.w>=180 && g.body.h>=(h<360 ? 150 : 190));
     assert(geometry_rect_in_bounds(g.body,w,h));
-    GeoRect controls[GEOMETRY_ABOUT_LINK_COUNT+4]={g.back,g.up,g.down};
+    GeoRect controls[GEOMETRY_ABOUT_LINK_COUNT+3]={g.back,g.up,g.down};
     int count=3;
-    if (about) for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
-      controls[count++]=g.links[i];
+    if (about) {
+      for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+        controls[count++]=g.links[i];
+      assert(g.links[0].y==g.links[1].y);
+      assert(g.links[2].y==g.links[3].y);
+      assert(g.links[4].y>g.links[3].y);
+      assert(g.links[4].w>=2*g.links[0].w);
+    }
     for (int i=0;i<count;++i) {
       assert(controls[i].w>=48 && controls[i].h>=48);
       if (about && h<600 && i>=3) assert(controls[i].w>=120);

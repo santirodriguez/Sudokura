@@ -207,7 +207,7 @@ static SDL_Rect home_collection_rect(const AppGeometry *geometry, bool journey) 
 }
 static int home_focus=HOME_FOCUS_NEW;
 enum{
-  INFO_FOCUS_BACK=0,INFO_FOCUS_STUDY,INFO_FOCUS_LINK_0,
+  INFO_FOCUS_BACK=0,INFO_FOCUS_LINK_0,
   INFO_FOCUS_LINK_1,INFO_FOCUS_LINK_2,INFO_FOCUS_LINK_3,
   INFO_FOCUS_LINK_4,
   INFO_FOCUS_COUNT
@@ -320,13 +320,13 @@ static bool ui_info_scroll_enabled(const Gfx *gfx,const UI *ui) {
 }
 
 static SDL_Rect ui_info_link_rect(const Gfx *gfx,const UI *ui,int link) {
-  if (link<0 || link>=GEOMETRY_ABOUT_LINK_COUNT+1)
+  if (link<0 || link>=GEOMETRY_ABOUT_LINK_COUNT)
     return (SDL_Rect){0,0,0,0};
   GeometryInfo mobile;
   if (ui_mobile_info_layout(gfx,ui,&mobile)) return sdl_rect(mobile.links[link]);
   AppGeometry g;
   if (!get_geometry(gfx,ui,&g)) return (SDL_Rect){0,0,0,0};
-  return sdl_rect(link==0 ? g.about_study_link : g.about_links[link-1]);
+  return sdl_rect(g.about_links[link]);
 }
 
 static SDL_Rect ui_info_scroll_rect(const Gfx *gfx,const UI *ui,bool down) {

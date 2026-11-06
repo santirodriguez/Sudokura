@@ -531,16 +531,17 @@ static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
   const char *sections[]={SUDOKURA_NAME_VERSION,tr(ui->language,T_ABOUT_BODY),
       tr(ui->language,T_ABOUT_FACT_TITLE),tr(ui->language,T_ABOUT_FACT),
       tr(ui->language,T_ABOUT_STUDY_TITLE),tr(ui->language,T_ABOUT_STUDY),
+      tr(ui->language,T_ABOUT_STUDY_REFERENCE),
       tr(ui->language,T_ABOUT_SEEDS),tr(ui->language,T_ABOUT_STACK)};
-  SDL_Texture *textures[8]={0};
-  int widths[8]={0},heights[8]={0},offsets[8]={0},total=0;
+  SDL_Texture *textures[9]={0};
+  int widths[9]={0},heights[9]={0},offsets[9]={0},total=0;
   SDL_Rect body=sdl_rect(layout.body);
-  for (int i=0;i<8;++i) {
+  for (int i=0;i<9;++i) {
     offsets[i]=total;
-    textures[i]=render_text_wrapped(gfx,cached_font(gfx,18),sections[i],
+    textures[i]=render_text_wrapped(gfx,cached_font(gfx,i==6?14:18),sections[i],
         (i==0 || i==2 || i==4) ? theme.title : theme.dim,
         body.w-12,&widths[i],&heights[i]);
-    total+=heights[i]+12;
+    total+=heights[i]+(i==6?8:12);
   }
   help_scroll_max_px=total>body.h ? total-body.h : 0;
   help_scroll_set(help_scroll_px);
@@ -548,25 +549,26 @@ static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
   SDL_RenderGetClipRect(gfx->ren,&previous);
   SDL_RenderSetClipRect(gfx->ren,&body);
   ui_info_semantic_begin(gfx,ui);
-  for (int i=0;i<8;++i) {
+  for (int i=0;i<9;++i) {
     ui_info_semantic_add(body,offsets[i],heights[i],sections[i],i);
     help_draw_scrolled_texture(gfx,textures[i],body,offsets[i],widths[i],
                                heights[i],help_scroll_px);
   }
   SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
-  const TextKey keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,T_WEBSITE,
-                        T_SUPPORT,T_PRIVACY_POLICY};
+  const TextKey keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT,
+                        T_PRIVACY_POLICY};
   int mx=0,my=0;
   Uint32 mouse=SDL_GetMouseState(&mx,&my);
-  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i) {
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
     SDL_Rect r=sdl_rect(layout.links[i]);
     bool hover=point_in(r,mx,my);
-    SDL_Rect face=polish_button_face(gfx,theme,r,hover ? theme.hover : theme.btn,
+    SDL_Color fill=i==GEOMETRY_ABOUT_LINK_COUNT-1 ? theme.palette_bg : theme.btn;
+    SDL_Rect face=polish_button_face(gfx,theme,r,hover ? theme.hover : fill,
         hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
     face.x+=6;face.w-=12;
     (void)polish_draw_wrapped_fit(gfx,tr(ui->language,keys[i]),theme.btnfg,
                                   face,17,13,true);
-    int focus=i ? INFO_FOCUS_LINK_0+i-1 : INFO_FOCUS_STUDY;
+    int focus=INFO_FOCUS_LINK_0+i;
     if (info_keyboard_focus==focus) draw_focus_ring(gfx->ren,r,theme.sel_outline);
   }
   draw_info_scroll_controls(gfx,ui,theme);
@@ -629,14 +631,14 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
 
   SDL_Rect study = sdl_rect(geometry.about_study);
   draw_round_rect(gfx->ren, study, 10, theme.btn);
-  SDL_Rect study_link = sdl_rect(geometry.about_study_link);
+  SDL_Rect study_reference = sdl_rect(geometry.about_study_reference);
   int study_title_h = study.h / 4;
   if (study_title_h < 12) study_title_h = 12;
   SDL_Rect study_title = {study.x + 9, study.y + 2, study.w - 18,
                           study_title_h};
   SDL_Rect study_copy = {study.x + 9, study.y + 2 + study_title_h,
                          study.w - 18,
-                         study_link.y - (study.y + 2 + study_title_h) - 2};
+                         study_reference.y - (study.y + 2 + study_title_h) - 2};
   (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_TITLE), theme.title,
                          study_title, fonts.help, 10);
   if (study_copy.h > 3)
@@ -645,15 +647,9 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
 
   int mx = 0, my = 0;
   Uint32 mouse = SDL_GetMouseState(&mx, &my);
-  bool study_hover = point_in(study_link, mx, my);
-  bool study_pressed = study_hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-  SDL_Rect study_face = polish_button_face(
-      gfx, theme, study_link, study_hover ? theme.hover : theme.palette_bg,
-      study_pressed, false);
-  (void)draw_fitted_text(gfx, tr(ui->language, T_ABOUT_STUDY_LINK), theme.btnfg,
-                         study_face, fonts.help, 10);
-  if(info_keyboard_focus==INFO_FOCUS_STUDY)
-    draw_focus_ring(gfx->ren,study_link,theme.sel_outline);
+  (void)draw_fitted_text(gfx,tr(ui->language,T_ABOUT_STUDY_REFERENCE),
+                          theme.dim,study_reference,
+                          fonts.help>13 ? fonts.help-2 : fonts.help,11);
 
   SDL_Rect credits = sdl_rect(geometry.about_credits);
   int credit_h = credits.h / 2;
@@ -671,12 +667,12 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
     SDL_Rect rect = sdl_rect(geometry.about_links[i]);
     bool hover = point_in(rect, mx, my);
     bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
+    SDL_Color fill=i==GEOMETRY_ABOUT_LINK_COUNT-1 ?
+        theme.palette_bg : theme.btn;
     SDL_Rect face = polish_button_face(
-        gfx, theme, rect, hover ? theme.hover : theme.btn, pressed, false);
-    char label[96];
-    snprintf(label, sizeof label, "%d · %s", i + 1,
-             tr(ui->language, link_keys[i]));
-    (void)draw_fitted_text(gfx, label, theme.btnfg, face, fonts.control, 10);
+        gfx, theme, rect, hover ? theme.hover : fill, pressed, false);
+    (void)draw_fitted_text(gfx,tr(ui->language,link_keys[i]),theme.btnfg,
+                           face,fonts.control,10);
     if(info_keyboard_focus==INFO_FOCUS_LINK_0+i)
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }

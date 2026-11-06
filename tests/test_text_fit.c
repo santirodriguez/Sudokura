@@ -99,7 +99,7 @@ int main(void) {
       assert_rect(g.about_body, width, height);
       assert_rect(g.about_fact, width, height);
       assert_rect(g.about_study, width, height);
-      assert_rect(g.about_study_link, width, height);
+      assert_rect(g.about_study_reference, width, height);
       assert_rect(g.about_credits, width, height);
       for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
         assert_rect(g.about_links[i], width, height);
@@ -308,7 +308,7 @@ int main(void) {
 
         int study_title_h = g.about_study.h / 4;
         if (study_title_h < 12) study_title_h = 12;
-        int study_copy_h = g.about_study_link.y -
+        int study_copy_h = g.about_study_reference.y -
                            (g.about_study.y + 2 + study_title_h) - 2;
         assert(fits(font, tr((Language)language, T_ABOUT_STUDY_TITLE), tier.help,
                     10, g.about_study.w - 18, study_title_h));
@@ -316,8 +316,8 @@ int main(void) {
         assert(wrapped_fits(font, tr((Language)language, T_ABOUT_STUDY),
                             tier.help, 10, g.about_study.w - 18,
                             study_copy_h));
-        assert(fits(font, tr((Language)language, T_ABOUT_STUDY_LINK), tier.help,
-                    10, g.about_study_link.w, g.about_study_link.h - 3));
+        assert(fits(font, tr((Language)language, T_ABOUT_STUDY_REFERENCE), tier.help,
+                    10, g.about_study_reference.w, g.about_study_reference.h - 3));
 
         int credit_h = g.about_credits.h / 2;
         assert(fits(font, tr((Language)language, T_ABOUT_SEEDS), tier.help, 10,
@@ -327,7 +327,7 @@ int main(void) {
 
         for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i) {
           char label[128];
-          snprintf(label, sizeof label, "%d · %s", i + 1,
+          snprintf(label, sizeof label, "%s",
                    tr((Language)language, about_links[i]));
           assert(fits(font, label, tier.control, 10, g.about_links[i].w,
                       g.about_links[i].h - 3));
@@ -443,9 +443,9 @@ int main(void) {
       GeometryLibrary library;
       assert(geometry_mobile_info(width,height,true,&info));
       assert(geometry_mobile_library(width,height,&library));
-      const TextKey info_keys[]={T_ABOUT_STUDY_LINK,T_GITHUB,T_REPOSITORY,
-                                 T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
-      assert(sizeof(info_keys)/sizeof(info_keys[0]) == GEOMETRY_ABOUT_LINK_COUNT+1);
+      const TextKey info_keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,
+                                 T_SUPPORT,T_PRIVACY_POLICY};
+      assert(sizeof(info_keys)/sizeof(info_keys[0]) == GEOMETRY_ABOUT_LINK_COUNT);
       for (unsigned i=0;i<sizeof(info_keys)/sizeof(info_keys[0]);++i)
         assert(wrapped_fits(font,tr(lang,info_keys[i]),17,13,
                             info.links[i].w-12,info.links[i].h));

@@ -29,7 +29,7 @@ int main(void) {
       "https://github.com/santirodriguez/Sudokura"));
   assert(url_launcher_is_allowed("https://sudokura.cajapersonal.org/"));
   assert(url_launcher_is_allowed(SUDOKURA_PRIVACY_POLICY_URL));
-  assert(url_launcher_is_allowed("https://doi.org/10.1002/gps.5085"));
+  assert(!url_launcher_is_allowed("https://doi.org/10.1002/gps.5085"));
   assert(url_launcher_is_allowed(
       "https://cajapersonal.org/donaciones/"));
 

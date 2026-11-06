@@ -1225,7 +1225,6 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   if(!ui||!g)return false;
   if(info_keyboard_focus==INFO_FOCUS_BACK){ui_button_click();return_from_info(p,game,ui);return true;}
   if(ui->screen!=SCR_ABOUT)return false;
-  if(info_keyboard_focus==INFO_FOCUS_STUDY){ui_open_url("https://doi.org/10.1002/gps.5085");return true;}
   int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
   if(link>=0&&link<3){open_about_url(g,game,ui,link);return true;}
   if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
@@ -2648,7 +2647,7 @@ int main(int argc, char **argv) {
                     if (target.action!=137) {app_shutdown(&g);return 1;}
                   }
                   if (ui.screen==SCR_ABOUT) {
-                    GeoRect link=info.links[GEOMETRY_ABOUT_LINK_COUNT];
+                    GeoRect link=info.links[GEOMETRY_ABOUT_LINK_COUNT-1];
                     PointerTarget target=ui_pointer_resolve(link.x+link.w/2,
                                                           link.y+link.h/2);
                     if (target.action!=131+GEOMETRY_ABOUT_LINK_COUNT-1) {
@@ -5685,7 +5684,7 @@ int main(int argc, char **argv) {
           if (ui.screen == SCR_ABOUT) {
             bool opened = false;
             for (int i = 0; i < 3; ++i) {
-              if (point_in(ui_info_link_rect(&g,&ui,i+1), x, y)) {
+              if (point_in(ui_info_link_rect(&g,&ui,i), x, y)) {
                 info_keyboard_focus=INFO_FOCUS_LINK_0+i;
                 open_about_url(&g, &game, &ui, i);
                 opened = true;

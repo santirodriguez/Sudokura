@@ -71,16 +71,20 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   g.up=(GeoRect){x+body_w-102,footer,48,48};
   g.down=(GeoRect){x+body_w-48,footer,48,48};
   if (columns) {
-    /* Fit all six actions in two columns without obscuring the scroll body. */
+    /* Four equal links plus a full-width Privacy row. */
     int top=height<360 ? 56 : 60,step=54;
     int column_w=(w-body_w-18)/2;
-    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
-      g.links[i]=(GeoRect){x+body_w+12+(i%2)*(column_w+6),
+    int link_x=x+body_w+12;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
+      g.links[i]=(GeoRect){link_x+(i%2)*(column_w+6),
                            top+(i/2)*step,column_w,48};
+    g.links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){
+        link_x,top+2*step,2*column_w+6,48};
   } else if (about) {
     int y=footer-162,half=(w-6)/2;
-    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT+1;++i)
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
       g.links[i]=(GeoRect){x+(i%2)*(half+6),y+(i/2)*54,half,48};
+    g.links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){x,y+108,w,48};
   }
   *out=g;return true;
 }
@@ -276,12 +280,15 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
 
   int link_h = portrait ? 36 : (short_desktop ? 34 : (xl ? 46 : 42));
   int link_gap = portrait ? 6 : 8;
-  int link_columns = portrait ? 2 : 3;
-  int link_rows = (GEOMETRY_ABOUT_LINK_COUNT + link_columns - 1) / link_columns;
-  int links_h = link_h * link_rows + link_gap * (link_rows - 1);
+  int links_h = 3*link_h + 2*link_gap;
   int links_y = about_top + about_stack_h - links_h;
-  grid_gap((GeoRect){about_x, links_y, about_w, links_h}, link_columns, link_gap,
-           g->about_links, GEOMETRY_ABOUT_LINK_COUNT);
+  int half=(about_w-link_gap)/2;
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
+    g->about_links[i]=(GeoRect){
+        about_x+(i%2)*(half+link_gap),
+        links_y+(i/2)*(link_h+link_gap),half,link_h};
+  g->about_links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){
+      about_x,links_y+2*(link_h+link_gap),about_w,link_h};
 
   int content_top = g->about_logo.y + g->about_logo.h + 8;
   int content_bottom = links_y - 8;
@@ -307,12 +314,9 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->about_fact = (GeoRect){about_x, content_y, about_w, fact_h};
   content_y += fact_h + content_gap;
   g->about_study = (GeoRect){about_x, content_y, about_w, study_h};
-  int study_link_h = min_i(28, max_i(22, study_h / 4));
-  int study_link_w = min_i(about_w / 2, portrait ? 190 : 220);
-  g->about_study_link =
-      (GeoRect){about_x + about_w - study_link_w - 10,
-                content_y + study_h - study_link_h - 4,
-                study_link_w, study_link_h};
+  int reference_h = min_i(18,max_i(13,study_h/5));
+  g->about_study_reference=(GeoRect){
+      about_x+9,content_y+study_h-reference_h-4,about_w-18,reference_h};
   content_y += study_h + content_gap;
   g->about_credits = (GeoRect){about_x, content_y, about_w, credits_h};
   g->about_meta = (GeoRect){about_x, g->about_fact.y, about_w,
@@ -538,7 +542,7 @@ GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
 static bool mobile_shell_valid(const AppGeometry *g,int width,int height) {
   const GeoRect fixed[]={g->screen_language,g->home_logo,g->home_mode_label,
       g->home_difficulty_label,g->info_heading,g->info_body,g->back_button,
-      g->about_logo,g->about_body,g->about_study_link,g->end_logo,g->end_heading,
+      g->about_logo,g->about_body,g->about_study_reference,g->end_logo,g->end_heading,
       g->end_summary,g->pause_logo,g->pause_heading};
   for (unsigned i=0;i<sizeof(fixed)/sizeof(fixed[0]);++i)
     if (!geometry_rect_in_bounds(fixed[i],width,height)) return false;
@@ -617,7 +621,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       !geometry_rect_in_bounds(g->about_meta, width, height) ||
       !geometry_rect_in_bounds(g->about_fact, width, height) ||
       !geometry_rect_in_bounds(g->about_study, width, height) ||
-      !geometry_rect_in_bounds(g->about_study_link, width, height) ||
+      !geometry_rect_in_bounds(g->about_study_reference, width, height) ||
       !geometry_rect_in_bounds(g->about_credits, width, height) ||
       !geometry_rect_in_bounds(g->end_logo, width, height) ||
       !geometry_rect_in_bounds(g->end_heading, width, height) ||
@@ -627,11 +631,11 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
     return false;
 
   if (!geometry_contains(g->about_study,
-                         g->about_study_link.x,
-                         g->about_study_link.y) ||
+                         g->about_study_reference.x,
+                         g->about_study_reference.y) ||
       !geometry_contains(g->about_study,
-                         g->about_study_link.x + g->about_study_link.w - 1,
-                         g->about_study_link.y + g->about_study_link.h - 1))
+                         g->about_study_reference.x + g->about_study_reference.w - 1,
+                         g->about_study_reference.y + g->about_study_reference.h - 1))
     return false;
 
   for (int i = 0; i < GEOMETRY_HOME_SEGMENT_COUNT; ++i)
@@ -1381,9 +1385,10 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
         !geometry_mobile_info(width,height,true,&about)) return false;
     g->info_heading=help.heading;g->info_body=help.body;g->back_button=help.back;
     g->about_logo=about.heading;g->about_body=about.body;
-    g->about_study_link=about.links[0];
+    /* Mobile citation scrolls with the About text, not with the buttons. */
+    g->about_study_reference=about.body;
     for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
-      g->about_links[i]=about.links[i+1];
+      g->about_links[i]=about.links[i];
     mobile_result_pause(width,height,g);
     set_compatibility_aliases(g);
     return geometry_play_valid(g,width,height);
