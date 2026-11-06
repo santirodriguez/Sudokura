@@ -55,6 +55,8 @@ static void test_label_bounds(void) {
       assert(b.icon.w==b.icon.h&&b.icon.w>=20);
     }
   }
+  assert(ui_design_label_layout(129,48,true).icon.w==0);
+  assert(ui_design_label_layout(159,48,true).icon.w==0);
   assert(ui_design_label_layout(160,48,true).icon.w==24);
   assert(ui_design_label_layout(161,48,true).text.w==111);
   assert(ui_design_label_layout(90,48,true).icon.w==0);

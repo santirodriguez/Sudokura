@@ -94,9 +94,9 @@ static inline UiDesignLabel ui_design_label_layout(int width, int height,
                                                    bool with_icon) {
   if (width <= 16 || height <= 0) return (UiDesignLabel){{0,0,0,0},{0,0,0,0}};
   UiDesignLabel out = {{0,0,0,0}, {8,0,width > 16 ? width-16 : 0,height}};
-  if (!with_icon || width < 116 || height < 32) return out;
+  /* In short-wide layouts the text wins over a decorative glyph. */
+  if (!with_icon || width < 160 || height < 32) return out;
   int side = height >= 44 ? 24 : 20;
-  if (width < 152) side = 20;
   out.icon = (UiDesignRect){10,(height-side)/2,side,side};
   out.text = (UiDesignRect){side+18,0,width-side-26,height};
   return out;
