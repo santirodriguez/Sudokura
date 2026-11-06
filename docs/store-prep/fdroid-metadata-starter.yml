@@ -20,6 +20,7 @@ Repo: https://github.com/santirodriguez/Sudokura.git
 # F-Droid is deferred to the future v1.4.1 candidate (proposed versionCode 2).
 # Do not invent its commit, version code approval, or a working build recipe.
 # Reuse the accepted Fastlane text, icon and six genuine Android screenshots.
+# Verify the public WebSite URL in an unauthenticated browser before submission.
 # Before submission: verify SPDX and dependency/asset licenses, pre-staged
 # source archives, font licenses, SDK/NDK/Gradle, exact new release commit,
 # productionRelease source-only/no-network build, fdroid lint/build, and
