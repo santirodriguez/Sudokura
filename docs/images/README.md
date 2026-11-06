@@ -17,12 +17,20 @@ A real Sudoku board is a better introduction than a wall of technical details. T
 
 <table>
 <tr>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png" alt="Sudokura Home in dark theme with Classic, Strikes, Time Attack and Daily Sudoku" width="150"></a><br><sub><strong>Home</strong></sub></td>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png" alt="Your journey Achieved tab showing a completed Classic puzzle and its result" width="150"></a><br><sub><strong>Achieved</strong></sub></td>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with an available Continue action" width="150"></a><br><sub><strong>Saved Games</strong></sub></td>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="150"></a><br><sub><strong>Classic</strong></sub></td>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Actual dated Daily Sudoku board with entered numbers and Save controls" width="150"></a><br><sub><strong>Daily</strong></sub></td>
-<td align="center" valign="top"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png" alt="Real Try again replay with entered numbers and Save controls" width="150"></a><br><sub><strong>Try again</strong></sub></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png" alt="Sudokura Home in dark theme with Classic, Strikes, Time Attack and Daily Sudoku" width="150"></a></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png" alt="Your journey Achieved tab showing a completed Classic puzzle and its result" width="150"></a></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with an available Continue action" width="150"></a></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="150"></a></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Actual dated Daily Sudoku board with entered numbers and Save controls" width="150"></a></td>
+<td align="center" valign="bottom"><a href="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png"><img src="../../fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png" alt="Real Try again replay with entered numbers and Save controls" width="150"></a></td>
+</tr>
+<tr>
+<td align="center"><strong>Home</strong></td>
+<td align="center"><strong>Achieved</strong></td>
+<td align="center"><strong>Saved&nbsp;Games</strong></td>
+<td align="center"><strong>Classic</strong></td>
+<td align="center"><strong>Daily</strong></td>
+<td align="center"><strong>Try&nbsp;again</strong></td>
 </tr>
 </table>
 

@@ -18,8 +18,8 @@
 
 ---
 
-## Download
-
+<a name="download"></a>
+<p align="center"><strong>Download</strong></p>
 <p align="center">
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows x64 — installer and portable EXE" height="28"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage" height="28"></a>
@@ -80,20 +80,24 @@ saved-game formats or the established recovery behavior.
 
 ### Android phone gallery
 
-<p align="center"><sub>Swipe sideways on smaller screens, and select any image to view it at full size.</sub></p>
-
 <table>
 <tr>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png" alt="Sudokura Home in dark theme with Classic, Strikes, Time Attack and Daily Sudoku" width="150"></a><br><sub><strong>Home</strong></sub></td>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png" alt="Your journey Achieved tab showing a completed Classic puzzle and its result" width="150"></a><br><sub><strong>Achieved</strong></sub></td>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with an available Continue action" width="150"></a><br><sub><strong>Saved Games</strong></sub></td>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="150"></a><br><sub><strong>Classic</strong></sub></td>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Actual dated Daily Sudoku board with entered numbers and Save controls" width="150"></a><br><sub><strong>Daily</strong></sub></td>
-<td align="center" valign="top"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png" alt="Real Try again replay with entered numbers and Save controls" width="150"></a><br><sub><strong>Try again</strong></sub></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/01-home-dark.png" alt="Sudokura Home in dark theme with Classic, Strikes, Time Attack and Daily Sudoku" width="150"></a></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/04-achieved-dark.png" alt="Your journey Achieved tab showing a completed Classic puzzle and its result" width="150"></a></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06-saved-games-light.png" alt="Saved Games in light theme with an available Continue action" width="150"></a></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/02-classic-dark.png" alt="Real Classic Sudoku board with notes, entered numbers and Save controls" width="150"></a></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/03-daily-dark.png" alt="Actual dated Daily Sudoku board with entered numbers and Save controls" width="150"></a></td>
+<td align="center" valign="bottom"><a href="fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/05-try-again-dark.png" alt="Real Try again replay with entered numbers and Save controls" width="150"></a></td>
+</tr>
+<tr>
+<td align="center"><strong>Home</strong></td>
+<td align="center"><strong>Achieved</strong></td>
+<td align="center"><strong>Saved&nbsp;Games</strong></td>
+<td align="center"><strong>Classic</strong></td>
+<td align="center"><strong>Daily</strong></td>
+<td align="center"><strong>Try&nbsp;again</strong></td>
 </tr>
 </table>
-
-<p align="center"><sub>Real Android gameplay and saved progress. <a href="docs/images/README.md#android-phone-gallery">Explore all six approved phone captures.</a></sub></p>
 
 ## Every attempt tells a story
 
@@ -174,8 +178,8 @@ More: [development](docs/DEVELOPMENT.md), [documentation](docs/README.md) and [b
 ## Support Sudokura
 
 <p align="center">
-  <a href="https://sudokura.cajapersonal.org/"><strong>sudokura.cajapersonal.org</strong></a><br>
-  <a href="https://cajapersonal.org/">By Caja Personal</a>
+  <a href="https://sudokura.cajapersonal.org/"><img src="https://img.shields.io/badge/Visit-Sudokura-789BE8?style=for-the-badge" alt="Visit the Sudokura website" height="34"></a>
+  <a href="https://cajapersonal.org/"><img src="https://img.shields.io/badge/Explore-Caja_Personal-343F57?style=for-the-badge" alt="Explore Caja Personal" height="34"></a>
 </p>
 
 <p align="center">
@@ -184,12 +188,6 @@ More: [development](docs/DEVELOPMENT.md), [documentation](docs/README.md) and [b
 
 <p align="center">
   <a href="https://cajapersonal.org/donate/"><img src="docs/images/donate.svg" alt="Support Sudokura — Donate" height="46"></a>
-</p>
-
-<p align="center">
-  <a href="https://cajapersonal.org/donate/">English</a> ·
-  <a href="https://cajapersonal.org/donaciones/">Español</a> ·
-  <a href="https://cajapersonal.org/donacions/">Català</a>
 </p>
 
 <p align="center">
