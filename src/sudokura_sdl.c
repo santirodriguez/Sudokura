@@ -24,7 +24,12 @@ static void ui_audio_control_cancel_interaction(void);
 #include "sudokura_sdl/02_font_discovery.inc"
 #include "sudokura_sdl/03_board_render.inc"
 #include "sudokura_sdl/04_screens.inc"
+/* Screen-by-screen adoption keeps unmigrated behavior unchanged. */
+static void app_render_existing_ui(Gfx *gfx, const Game *game, UI *ui);
+#define app_render_ui app_render_existing_ui
 #include "sudokura_sdl/ui_present.inc"
+#undef app_render_ui
+#include "sudokura_sdl/ui_design.inc"
 #include "sudokura_sdl/modal_ui.inc"
 #include "sudokura_sdl/games_ui.inc"
 #include "sudokura_sdl/audio_ui.inc"

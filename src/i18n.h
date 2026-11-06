@@ -251,4 +251,14 @@ typedef enum {
 const char *tr(Language language, TextKey key);
 const char *language_name(Language language);
 
+/* Public product credit, separate from retained source/license authorship. */
+static inline const char *tr_publisher_credit(Language language) {
+  static const char *const credits[LANG_COUNT] = {
+    "By Caja Personal · GPLv3",
+    "Por Caja Personal · GPLv3",
+    "Per Caja Personal · GPLv3"
+  };
+  return credits[(unsigned)language < LANG_COUNT ? language : LANG_EN];
+}
+
 #endif
