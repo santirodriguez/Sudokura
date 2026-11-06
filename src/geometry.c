@@ -289,10 +289,13 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   int links_h = 2*link_h + link_gap;
   int links_y = about_top + about_stack_h - links_h;
   int half=(about_w-link_gap)/2;
-  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
+    int right=i%2;
     g->about_links[i]=(GeoRect){
-        about_x+(i%2)*(half+link_gap),
-        links_y+(i/2)*(link_h+link_gap),half,link_h};
+        about_x+right*(half+link_gap),
+        links_y+(i/2)*(link_h+link_gap),
+        right ? about_w-half-link_gap : half,link_h};
+  }
   g->about_back=(GeoRect){about_x,g->back_button.y,about_w,link_h};
 
   /* Keep the cards readable when short desktops need a third action row. */
