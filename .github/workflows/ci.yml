@@ -77,10 +77,13 @@ jobs:
       SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
       SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
 
-  # The isolated UI branch needs an actual Android smoke build, but must
-  # never receive release signing secrets.
+  # Feature and final pre-merge UI candidates need source-exact Android debug
+  # builds, without passing release-signing secrets to these branches.
   android-ui-debug:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/unified-ui'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/feature/unified-ui' ||
+       github.ref == 'refs/heads/release-prep/1.4.0-unified-ui')
     uses: ./.github/workflows/android-preview.yml
     with:
       source_commit: ${{ github.sha }}

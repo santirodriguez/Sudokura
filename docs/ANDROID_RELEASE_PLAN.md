@@ -1,7 +1,7 @@
 # Sudokura: desktop evolution and Android release plan
 
 Status (2026-11-04): v1.4.0 implementation, signing and exact-source seven-file release-candidate bundle verified by cross-platform CI. This is a dated acceptance record, not a live publication indicator; see [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for current public availability. F-Droid and Google Play are separate distribution channels.
-Reviewed: 2026-11-04.
+Reviewed: 2026-11-06 (unified-design screenshot/copy amendment; earlier release evidence remains dated).
 Published baseline at the start of v1.4.0 work: `f7e8acb4a2a3fdfed9267d8862e8b30057710d7a` (`main` at the time and published tag `v1.3.9`). This is historical provenance, not a claim about the current release.
 Implementation specification: [v1.4.0 blueprint](V1.4.0_BLUEPRINT.md). Completed prototype contract: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
 Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.
@@ -10,7 +10,7 @@ Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), origin
 
 The original roadmap requirements and prototype observations below are retained with their release context. The [November 4 amendment](#release-acceptance-amendment--november-4-2026) supersedes earlier mandatory wording only for full manual TalkBack testing, extended performance measurements and further emulator debugging on the immediate preparation path. These remain unverified. Known crashes, data loss, signer/source/checksum integrity and unusable critical actions are not waived.
 
-The signed production candidate was accepted for gameplay, revised journey/dialog design, Try again, and Save followed by Android force stop/reopening with numbers and notes retained. Production identity is `org.cajapersonal.sudokura`; the direct APK uses the established app-signing certificate. Backup/device transfer remain disabled, and cross-store switching is not promised. The approved v1.4.0 desktop screenshot preserves the prior image bytes and accurately identifies its original provenance. Public copy was reviewed during the November 4 documentation freeze; actual merge, tag and publication are separately authorized and verified events.
+The signed production candidate was accepted for gameplay, revised journey/dialog design, Try again, and Save followed by Android force stop/reopening with numbers and notes retained. Production identity is `org.cajapersonal.sudokura`; the direct APK uses the established app-signing certificate. Backup/device transfer remain disabled, and cross-store switching is not promised. The November 4 documentation freeze approved reuse of an older screenshot at that time; the November 6 unified-design decision below supersedes that image selection. Current v1.4.0 copy and screenshots show the new interface; actual merge, tag and publication remain separately authorized and verified events.
 
 ## Outcome and constraints
 
@@ -149,4 +149,12 @@ The maintainer prioritizes completing v1.4.0 over further exploratory validation
 
 The signed production phone candidate was accepted for gameplay, revised journey/dialog design, Try again, and explicit Save followed by Android force stop and reopening with numbers/notes retained. The optional x86_64 16 KB emulator reached play, but its complete run remains unaccepted because of guest/system instability. No production ARM64 16 KB, exhaustive lifecycle matrix, measured performance, independent reproducibility or full TalkBack acceptance is inferred. Store submission and cross-store migration remain separate work.
 
-The pre-merge candidate handoff used the exact-source combined CI bundle: five applications and two technical files. This November 4 amendment itself granted no merge, tag, publication, credential or permission authority. The maintainer approved reusing the preceding desktop screenshot without altering its pixels or claiming a new capture. Final public-copy review was completed during the subsequent documentation freeze. A tag-triggered release rebuild must still be verified against its own exact source and uploaded files.
+The pre-merge candidate handoff used the exact-source combined CI bundle: five applications and two technical files. This November 4 amendment itself granted no merge, tag, publication, credential or permission authority. The maintainer then approved reusing the preceding desktop screenshot without altering its pixels or claiming a new capture. That was the November 4 choice, now superseded by the new approved capture and copy in the November 6 amendment below. A tag-triggered release rebuild must still be verified against its own exact source and uploaded files.
+
+## Unified-design screenshot and release-scope amendment — November 6, 2026
+
+The maintainer explicitly chose to include the unified visual redesign across Home, About, gameplay, auxiliary screens and dialogs in **Sudokura v1.4.0**. General real-device Android and Linux visual/functional smoke acceptance was reported for the implemented UI; specialized compatibility and upgrade checks retain their documented status and limitations.
+
+The November 4 decision to reuse the v1.3.9 desktop screenshot is **superseded**. The approved current desktop image `docs/images/sudokura-v1.4.0.png` is a genuine 1024 × 720 capture of the redesigned Linux app. Six approved, genuine 1080 × 1920 English Android emulator screenshots replace the earlier phone-image set at the canonical Fastlane paths; five use the dark theme and Saved Games uses the light theme. The images were reviewed with the updated README, gallery, changelog and release notes. Historical screenshots are not replaced.
+
+This is a presentation and documentation amendment, not evidence of production release readiness. In particular, the current debug APK acceptance does not replace source-exact production signing, identity/update safety, required CI/package validation, or the separate merge/tag/publication gates. The November 4 scope of deferral for extended TalkBack, performance and 16 KiB emulator troubleshooting remains as documented; all unverified behavior must be disclosed rather than claimed as passed. F-Droid and Google Play remain separate future channels.

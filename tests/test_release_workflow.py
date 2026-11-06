@@ -14,6 +14,7 @@ assert "github.head_ref == 'release/1.4.0'" in android_gate
 debug = ci['jobs']['android-ui-debug']
 assert "github.event_name == 'push'" in debug['if']
 assert "refs/heads/feature/unified-ui" in debug['if']
+assert "refs/heads/release-prep/1.4.0-unified-ui" in debug['if']
 assert debug['uses'] == './.github/workflows/android-preview.yml'
 assert debug['with']['source_commit'] == '${{ github.sha }}'
 assert 'secrets' not in debug
