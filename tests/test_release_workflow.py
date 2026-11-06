@@ -27,6 +27,13 @@ assert 'timeout --signal=TERM --kill-after=10s 480s' in install['run']
 assert 'install -y --no-install-recommends' in install['run']
 assert 'binutils libfuse2t64 xvfb weston dbus-x11 gdb strace' in install['run']
 assert 'validate-linux-runtime.sh' in ubuntu['steps'][-2]['run']
+release_ubuntu = release['jobs']['linux-ubuntu24']
+assert release_ubuntu['timeout-minutes'] == '15'
+release_install = next(s for s in release_ubuntu['steps']
+                       if s.get('name') == 'Install Ubuntu runtime validation dependencies')
+assert release_install['run'] == install['run']
+assert 'validate-linux-runtime.sh' in release_ubuntu['steps'][-2]['run']
+assert 'ubuntu24 required' in release_ubuntu['steps'][-2]['run']
 assert release['jobs']['android']['with']['require_signed'] == 'true'
 assert 'needs.version.outputs.commit' in release['jobs']['android']['with']['source_commit']
 assert 'android' in release['jobs']['release-bundle']['needs']
