@@ -64,7 +64,25 @@ int main(void) {
       }
     }
   }
+  /* Actual 412dp mobile Home: a full Catalan mode label should be one line,
+     not an awkward trailing single character from word wrapping. */
+  AppGeometry home;
+  assert(geometry_compute_mobile(412,892,GEOMETRY_MODE_CLASSIC,&home));
+  GeoRect control=home.home_mode[2];
+  UiDesignLabel label=ui_design_label_layout(control.w,control.h,false);
+  int one_line=0;
+  const char *mode=tr(LANG_CA,T_TIME_ATTACK);
+  for(int size=16;size>=13;--size) {
+    TTF_Font *face=TTF_OpenFont(font,size);
+    assert(face);
+    int w=0,h=0;
+    if(TTF_SizeUTF8(face,mode,&w,&h)==0 &&
+       w<=label.text.w-8 && h<=control.h-10)one_line=size;
+    TTF_CloseFont(face);
+    if(one_line)break;
+  }
+  assert(one_line>=13);
   TTF_Quit();
-  puts("Unified UI real SDL_ttf fit: About links, pressed state, EN/ES/CA and credits: PASS");
+  puts("Unified UI real SDL_ttf fit: About links, one-line Catalan Home mode, pressed state, EN/ES/CA and credits: PASS");
   return 0;
 }

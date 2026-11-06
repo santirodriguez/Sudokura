@@ -77,7 +77,10 @@ static void design_button(Gfx *gfx,UiDesignTheme t,SDL_Rect rect,
     UiDesignColor subdued=role==UI_DESIGN_PRIMARY ? style.text : t.muted;
     if(disabled)subdued=t.disabled;
     (void)design_fit(gfx,detail,subdued,subtitle,13,10,true);
-  } else {
+  } else if (!draw_fitted_text(gfx,label,ui_design_sdl_color(style.text),
+                               text,preferred,minimum)) {
+    /* Single-line fit prevents awkward mid-word wraps on segmented controls.
+       Only longer labels that cannot fit legibly fall back to two lines. */
     (void)design_fit(gfx,label,style.text,text,preferred,minimum,true);
   }
 }
