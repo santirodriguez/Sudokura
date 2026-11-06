@@ -3,7 +3,7 @@
 #ifdef main
 #undef main
 #endif
-#include "sudokura_sdl/ui_design_draw.h"
+#include "sudokura_sdl/ui_action_icons.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,12 +19,20 @@ static int changed_pixels(const unsigned char *pixels,int pitch,int scale,
     }
   return count;
 }
+static void check_glyph(const unsigned char *pixels,int pitch,int scale,
+                         int cell,int row_offset,UiDesignColor bg) {
+  SDL_Rect box={cell%6*64+20,(cell/6+row_offset)*64+20,24,24};
+  int changed=changed_pixels(pixels,pitch,scale,box,bg);
+  assert(changed>24*scale*scale);
+  assert(changed<24*24*scale*scale);
+  SDL_Rect margin={cell%6*64+4,(cell/6+row_offset)*64+4,12,12};
+  assert(changed_pixels(pixels,pitch,scale,margin,bg)==0);
+}
 int main(int argc,char **argv) {
-  enum { WIDTH=384,HEIGHT=320 };
+  enum { WIDTH=384,HEIGHT=464 };
   assert(SDL_Init(0)==0);
   for(int dark=0;dark<2;++dark)for(int scale=1;scale<=3;++scale) {
     UiDesignTheme t=ui_design_theme(dark!=0);
-    /* Match the opaque display target; retain alpha only for source coverage. */
     SDL_Surface *surface=SDL_CreateRGBSurfaceWithFormat(0,WIDTH*scale,HEIGHT*scale,
                                                        32,SDL_PIXELFORMAT_RGB888);
     assert(surface);
@@ -39,10 +47,15 @@ int main(int argc,char **argv) {
       SDL_Rect box={cell%6*64+20,cell/6*64+20,24,24};
       ui_design_icon(renderer,box,(UiDesignIcon)icon,t.text);
     }
+    for(int icon=1;icon<UI_ACTION_COUNT;++icon) {
+      int cell=icon-1;
+      SDL_Rect box={cell%6*64+20,(cell/6+3)*64+20,24,24};
+      ui_action_icon(renderer,box,(UiActionIcon)icon,t.text);
+    }
     for(int i=0;i<4;++i) {
       UiDesignState state={i==1,i==2,false,i==3};
       UiDesignButton b=ui_design_button_style(t,UI_DESIGN_PRIMARY,state);
-      SDL_Rect rect={8+i*94,224,86,48};
+      SDL_Rect rect={8+i*94,400,86,48};
       ui_design_panel(renderer,rect,12,b.top,b.bottom,b.border);
       ui_design_icon(renderer,(SDL_Rect){rect.x+31,rect.y+12,24,24},
                      UI_DESIGN_ICON_HEART,b.text);
@@ -52,15 +65,10 @@ int main(int argc,char **argv) {
     unsigned char *pixels=malloc((size_t)pitch*HEIGHT*scale);
     assert(pixels);
     assert(SDL_RenderReadPixels(renderer,NULL,SDL_PIXELFORMAT_RGBA32,pixels,pitch)==0);
-    for(int icon=1;icon<UI_DESIGN_ICON_COUNT;++icon) {
-      int cell=icon-1;
-      SDL_Rect box={cell%6*64+20,cell/6*64+20,24,24};
-      int changed=changed_pixels(pixels,pitch,scale,box,t.background_bottom);
-      assert(changed>24*scale*scale);
-      assert(changed<24*24*scale*scale);
-      SDL_Rect margin={cell%6*64+4,cell/6*64+4,12,12};
-      assert(changed_pixels(pixels,pitch,scale,margin,t.background_bottom)==0);
-    }
+    for(int icon=1;icon<UI_DESIGN_ICON_COUNT;++icon)
+      check_glyph(pixels,pitch,scale,icon-1,0,t.background_bottom);
+    for(int icon=1;icon<UI_ACTION_COUNT;++icon)
+      check_glyph(pixels,pitch,scale,icon-1,3,t.background_bottom);
     if(argc==2) {
       char file[256];
       int length=snprintf(file,sizeof(file),"%s-%s-%dx.bmp",argv[1],dark?"dark":"light",scale);
@@ -70,6 +78,6 @@ int main(int argc,char **argv) {
     free(pixels);SDL_DestroyRenderer(renderer);SDL_FreeSurface(surface);
   }
   SDL_Quit();
-  puts("Unified UI vector icons/surfaces, software renderer, light/dark, 1x/2x/3x: PASS");
+  puts("Unified system/action icons and surfaces, software renderer, light/dark, 1x/2x/3x: PASS");
   return 0;
 }

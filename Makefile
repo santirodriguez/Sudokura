@@ -139,15 +139,15 @@ $(GENERATED_UI): assets/branding/source/sudokura-512.png assets/branding/source/
 clean:
 	rm -f sudokura tests/test_accessibility tests/test_app_modal tests/test_library_paging tests/test_pointer_capture tests/test_touch_input tests/test_android_viewport tests/test_mobile_geometry tests/test_android_lifecycle tests/test_main tests/test_app tests/test_clock tests/test_game_library tests/test_game_migration tests/test_session tests/test_store tests/test_save_policy tests/test_profile tests/test_live_save tests/test_human tests/test_human_calibration tests/test_generator_quality tests/test_seed tests/test_deterministic_parity tests/test_progress tests/test_geometry_ui tests/test_desktop tests/test_url_launcher tests/test_text_fit tests/test_audio tests/test_input tests/test_i18n tests/test_interaction
 
-# Shared visual primitives and the first migrated screen painters.
-UI_DESIGN_HEADERS = src/ui_design.h src/sudokura_sdl/ui_design_draw.h
-sudokura: $(UI_DESIGN_HEADERS) src/sudokura_sdl/ui_design.inc
+# Shared visual primitives and all screen painters.
+UI_DESIGN_HEADERS = src/ui_design.h src/sudokura_sdl/ui_design_draw.h src/sudokura_sdl/ui_action_icons.h
+sudokura: $(UI_DESIGN_HEADERS) src/sudokura_sdl/ui_design.inc src/sudokura_sdl/ui_shared_style.inc src/sudokura_sdl/ui_rollout.inc
 
 tests/test_ui_design: tests/test_ui_design.c src/ui_design.h src/i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_ui_design.c -o $@ -lm
 tests/test_ui_design_render: tests/test_ui_design_render.c $(UI_DESIGN_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_ui_design_render.c -o $@ $(SDL_TEST_LIBS) -lm
-tests/test_ui_design_text: tests/test_ui_design_text.c src/ui_design.h src/geometry.c src/geometry.h src/i18n.c src/i18n.h
+tests/test_ui_design_text: tests/test_ui_design_text.c $(UI_DESIGN_HEADERS) src/geometry.c src/geometry.h src/i18n.c src/i18n.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SDL_TEST_CFLAGS) tests/test_ui_design_text.c src/geometry.c src/i18n.c -o $@ $(SDL_TEST_LIBS)
 .PHONY: test-ui-design test-ui-design-render clean-ui-design
 test-ui-design: tests/test_ui_design
