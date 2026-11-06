@@ -21,7 +21,7 @@ int main(void) {
       {600, 640}, {639, 640}, {640, 640},
   };
 
-  assert(GEOMETRY_ABOUT_LINK_COUNT == 5);
+  assert(GEOMETRY_ABOUT_LINK_COUNT == 4);
   assert(PLAY_ACTION_COUNT == GEOMETRY_ACTION_COUNT);
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     int width = sizes[s][0], height = sizes[s][1];
@@ -190,15 +190,21 @@ int main(void) {
                g.play_controls[PLAY_CONTROL_SAVE].y);
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
-        assert(g.about_links[4].y > g.about_links[3].y);
-        assert(g.about_links[4].x == g.about_logo.x);
-        assert(g.about_links[4].w == g.about_logo.w);
+        assert(g.about_links[2].y > g.about_links[0].y);
+        assert(g.about_back.x == g.about_links[0].x);
+        assert(g.about_back.w == g.about_links[1].x+
+               g.about_links[1].w-g.about_links[0].x);
+        assert(g.about_back.h == g.about_links[0].h);
+        assert(g.about_back.y > g.about_links[3].y+g.about_links[3].h);
       } else {
         assert(g.about_links[0].y == g.about_links[1].y);
         assert(g.about_links[2].y == g.about_links[3].y);
-        assert(g.about_links[4].y > g.about_links[3].y);
-        assert(g.about_links[4].x == g.about_logo.x);
-        assert(g.about_links[4].w == g.about_logo.w);
+        assert(g.about_links[2].y > g.about_links[0].y);
+        assert(g.about_back.x == g.about_links[0].x);
+        assert(g.about_back.w == g.about_links[1].x+
+               g.about_links[1].w-g.about_links[0].x);
+        assert(g.about_back.h == g.about_links[0].h);
+        assert(g.about_back.y > g.about_links[3].y+g.about_links[3].h);
         /* Wordmark, title and controls use separate vertical regions. */
         assert(g.play_language.h == 1);
         assert(g.play_title.h >= 32);

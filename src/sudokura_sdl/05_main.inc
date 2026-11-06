@@ -1198,12 +1198,11 @@ static void home_activate(Persistence *p, Game *game, UI *ui, Gfx *g,
 }
 
 static const char *about_url(int index) {
-  static const char *const urls[3] = {
-      "https://github.com/santirodriguez",
+  static const char *const urls[2] = {
       "https://github.com/santirodriguez/Sudokura",
       "https://sudokura.cajapersonal.org/",
   };
-  return index >= 0 && index < 3 ? urls[index] : NULL;
+  return index >= 0 && index < 2 ? urls[index] : NULL;
 }
 
 static void open_about_url(Gfx *g, const Game *game, UI *ui, int index) {
@@ -1226,9 +1225,9 @@ static bool activate_info_focus(Persistence*p,const Game*game,UI*ui,Gfx*g){
   if(info_keyboard_focus==INFO_FOCUS_BACK){ui_button_click();return_from_info(p,game,ui);return true;}
   if(ui->screen!=SCR_ABOUT)return false;
   int link=info_keyboard_focus-INFO_FOCUS_LINK_0;
-  if(link>=0&&link<3){open_about_url(g,game,ui,link);return true;}
-  if(link==3){ui_open_url(ui_support_url(ui->language));return true;}
-  if(link==4){ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);return true;}
+  if(link>=0&&link<2){open_about_url(g,game,ui,link);return true;}
+  if(link==2){ui_open_url(ui_support_url(ui->language));return true;}
+  if(link==3){ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);return true;}
   return false;
 }
 static void activate_result_focus(Persistence*p,Game*game,UI*ui,Gfx*g){
@@ -4854,7 +4853,7 @@ int main(int argc, char **argv) {
               focus_rect=ui_settings_focus_rect(p,settings_keyboard_focus);break;
             }
             case REVIEW_ABOUT:
-              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_0;focus="about-github";
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_0;focus="about-repository";
               focus_rect=sdl_rect(geometry.about_links[0]);break;
           }
 
@@ -4960,12 +4959,12 @@ int main(int argc, char **argv) {
               ui_audio_control_cancel_interaction();
               app_frame(&g,&game,&ui);
             }else{
-              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_3;
+              ui.screen=SCR_ABOUT;info_keyboard_focus=INFO_FOCUS_LINK_2;
               AppGeometry geometry;
               if(!get_geometry(&g,&ui,&geometry)){
                 fclose(manifest);app_shutdown(&g);return 1;
               }
-              focus="about-support";focus_rect=sdl_rect(geometry.about_links[3]);
+              focus="about-support";focus_rect=sdl_rect(geometry.about_links[2]);
             }
 
             if(strcmp(audit_state,"dialog-prep"))
@@ -5356,8 +5355,7 @@ int main(int argc, char **argv) {
               open_about_url(&g, &game, &ui, 0);
             else if (k == SDLK_2 || k == SDLK_KP_2)
               open_about_url(&g, &game, &ui, 1);
-            else if (k == SDLK_3 || k == SDLK_KP_3)
-              open_about_url(&g, &game, &ui, 2);
+
           }
           continue;
         }
@@ -5683,7 +5681,7 @@ int main(int argc, char **argv) {
           }
           if (ui.screen == SCR_ABOUT) {
             bool opened = false;
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 2; ++i) {
               if (point_in(ui_info_link_rect(&g,&ui,i), x, y)) {
                 info_keyboard_focus=INFO_FOCUS_LINK_0+i;
                 open_about_url(&g, &game, &ui, i);

@@ -71,20 +71,21 @@ bool geometry_mobile_info(int width,int height,bool about,GeometryInfo *out) {
   g.up=(GeoRect){x+body_w-102,footer,48,48};
   g.down=(GeoRect){x+body_w-48,footer,48,48};
   if (columns) {
-    /* Four equal links plus a full-width Privacy row. */
+    /* Four actions in the right panel, with Back aligned below. */
     int top=height<360 ? 56 : 60,step=54;
     int column_w=(w-body_w-18)/2;
     int link_x=x+body_w+12;
-    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
       g.links[i]=(GeoRect){link_x+(i%2)*(column_w+6),
                            top+(i/2)*step,column_w,48};
-    g.links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){
-        link_x,top+2*step,2*column_w+6,48};
+    g.back=(GeoRect){link_x,footer,2*column_w+6,48};
   } else if (about) {
-    int y=footer-162,half=(w-6)/2;
-    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
+    /* Scroll arrows occupy the reserved row above the link grid. */
+    int y=footer-108,half=(w-6)/2;
+    for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
       g.links[i]=(GeoRect){x+(i%2)*(half+6),y+(i/2)*54,half,48};
-    g.links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){x,y+108,w,48};
+    g.up.y=g.down.y=footer-162;
+    g.back=(GeoRect){x,footer,w,48};
   }
   *out=g;return true;
 }
@@ -280,18 +281,16 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
                      (compact_about ? 72 : (xl ? 96 : 80)));
   g->about_logo = (GeoRect){about_x, about_top, about_w, about_logo_h};
 
-  int link_h = portrait ? 36 : (short_desktop ? 28 :
-               (compact_about ? 36 : (xl ? 46 : 42)));
+  int link_h = back_h;
   int link_gap = portrait || short_desktop ? 6 : 8;
-  int links_h = 3*link_h + 2*link_gap;
+  int links_h = 2*link_h + link_gap;
   int links_y = about_top + about_stack_h - links_h;
   int half=(about_w-link_gap)/2;
-  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT-1;++i)
+  for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
     g->about_links[i]=(GeoRect){
         about_x+(i%2)*(half+link_gap),
         links_y+(i/2)*(link_h+link_gap),half,link_h};
-  g->about_links[GEOMETRY_ABOUT_LINK_COUNT-1]=(GeoRect){
-      about_x,links_y+2*(link_h+link_gap),about_w,link_h};
+  g->about_back=(GeoRect){about_x,g->back_button.y,about_w,link_h};
 
   /* Keep the cards readable when short desktops need a third action row. */
   int inner_gap = short_desktop ? 4 : (compact_about ? 6 : 8);
@@ -547,7 +546,8 @@ GeometryStyle geometry_style(const AppGeometry *g, int width, int height) {
 static bool mobile_shell_valid(const AppGeometry *g,int width,int height) {
   const GeoRect fixed[]={g->screen_language,g->home_logo,g->home_mode_label,
       g->home_difficulty_label,g->info_heading,g->info_body,g->back_button,
-      g->about_logo,g->about_body,g->about_study_reference,g->end_logo,g->end_heading,
+      g->about_logo,g->about_body,g->about_study_reference,g->about_back,
+       g->end_logo,g->end_heading,
       g->end_summary,g->pause_logo,g->pause_heading};
   for (unsigned i=0;i<sizeof(fixed)/sizeof(fixed[0]);++i)
     if (!geometry_rect_in_bounds(fixed[i],width,height)) return false;
@@ -622,6 +622,7 @@ bool geometry_play_valid(const AppGeometry *g, int width, int height) {
       !geometry_rect_in_bounds(g->info_body, width, height) ||
       !geometry_rect_in_bounds(g->back_button, width, height) ||
       !geometry_rect_in_bounds(g->about_logo, width, height) ||
+      !geometry_rect_in_bounds(g->about_back, width, height) ||
       !geometry_rect_in_bounds(g->about_body, width, height) ||
       !geometry_rect_in_bounds(g->about_meta, width, height) ||
       !geometry_rect_in_bounds(g->about_fact, width, height) ||
@@ -1392,6 +1393,7 @@ bool geometry_compute_mobile(int width, int height, GeometryMode mode,
     g->about_logo=about.heading;g->about_body=about.body;
     /* Mobile citation scrolls with the About text, not with the buttons. */
     g->about_study_reference=about.body;
+    g->about_back=about.back;
     for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
       g->about_links[i]=about.links[i];
     mobile_result_pause(width,height,g);

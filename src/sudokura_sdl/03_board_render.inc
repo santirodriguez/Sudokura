@@ -209,7 +209,6 @@ static int home_focus=HOME_FOCUS_NEW;
 enum{
   INFO_FOCUS_BACK=0,INFO_FOCUS_LINK_0,
   INFO_FOCUS_LINK_1,INFO_FOCUS_LINK_2,INFO_FOCUS_LINK_3,
-  INFO_FOCUS_LINK_4,
   INFO_FOCUS_COUNT
 };
 static int info_keyboard_focus=INFO_FOCUS_BACK;
@@ -339,7 +338,9 @@ static SDL_Rect back_rect(const Gfx *g,const UI *ui) {
   GeometryInfo mobile;
   if (ui_mobile_info_layout(g,ui,&mobile)) return sdl_rect(mobile.back);
   AppGeometry a;
-  return get_geometry(g,ui,&a) ? sdl_rect(a.back_button) : (SDL_Rect){0,0,0,0};
+  return get_geometry(g,ui,&a) ?
+      sdl_rect(ui && ui->screen==SCR_ABOUT ? a.about_back : a.back_button) :
+      (SDL_Rect){0,0,0,0};
 }
 static void draw_back_button(Gfx*g,const UI*ui,Theme th,bool focused){SDL_Rect r=back_rect(g,ui);int mx=0,my=0;Uint32 mouse=SDL_GetMouseState(&mx,&my);bool hover=point_in(r,mx,my),pressed=hover&&(mouse&SDL_BUTTON(SDL_BUTTON_LEFT));SDL_Rect paint=r;if(pressed&&paint.h>4){paint.y+=2;paint.h-=2;}AppGeometry a;int preferred=20;if(get_geometry(g,ui,&a))preferred=geometry_font_sizes(&a,g->width,g->height).control;draw_round_rect(g->ren,paint,7,pressed?th.sel:hover?th.hover:th.btn);(void)draw_fitted_text(g,tr(ui->language,T_BACK),th.btnfg,paint,preferred,10);if(focused)draw_focus_ring(g->ren,r,th.sel_outline);}
 

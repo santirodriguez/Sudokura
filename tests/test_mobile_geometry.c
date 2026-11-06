@@ -214,8 +214,11 @@ static void check_auxiliary(int w,int h) {
         controls[count++]=g.links[i];
       assert(g.links[0].y==g.links[1].y);
       assert(g.links[2].y==g.links[3].y);
-      assert(g.links[4].y>g.links[3].y);
-      assert(g.links[4].w>=2*g.links[0].w);
+      assert(g.links[2].y>g.links[0].y);
+      assert(g.back.x==g.links[0].x);
+      assert(g.back.w==g.links[1].x+g.links[1].w-g.links[0].x);
+      assert(g.back.h==g.links[0].h);
+      assert(g.back.y>=g.links[3].y+g.links[3].h);
     }
     for (int i=0;i<count;++i) {
       assert(controls[i].w>=48 && controls[i].h>=48);

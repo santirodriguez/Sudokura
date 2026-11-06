@@ -112,7 +112,8 @@ static SDL_Rect polish_quiet_face(Gfx *gfx, Theme theme, SDL_Rect rect,
 /* Lightweight line glyphs share the existing SDL renderer; no image library. */
 typedef enum {
   UI_GLYPH_FOLDER, UI_GLYPH_SAVE, UI_GLYPH_PLAY, UI_GLYPH_BACK,
-  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE, UI_GLYPH_TROPHY
+  UI_GLYPH_REPLAY, UI_GLYPH_TRASH, UI_GLYPH_EYE, UI_GLYPH_TROPHY,
+  UI_GLYPH_REPO, UI_GLYPH_GLOBE, UI_GLYPH_HEART, UI_GLYPH_SHIELD
 } UiGlyph;
 
 static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
@@ -169,6 +170,42 @@ static void ui_draw_glyph(SDL_Renderer *renderer, SDL_Rect box, UiGlyph glyph,
     draw_line(renderer,end_x,y + side/2,x + side/2,end_y - 2,color);
     draw_line(renderer,x + side/2,end_y - 2,x + 2,y + side/2,color);
     draw_rect(renderer,x + side/2 - 1,y + side/2 - 1,3,3,color);
+  } else if (glyph == UI_GLYPH_REPO) {
+    draw_line(renderer,x+4,y+4,x+4,end_y-3,color);
+    draw_line(renderer,x+4,y+side/2,end_x-3,y+side/2,color);
+    draw_line(renderer,end_x-3,y+4,end_x-3,y+side/2,color);
+    draw_rect(renderer,x+2,y+2,5,5,color);
+    draw_rect(renderer,x+2,end_y-5,5,5,color);
+    draw_rect(renderer,end_x-5,y+2,5,5,color);
+  } else if (glyph == UI_GLYPH_GLOBE) {
+    draw_line(renderer,x+side/2,y+1,x+side-3,y+4,color);
+    draw_line(renderer,x+side-3,y+4,end_x,y+side/2,color);
+    draw_line(renderer,end_x,y+side/2,x+side-3,end_y-2,color);
+    draw_line(renderer,x+side-3,end_y-2,x+side/2,end_y,color);
+    draw_line(renderer,x+side/2,end_y,x+2,end_y-2,color);
+    draw_line(renderer,x+2,end_y-2,x,y+side/2,color);
+    draw_line(renderer,x,y+side/2,x+2,y+4,color);
+    draw_line(renderer,x+2,y+4,x+side/2,y+1,color);
+    draw_line(renderer,x+1,y+side/2,end_x,y+side/2,color);
+    draw_line(renderer,x+side/2,y+1,x+side/2,end_y,color);
+  } else if (glyph == UI_GLYPH_HEART) {
+    draw_line(renderer,x+side/2,y+side-2,x+2,y+side/2,color);
+    draw_line(renderer,x+2,y+side/2,x+1,y+5,color);
+    draw_line(renderer,x+1,y+5,x+4,y+2,color);
+    draw_line(renderer,x+4,y+2,x+side/2,y+5,color);
+    draw_line(renderer,x+side/2,y+5,x+side-5,y+2,color);
+    draw_line(renderer,x+side-5,y+2,x+side-2,y+5,color);
+    draw_line(renderer,x+side-2,y+5,x+side-3,y+side/2,color);
+    draw_line(renderer,x+side-3,y+side/2,x+side/2,y+side-2,color);
+  } else if (glyph == UI_GLYPH_SHIELD) {
+    draw_line(renderer,x+side/2,y+1,x+side-3,y+4,color);
+    draw_line(renderer,x+side-3,y+4,x+side-4,y+side-6,color);
+    draw_line(renderer,x+side-4,y+side-6,x+side/2,end_y,color);
+    draw_line(renderer,x+side/2,end_y,x+3,y+side-6,color);
+    draw_line(renderer,x+3,y+side-6,x+2,y+4,color);
+    draw_line(renderer,x+2,y+4,x+side/2,y+1,color);
+    draw_line(renderer,x+5,y+side/2,x+side/2-1,y+side/2+3,color);
+    draw_line(renderer,x+side/2-1,y+side/2+3,x+side-5,y+6,color);
   }
 }
 
@@ -237,6 +274,45 @@ static bool polish_draw_wrapped_fit(Gfx *gfx, const char *text, SDL_Color color,
       visible_w, visible_h};
   SDL_RenderCopy(gfx->ren, texture, &source, &destination);
   return true;
+}
+
+/* About uses consistent outlined controls and native SDL line icons. */
+static void polish_about_action(Gfx *gfx, Theme theme, SDL_Rect rect,
+                                const char *label, UiGlyph glyph,
+                                bool mobile, bool secondary, int preferred) {
+  int mx=0,my=0;
+  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  bool hover=point_in(rect,mx,my);
+  SDL_Rect face=polish_button_face(gfx,theme,rect,
+      hover ? theme.hover : (secondary ? theme.palette_bg : theme.btn),
+      hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
+  SDL_Rect icon,text_rect;
+  int side=mobile ? 16 : 18;
+  if (mobile && face.w < 150) {
+    /* Preserve two-line labels in the shortest landscape controls. */
+    side=13;
+    icon=(SDL_Rect){face.x+4,face.y+(face.h-side)/2,side,side};
+    text_rect=(SDL_Rect){face.x+20,face.y,face.w-24,face.h};
+  } else {
+    int inset=mobile ? 10 : 14;
+    icon=(SDL_Rect){face.x+inset,face.y+(face.h-side)/2,side,side};
+    text_rect=(SDL_Rect){face.x+inset+side+6,face.y,
+                         face.w-2*inset-side-6,face.h};
+  }
+  ui_draw_glyph(gfx->ren,icon,glyph,theme.btnfg);
+  if (mobile)
+    (void)polish_draw_wrapped_fit(gfx,label,theme.btnfg,text_rect,17,13,true);
+  else
+    (void)draw_fitted_text(gfx,label,theme.btnfg,text_rect,preferred,10);
+}
+
+static void polish_about_back(Gfx *gfx, UI *ui, Theme theme,
+                              bool mobile, int preferred) {
+  SDL_Rect rect=back_rect(gfx,ui);
+  polish_about_action(gfx,theme,rect,tr(ui->language,T_BACK),
+                      UI_GLYPH_BACK,mobile,true,preferred);
+  if (info_keyboard_focus==INFO_FOCUS_BACK)
+    draw_focus_ring(gfx->ren,rect,theme.sel_outline);
 }
 
 static int polish_home_bottom(const AppGeometry *geometry) {
@@ -555,24 +631,18 @@ static void polish_render_mobile_about(Gfx *gfx,UI *ui,GeometryInfo layout) {
                                heights[i],help_scroll_px);
   }
   SDL_RenderSetClipRect(gfx->ren,previous.w||previous.h ? &previous : NULL);
-  const TextKey keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT,
-                        T_PRIVACY_POLICY};
-  int mx=0,my=0;
-  Uint32 mouse=SDL_GetMouseState(&mx,&my);
+  const TextKey keys[]={T_REPOSITORY,T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
+  const UiGlyph glyphs[]={UI_GLYPH_REPO,UI_GLYPH_GLOBE,
+                          UI_GLYPH_HEART,UI_GLYPH_SHIELD};
   for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i) {
     SDL_Rect r=sdl_rect(layout.links[i]);
-    bool hover=point_in(r,mx,my);
-    SDL_Color fill=i==GEOMETRY_ABOUT_LINK_COUNT-1 ? theme.palette_bg : theme.btn;
-    SDL_Rect face=polish_button_face(gfx,theme,r,hover ? theme.hover : fill,
-        hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)),false);
-    face.x+=6;face.w-=12;
-    (void)polish_draw_wrapped_fit(gfx,tr(ui->language,keys[i]),theme.btnfg,
-                                  face,17,13,true);
+    polish_about_action(gfx,theme,r,tr(ui->language,keys[i]),
+                        glyphs[i],true,false,17);
     int focus=INFO_FOCUS_LINK_0+i;
     if (info_keyboard_focus==focus) draw_focus_ring(gfx->ren,r,theme.sel_outline);
   }
   draw_info_scroll_controls(gfx,ui,theme);
-  draw_back_button(gfx,ui,theme,info_keyboard_focus==INFO_FOCUS_BACK);
+  polish_about_back(gfx,ui,theme,true,17);
 }
 
 static void polish_render_about(Gfx *gfx, UI *ui) {
@@ -645,8 +715,6 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
     (void)polish_draw_wrapped_fit(gfx, tr(ui->language, T_ABOUT_STUDY),
                                   theme.dim, study_copy, fonts.help, 10, false);
 
-  int mx = 0, my = 0;
-  Uint32 mouse = SDL_GetMouseState(&mx, &my);
   (void)draw_fitted_text(gfx,tr(ui->language,T_ABOUT_STUDY_REFERENCE),
                           theme.dim,study_reference,
                           fonts.help>13 ? fonts.help-2 : fonts.help,11);
@@ -662,22 +730,18 @@ static void polish_render_about(Gfx *gfx, UI *ui) {
                          music, fonts.help, 10);
 
   const TextKey link_keys[GEOMETRY_ABOUT_LINK_COUNT] = {
-      T_GITHUB, T_REPOSITORY, T_WEBSITE, T_SUPPORT, T_PRIVACY_POLICY};
+      T_REPOSITORY, T_WEBSITE, T_SUPPORT, T_PRIVACY_POLICY};
+  const UiGlyph glyphs[GEOMETRY_ABOUT_LINK_COUNT] = {
+      UI_GLYPH_REPO, UI_GLYPH_GLOBE, UI_GLYPH_HEART, UI_GLYPH_SHIELD};
   for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i) {
     SDL_Rect rect = sdl_rect(geometry.about_links[i]);
-    bool hover = point_in(rect, mx, my);
-    bool pressed = hover && (mouse & SDL_BUTTON(SDL_BUTTON_LEFT));
-    SDL_Color fill=i==GEOMETRY_ABOUT_LINK_COUNT-1 ?
-        theme.palette_bg : theme.btn;
-    SDL_Rect face = polish_button_face(
-        gfx, theme, rect, hover ? theme.hover : fill, pressed, false);
-    (void)draw_fitted_text(gfx,tr(ui->language,link_keys[i]),theme.btnfg,
-                           face,fonts.control,10);
+    polish_about_action(gfx,theme,rect,tr(ui->language,link_keys[i]),
+                        glyphs[i],false,false,fonts.control);
     if(info_keyboard_focus==INFO_FOCUS_LINK_0+i)
       draw_focus_ring(gfx->ren,rect,theme.sel_outline);
   }
 
-  draw_back_button(gfx, ui, theme, info_keyboard_focus==INFO_FOCUS_BACK);
+  polish_about_back(gfx,ui,theme,false,fonts.control);
 }
 
 static GameGenerationResult start_new_session(

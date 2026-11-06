@@ -215,8 +215,7 @@ static void ui_a11y_build_body(AccessibilitySnapshot *s,const Persistence *p,
         ui_a11y_text(s,g,A11Y_INFO_BODY+span->id,span->rect,span->text,scroll);
       }
     if (ui->screen==SCR_ABOUT) {
-      const TextKey keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,T_SUPPORT,
-                            T_PRIVACY_POLICY};
+      const TextKey keys[]={T_REPOSITORY,T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
       for (int i=0;i<GEOMETRY_ABOUT_LINK_COUNT;++i)
         ADD(A11Y_INFO+1+i,ui_info_link_rect(g,ui,i),keys[i],true,false);
     }

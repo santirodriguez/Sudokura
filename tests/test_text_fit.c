@@ -83,8 +83,8 @@ int main(void) {
   };
   const TextKey modes[] = {T_CLASSIC, T_STRIKES, T_TIME_ATTACK};
   const TextKey difficulties[] = {T_EASY, T_MEDIUM, T_HARD};
-  const TextKey about_links[] = {T_GITHUB, T_REPOSITORY, T_WEBSITE,
-                                T_SUPPORT, T_PRIVACY_POLICY};
+  const TextKey about_links[] = {T_REPOSITORY, T_WEBSITE,
+                                 T_SUPPORT, T_PRIVACY_POLICY};
 
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(sizes[0]); ++s) {
     for (int mode = 0; mode < 3; ++mode) {
@@ -103,6 +103,7 @@ int main(void) {
       assert_rect(g.about_credits, width, height);
       for (int i = 0; i < GEOMETRY_ABOUT_LINK_COUNT; ++i)
         assert_rect(g.about_links[i], width, height);
+        assert_rect(g.about_back,width,height);
 
       for (int language = 0; language < LANG_COUNT; ++language) {
         int screen_segment = g.screen_language.w / 3 - 40;
@@ -329,7 +330,7 @@ int main(void) {
           char label[128];
           snprintf(label, sizeof label, "%s",
                    tr((Language)language, about_links[i]));
-          assert(fits(font, label, tier.control, 10, g.about_links[i].w,
+          assert(fits(font, label, tier.control, 10, g.about_links[i].w-52,
                       g.about_links[i].h - 3));
         }
 
@@ -443,13 +444,16 @@ int main(void) {
       GeometryLibrary library;
       assert(geometry_mobile_info(width,height,true,&info));
       assert(geometry_mobile_library(width,height,&library));
-      const TextKey info_keys[]={T_GITHUB,T_REPOSITORY,T_WEBSITE,
-                                 T_SUPPORT,T_PRIVACY_POLICY};
+      const TextKey info_keys[]={T_REPOSITORY,T_WEBSITE,T_SUPPORT,T_PRIVACY_POLICY};
       assert(sizeof(info_keys)/sizeof(info_keys[0]) == GEOMETRY_ABOUT_LINK_COUNT);
-      for (unsigned i=0;i<sizeof(info_keys)/sizeof(info_keys[0]);++i)
+      for (unsigned i=0;i<sizeof(info_keys)/sizeof(info_keys[0]);++i) {
+        bool compact=info.links[i].w<150;
         assert(wrapped_fits(font,tr(lang,info_keys[i]),17,13,
-                            info.links[i].w-12,info.links[i].h));
-      assert(fits(font,tr(lang,T_BACK),20,13,info.back.w,info.back.h));
+                            info.links[i].w-(compact?26:56),
+                            info.links[i].h-2));
+      }
+      assert(wrapped_fits(font,tr(lang,T_BACK),17,13,info.back.w-56,
+                          info.back.h-2));
       const TextKey page_keys[]={T_GAMES_PREVIOUS_PAGE,T_GAMES_NEXT_PAGE};
       const GeoRect page_rects[]={library.page_previous,library.page_next};
       for (unsigned i=0;i<2;++i)

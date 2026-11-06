@@ -24,7 +24,7 @@ static const char *environment_value(char *const environment[],
 #endif
 
 int main(void) {
-  assert(url_launcher_is_allowed("https://github.com/santirodriguez"));
+  assert(!url_launcher_is_allowed("https://github.com/santirodriguez"));
   assert(url_launcher_is_allowed(
       "https://github.com/santirodriguez/Sudokura"));
   assert(url_launcher_is_allowed("https://sudokura.cajapersonal.org/"));

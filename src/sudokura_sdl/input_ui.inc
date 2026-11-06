@@ -968,8 +968,8 @@ static bool ui_prepare_event(SDL_Event *event) {
       return false;
     int digit = input_digit_value(key, event->key.keysym.scancode);
 
-    if (audio_ui && audio_ui->screen == SCR_ABOUT && (digit == 4 || digit == 5)) {
-      ui_open_url(digit == 4 ? ui_support_url(audio_ui->language)
+    if (audio_ui && audio_ui->screen == SCR_ABOUT && (digit == 3 || digit == 4)) {
+      ui_open_url(digit == 3 ? ui_support_url(audio_ui->language)
                              : SUDOKURA_PRIVACY_POLICY_URL);
       return false;
     }
@@ -984,16 +984,16 @@ static bool ui_prepare_event(SDL_Event *event) {
     int x = event->button.x, y = event->button.y;
     AppGeometry geometry;
     if (get_geometry(audio_gfx, audio_ui, &geometry)) {
-      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,3), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,2), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
-          info_keyboard_focus = INFO_FOCUS_LINK_3;
+          info_keyboard_focus = INFO_FOCUS_LINK_2;
           ui_open_url(ui_support_url(audio_ui->language));
         }
         return false;
       }
-      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,4), x, y)) {
+      if (point_in(ui_info_link_rect(audio_gfx,audio_ui,3), x, y)) {
         if (event->button.button == SDL_BUTTON_LEFT) {
-          info_keyboard_focus = INFO_FOCUS_LINK_4;
+          info_keyboard_focus = INFO_FOCUS_LINK_3;
           ui_open_url(SUDOKURA_PRIVACY_POLICY_URL);
         }
         return false;

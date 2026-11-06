@@ -11,7 +11,6 @@
 #include <string.h>
 
 static const char *const allowed_urls[] = {
-    "https://github.com/santirodriguez",
     "https://github.com/santirodriguez/Sudokura",
     "https://sudokura.cajapersonal.org/",
     SUDOKURA_PRIVACY_POLICY_URL,
