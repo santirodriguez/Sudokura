@@ -24,14 +24,14 @@
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows x64 — installer and portable EXE" height="28"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage" height="28"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-arm64-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG" height="28"></a>
-  <a href="#android"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.4.0/Sudokura-1.4.0-Android-arm64.apk"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
 </p>
 <p align="center">
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/santirodriguez/Sudokura"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Add Sudokura to Obtainium" height="48"></a><br>
   <sub>Follow Android releases with Obtainium. APK downloads begin with the published v1.4.0 release.</sub>
 </p>
 
-Buttons lead to the **latest published release**, not an unpublished build. See the [screenshot gallery](docs/images/README.md) and [release notes](docs/RELEASE_NOTES_1.4.0.md).
+Desktop buttons open the **latest published release**. The Android button downloads the signed **v1.4.0 APK** once that release is published. See the [screenshot gallery](docs/images/README.md) and [release notes](docs/RELEASE_NOTES_1.4.0.md).
 
 <details>
 <summary><strong>Which download should I choose?</strong></summary>
@@ -143,7 +143,7 @@ The familiar grid, made for thumbs. Sudokura 1.4.0 brings portrait and landscape
 
 <p align="center"><a href="#android-phone-gallery">See the six Android screenshots above</a></p>
 
-Requires **Android 9+ on ARM64**. Get the signed APK from [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases/latest) **when v1.4.0 is published**, or follow the repository in Obtainium. F-Droid and Google Play availability will be announced separately.
+Requires **Android 9+ on ARM64**. Download the [signed v1.4.0 APK](https://github.com/santirodriguez/Sudokura/releases/download/v1.4.0/Sudokura-1.4.0-Android-arm64.apk) **once v1.4.0 is published**, or follow the repository in Obtainium. F-Droid and Google Play availability will be announced separately.
 
 <details>
 <summary><strong>Android progress and compatibility</strong></summary>
