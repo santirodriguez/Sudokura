@@ -77,6 +77,14 @@ jobs:
       SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
       SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
 
+  # The isolated UI branch needs an actual Android smoke build, but must
+  # never receive release signing secrets.
+  android-ui-debug:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/unified-ui'
+    uses: ./.github/workflows/android-preview.yml
+    with:
+      source_commit: ${{ github.sha }}
+
   linux:
     runs-on: ubuntu-22.04
     steps:
@@ -194,13 +202,24 @@ jobs:
   linux-ubuntu24:
     needs: linux
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: phase7-linux-candidate
           path: candidate
-      - run: sudo apt-get update && sudo apt-get install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
+      - name: Install Ubuntu runtime validation dependencies
+        run: |
+          # Bound external apt/mirror stalls instead of trapping the entire CI.
+          sudo timeout --signal=TERM --kill-after=10s 180s \
+            apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 update
+          sudo timeout --signal=TERM --kill-after=10s 240s \
+            env DEBIAN_FRONTEND=noninteractive apt-get \
+              -o Acquire::Retries=2 -o Acquire::http::Timeout=20 \
+              -o Acquire::https::Timeout=20 \
+              install -y binutils libfuse2t64 xvfb weston dbus-x11 gdb strace
       - run: chmod +x candidate/Sudokura-*-Linux-x64.AppImage && packaging/ci/validate-linux-runtime.sh candidate/Sudokura-*-Linux-x64.AppImage ubuntu24 required
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ always() }}

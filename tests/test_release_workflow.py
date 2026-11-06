@@ -11,6 +11,19 @@ android_gate = ci['jobs']['android-changes']['if']
 assert "github.event_name == 'pull_request'" in android_gate
 assert "github.base_ref == 'main'" in android_gate
 assert "github.head_ref == 'release/1.4.0'" in android_gate
+debug = ci['jobs']['android-ui-debug']
+assert "github.event_name == 'push'" in debug['if']
+assert "refs/heads/feature/unified-ui" in debug['if']
+assert debug['uses'] == './.github/workflows/android-preview.yml'
+assert debug['with']['source_commit'] == '${{ github.sha }}'
+assert 'secrets' not in debug
+ubuntu = ci['jobs']['linux-ubuntu24']
+assert ubuntu['timeout-minutes'] == '15'
+install = next(s for s in ubuntu['steps']
+               if s.get('name') == 'Install Ubuntu runtime validation dependencies')
+assert 'timeout --signal=TERM --kill-after=10s 180s' in install['run']
+assert 'timeout --signal=TERM --kill-after=10s 240s' in install['run']
+assert 'validate-linux-runtime.sh' in ubuntu['steps'][-2]['run']
 assert release['jobs']['android']['with']['require_signed'] == 'true'
 assert 'needs.version.outputs.commit' in release['jobs']['android']['with']['source_commit']
 assert 'android' in release['jobs']['release-bundle']['needs']
