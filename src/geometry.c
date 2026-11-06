@@ -314,7 +314,7 @@ static void common_screens(int width, int height, bool portrait, AppGeometry *g)
   g->about_fact = (GeoRect){about_x, content_y, about_w, fact_h};
   content_y += fact_h + content_gap;
   g->about_study = (GeoRect){about_x, content_y, about_w, study_h};
-  int reference_h = min_i(18,max_i(13,study_h/5));
+  int reference_h = min_i(24,max_i(20,study_h/4));
   g->about_study_reference=(GeoRect){
       about_x+9,content_y+study_h-reference_h-4,about_w-18,reference_h};
   content_y += study_h + content_gap;

@@ -30,6 +30,7 @@ int main(void) {
       AppGeometry g;
       assert(geometry_compute(width, height, (GeometryMode)mode, &g));
       assert_inside(g.about_study, g.about_study_reference);
+      assert(g.about_study_reference.h >= 20);
       assert(g.about_fact.h >= 48);
       assert(g.about_study.h >= 48);
       assert(GEOMETRY_HOME_SECONDARY_COUNT == 5);
