@@ -219,8 +219,11 @@ static void rollout_more(Gfx *gfx, UI *ui) {
   AppGeometry geo;
   if (!get_geometry(gfx,ui,&geo)||!geo.play_compact) return;
   UiDesignTheme t=ui_design_theme(ui->dark_theme);
-  /* An opaque background is required: paused board contents stay concealed. */
-  design_background(gfx,t);
+  /* A solid opaque backdrop conceals every cell outside the floating panel.
+     Keep the established concealment pixel test valid without exceptions. */
+  SDL_Color backdrop=ui_design_sdl_color(t.background_bottom);
+  SDL_SetRenderDrawColor(gfx->ren,backdrop.r,backdrop.g,backdrop.b,255);
+  SDL_RenderClear(gfx->ren);
   SDL_Rect panel=sdl_rect(geo.more_panel);
   design_card(gfx,t,panel);
   (void)draw_fitted_text(gfx,tr(ui->language,T_MORE),ui_design_sdl_color(t.text),
