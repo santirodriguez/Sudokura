@@ -253,4 +253,87 @@ except RuntimeError as exc:
 else:
     raise AssertionError("Duplicate board accepted for two identical row labels")
 
-print("PASS: semantic row selection, Continue game activation and unique board fixtures")
+
+# Storage faults must be surfaced by the first fresh UI snapshot, not timed out.
+storage_tree = ET.fromstring('<hierarchy><node enabled="true" '
+                             'content-desc="Storage error"/></hierarchy>')
+storage_fixture = object.__new__(module.Upgrade)
+storage_calls = []
+def storage_shell(*args):
+    assert args == ("am", "start", "-W", "-n", module.ACTIVITY)
+storage_fixture.shell = storage_shell
+def storage_wait(label, predicate, **kwargs):
+    storage_calls.append(label)
+    assert label == "opened" and predicate(storage_tree)
+    return storage_tree
+storage_fixture.wait = storage_wait
+try:
+    module.Upgrade.start(storage_fixture)
+except RuntimeError as exc:
+    assert "Storage error at startup" in str(exc)
+else:
+    raise AssertionError("Startup storage error was not detected promptly")
+assert storage_calls == ["opened"]
+
+# Metadata must describe app-owned paths and a verified SELinux context.
+metadata_root = "/data/user/0/" + module.PACKAGE
+meta_files = {metadata_root + "/files/profile.dat": "a" * 64,
+              metadata_root + "/files/games/example.dat": "b" * 64}
+meta_fixture = object.__new__(module.Upgrade)
+meta_calls = []
+def metadata_shell(*args):
+    meta_calls.append(args)
+    if args == ("id", "-u"):
+        return "0"
+    if args == ("pm", "list", "packages", "-U", module.PACKAGE):
+        return "package:" + module.PACKAGE + " uid:10123"
+    if args[:3] == ("stat", "-c", "%u:%g:%a"):
+        return "10123:10123:600" if args[3].endswith(".dat") else "10123:10123:700"
+    if args[:2] == ("ls", "-Zd"):
+        return "u:object_r:app_data_file:s0:c123,c456 " + args[2]
+    raise AssertionError("Unexpected metadata command: %r" % (args,))
+meta_fixture.shell = metadata_shell
+metadata = module.Upgrade.private_metadata(meta_fixture, meta_files)
+assert metadata["package_uid"] == 10123
+assert len(metadata["paths"]) == 5
+assert all(entry["selinux"].startswith("u:object_r:")
+           for entry in metadata["paths"].values())
+for fault, bad_value in (
+    (("pm", "list", "packages", "-U", module.PACKAGE), "unknown"),
+    (("stat", "-c", "%u:%g:%a", metadata_root + "/files/profile.dat"), "bad"),
+    (("ls", "-Zd", metadata_root + "/files/profile.dat"), "no-context")):
+    def broken_meta_shell(*args, expected=fault, bad=bad_value):
+        return bad if args == expected else metadata_shell(*args)
+    meta_fixture.shell = broken_meta_shell
+    try:
+        module.Upgrade.private_metadata(meta_fixture, meta_files)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Invalid private metadata accepted")
+meta_fixture.shell = metadata_shell
+
+# Reopening the original version is a mandatory gate before install -r.
+import tempfile
+with tempfile.TemporaryDirectory() as temp:
+    cold = object.__new__(module.Upgrade)
+    cold.out = Path(temp)
+    cold_stops = []
+    cold.shell = lambda *args: cold_stops.append(args)
+    cold.start = lambda: None
+    cold.settings = lambda: "Theme: Light"
+    cold.saved_previews = lambda boards: sorted(snapshots)
+    cold.history = lambda: ["Interrupted attempt"]
+    module.Upgrade.cold_reopen(
+        cold, snapshots, "Theme: Light", sorted(snapshots), ["Interrupted attempt"])
+    assert cold_stops == [("am", "force-stop", module.PACKAGE)] * 2
+    assert (cold.out / "old-cold-reopen.json").is_file()
+    try:
+        module.Upgrade.cold_reopen(
+            cold, snapshots, "Theme: Dark", sorted(snapshots), ["Interrupted attempt"])
+    except RuntimeError as exc:
+        assert "cold reopen" in str(exc)
+    else:
+        raise AssertionError("Incorrect original cold-reopen settings passed")
+
+print("PASS: semantic row, cold reopen, private metadata and storage failure fixtures")

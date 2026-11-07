@@ -198,12 +198,21 @@ class Upgrade:
 
     def start(self):
         self.shell("am", "start", "-W", "-n", ACTIVITY)
-        tree = self.wait("opened", lambda t: bool(self.find(t, "Start new game")) or
-                         bool(self.find(t, "Resume")))
+        ready = lambda t: (bool(self.find(t, "Start new game")) or
+                           bool(self.find(t, "Resume")) or
+                           bool(self.find(t, "Storage error")))
+        tree = self.wait("opened", ready)
+        if self.find(tree, "Storage error"):
+            raise RuntimeError("Storage error at startup; see opened.xml/png")
         if self.find(tree, "Resume"):
             self.tap("Resume")
-        return self.wait("foreground", lambda t: bool(self.find(t, "Start new game")) or
-                         len(parse_cells(t)) == 81)
+        tree = self.wait("foreground", lambda t:
+                         bool(self.find(t, "Start new game")) or
+                         len(parse_cells(t)) == 81 or
+                         bool(self.find(t, "Storage error")))
+        if self.find(tree, "Storage error"):
+            raise RuntimeError("Storage error after Resume; see foreground.xml/png")
+        return tree
 
     def saved_previews(self, expected):
         expected = tuple(expected)
@@ -263,6 +272,9 @@ class Upgrade:
         self.tap("Menu")
         tree = self.wait("leave-choice", lambda t: bool(self.find(t, "Abandon attempt")))
         self.tap("Abandon attempt")
+        return self.history()
+
+    def history(self):
         self.home()
         self.tap("Your journey")
         self.tap("Try again")
@@ -274,6 +286,26 @@ class Upgrade:
         self.tap("Back")
         self.home()
         return items
+
+    def cold_reopen(self, boards, theme, saved, history):
+        # Verify that the seeded state cold-opens under v1.4.0 before upgrading.
+        self.shell("am", "force-stop", PACKAGE)
+        self.start()
+        cold_theme = self.settings()
+        cold_saved = self.saved_previews(boards)
+        cold_history = self.history()
+        if (cold_theme != theme or cold_saved != saved or
+                cold_history != history):
+            raise RuntimeError("Original v1.4.0 cold reopen did not retain state")
+        (self.out / "old-cold-reopen.json").write_text(json.dumps({
+            "version": "1.4.0", "code": 1,
+            "two_unique_saved_boards": "PASS",
+            "notes_settings_history": "PASS"}, indent=2) + "\n")
+        self.shell("am", "force-stop", PACKAGE)
+
+    def stage(self, name):
+        (self.out / "upgrade-stage.json").write_text(
+            json.dumps({"stage": name}) + "\n")
 
     def private_files(self):
         if self.shell("id", "-u").strip() != "0":
@@ -289,6 +321,38 @@ class Upgrade:
         if any(not path.startswith(root + "/") for path in inventory):
             raise RuntimeError("Private inventory contains unexpected path")
         return inventory
+
+    def private_metadata(self, inventory):
+        # Record ownership/mode/SELinux, never raw profile or keystore bytes.
+        root = "/data/user/0/" + PACKAGE
+        files = root + "/files"
+        if (self.shell("id", "-u").strip() != "0" or not inventory or
+                files + "/profile.dat" not in inventory):
+            raise RuntimeError("Private metadata requires root and real profile")
+        uid_lines = self.shell("pm", "list", "packages", "-U", PACKAGE).splitlines()
+        matches = [re.fullmatch(r"package:" + re.escape(PACKAGE) +
+                                r"\s+uid:(\d+)", line.strip())
+                   for line in uid_lines]
+        uids = [int(match[1]) for match in matches if match]
+        if len(uids) != 1:
+            raise RuntimeError("Missing or ambiguous installed app UID")
+        paths = [root, files, files + "/games"] + sorted(inventory)
+        if len(paths) != len(set(paths)) or any(
+                not path.startswith(files + "/") for path in inventory):
+            raise RuntimeError("Unexpected private metadata path")
+        entries = {}
+        for path in paths:
+            stat = self.shell("stat", "-c", "%u:%g:%a", path).strip()
+            parts = re.fullmatch(r"(\d+):(\d+):([0-7]{3,4})", stat)
+            if not parts:
+                raise RuntimeError("Invalid private file ownership or mode")
+            label = self.shell("ls", "-Zd", path).strip().split()
+            contexts = [part for part in label if part.startswith("u:object_r:")]
+            if len(contexts) != 1 or not label or label[-1] != path:
+                raise RuntimeError("Missing or ambiguous SELinux file context")
+            entries[path] = {"uid": int(parts[1]), "gid": int(parts[2]),
+                             "mode": parts[3], "selinux": contexts[0]}
+        return {"package_uid": uids[0], "paths": entries}
 
     def check_apks(self):
         certificates = []
@@ -324,6 +388,9 @@ class Upgrade:
         if "restarting" in root_attempt or "already running as root" in root_attempt:
             self.adb("wait-for-device", timeout=45)
         root_available = self.shell("id", "-u") == "0"
+        if not root_available:
+            raise RuntimeError("Root unavailable for required metadata gate")
+        self.stage("install_original")
         self.adb("install", str(self.args.old), timeout=100)
         self.start()
         self.home()
@@ -336,35 +403,54 @@ class Upgrade:
         before_theme = self.settings(set_light=True)
         before_saved = self.saved_previews((classic_expected, daily_expected))
         before_history = self.interrupted()
-        self.shell("am", "force-stop", PACKAGE)
-        before_files = self.private_files() if root_available else None
-        (self.out / "before-private-hashes.json").write_text(json.dumps(before_files, indent=2))
+        self.stage("old_cold_reopen")
+        self.cold_reopen((classic_expected, daily_expected), before_theme,
+                         before_saved, before_history)
+        self.stage("private_metadata_before")
+        before_files = self.private_files()
+        (self.out / "before-private-hashes.json").write_text(
+            json.dumps(before_files, indent=2) + "\n")
+        before_meta = self.private_metadata(before_files)
+        (self.out / "before-private-metadata.json").write_text(
+            json.dumps(before_meta, indent=2) + "\n")
+        self.stage("install_upgrade")
         self.adb("install", "-r", str(self.args.new), timeout=100)
-        after_files = self.private_files() if root_available else None
-        (self.out / "after-install-private-hashes.json").write_text(json.dumps(after_files, indent=2))
-        if before_files is not None and before_files != after_files:
+        after_files = self.private_files()
+        (self.out / "after-install-private-hashes.json").write_text(
+            json.dumps(after_files, indent=2) + "\n")
+        after_meta = self.private_metadata(after_files)
+        (self.out / "after-install-private-metadata.json").write_text(
+            json.dumps(after_meta, indent=2) + "\n")
+        (self.out / "metadata-comparison.json").write_text(json.dumps({
+            "package_uid_same": before_meta["package_uid"] == after_meta["package_uid"],
+            "private_file_metadata_same": before_meta == after_meta,
+            "changed_paths": sorted(path for path in
+                                    set(before_meta["paths"]) | set(after_meta["paths"])
+                                    if before_meta["paths"].get(path) !=
+                                       after_meta["paths"].get(path))
+        }, indent=2) + "\n")
+        if before_files != after_files:
             raise RuntimeError("Private saved data altered by package installation")
         installed = self.shell("dumpsys", "package", PACKAGE)
         if "versionCode=2" not in installed:
             raise RuntimeError("Android package manager did not install code2")
+        self.stage("new_version_start")
         self.start()
+        self.stage("new_version_data_verification")
         after_theme = self.settings()
         after_saved = self.saved_previews((classic_expected, daily_expected))
-        self.home()
-        self.tap("Your journey")
-        self.tap("Try again")
-        tree = self.wait("journey-after", lambda t:
-                         any("Interrupted attempt" in n.get("content-desc", "")
-                             for n in t.iter("node")))
-        after_history = sorted(n.get("content-desc") for n in tree.iter("node")
-                               if "Interrupted attempt" in n.get("content-desc", ""))
+        after_history = self.history()
         if before_theme != after_theme or before_saved != after_saved or before_history != after_history:
             raise RuntimeError("Saved game, notes, settings or history changed across update")
+        if before_meta != after_meta:
+            raise RuntimeError("Private ownership/mode/SELinux changed during install")
         receipt = {
             "source_old": OLD_SHA, "source_new": NEW_SHA,
             "package": PACKAGE, "old_code": 1, "new_code": 2,
             "signer": "ephemeral_test_only", "test_signer_sha256": cert,
             "same_signer": "PASS", "adb_install_r": "PASS",
+            "old_version_cold_reopen": "PASS",
+            "pre_post_private_metadata": "PASS",
             "classic_daily_note_preview_preservation": "PASS",
             "interrupted_history_preservation": "PASS",
             "settings_preservation": "PASS",
@@ -373,6 +459,7 @@ class Upgrade:
             "physical_arm64_16k": "NOT_RUN",
             "replay_ancestry_and_deletion_receipts": "NOT_RUN"
         }
+        self.stage("upgrade_verified")
         (self.out / "upgrade-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
         print(json.dumps(receipt, sort_keys=True))
 
