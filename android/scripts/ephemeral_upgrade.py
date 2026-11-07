@@ -52,6 +52,24 @@ def package_present(output, package):
     return any(line.strip() == "package:" + package for line in output.splitlines())
 
 
+def saved_rows(tree):
+    return [node for node in tree.iter("node")
+            if node.get("enabled") == "true"
+            and node.get("clickable") == "true"
+            and "In progress" in node.get("content-desc", "")]
+
+
+def selected_saved_index(tree, expected_count):
+    rows = saved_rows(tree)
+    if len(rows) != expected_count:
+        raise RuntimeError("Unexpected saved-game row count")
+    selected = [idx for idx, node in enumerate(rows)
+                if node.get("selected") == "true"]
+    if len(selected) != 1:
+        raise RuntimeError("Expected exactly one selected saved-game row")
+    return selected[0]
+
+
 def parse_hashes(output):
     hashes = {}
     for line in output.splitlines():
@@ -187,33 +205,33 @@ class Upgrade:
         return self.wait("foreground", lambda t: bool(self.find(t, "Start new game")) or
                          len(parse_cells(t)) == 81)
 
-    def saved_previews(self, minimum):
+    def saved_previews(self, expected):
+        expected = tuple(expected)
+        if len(expected) != 2 or len(set(expected)) != 2 or any(
+                len(cells) != 81 for cells in expected):
+            raise RuntimeError("Require two distinct fully seeded saved boards")
         self.home()
         self.tap("Saved games")
-        tree = self.wait("saved-list", lambda t:
-                         sum("In progress" in n.get("content-desc", "")
-                             and n.get("clickable") == "true"
-                             for n in t.iter("node")) >= minimum)
-        rows = [n.get("content-desc") for n in tree.iter("node")
-                if "In progress" in n.get("content-desc", "")
-                and n.get("clickable") == "true"]
+        count = len(expected)
+        self.wait("saved-list", lambda t:
+                  selected_saved_index(t, count) >= 0)
         found = []
-        for idx in range(len(rows)):
-            tree = self.wait("saved-row", lambda t:
-                             len([n for n in t.iter("node")
-                                  if "In progress" in n.get("content-desc", "")
-                                  and n.get("clickable") == "true"]) == len(rows))
-            row_nodes = [n for n in tree.iter("node")
-                         if "In progress" in n.get("content-desc", "")
-                         and n.get("clickable") == "true"]
-            self.tap_node(row_nodes[idx])
-            preview = self.board("saved-preview-%d" % idx)
-            found.append(normalized_cells(preview))
-        self.tap("Back")
-        self.home()
-        if len(found) < minimum or sum(any("Notes 7" in label for _, label in item)
-                                       for item in found) < minimum:
-            raise RuntimeError("Saved game previews lack retained synthetic notes")
+        for idx in range(count):
+            tree = self.wait("saved-row-%d" % idx, lambda t:
+                             selected_saved_index(t, count) >= 0)
+            self.tap_node(saved_rows(tree)[idx])
+            selected = self.wait("saved-selected-%d" % idx, lambda t:
+                                 selected_saved_index(t, count) == idx)
+            primary = self.find(selected, "Continue game")
+            if len(primary) != 1 or primary[0].get("clickable") != "true":
+                raise RuntimeError("No unique enabled Continue game action")
+            self.tap_node(primary[0])
+            found.append(normalized_cells(self.board("saved-preview-%d" % idx)))
+            self.to_home()
+            if idx + 1 < count:
+                self.tap("Saved games")
+        if len(set(found)) != count or sorted(found) != sorted(expected):
+            raise RuntimeError("Saved game previews differ from seeded unique boards")
         return sorted(found)
 
     def settings(self, set_light=False):
@@ -306,13 +324,13 @@ class Upgrade:
         self.start()
         self.home()
         self.tap("Start new game")
-        self.seed("classic")
+        classic_expected = self.seed("classic")
         self.to_home()
         self.tap("Daily Sudoku")
-        self.seed("daily")
+        daily_expected = self.seed("daily")
         self.to_home()
         before_theme = self.settings(set_light=True)
-        before_saved = self.saved_previews(2)
+        before_saved = self.saved_previews((classic_expected, daily_expected))
         before_history = self.interrupted()
         self.shell("am", "force-stop", PACKAGE)
         before_files = self.private_files() if root_available else None
@@ -327,7 +345,7 @@ class Upgrade:
             raise RuntimeError("Android package manager did not install code2")
         self.start()
         after_theme = self.settings()
-        after_saved = self.saved_previews(2)
+        after_saved = self.saved_previews((classic_expected, daily_expected))
         self.home()
         self.tap("Your journey")
         self.tap("Try again")
