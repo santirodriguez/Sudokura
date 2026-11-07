@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
-      SUDOKURA_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
+      SUDOKURA_SOURCE_COMMIT: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/probe/sudokura-1.4.1-signing-prep' && '810888803430d0664c6d02e1b49f67b5e590141d') || inputs.source_commit || github.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -41,6 +41,26 @@ jobs:
         run: |
           python3 tests/test_signing_context.py
           python3 android/scripts/signing_context.py
+      - name: Validate manual exact-source candidate signing gate
+        id: candidate_gate
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/probe/sudokura-1.4.1-signing-prep'
+        run: |
+          python3 tests/test_candidate_signing_gate.py
+          python3 tests/test_probe_upgrade_device.py
+          python3 android/scripts/candidate_signing_gate.py
+      - name: Check out approved immutable candidate after the gate
+        if: steps.candidate_gate.outputs.approved == 'true'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.candidate_gate.outputs.source }}
+          fetch-depth: 0
+      - name: Verify source identity before building an internal signed candidate
+        if: steps.candidate_gate.outputs.approved == 'true'
+        run: |
+          test "$(git rev-parse HEAD)" = "$SUDOKURA_SOURCE_COMMIT"
+          test "$(sh scripts/version.sh)" = '1.4.1'
+          grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 2' src/version.h
+          grep -Fq "applicationId 'org.cajapersonal.sudokura'" android/app/build.gradle
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -154,7 +174,7 @@ jobs:
           sha256sum android-production-output/*.apk android-production-output/*.aab > android-production-output/SHA256SUMS.txt
           printf 'source_sha=%s\nversion=%s\nandroid_public_release=first-planned\nsigning=NOT_RUN\nphysical_device=NOT_RUN\n' "$SUDOKURA_SOURCE_COMMIT" "$VERSION" > android-production-output/build-info.txt
       - name: Sign production APK with the Sudokura app key
-        if: steps.signing.outputs.sign == 'true'
+        if: steps.signing.outputs.sign == 'true' || steps.candidate_gate.outputs.approved == 'true'
         shell: bash
         env:
           SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
@@ -198,7 +218,7 @@ jobs:
             --directory android-signed-output --version "$(sh scripts/version.sh)" \
             --source-commit "$SUDOKURA_SOURCE_COMMIT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: steps.signing.outputs.sign == 'true'
+        if: steps.signing.outputs.sign == 'true' || steps.candidate_gate.outputs.approved == 'true'
         with:
           name: sudokura-android-signed-github
           path: android-signed-output/
