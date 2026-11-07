@@ -36,6 +36,15 @@ jobs:
           test -x "$ANDROID_HOME/platform-tools/adb"
           test -s "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties"
           cp "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties" probe-output/image-source.properties
+          # Match the minimal emulator runtime libraries already used by the Android CI.
+          sudo timeout --signal=TERM --kill-after=10s 180s apt-get update -qq
+          sudo timeout --signal=TERM --kill-after=10s 180s apt-get install -y --no-install-recommends libpulse0 libxkbfile1 libnss3 libx11-xcb1
+          ldd "$ANDROID_HOME/emulator/qemu/linux-x86_64/qemu-system-x86_64" > probe-output/emulator-libraries.txt
+          if grep -q 'not found' probe-output/emulator-libraries.txt; then
+            echo 'Android emulator runtime libraries still missing'
+            cat probe-output/emulator-libraries.txt
+            exit 1
+          fi
           "$ANDROID_HOME/emulator/emulator" -version > probe-output/emulator-version.txt
       - name: Verify official production APK source, code and signer
         shell: bash
