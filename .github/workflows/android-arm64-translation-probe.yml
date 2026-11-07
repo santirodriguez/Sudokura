@@ -1,0 +1,119 @@
+name: Android 11 ARM64 translation feasibility
+
+on:
+  push:
+    branches:
+      - probe/sudokura-api30-arm-translation
+    paths:
+      - .github/workflows/android-arm64-translation-probe.yml
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  android11-arm64-translation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - name: Verify standard KVM runner and install official Android 11 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe-output
+          uname -a | tee probe-output/host.txt
+          test "$(uname -m)" = x86_64
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          sudo chmod u+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+          test -n "$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          (yes || true) | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platform-tools" "emulator" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
+          test -x "$ANDROID_HOME/emulator/emulator"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -s "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties"
+          cp "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties" probe-output/image-source.properties
+          "$ANDROID_HOME/emulator/emulator" -version > probe-output/emulator-version.txt
+      - name: Verify official production APK source, code and signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe-output
+          APK="$RUNNER_TEMP/Sudokura-1.4.0-Android-arm64.apk"
+          curl --fail --location --silent --show-error --retry 2 --connect-timeout 20 --max-time 180 \
+            --output "$APK" \
+            "https://github.com/santirodriguez/Sudokura/releases/download/v1.4.0/Sudokura-1.4.0-Android-arm64.apk"
+          printf '%s  %s\n' "c2f38f650591748985bb8242ea98799361c7f11f3d4672f68459c5b2426581b4" "$APK" | sha256sum -c - | tee probe-output/apk-hash.txt
+          test "$(stat -c %s "$APK")" = 5658763
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > probe-output/apk-badging.txt
+          grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='1' versionName='1.4.0'" probe-output/apk-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" > probe-output/apk-signature.txt
+          grep -iqF 'fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d' probe-output/apk-signature.txt
+          echo 'Verified exact public v1.4.0 signed APK; no signing keys used.' | tee probe-output/apk-identity.txt
+      - name: Boot disposable Android 11 and install and launch ARM64 production APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/sudokura-arm-probe-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME" probe-output
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force --name sudokura-api30-arm-test --device pixel_2 \
+            --path "$ANDROID_AVD_HOME/sudokura-api30-arm-test.avd" \
+            --package "system-images;android-30;google_apis;x86_64"
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee probe-output/avd-list.txt
+          "$ANDROID_HOME/emulator/emulator" -avd sudokura-api30-arm-test -port 5554 \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 3072 -cores 2 \
+            > probe-output/emulator.log 2>&1 &
+          emulator_pid=$!
+          cleanup() {
+            original_status=$?
+            trap - EXIT
+            set +e
+            timeout 18 adb -s emulator-5554 logcat -d -t 650 > probe-output/final-logcat.txt 2>&1
+            timeout 12 adb -s emulator-5554 exec-out screencap -p > probe-output/diagnostic-screen.png
+            timeout 12 adb -s emulator-5554 shell dumpsys activity activities > probe-output/activity.txt 2>&1
+            kill "$emulator_pid" 2>/dev/null || true
+            exit "$original_status"
+          }
+          trap cleanup EXIT
+          deadline=$((SECONDS + 240))
+          until timeout 7 adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -Fxq '1'; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$deadline" ]; then
+              tail -80 probe-output/emulator.log
+              exit 1
+            fi
+            sleep 4
+          done
+          adb -s emulator-5554 shell getprop ro.build.version.sdk | tr -d '\r' | tee probe-output/sdk-version.txt
+          test "$(tr -d '\r\n' < probe-output/sdk-version.txt)" = 30
+          adb -s emulator-5554 shell getprop ro.product.cpu.abilist | tr -d '\r' | tee probe-output/abi-list.txt
+          adb -s emulator-5554 shell getprop ro.dalvik.vm.native.bridge | tr -d '\r' | tee probe-output/native-bridge.txt
+          tr ',' '\n' < probe-output/abi-list.txt | grep -Fxq 'arm64-v8a'
+          PACKAGE=org.cajapersonal.sudokura
+          if adb -s emulator-5554 shell pm path "$PACKAGE" | grep -q '^package:'; then
+            echo 'Refusing to reuse an emulator with an existing app install'
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sudokura-1.4.0-Android-arm64.apk"
+          timeout 100 adb -s emulator-5554 install "$APK" | tee probe-output/install.txt
+          grep -Fxq Success probe-output/install.txt
+          LAUNCH="$(sed -n "s/^launchable-activity: name='\\([^']*\\)'.*/\\1/p" probe-output/apk-badging.txt | head -n 1)"
+          test -n "$LAUNCH"
+          timeout 35 adb -s emulator-5554 shell am start -W -n "$PACKAGE/$LAUNCH" | tee probe-output/launch.txt
+          sleep 12
+          timeout 10 adb -s emulator-5554 shell pidof "$PACKAGE" | tee probe-output/process.txt
+          test -s probe-output/process.txt
+          printf 'artifact=public-v1.4.0\npackage=%s\nandroid_sdk=30\ninstalled=PASS\nlaunched_process=PASS\nsigned_candidate_1.4.1=NOT_RUN\ninstalled_upgrade=NOT_RUN\n' "$PACKAGE" | tee probe-output/receipt.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: sudokura-android11-arm64-translation-diagnostics
+          path: probe-output/
+          if-no-files-found: warn
+          retention-days: 7

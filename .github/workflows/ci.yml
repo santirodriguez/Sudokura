@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+      - "!probe/sudokura-api30-arm-translation"
   pull_request:
 
 permissions:
