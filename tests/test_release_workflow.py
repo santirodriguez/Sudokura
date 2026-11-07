@@ -11,6 +11,11 @@ android_gate = ci['jobs']['android-changes']['if']
 assert "github.event_name == 'pull_request'" in android_gate
 assert "github.base_ref == 'main'" in android_gate
 assert "github.head_ref == 'release/1.4.0'" in android_gate
+assert "github.ref == 'refs/heads/release/1.4.1'" in android_gate
+assert "github.head_ref == 'release/1.4.1'" in android_gate
+selector = next(s for s in ci['jobs']['android-changes']['steps'] if s.get('id') == 'paths')['run']
+for required in ("'LICENSE'", "'.gitattributes'", "'assets/flags/LICENSE-MIT.txt'"):
+    assert required in selector
 debug = ci['jobs']['android-ui-debug']
 assert "github.event_name == 'push'" in debug['if']
 assert "refs/heads/feature/unified-ui" in debug['if']

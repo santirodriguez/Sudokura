@@ -60,7 +60,7 @@ jobs:
                   pass
           prefixes = ('android/', 'src/', 'assets/audio/',
                       'assets/branding/source/', 'assets/flags/raster/')
-          files = {'LICENSE', 'assets/flags/LICENSE-MIT.txt',
+          files = {'LICENSE', '.gitattributes', 'assets/flags/LICENSE-MIT.txt',
                    'Makefile', 'scripts/generate_assets.go',
                    'scripts/generate_assets.py', 'scripts/validate_assets.py',
                    '.github/workflows/ci.yml',

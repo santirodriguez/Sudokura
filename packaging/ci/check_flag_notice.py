@@ -10,6 +10,8 @@ SOURCE = ROOT / "assets/flags/LICENSE-MIT.txt"
 
 def verify(payload, member=None, source=SOURCE):
     expected = Path(source).read_bytes()
+    if b"\r" in expected:
+        raise ValueError("Canonical flag-icons MIT notice must retain LF line endings")
     if (b"Copyright (c) 2013 Panayiotis Lipiridis" not in expected or
             b"Permission is hereby granted" not in expected):
         raise ValueError("Canonical flag-icons MIT notice is invalid")

@@ -50,6 +50,13 @@ class FlagNoticeTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             check.verify(archive, self.payload.name, self.source)
 
+    def test_canonical_crlf_conversion_is_rejected(self):
+        windows_notice = NOTICE.replace(b"\n", b"\r\n")
+        self.source.write_bytes(windows_notice)
+        self.payload.write_bytes(windows_notice)
+        with self.assertRaises(ValueError):
+            check.verify(self.payload, source=self.source)
+
     def test_canonical_notice_must_retain_attribution(self):
         self.source.write_bytes(b"Permission is hereby granted")
         with self.assertRaises(ValueError):
