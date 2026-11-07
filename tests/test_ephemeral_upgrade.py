@@ -55,6 +55,71 @@ for bad in ("garbage", "a" * 64 + "  files/profile.dat\n" + "b" * 64 + "  files/
         pass
     else:
         raise AssertionError("Invalid file inventory accepted")
+# The API30 test emulator must inventory the actual SDL Android files/ root.
+# Do not use a nested shell command: adb shell sh -c may separate cd and find.
+data_root = "/data/user/0/" + module.PACKAGE + "/files"
+profile_path = data_root + "/profile.dat"
+session_path = data_root + "/session.dat"
+expected_find = ("find", data_root, "-type", "f", "-exec",
+                 "sha256sum", "{}", "+")
+valid_inventory = ("a" * 64 + "  " + profile_path + "\n" +
+                   "b" * 64 + "  " + session_path)
+fake_private = object.__new__(module.Upgrade)
+inventory_calls = []
+def fake_private_shell(*parts):
+    inventory_calls.append(parts)
+    if parts == ("id", "-u"):
+        return "0"
+    assert parts == expected_find, "Unsafe or relative private inventory command"
+    return valid_inventory
+fake_private.shell = fake_private_shell
+assert module.Upgrade.private_files(fake_private) == {
+    profile_path: "a" * 64, session_path: "b" * 64}
+assert inventory_calls == [("id", "-u"), expected_find]
+
+nonroot = object.__new__(module.Upgrade)
+nonroot_calls = []
+def nonroot_shell(*parts):
+    nonroot_calls.append(parts)
+    assert parts == ("id", "-u"), "Unprivileged shell must not read private files"
+    return "2000"
+nonroot.shell = nonroot_shell
+assert module.Upgrade.private_files(nonroot) is None
+assert nonroot_calls == [("id", "-u")]
+
+for bad_inventory in (
+    "", "a" * 64 + "  " + data_root + "/profile.dat.bak",
+    "a" * 64 + "  files/profile.dat",
+    "a" * 64 + "  " + profile_path + "\n" + "b" * 64 + "  /tmp/foreign",
+    "unexpected output"):
+    invalid = object.__new__(module.Upgrade)
+    def bad_shell(*parts, response=bad_inventory):
+        if parts == ("id", "-u"):
+            return "0"
+        assert parts == expected_find
+        return response
+    invalid.shell = bad_shell
+    try:
+        module.Upgrade.private_files(invalid)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Missing, malformed or foreign private files accepted")
+
+missing = object.__new__(module.Upgrade)
+def missing_shell(*parts):
+    if parts == ("id", "-u"):
+        return "0"
+    assert parts == expected_find
+    raise RuntimeError("ADB failed: private directory missing")
+missing.shell = missing_shell
+try:
+    module.Upgrade.private_files(missing)
+except RuntimeError as exc:
+    assert "private directory missing" in str(exc)
+else:
+    raise AssertionError("ADB find failure suppressed")
+
 assert not module.package_present("", module.PACKAGE)
 assert module.package_present("package:org.cajapersonal.sudokura\n", module.PACKAGE)
 assert not module.package_present("package:org.cajapersonal.sudokura.debug\n", module.PACKAGE)

@@ -278,12 +278,16 @@ class Upgrade:
     def private_files(self):
         if self.shell("id", "-u").strip() != "0":
             return None
-        root = "/data/user/0/" + PACKAGE
-        command = "cd %s && find files -type f -exec sha256sum {} +" % root
-        output = self.shell("sh", "-c", command)
+        # On Android SDL_GetPrefPath maps directly to the app's files/ root.
+        # Use an absolute path: adb shell sh -c can split a compound command.
+        root = "/data/user/0/" + PACKAGE + "/files"
+        output = self.shell("find", root, "-type", "f", "-exec",
+                            "sha256sum", "{}", "+")
         inventory = parse_hashes(output)
-        if not inventory or not any("profile" in path for path in inventory):
+        if root + "/profile.dat" not in inventory:
             raise RuntimeError("No verified private Sudokura profile data")
+        if any(not path.startswith(root + "/") for path in inventory):
+            raise RuntimeError("Private inventory contains unexpected path")
         return inventory
 
     def check_apks(self):
