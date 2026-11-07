@@ -55,5 +55,9 @@ for bad in ("garbage", "a" * 64 + "  files/profile.dat\n" + "b" * 64 + "  files/
         pass
     else:
         raise AssertionError("Invalid file inventory accepted")
+assert not module.package_present("", module.PACKAGE)
+assert module.package_present("package:org.cajapersonal.sudokura\n", module.PACKAGE)
+assert not module.package_present("package:org.cajapersonal.sudokura.debug\n", module.PACKAGE)
+assert not module.package_present("package:org.example.test\n", module.PACKAGE)
 assert module.PUBLIC_CERT != "a" * 64
 print("PASS: board cells, notes, signer identity and private inventory fail-closed fixtures")

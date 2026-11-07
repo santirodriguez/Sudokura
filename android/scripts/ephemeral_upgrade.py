@@ -48,6 +48,10 @@ def signing_cert(output):
     return matches[0].lower()
 
 
+def package_present(output, package):
+    return any(line.strip() == "package:" + package for line in output.splitlines())
+
+
 def parse_hashes(output):
     hashes = {}
     for line in output.splitlines():
@@ -292,7 +296,7 @@ class Upgrade:
         if self.shell("getprop", "ro.dalvik.vm.native.bridge") != "libndk_translation.so":
             raise RuntimeError("Unexpected native bridge")
         cert = self.check_apks()
-        if "package:" in self.shell("pm", "path", PACKAGE):
+        if package_present(self.shell("pm", "list", "packages", PACKAGE), PACKAGE):
             raise RuntimeError("Refuse emulator with existing Sudokura installation")
         root_attempt = self.adb("root", check=False, timeout=15)
         if "restarting" in root_attempt or "already running as root" in root_attempt:
