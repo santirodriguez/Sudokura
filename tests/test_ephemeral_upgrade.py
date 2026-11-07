@@ -2,9 +2,11 @@
 """Fail-closed parser and identity tests for disposable upgrade acceptance."""
 import importlib.util
 from pathlib import Path
+import sys
 import xml.etree.ElementTree as ET
 
 script = Path(__file__).resolve().parents[1] / "android/scripts/ephemeral_upgrade.py"
+sys.path.insert(0, str(script.parent))
 spec = importlib.util.spec_from_file_location("upgrade", script)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
