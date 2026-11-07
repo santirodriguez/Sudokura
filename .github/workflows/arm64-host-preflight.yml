@@ -1,0 +1,66 @@
+name: ARM64 Android guest availability (read-only)
+
+on:
+  push:
+    branches:
+      - probe/sudokura-arm64-host-check
+    paths:
+      - .github/workflows/arm64-host-preflight.yml
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-ephemeral-host:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Inspect ARM64 host and Android guest availability without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'host_arch=%s\n' "$(uname -m)"
+          printf 'runner_os=%s\n' "$RUNNER_OS"
+          printf 'runner_arch=%s\n' "$RUNNER_ARCH"
+          test "$(uname -m)" = 'aarch64'
+          if test -e /dev/kvm; then
+            echo 'kvm_device=PRESENT'
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo 'kvm_access=YES'
+            else
+              echo 'kvm_access=NO'
+            fi
+          else
+            echo 'kvm_device=ABSENT'
+            echo 'kvm_access=NO'
+          fi
+          for tool in adb emulator qemu-system-aarch64 sdkmanager avdmanager; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              printf '%s=AVAILABLE\n' "$tool"
+            else
+              printf '%s=NOT_INSTALLED\n' "$tool"
+            fi
+          done
+          if env | grep -q '^ANDROID_HOME='; then echo 'android_home_set=YES'; else echo 'android_home_set=NO'; fi
+          guest_ready=NO
+          if command -v adb >/dev/null 2>&1; then
+            while IFS= read -r serial; do
+              [ -n "$serial" ] || continue
+              [[ "$serial" == emulator-* ]] || continue
+              abi="$(adb -s "$serial" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r' || true)"
+              arch="$(adb -s "$serial" shell uname -m 2>/dev/null | tr -d '\r' || true)"
+              boot="$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
+              if [ "$abi" = arm64-v8a ] && [ "$arch" = aarch64 ] && [ "$boot" = 1 ]; then
+                guest_ready=YES
+              fi
+            done < <(adb devices | awk 'NR>1 && $2=="device"{print $1}')
+          fi
+          printf 'booted_native_android_emulator=%s\n' "$guest_ready"
+          if [ "$guest_ready" = YES ]; then
+            echo 'ARM64_ANDROID_GUEST_READY=YES'
+          else
+            echo 'ARM64_ANDROID_GUEST_READY=NO'
+            echo 'No booted ARM64 Android emulator was detected on this fresh runner.'
+          fi
+          echo 'No tools installed, APK built/installed, secrets accessed, or stores contacted.'

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+      - "!probe/sudokura-arm64-host-check"
   pull_request:
 
 permissions:
