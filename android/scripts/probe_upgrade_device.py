@@ -7,13 +7,14 @@ import subprocess
 PACKAGE = 'org.cajapersonal.sudokura'
 
 
-def eligible(abi_list, sdk_text, is_emulator, installed):
+def eligible(abi_list, sdk_text, is_emulator, installed, primary_abi, guest_machine):
     try:
         api = int(sdk_text)
     except (TypeError, ValueError):
         return False
     return (is_emulator == '1' and api >= 28 and
-            'arm64-v8a' in abi_list.split(',') and not installed)
+            'arm64-v8a' in abi_list.split(',') and not installed
+            and primary_abi == 'arm64-v8a' and guest_machine == 'aarch64')
 
 
 def main():
@@ -30,12 +31,16 @@ def main():
         return result.stdout.strip()
 
     abi_list = query('getprop', 'ro.product.cpu.abilist')
+    primary_abi = query('getprop', 'ro.product.cpu.abi')
+    guest_machine = query('uname', '-m')
     sdk = query('getprop', 'ro.build.version.sdk')
     emulator = query('getprop', 'ro.kernel.qemu')
     existing_package = query('pm', 'path', PACKAGE)
-    status = eligible(abi_list, sdk, emulator, bool(existing_package))
+    status = eligible(abi_list, sdk, emulator, bool(existing_package),
+                      primary_abi, guest_machine)
     print(json.dumps({'eligible': status, 'is_emulator': emulator == '1',
-                      'arm64_supported': 'arm64-v8a' in abi_list.split(','),
+                      'native_arm64_guest': (primary_abi == 'arm64-v8a' and
+                                             guest_machine == 'aarch64'),
                       'sdk': sdk, 'package_already_installed': bool(existing_package),
                       'checks_only': True, 'installed_or_modified': False}, sort_keys=True))
     if not status:
