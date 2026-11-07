@@ -1,0 +1,173 @@
+name: Android synthetic upgrade, disposable signer
+
+on:
+  push:
+    branches:
+      - probe/sudokura-api30-ephemeral-upgrade
+    paths:
+      - .github/workflows/android-ephemeral-upgrade.yml
+      - .github/workflows/ci.yml
+      - android/scripts/ephemeral_upgrade.py
+      - tests/test_ephemeral_upgrade.py
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-same-signer-upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Inspect pinned test harness
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: probe
+          persist-credentials: false
+      - name: Checkout exact public v1.4.0 source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: c1b3eb31e82bcc06a078bc10e10f342aa8329e25
+          path: source140
+          persist-credentials: false
+      - name: Checkout exact unmerged v1.4.1 source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 810888803430d0664c6d02e1b49f67b5e590141d
+          path: source141
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Fail closed on test harness and immutable source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source140 rev-parse HEAD)" = c1b3eb31e82bcc06a078bc10e10f342aa8329e25
+          test "$(git -C source141 rev-parse HEAD)" = 810888803430d0664c6d02e1b49f67b5e590141d
+          grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 1' source140/src/version.h
+          grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 2' source141/src/version.h
+          grep -Fq "applicationId 'org.cajapersonal.sudokura'" source140/android/app/build.gradle
+          grep -Fq "applicationId 'org.cajapersonal.sudokura'" source141/android/app/build.gradle
+          python3 -m py_compile probe/android/scripts/ephemeral_upgrade.py
+          python3 probe/tests/test_ephemeral_upgrade.py
+          python3 source140/android/scripts/test_prepare_sources.py
+          python3 source141/android/scripts/test_prepare_sources.py
+      - name: Install pinned source-build toolchains and Android 11 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core libpulse0 libxkbfile1 libnss3 libx11-xcb1
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          sudo chmod u+rw /dev/kvm
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          (yes || true) | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" \
+            "ndk;28.2.13676358" "cmake;3.22.1" "emulator" \
+            "system-images;android-30;google_apis;x86_64"
+          test -s "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties"
+          "$ANDROID_HOME/emulator/emulator" -version
+      - name: Build unsigned original-source APK v1.4.0 and v1.4.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upgrade-diagnostics
+          for pair in 'source140 1.4.0' 'source141 1.4.1'; do
+            read -r folder version <<< "$pair"
+            python3 "$folder/android/scripts/prepare_sources.py"
+            make -C "$folder" assets
+            bash "$folder/android/gradlew" --no-daemon --max-workers 2 \
+              :app:assembleProductionRelease \
+              -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+              -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
+            APK="$folder/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
+            test -s "$APK"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "upgrade-diagnostics/unsigned-$version.txt"
+            grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='$([ "$version" = 1.4.0 ] && echo 1 || echo 2)' versionName='$version'" "upgrade-diagnostics/unsigned-$version.txt"
+            python3 "$folder/android/scripts/audit_apk.py" \
+              "$ANDROID_HOME/build-tools/35.0.0/aapt" "$APK" --variant release --require-unsigned \
+              > "upgrade-diagnostics/unsigned-audit-$version.json"
+          done
+      - name: Generate one throwaway test signer and run the synthetic Android upgrade
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p upgrade-diagnostics
+          export UPGRADE_TEST_PASS
+          UPGRADE_TEST_PASS="$(openssl rand -hex 24)"
+          KEY="$RUNNER_TEMP/sudokura-ephemeral-test.p12"
+          OLD="$RUNNER_TEMP/sudokura-140-test-signed.apk"
+          NEW="$RUNNER_TEMP/sudokura-141-test-signed.apk"
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/sudokura-ephemeral-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          emulator_pid=''
+          cleanup() {
+            status=$?
+            trap - EXIT
+            set +e
+            timeout 18 adb -s emulator-5554 logcat -d -t 1100 > upgrade-diagnostics/final-logcat.txt 2>&1
+            timeout 12 adb -s emulator-5554 exec-out screencap -p > upgrade-diagnostics/final-screen.png
+            if [ -n "$emulator_pid" ]; then kill "$emulator_pid" 2>/dev/null || true; fi
+            rm -f "$KEY" "$OLD" "$NEW"
+            unset UPGRADE_TEST_PASS
+            exit "$status"
+          }
+          trap cleanup EXIT
+          keytool -genkeypair -noprompt -alias sudokura-ci-only \
+            -dname "CN=Sudokura Disposable CI Test" \
+            -keyalg RSA -keysize 3072 -validity 2 -storetype PKCS12 \
+            -keystore "$KEY" -storepass:env UPGRADE_TEST_PASS -keypass:env UPGRADE_TEST_PASS \
+            > upgrade-diagnostics/keytool.txt 2>&1
+          for input in 'source140 1.4.0' 'source141 1.4.1'; do
+            read -r folder version <<< "$input"
+            src="$folder/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
+            dst="$RUNNER_TEMP/sudokura-$([ "$version" = 1.4.0 ] && echo 140 || echo 141)-test-signed.apk"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+              --ks "$KEY" --ks-type PKCS12 --ks-key-alias sudokura-ci-only \
+              --ks-pass env:UPGRADE_TEST_PASS --key-pass env:UPGRADE_TEST_PASS \
+              --out "$dst" "$src"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$dst" \
+              > "upgrade-diagnostics/test-cert-$version.txt"
+            sha256sum "$dst" >> upgrade-diagnostics/test-apk-hashes.txt
+          done
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force --name sudokura-test-upgrade --device pixel_2 \
+            --path "$ANDROID_AVD_HOME/sudokura-test-upgrade.avd" \
+            --package "system-images;android-30;google_apis;x86_64"
+          "$ANDROID_HOME/emulator/emulator" -avd sudokura-test-upgrade -port 5554 \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -memory 3072 -cores 2 \
+            > upgrade-diagnostics/emulator.log 2>&1 &
+          emulator_pid=$!
+          deadline=$((SECONDS + 240))
+          until timeout 7 adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -Fxq 1; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Android 11 emulator failed to boot"
+              tail -80 upgrade-diagnostics/emulator.log
+              exit 1
+            fi
+            sleep 4
+          done
+          python3 probe/android/scripts/ephemeral_upgrade.py \
+            --adb "$ANDROID_HOME/platform-tools/adb" \
+            --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            --old "$OLD" --new "$NEW" --output upgrade-diagnostics
+      - name: Upload diagnostic evidence, never test APKs or keystore
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sudokura-ephemeral-upgrade-diagnostics
+          path: upgrade-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7

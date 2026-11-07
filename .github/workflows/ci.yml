@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+      - "!probe/sudokura-api30-ephemeral-upgrade"
   pull_request:
 
 permissions:
