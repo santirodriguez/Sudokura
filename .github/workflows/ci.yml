@@ -22,10 +22,12 @@ jobs:
       github.ref == 'refs/heads/main' ||
       github.ref == 'refs/heads/release/1.3.9' ||
       github.ref == 'refs/heads/release/1.4.0' ||
+      github.ref == 'refs/heads/release/1.4.1' ||
       github.ref == 'refs/heads/store-prep/1.4-next' ||
       (github.event_name == 'pull_request' && github.base_ref == 'main') ||
       github.head_ref == 'release/1.3.9' ||
-      github.head_ref == 'release/1.4.0'
+      github.head_ref == 'release/1.4.0' ||
+      github.head_ref == 'release/1.4.1'
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.paths.outputs.build }}
@@ -58,7 +60,8 @@ jobs:
                   pass
           prefixes = ('android/', 'src/', 'assets/audio/',
                       'assets/branding/source/', 'assets/flags/raster/')
-          files = {'Makefile', 'scripts/generate_assets.go',
+          files = {'LICENSE', 'assets/flags/LICENSE-MIT.txt',
+                   'Makefile', 'scripts/generate_assets.go',
                    'scripts/generate_assets.py', 'scripts/validate_assets.py',
                    '.github/workflows/ci.yml',
                    '.github/workflows/android-preview.yml'}
@@ -98,6 +101,7 @@ jobs:
           cache: false
       - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libdecor-0-plugin-1-cairo libfuse2 curl fonts-dejavu-core
       - run: make assets
+      - run: python3 tests/test_flag_notice.py
       - run: make WERROR=-Werror test test-ui
       - run: python3 scripts/validate_contrast.py
       - name: Identify generator benchmark host

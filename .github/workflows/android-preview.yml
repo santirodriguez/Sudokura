@@ -143,6 +143,7 @@ jobs:
               assert all(not p.startswith('/') and '..' not in p.split('/') for p in paths)
               assert not any(p.upper().startswith('META-INF/') and p.upper().endswith(('.SF', '.RSA', '.DSA', '.EC')) for p in paths)
               assert 'base/lib/arm64-v8a/libmain.so' in paths
+              assert archive.read('base/assets/licenses/flag-icons-MIT.txt') == Path('assets/flags/LICENSE-MIT.txt').read_bytes(), 'Flag-icons MIT notice missing or modified in AAB'
           Path('android-production-output/bundle-readiness.json').write_text(json.dumps({
               'container': 'PASS', 'signed': False, 'bundletool_validation': 'PASS',
               'bundletool_version': '1.18.3',

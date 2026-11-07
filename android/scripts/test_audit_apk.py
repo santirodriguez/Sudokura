@@ -193,6 +193,10 @@ class ArchiveTests(unittest.TestCase):
         (self.root / "src").mkdir()
         (self.root / "src/version.h").write_text(header(), encoding="utf-8")
         self.contents = {path: b"synthetic fixture" for path in audit_apk.EXPECTED_ASSETS}
+        flag_source = self.root / "assets/flags/LICENSE-MIT.txt"
+        flag_source.parent.mkdir(parents=True)
+        flag_source.write_bytes((audit_apk.ROOT / "assets/flags/LICENSE-MIT.txt").read_bytes())
+        self.contents["assets/licenses/flag-icons-MIT.txt"] = flag_source.read_bytes()
         for name in audit_apk.AUDIO_NAMES:
             (self.audio / name).write_bytes(self.contents[f"assets/audio/{name}"])
         for name in audit_apk.EXPECTED_NATIVE:
@@ -230,6 +234,15 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.audit()
         self.contents[path] = b""
+        with self.assertRaises(ValueError):
+            self.audit()
+
+    def test_missing_or_altered_flag_notice(self):
+        notice = "assets/licenses/flag-icons-MIT.txt"
+        canonical = self.contents.pop(notice)
+        with self.assertRaises(ValueError):
+            self.audit()
+        self.contents[notice] = canonical + b"tampered"
         with self.assertRaises(ValueError):
             self.audit()
 

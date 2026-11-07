@@ -33,6 +33,8 @@ install -Dm644 "$font" AppDir/usr/bin/DejaVuSans.ttf
 install -Dm644 packaging/licenses/DejaVu-FONT-LICENSE.txt AppDir/usr/bin/DejaVu-FONT-LICENSE.txt
 install -Dm644 LICENSE AppDir/usr/share/doc/sudokura/LICENSE.txt
 install -Dm644 packaging/licenses/DISTRIBUTION-NOTICES.md AppDir/usr/share/doc/sudokura/DISTRIBUTION-NOTICES.md
+install -Dm644 assets/flags/LICENSE-MIT.txt AppDir/usr/share/doc/sudokura/FLAG-ICONS-LICENSE-MIT.txt
+python3 packaging/ci/check_flag_notice.py AppDir/usr/share/doc/sudokura/FLAG-ICONS-LICENSE-MIT.txt
 install -Dm644 assets/audio/README.md AppDir/usr/share/doc/sudokura/AUDIO-PROVENANCE.md
 install -Dm644 assets/audio/music-main.ogg AppDir/usr/bin/audio/music-main.ogg
 install -Dm644 assets/audio/music-fail.ogg AppDir/usr/bin/audio/music-fail.ogg
@@ -93,6 +95,15 @@ test -x "$artifact"
 
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software SDL_RENDER_VSYNC=0 \
   timeout 45s "./$artifact" --appimage-extract-and-run --smoke-test
+
+# Inspect the resulting AppImage, not just its staging directory.
+appimage_path="$PWD/$artifact"
+extract_root=$(mktemp -d)
+trap 'rm -rf "$extract_root"' EXIT
+(cd "$extract_root" && "$appimage_path" --appimage-extract > /dev/null)
+python3 packaging/ci/check_flag_notice.py "$extract_root/squashfs-root/usr/share/doc/sudokura/FLAG-ICONS-LICENSE-MIT.txt"
+rm -rf "$extract_root"
+trap - EXIT
 
 find AppDir -type f -printf '%P\n' | LC_ALL=C sort > inventory-linux.txt
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do

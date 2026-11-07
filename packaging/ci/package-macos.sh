@@ -54,6 +54,7 @@ for required in \
   Contents/Resources/DejaVu-FONT-LICENSE.txt \
   Contents/Resources/Documentation/LICENSE.txt \
   Contents/Resources/Documentation/DISTRIBUTION-NOTICES.md \
+  Contents/Resources/Documentation/FLAG-ICONS-LICENSE-MIT.txt \
   Contents/Resources/Documentation/COMPONENTS.txt \
   Contents/Resources/audio/music-main.ogg \
   Contents/Resources/audio/music-fail.ogg \
@@ -94,6 +95,7 @@ hdiutil attach -readonly -nobrowse -mountpoint "$PWD/macmount" -plist "$artifact
 trap 'hdiutil detach "$PWD/macmount" >/dev/null 2>&1 || true' EXIT
 test -d macmount/Sudokura.app
 test -L macmount/Applications
+python3 packaging/ci/check_flag_notice.py macmount/Sudokura.app/Contents/Resources/Documentation/FLAG-ICONS-LICENSE-MIT.txt
 codesign --verify --deep --strict --verbose=2 macmount/Sudokura.app
 python3 packaging/ci/smoke-macos-bundle.py \
   macmount/Sudokura.app/Contents/MacOS/sudokura "smoke-macos-${ARCH}-dmg.txt" dmg

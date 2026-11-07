@@ -20,6 +20,7 @@ EXPECTED_ASSETS = {
     "assets/audio/jingle-win.ogg",
     "assets/audio/jingle-fail.ogg",
     "assets/licenses/Sudokura-GPLv3.txt",
+    "assets/licenses/flag-icons-MIT.txt",
     "assets/licenses/DejaVuSans-copyright.txt",
     "assets/licenses/SDL2-2.32.10-license.txt",
     "assets/licenses/SDL2_ttf-2.24.0-license.txt",
@@ -179,6 +180,9 @@ def audit_archive(apk, source_audio, packaged=None):
             raise ValueError("Launcher icon is not a PNG")
         if struct.unpack(">II", icon_png[16:24]) != (512, 512):
             raise ValueError("Launcher icon does not match 512x512 master dimensions")
+        if (archive.read("assets/licenses/flag-icons-MIT.txt") !=
+                (ROOT / "assets/flags/LICENSE-MIT.txt").read_bytes()):
+            raise ValueError("Altered flag-icons MIT notice")
         for name in AUDIO_NAMES:
             packed = archive.read(f"assets/audio/{name}")
             local = (source_audio / name).read_bytes()

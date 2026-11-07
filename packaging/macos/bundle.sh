@@ -31,6 +31,8 @@ cp assets/audio/jingle-win.ogg "$APP/Contents/Resources/audio/"
 cp assets/audio/jingle-fail.ogg "$APP/Contents/Resources/audio/"
 cp LICENSE "$APP/Contents/Resources/Documentation/LICENSE.txt"
 cp packaging/licenses/DISTRIBUTION-NOTICES.md "$APP/Contents/Resources/Documentation/"
+cp assets/flags/LICENSE-MIT.txt "$APP/Contents/Resources/Documentation/FLAG-ICONS-LICENSE-MIT.txt"
+python3 packaging/ci/check_flag_notice.py "$APP/Contents/Resources/Documentation/FLAG-ICONS-LICENSE-MIT.txt"
 cp assets/audio/README.md "$APP/Contents/Resources/Documentation/AUDIO-PROVENANCE.md"
 
 cellar=$(brew --cellar)
