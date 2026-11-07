@@ -443,7 +443,12 @@ static void test_window_size_normalization(void) {
 static void test_i18n(void) {
   for (int language = 0; language < LANG_COUNT; ++language)
     for (int key = 0; key < T_COUNT; ++key) assert(tr((Language)language, (TextKey)key)[0]);
-  assert(!strcmp(SUDOKURA_VERSION, "1.4.0"));
+  char expected_version[32];
+  int count = snprintf(expected_version, sizeof(expected_version), "%d.%d.%d",
+                       SUDOKURA_VERSION_MAJOR, SUDOKURA_VERSION_MINOR,
+                       SUDOKURA_VERSION_PATCH);
+  assert(count > 0 && (size_t)count < sizeof(expected_version));
+  assert(!strcmp(SUDOKURA_VERSION, expected_version));
 }
 
 int main(void) {
