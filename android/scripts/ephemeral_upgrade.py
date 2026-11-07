@@ -227,7 +227,7 @@ class Upgrade:
             self.tap_node(values[0])
             tree = self.wait("light-theme", lambda t: bool(self.find(t, "Theme: Light")))
         value = self.find(tree, "Theme:", True)[0].get("content-desc")
-        self.tap("Back")
+        self.tap("Back: Back")
         self.home()
         return value
 

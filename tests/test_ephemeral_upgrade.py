@@ -60,4 +60,30 @@ assert module.package_present("package:org.cajapersonal.sudokura\n", module.PACK
 assert not module.package_present("package:org.cajapersonal.sudokura.debug\n", module.PACKAGE)
 assert not module.package_present("package:org.example.test\n", module.PACKAGE)
 assert module.PUBLIC_CERT != "a" * 64
-print("PASS: board cells, notes, signer identity and private inventory fail-closed fixtures")
+
+# Settings exposes a composed accessibility label; a bare "Back" must NOT
+# appear to be a valid semantic target. Exercise the actual settings method.
+settings_tree = ET.fromstring(
+    '<hierarchy><node enabled="true" content-desc="Theme: Light"/>'
+    '<node enabled="true" clickable="true" content-desc="Back: Back"/>'
+    '</hierarchy>'
+)
+fake = object.__new__(module.Upgrade)
+labels = []
+home_calls = []
+fake.home = lambda: home_calls.append("home")
+def fake_tap(label, **kwargs):
+    if label != "Settings" and not module.Upgrade.find(fake, settings_tree, label):
+        raise AssertionError("Unknown Settings accessibility label: " + label)
+    labels.append(label)
+fake.tap = fake_tap
+def fake_wait(name, predicate, **kwargs):
+    assert name == "settings" and predicate(settings_tree)
+    return settings_tree
+fake.wait = fake_wait
+assert module.Upgrade.find(fake, settings_tree, "Back") == []
+assert len(module.Upgrade.find(fake, settings_tree, "Back: Back")) == 1
+assert module.Upgrade.settings(fake) == "Theme: Light"
+assert labels == ["Settings", "Back: Back"]
+assert home_calls == ["home", "home"]
+print("PASS: board cells, notes, signer identity, inventory and Settings Back regression")
