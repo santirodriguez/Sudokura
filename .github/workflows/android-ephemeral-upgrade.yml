@@ -1,4 +1,4 @@
-name: Android v1.4.0 fixed Saved Games end-to-end verification
+name: Android v1.4.0 to v1.4.1 disposable in-place upgrade diagnostic
 
 on:
   push:
@@ -7,7 +7,9 @@ on:
     paths:
       - .github/workflows/android-ephemeral-upgrade.yml
       - android/scripts/old_cold_reopen.py
+      - android/scripts/ephemeral_upgrade.py
       - tests/test_old_cold_reopen.py
+      - tests/test_ephemeral_upgrade.py
 
 permissions:
   contents: read
@@ -28,6 +30,12 @@ jobs:
           ref: 3077dd6f0b803a523f7ab41d6203dfce9cfde978
           path: source140
           persist-credentials: false
+      - name: Checkout exact integrated v1.4.1 test source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: c978dfcd6a9565d712940b67694f49f8505dd62c
+          path: source141
+          persist-credentials: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -36,17 +44,29 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: false
-      - name: Fail closed on fixed-source identity and offline test fixtures
+      - name: Verify exact source identity and offline fixtures before Android
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C source140 rev-parse HEAD)" = 3077dd6f0b803a523f7ab41d6203dfce9cfde978
+          test "$(git -C source141 rev-parse HEAD)" = c978dfcd6a9565d712940b67694f49f8505dd62c
+          test -z "$(git -C source140 status --porcelain)"
+          test -z "$(git -C source141 status --porcelain)"
           grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 1' source140/src/version.h
+          grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 2' source141/src/version.h
+          grep -Fxq '#define SUDOKURA_VERSION_PATCH 0' source140/src/version.h
+          grep -Fxq '#define SUDOKURA_VERSION_PATCH 1' source141/src/version.h
           grep -Fq "applicationId 'org.cajapersonal.sudokura'" source140/android/app/build.gradle
+          grep -Fq "applicationId 'org.cajapersonal.sudokura'" source141/android/app/build.gradle
+          grep -Fq 'games_browser_load_keep_required(departing, same_attempt)' source140/src/sudokura_sdl/games_ui.inc
+          grep -Fq 'games_browser_load_keep_required(departing, same_attempt)' source141/src/sudokura_sdl/games_ui.inc
+          grep -Fq 'result->attempt_id = record->id;' source140/src/game_library.h
+          grep -Fq 'result->attempt_id = record->id;' source141/src/game_library.h
           python3 -m py_compile probe/android/scripts/ephemeral_upgrade.py probe/android/scripts/old_cold_reopen.py
           python3 probe/tests/test_ephemeral_upgrade.py
           python3 probe/tests/test_old_cold_reopen.py
           python3 source140/android/scripts/test_prepare_sources.py
+          python3 source141/android/scripts/test_prepare_sources.py
       - name: Install pinned source-build toolchains and Android 11 image
         shell: bash
         run: |
@@ -98,60 +118,63 @@ jobs:
             exit 1
           fi
           "$ANDROID_HOME/emulator/emulator" -version
-      - name: Build disposable fixed v1.4.0 test APK only
+      - name: Build and audit both pinned unsigned Android APKs
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p baseline-diagnostics
-          test "$(git -C source140 rev-parse HEAD)" = 3077dd6f0b803a523f7ab41d6203dfce9cfde978
-          test -z "$(git -C source140 status --porcelain)"
-          grep -Fq 'result->attempt_id = record->id;' source140/src/game_library.h
-          grep -Fq 'if(!game_library_profile_result(&record,&terminal_result))return false;' source140/src/sudokura_sdl/01_runtime.inc
-          grep -Fq 'games_browser_load_keep_required(departing, same_attempt)' source140/src/sudokura_sdl/games_ui.inc
-          grep -Fq 'departing->value.session.status == SESSION_ACTIVE' source140/src/sudokura_sdl/games_ui.inc
-          printf '%s\n' '3077dd6f0b803a523f7ab41d6203dfce9cfde978' > baseline-diagnostics/patched-source-commit.txt
-          source_log="$RUNNER_TEMP/sudokura-source-prepare.log"
-          for attempt in 1 2 3; do
-            if python3 source140/android/scripts/prepare_sources.py >"$source_log" 2>&1; then
-              cat "$source_log"
-              break
-            fi
-            cat "$source_log" >&2
-            if ! grep -Eq 'urllib\.error\.HTTPError: HTTP Error (429|502|503|504):' "$source_log"; then
-              echo "Non-transient dependency preparation failure; stopping" >&2
-              exit 1
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "Source preparation exhausted three attempts" >&2
-              exit 1
-            fi
-            sleep "$((attempt * 5))"
+          mkdir -p upgrade-diagnostics
+          for src in source140 source141; do
+            source_log="$RUNNER_TEMP/sudokura-$src-source-prepare.log"
+            for attempt in 1 2 3; do
+              if python3 "$src/android/scripts/prepare_sources.py" >"$source_log" 2>&1; then
+                cat "$source_log"
+                break
+              fi
+              cat "$source_log" >&2
+              if ! grep -Eq 'urllib\.error\.HTTPError: HTTP Error (429|502|503|504):' "$source_log"; then
+                echo "Non-transient source preparation failure" >&2
+                exit 1
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Source preparation exhausted allowed retries" >&2
+                exit 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+            make -C "$src" assets
+            bash "$src/android/gradlew" --no-daemon --max-workers 2 \
+              :app:assembleProductionRelease \
+              -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+              -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
+            test -s "$src/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
           done
-          make -C source140 assets
-          bash source140/android/gradlew --no-daemon --max-workers 2 \
-            :app:assembleProductionRelease \
-            -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
-            -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
-          APK="source140/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
-          test -s "$APK"
-          # Fixed-source runtime is verified by pinned checkout, preflight,
-          # unsigned package audit and exact app version. No diagnostic flag.
-          printf '%s\n' 'source='$(git -C source140 rev-parse HEAD) 'terminal_load_gate=PASS' > baseline-diagnostics/fixed-source-receipt.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > baseline-diagnostics/unsigned-v140.txt
-          grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='1' versionName='1.4.0'" baseline-diagnostics/unsigned-v140.txt
-          python3 source140/android/scripts/audit_apk.py \
-            "$ANDROID_HOME/build-tools/35.0.0/aapt" "$APK" --variant release --require-unsigned \
-            > baseline-diagnostics/unsigned-audit-v140.json
-      - name: Verify two saved boards and interrupted history on disposable API30
+          test "$(git -C source140 rev-parse HEAD)" = 3077dd6f0b803a523f7ab41d6203dfce9cfde978
+          test "$(git -C source141 rev-parse HEAD)" = c978dfcd6a9565d712940b67694f49f8505dd62c
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          OLD_APK="source140/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
+          NEW_APK="source141/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
+          "$AAPT" dump badging "$OLD_APK" > upgrade-diagnostics/unsigned-v140.txt
+          "$AAPT" dump badging "$NEW_APK" > upgrade-diagnostics/unsigned-v141.txt
+          grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='1' versionName='1.4.0'" upgrade-diagnostics/unsigned-v140.txt
+          grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='2' versionName='1.4.1'" upgrade-diagnostics/unsigned-v141.txt
+          python3 source140/android/scripts/audit_apk.py "$AAPT" "$OLD_APK" \
+            --variant release --require-unsigned > upgrade-diagnostics/unsigned-audit-v140.json
+          python3 source141/android/scripts/audit_apk.py "$AAPT" "$NEW_APK" \
+            --variant release --require-unsigned > upgrade-diagnostics/unsigned-audit-v141.json
+          printf '%s\n' 'source_old=3077dd6f0b803a523f7ab41d6203dfce9cfde978' \
+            'source_new=c978dfcd6a9565d712940b67694f49f8505dd62c' \
+            'unsigned_audits=PASS' > upgrade-diagnostics/build-receipt.txt
+      - name: Verify one disposable same-signer code1-to-code2 upgrade
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          mkdir -p baseline-diagnostics
+          mkdir -p upgrade-diagnostics
           export UPGRADE_TEST_PASS
           UPGRADE_TEST_PASS="$(openssl rand -hex 24)"
           KEY="$RUNNER_TEMP/sudokura-ephemeral-test.p12"
           OLD="$RUNNER_TEMP/sudokura-140-test-signed.apk"
+          NEW="$RUNNER_TEMP/sudokura-141-test-signed.apk"
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
           export ANDROID_USER_HOME="$RUNNER_TEMP/sudokura-ephemeral-user"
           export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
@@ -161,10 +184,10 @@ jobs:
             status=$?
             trap - EXIT
             set +e
-            timeout 18 adb -s emulator-5554 logcat -d -t 1100 > baseline-diagnostics/final-logcat.txt 2>&1
-            timeout 12 adb -s emulator-5554 exec-out screencap -p > baseline-diagnostics/final-screen.png
+            timeout 18 adb -s emulator-5554 logcat -d -t 1100 > upgrade-diagnostics/final-logcat.txt 2>&1
+            timeout 12 adb -s emulator-5554 exec-out screencap -p > upgrade-diagnostics/final-screen.png
             if [ -n "$emulator_pid" ]; then kill "$emulator_pid" 2>/dev/null || true; fi
-            rm -f "$KEY" "$OLD"
+            rm -f "$KEY" "$OLD" "$NEW"
             unset UPGRADE_TEST_PASS
             exit "$status"
           }
@@ -173,15 +196,22 @@ jobs:
             -dname "CN=Sudokura Disposable CI Test" \
             -keyalg RSA -keysize 3072 -validity 2 -storetype PKCS12 \
             -keystore "$KEY" -storepass:env UPGRADE_TEST_PASS -keypass:env UPGRADE_TEST_PASS \
-            > baseline-diagnostics/keytool.txt 2>&1
+            > upgrade-diagnostics/keytool.txt 2>&1
           SRC="source140/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
             --ks "$KEY" --ks-type PKCS12 --ks-key-alias sudokura-ci-only \
             --ks-pass env:UPGRADE_TEST_PASS --key-pass env:UPGRADE_TEST_PASS \
             --out "$OLD" "$SRC"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$OLD" \
-            > baseline-diagnostics/test-cert-v140.txt
-          sha256sum "$OLD" > baseline-diagnostics/test-apk-hash.txt
+            > upgrade-diagnostics/test-cert-v140.txt
+          SRC_NEW="source141/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$KEY" --ks-type PKCS12 --ks-key-alias sudokura-ci-only \
+            --ks-pass env:UPGRADE_TEST_PASS --key-pass env:UPGRADE_TEST_PASS \
+            --out "$NEW" "$SRC_NEW"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$NEW" \
+            > upgrade-diagnostics/test-cert-v141.txt
+          sha256sum "$OLD" "$NEW" > upgrade-diagnostics/test-apk-hashes.txt
           printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
             --force --name sudokura-test-baseline --device pixel_2 \
             --path "$ANDROID_AVD_HOME/sudokura-test-baseline.avd" \
@@ -189,27 +219,27 @@ jobs:
           "$ANDROID_HOME/emulator/emulator" -avd sudokura-test-baseline -port 5554 \
             -no-window -no-audio -no-boot-anim -no-snapshot \
             -gpu swiftshader_indirect -memory 3072 -cores 2 \
-            > baseline-diagnostics/emulator.log 2>&1 &
+            > upgrade-diagnostics/emulator.log 2>&1 &
           emulator_pid=$!
           deadline=$((SECONDS + 240))
           until timeout 7 adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -Fxq 1; do
             if ! kill -0 "$emulator_pid" 2>/dev/null || [ "$SECONDS" -ge "$deadline" ]; then
               echo "Android 11 emulator failed to boot"
-              tail -80 baseline-diagnostics/emulator.log
+              tail -80 upgrade-diagnostics/emulator.log
               exit 1
             fi
             sleep 4
           done
-          python3 probe/android/scripts/old_cold_reopen.py \
+          python3 probe/android/scripts/ephemeral_upgrade.py \
             --adb "$ANDROID_HOME/platform-tools/adb" \
             --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
             --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            --old "$OLD" --output baseline-diagnostics
-      - name: Upload bounded test evidence, never APK or keystore
+            --old "$OLD" --new "$NEW" --output upgrade-diagnostics
+      - name: Upload bounded upgrade evidence, never APK or keystore
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sudokura-v140-fixed-saved-games-api30
-          path: baseline-diagnostics/
+          name: sudokura-v141-test-signer-upgrade-api30
+          path: upgrade-diagnostics/
           if-no-files-found: warn
           retention-days: 7

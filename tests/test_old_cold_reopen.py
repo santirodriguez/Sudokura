@@ -11,6 +11,7 @@ from old_cold_reopen import OldBaseline
 import old_cold_reopen as baseline
 
 assert baseline.OLD_SHA == "3077dd6f0b803a523f7ab41d6203dfce9cfde978"
+assert baseline.PUBLISHED_SHA == "c1b3eb31e82bcc06a078bc10e10f342aa8329e25"
 assert baseline.OLD_SHA != baseline.PUBLISHED_SHA
 
 root = "/data/user/0/" + baseline.PACKAGE

@@ -15,6 +15,11 @@ def tree(labels):
     nodes = "".join('<node content-desc="%s" enabled="true"/>' % s for s in labels)
     return ET.fromstring("<hierarchy>" + nodes + "</hierarchy>")
 
+assert module.PUBLISHED_SHA == "c1b3eb31e82bcc06a078bc10e10f342aa8329e25"
+assert module.OLD_SHA == "3077dd6f0b803a523f7ab41d6203dfce9cfde978"
+assert module.NEW_SHA == "c978dfcd6a9565d712940b67694f49f8505dd62c"
+assert module.PUBLISHED_SHA != module.OLD_SHA != module.NEW_SHA
+
 base = ["Row %d, column %d. Empty" % (r, c)
         for r in range(1, 10) for c in range(1, 10)]
 assert len(module.parse_cells(tree(base))) == 81
@@ -25,6 +30,26 @@ filled[1] = "Row 1, column 2. Empty. Notes 7"
 content = module.normalized_cells(tree(filled))
 assert content[0] == ((1, 1), "Entered 3")
 assert content[1] == ((1, 2), "Empty. Notes 7")
+
+# The actual preview path must surface errors without waiting or tapping.
+saved_board_fixture = object.__new__(module.Upgrade)
+candidate_board = tree(base)
+def fixed_preview_wait(name, predicate, **kwargs):
+    assert name == "saved-preview-0-or-error"
+    assert predicate(candidate_board), "Unexpected state was not detected"
+    return candidate_board
+saved_board_fixture.wait = fixed_preview_wait
+assert module.Upgrade.board(saved_board_fixture, "saved-preview-0") is candidate_board
+for forbidden in ("Keep your current game?", "Unsaved progress", "Storage error"):
+    candidate_board = tree([forbidden])
+    try:
+        module.Upgrade.board(saved_board_fixture, "saved-preview-0")
+    except RuntimeError as exc:
+        assert forbidden in str(exc)
+    else:
+        raise AssertionError("Saved-game modal or storage failure was accepted")
+candidate_board = tree(base)
+
 try:
     module.normalized_cells(tree(filled[:-1]))
 except RuntimeError:
@@ -328,6 +353,14 @@ with tempfile.TemporaryDirectory() as temp:
         cold, snapshots, "Theme: Light", sorted(snapshots), ["Interrupted attempt"])
     assert cold_stops == [("am", "force-stop", module.PACKAGE)] * 2
     assert (cold.out / "old-cold-reopen.json").is_file()
+    module.Upgrade.cold_reopen(
+        cold, snapshots, "Theme: Light", sorted(snapshots),
+        ["Interrupted attempt"], version="1.4.1", code=2, label="new")
+    verified = json.loads((cold.out / "new-cold-reopen.json").read_text())
+    assert verified["source"] == module.NEW_SHA
+    assert verified["version"] == "1.4.1" and verified["code"] == 2
+    assert verified["two_unique_saved_boards"] == "PASS"
+    assert verified["notes_settings_history"] == "PASS"
     try:
         module.Upgrade.cold_reopen(
             cold, snapshots, "Theme: Dark", sorted(snapshots), ["Interrupted attempt"])
@@ -336,4 +369,4 @@ with tempfile.TemporaryDirectory() as temp:
     else:
         raise AssertionError("Incorrect original cold-reopen settings passed")
 
-print("PASS: semantic row, cold reopen, private metadata and storage failure fixtures")
+print("PASS: pinned upgrade identity, two cold reopens, dialogs and private metadata")

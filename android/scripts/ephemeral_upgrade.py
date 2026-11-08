@@ -14,8 +14,10 @@ from emulator_runtime import capture_tree
 PACKAGE = "org.cajapersonal.sudokura"
 ACTIVITY = PACKAGE + "/org.sudokura.prototype.PrototypeActivity"
 PUBLIC_CERT = "fde951e3d2ef42e41c7186ee965944aeca549d590ad080711dd3d875f82df66d"
-OLD_SHA = "c1b3eb31e82bcc06a078bc10e10f342aa8329e25"
-NEW_SHA = "810888803430d0664c6d02e1b49f67b5e590141d"
+# The published baseline stays distinct from this fixed-source test scenario.
+PUBLISHED_SHA = "c1b3eb31e82bcc06a078bc10e10f342aa8329e25"
+OLD_SHA = "3077dd6f0b803a523f7ab41d6203dfce9cfde978"
+NEW_SHA = "c978dfcd6a9565d712940b67694f49f8505dd62c"
 CELL = re.compile(r"^Row ([1-9]), column ([1-9])\. (.+)$")
 BOUNDS = re.compile(r"^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$")
 
@@ -150,6 +152,21 @@ class Upgrade:
         return self.wait("home", lambda t: bool(self.find(t, "Start new game")))
 
     def board(self, label):
+        if re.fullmatch(r"saved-preview-[01]", label):
+            snapshot = self.wait(
+                label + "-or-error",
+                lambda t: len(parse_cells(t)) == 81 or
+                bool(self.find(t, "Keep your current game?")) or
+                bool(self.find(t, "Unsaved progress")) or
+                bool(self.find(t, "Storage error")))
+            for message in ("Keep your current game?", "Unsaved progress",
+                            "Storage error"):
+                if self.find(snapshot, message):
+                    raise RuntimeError(
+                        "Unexpected saved-game gate or storage error: " + message)
+            if len(parse_cells(snapshot)) != 81:
+                raise RuntimeError("Invalid saved-game preview after upgrade")
+            return snapshot
         return self.wait(label, lambda t: len(parse_cells(t)) == 81)
 
     def seed(self, label):
@@ -287,8 +304,11 @@ class Upgrade:
         self.home()
         return items
 
-    def cold_reopen(self, boards, theme, saved, history):
-        # Verify that the seeded state cold-opens under v1.4.0 before upgrading.
+    def cold_reopen(self, boards, theme, saved, history, *,
+                    version="1.4.0", code=1, label="old"):
+        if (version, code, label) not in (
+                ("1.4.0", 1, "old"), ("1.4.1", 2, "new")):
+            raise RuntimeError("Unexpected cold-reopen version or stage")
         self.shell("am", "force-stop", PACKAGE)
         self.start()
         cold_theme = self.settings()
@@ -296,9 +316,10 @@ class Upgrade:
         cold_history = self.history()
         if (cold_theme != theme or cold_saved != saved or
                 cold_history != history):
-            raise RuntimeError("Original v1.4.0 cold reopen did not retain state")
-        (self.out / "old-cold-reopen.json").write_text(json.dumps({
-            "version": "1.4.0", "code": 1,
+            raise RuntimeError(label + " cold reopen did not retain state")
+        (self.out / (label + "-cold-reopen.json")).write_text(json.dumps({
+            "source": OLD_SHA if code == 1 else NEW_SHA,
+            "version": version, "code": code,
             "two_unique_saved_boards": "PASS",
             "notes_settings_history": "PASS"}, indent=2) + "\n")
         self.shell("am", "force-stop", PACKAGE)
@@ -444,12 +465,18 @@ class Upgrade:
             raise RuntimeError("Saved game, notes, settings or history changed across update")
         if before_meta != after_meta:
             raise RuntimeError("Private ownership/mode/SELinux changed during install")
+        self.stage("new_version_cold_reopen")
+        self.cold_reopen(
+            (classic_expected, daily_expected), before_theme,
+            before_saved, before_history,
+            version="1.4.1", code=2, label="new")
         receipt = {
             "source_old": OLD_SHA, "source_new": NEW_SHA,
             "package": PACKAGE, "old_code": 1, "new_code": 2,
             "signer": "ephemeral_test_only", "test_signer_sha256": cert,
             "same_signer": "PASS", "adb_install_r": "PASS",
             "old_version_cold_reopen": "PASS",
+            "post_upgrade_cold_reopen": "PASS",
             "pre_post_private_metadata": "PASS",
             "classic_daily_note_preview_preservation": "PASS",
             "interrupted_history_preservation": "PASS",

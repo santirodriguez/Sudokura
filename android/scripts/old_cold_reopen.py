@@ -7,7 +7,7 @@ import re
 import subprocess
 
 from ephemeral_upgrade import (
-    OLD_SHA as PUBLISHED_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present,
+    PUBLISHED_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present,
     signing_cert, parse_cells
 )
 
