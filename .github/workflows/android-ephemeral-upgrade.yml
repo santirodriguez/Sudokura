@@ -25,7 +25,7 @@ jobs:
       - name: Checkout exact PATCHED v1.4.0 candidate source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: 82c73c61571a1c67474a9589250980cf9f0d837e
+          ref: 65e769b95aef66db3ad447ca74a4f4b2d52b4ab5
           path: source140
           persist-credentials: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C source140 rev-parse HEAD)" = 82c73c61571a1c67474a9589250980cf9f0d837e
+          test "$(git -C source140 rev-parse HEAD)" = 65e769b95aef66db3ad447ca74a4f4b2d52b4ab5
           grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 1' source140/src/version.h
           grep -Fq "applicationId 'org.cajapersonal.sudokura'" source140/android/app/build.gradle
           python3 -m py_compile probe/android/scripts/ephemeral_upgrade.py probe/android/scripts/old_cold_reopen.py
@@ -103,11 +103,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p baseline-diagnostics
-          test "$(git -C source140 rev-parse HEAD)" = 82c73c61571a1c67474a9589250980cf9f0d837e
+          test "$(git -C source140 rev-parse HEAD)" = 65e769b95aef66db3ad447ca74a4f4b2d52b4ab5
           test -z "$(git -C source140 status --porcelain)"
           grep -Fq 'result->attempt_id = record->id;' source140/src/game_library.h
           grep -Fq 'if(!game_library_profile_result(&record,&terminal_result))return false;' source140/src/sudokura_sdl/01_runtime.inc
-          printf '%s\n' '82c73c61571a1c67474a9589250980cf9f0d837e' > baseline-diagnostics/patched-source-commit.txt
+          grep -Fq 'SUDOKURA_LAB_SAVE_LIB stage=%s' source140/src/game_library.c
+          printf '%s\n' '65e769b95aef66db3ad447ca74a4f4b2d52b4ab5' > baseline-diagnostics/patched-source-commit.txt
           source_log="$RUNNER_TEMP/sudokura-source-prepare.log"
           for attempt in 1 2 3; do
             if python3 source140/android/scripts/prepare_sources.py >"$source_log" 2>&1; then
@@ -137,8 +138,9 @@ jobs:
           # native save-gate instrumentation.
           unzip -p "$APK" lib/arm64-v8a/libmain.so > "$RUNNER_TEMP/sudokura-save-trace-main.so"
           grep -aFq 'SUDOKURA_LAB_SAVE stage=%s' "$RUNNER_TEMP/sudokura-save-trace-main.so"
+          grep -aFq 'SUDOKURA_LAB_SAVE_LIB stage=%s' "$RUNNER_TEMP/sudokura-save-trace-main.so"
           rm -f "$RUNNER_TEMP/sudokura-save-trace-main.so"
-          printf '%s\n' 'source='$(git -C source140 rev-parse HEAD) 'trace_opt_in=PASS' > baseline-diagnostics/trace-build-receipt.txt
+          printf '%s\n' 'source='$(git -C source140 rev-parse HEAD) 'trace_opt_in=PASS' 'archive_stage_marker=PASS' > baseline-diagnostics/trace-build-receipt.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > baseline-diagnostics/unsigned-v140.txt
           grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='1' versionName='1.4.0'" baseline-diagnostics/unsigned-v140.txt
           python3 source140/android/scripts/audit_apk.py \
