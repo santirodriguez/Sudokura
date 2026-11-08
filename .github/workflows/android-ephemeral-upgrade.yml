@@ -60,9 +60,43 @@ jobs:
           test -x "$SDKMANAGER"
           (yes || true) | "$SDKMANAGER" --licenses >/dev/null
           "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" \
-            "ndk;28.2.13676358" "cmake;3.22.1" "emulator" \
-            "system-images;android-30;google_apis;x86_64"
-          test -s "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties"
+            "ndk;28.2.13676358" "cmake;3.22.1" "emulator"
+          IMAGE_PACKAGE='system-images;android-30;google_apis;x86_64'
+          IMAGE_DIR="$ANDROID_HOME/system-images/android-30/google_apis/x86_64"
+          IMAGE_LOG="$RUNNER_TEMP/sudokura-api30-sdkmanager.log"
+          image_ready() {
+            local props="$IMAGE_DIR/source.properties"
+            test -s "$props" &&
+              grep -Fxq 'AndroidVersion.ApiLevel=30' "$props" &&
+              grep -Fxq 'SystemImage.TagId=google_apis' "$props" &&
+              grep -Fxq 'SystemImage.Abi=x86_64' "$props" &&
+              test -s "$IMAGE_DIR/system.img" &&
+              test -s "$IMAGE_DIR/ramdisk.img"
+          }
+          for attempt in 1 2 3; do
+            if "$SDKMANAGER" "$IMAGE_PACKAGE" >"$IMAGE_LOG" 2>&1; then
+              cat "$IMAGE_LOG"
+              if image_ready; then
+                break
+              fi
+              echo 'Android 11 system image incomplete after SDK Manager success' >&2
+            else
+              cat "$IMAGE_LOG" >&2
+            fi
+            if ! grep -Fq 'Error on ZipFile unknown archive' "$IMAGE_LOG"; then
+              echo 'SDK Manager failed without the allowed damaged-image signal' >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo 'Android 11 system image failed after three attempts' >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
+          if ! image_ready; then
+            echo 'Android 11 system image is missing or has the wrong identity' >&2
+            exit 1
+          fi
           "$ANDROID_HOME/emulator/emulator" -version
       - name: Build disposable PATCHED v1.4.0 test APK only
         shell: bash
