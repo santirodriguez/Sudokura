@@ -180,9 +180,106 @@ with tempfile.TemporaryDirectory() as temp:
     else:
         raise AssertionError("Physical Android target accepted")
 
+
+# The known modal is sourced from the real API30 UI hierarchy of the
+# previous failed checkpoint, with only nonessential XML attributes omitted.
+import xml.etree.ElementTree as ET
+
+
+def modal_tree():
+    root = ET.Element("hierarchy")
+    values = (
+        (baseline.KEEP_TITLE, "android.widget.TextView"),
+        (baseline.KEEP_BODY, "android.widget.TextView"),
+        ("Cancel", "android.widget.Button"),
+        ("Save and leave", "android.widget.Button"),
+        ("Abandon attempt", "android.widget.Button"),
+    )
+    for title, role in values:
+        ET.SubElement(root, "node", {
+            "content-desc": title, "class": role, "package": baseline.PACKAGE,
+            "enabled": "true",
+            "clickable": "true" if role == "android.widget.Button" else "false",
+            "bounds": "[10,10][50,50]",
+        })
+    return root
+
+
+known = modal_tree()
+choice = baseline.guarded_save_and_leave(known)
+assert choice is not None and choice.get("content-desc") == "Save and leave"
+assert choice.get("content-desc") != "Abandon attempt"
+for variant in ("wrong-body", "missing-option", "duplicate-option",
+                "disabled-save", "nonclickable-save", "foreign-package"):
+    t = modal_tree()
+    nodes = [n for n in t.iter("node") if n.get("content-desc")]
+    if variant == "wrong-body":
+        nodes[1].set("content-desc", "Different warning")
+    elif variant == "missing-option":
+        t.remove(nodes[2])
+    elif variant == "duplicate-option":
+        t.append(ET.fromstring(ET.tostring(nodes[3])))
+    elif variant == "disabled-save":
+        nodes[3].set("enabled", "false")
+    elif variant == "nonclickable-save":
+        nodes[3].set("clickable", "false")
+    else:
+        nodes[3].set("package", "example.foreign")
+    try:
+        baseline.guarded_save_and_leave(t)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Unsafe replacement variant accepted: " + variant)
+
+blank = ET.Element("hierarchy")
+assert baseline.guarded_save_and_leave(blank) is None
+board = ET.Element("hierarchy")
+for row in range(1, 10):
+    for col in range(1, 10):
+        ET.SubElement(board, "node", {
+            "content-desc": "Row %d, column %d. Empty" % (row, col)
+        })
+
+
+def simulate_preview(response):
+    probe = object.__new__(OldBaseline)
+    tapped = []
+    def fake_wait(label, predicate):
+        tree = response if label.endswith("-or-keep") else board
+        assert predicate(tree), label
+        return tree
+    probe.wait = fake_wait
+    probe.find = lambda tree, title: [
+        n for n in tree.iter("node") if
+        n.get("enabled") == "true" and n.get("content-desc") == title]
+    probe.tap_node = lambda node: tapped.append(node.get("content-desc"))
+    result = OldBaseline.board(probe, "saved-preview-1")
+    assert len(baseline.parse_cells(result)) == 81
+    return tapped
+
+
+assert simulate_preview(known) == ["Save and leave"]
+assert simulate_preview(board) == []
+try:
+    bad = modal_tree()
+    next(n for n in bad.iter("node")
+         if n.get("content-desc") == baseline.KEEP_BODY).set(
+             "content-desc", "Unexpected data-loss prompt")
+    simulate_preview(bad)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("Unsafe modal was clicked")
+# Unrelated board calls must not enter the special saved-preview flow.
+probe = object.__new__(OldBaseline)
+probe.wait = lambda name, predicate: board if predicate(board) else None
+probe.find = lambda tree, title: []
+assert OldBaseline.board(probe, "classic-saved") is board
+
 script_source = (Path(__file__).resolve().parents[1] / "android" / "scripts" /
                  "old_cold_reopen.py").read_text()
 assert '"-r"' not in script_source
 assert '"--new"' not in script_source
 assert "source141" not in script_source
-print("PASS: old-only two-checkpoint ordering, metadata, error gates and device safety")
+print("PASS: patched two-checkpoint metadata, guarded modal and device safety fixtures")

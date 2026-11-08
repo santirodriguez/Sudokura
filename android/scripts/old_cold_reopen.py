@@ -7,16 +7,69 @@ import re
 import subprocess
 
 from ephemeral_upgrade import (
-    OLD_SHA as PUBLISHED_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present, signing_cert
+    OLD_SHA as PUBLISHED_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present,
+    signing_cert, parse_cells
 )
 
 
 # Exact nonpublished v1.4.0 patch candidate, never the public 1.4.0 APK.
 OLD_SHA = "b874e4ea14a8fac6da5f7ac7d540c69bdae38572"
 
+KEEP_TITLE = "Keep your current game?"
+KEEP_BODY = ("Loading will replace the current unsaved game. "
+             "Save it in Games, discard its progress, or cancel.")
+
+
+def guarded_save_and_leave(tree):
+    """Return only the safe button in the exact, known replacement dialog."""
+    nodes = [node for node in tree.iter("node") if node.get("content-desc")]
+    labels = [node.get("content-desc") for node in nodes]
+    if KEEP_TITLE not in labels:
+        return None
+    expected = {
+        KEEP_TITLE: "android.widget.TextView",
+        KEEP_BODY: "android.widget.TextView",
+        "Cancel": "android.widget.Button",
+        "Save and leave": "android.widget.Button",
+        "Abandon attempt": "android.widget.Button",
+    }
+    if len(labels) != len(expected) or set(labels) != set(expected):
+        raise RuntimeError("Unexpected saved-game replacement dialog")
+    for node in nodes:
+        label = node.get("content-desc")
+        button = expected[label] == "android.widget.Button"
+        if (node.get("package") != PACKAGE or
+                node.get("class") != expected[label] or
+                node.get("enabled") != "true" or
+                node.get("clickable") != ("true" if button else "false")):
+            raise RuntimeError("Unsafe saved-game replacement control")
+    return next(node for node in nodes
+                if node.get("content-desc") == "Save and leave")
+
 
 class OldBaseline(Upgrade):
     """Never installs a new version or modifies the product's storage directly."""
+
+
+    def board(self, label):
+        # Only the two known saved-game previews may resolve this UI guard.
+        if not re.fullmatch(r"saved-preview-[01]", label):
+            return super().board(label)
+        response = self.wait(label + "-or-keep", lambda t:
+                             len(parse_cells(t)) == 81 or
+                             any(n.get("content-desc") == KEEP_TITLE
+                                 for n in t.iter("node")) or
+                             bool(self.find(t, "Storage error")))
+        if self.find(response, "Storage error"):
+            raise RuntimeError("Storage error during saved-game selection")
+        button = guarded_save_and_leave(response)
+        if button is not None:
+            if parse_cells(response):
+                raise RuntimeError("Ambiguous board and replacement dialog")
+            self.tap_node(button)  # Save and leave only, never Abandon.
+        elif len(parse_cells(response)) != 81:
+            raise RuntimeError("Unexpected saved-game preview state")
+        return super().board(label)
 
     def verify_original_apk(self):
         badging = subprocess.check_output(
