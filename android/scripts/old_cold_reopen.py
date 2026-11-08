@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test-only two-stage cold-start baseline for an original Sudokura v1.4.0 APK."""
+"""Test-only cold-start baseline; supports a labeled, modified lab build of v1.4.0."""
 import argparse
 import json
 from pathlib import Path
@@ -54,6 +54,9 @@ class OldBaseline(Upgrade):
             entry["present"] = True
         snapshot = {
             "source": OLD_SHA, "version": "1.4.0", "code": 1,
+            "build_kind": ("LAB_INSTRUMENTED" if getattr(
+                getattr(self, "args", None), "lab_instrumented", False)
+                else "UNMODIFIED_TEST_APK"),
             "package": PACKAGE, "stage": label,
             "files_sha256": inventory, "metadata": metadata
         }
@@ -79,6 +82,9 @@ class OldBaseline(Upgrade):
         self.stage(label + "-verified")
         (self.out / (label + "-receipt.json")).write_text(
             json.dumps({"source": OLD_SHA, "version": "1.4.0",
+                        "build_kind": ("LAB_INSTRUMENTED" if getattr(
+                            getattr(self, "args", None), "lab_instrumented", False)
+                            else "UNMODIFIED_TEST_APK"),
                         "stage": label, "cold_reopen": "PASS",
                         "two_saved_boards_and_notes": "PASS",
                         "light_theme": "PASS",
@@ -125,6 +131,9 @@ class OldBaseline(Upgrade):
         self.checkpoint("stage-B-interrupted", (classic, daily), theme, saved, history)
         receipt = {
             "source": OLD_SHA, "version": "1.4.0", "code": 1,
+            "build_kind": ("LAB_INSTRUMENTED" if getattr(
+                getattr(self, "args", None), "lab_instrumented", False)
+                else "UNMODIFIED_TEST_APK"),
             "signer": "disposable_test_only", "test_signer_sha256": fingerprint,
             "stage_A_saved_cold_reopen": "PASS",
             "stage_B_interrupted_cold_reopen": "PASS",
@@ -144,5 +153,6 @@ if __name__ == "__main__":
     parser.add_argument("--apksigner", required=True)
     parser.add_argument("--serial", default="emulator-5554")
     parser.add_argument("--old", type=Path, required=True)
+    parser.add_argument("--lab-instrumented", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     OldBaseline(parser.parse_args()).run()

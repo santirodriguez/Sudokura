@@ -1,4 +1,4 @@
-name: Android v1.4.0 cold-reopen baseline, disposable signer
+name: Android v1.4.0 LAB-INSTRUMENTED startup diagnostic
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
       - .github/workflows/android-ephemeral-upgrade.yml
       - android/scripts/old_cold_reopen.py
       - tests/test_old_cold_reopen.py
+      - android/scripts/instrument_android_storage.py
+      - tests/test_instrument_android_storage.py
 
 permissions:
   contents: read
@@ -46,6 +48,7 @@ jobs:
           python3 -m py_compile probe/android/scripts/ephemeral_upgrade.py probe/android/scripts/old_cold_reopen.py
           python3 probe/tests/test_ephemeral_upgrade.py
           python3 probe/tests/test_old_cold_reopen.py
+          python3 probe/tests/test_instrument_android_storage.py
           python3 source140/android/scripts/test_prepare_sources.py
       - name: Install pinned source-build toolchains and Android 11 image
         shell: bash
@@ -64,11 +67,17 @@ jobs:
             "system-images;android-30;google_apis;x86_64"
           test -s "$ANDROID_HOME/system-images/android-30/google_apis/x86_64/source.properties"
           "$ANDROID_HOME/emulator/emulator" -version
-      - name: Build original-source unsigned APK v1.4.0 only
+      - name: Build disposable LAB-INSTRUMENTED v1.4.0 APK only
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p baseline-diagnostics
+          python3 probe/android/scripts/instrument_android_storage.py \
+            --source source140 \
+            --manifest baseline-diagnostics/lab-build-manifest.json
+          test "$(git -C source140 rev-parse HEAD)" = c1b3eb31e82bcc06a078bc10e10f342aa8329e25
+          CHANGED="$(git -C source140 diff --name-only | sort)"
+          test "$CHANGED" = "$(printf '%s\n' src/game_migration.c src/store_io.c src/sudokura_sdl/01_runtime.inc | sort)"
           python3 source140/android/scripts/prepare_sources.py
           make -C source140 assets
           bash source140/android/gradlew --no-daemon --max-workers 2 \
@@ -82,7 +91,7 @@ jobs:
           python3 source140/android/scripts/audit_apk.py \
             "$ANDROID_HOME/build-tools/35.0.0/aapt" "$APK" --variant release --require-unsigned \
             > baseline-diagnostics/unsigned-audit-v140.json
-      - name: Sign disposable original APK and test two cold-reopen checkpoints
+      - name: Sign disposable lab APK and identify old-version startup failure
         shell: bash
         run: |
           set -euo pipefail
@@ -102,6 +111,7 @@ jobs:
             trap - EXIT
             set +e
             timeout 18 adb -s emulator-5554 logcat -d -t 1100 > baseline-diagnostics/final-logcat.txt 2>&1
+            timeout 15 adb -s emulator-5554 logcat -d -s SUDOKURA_LAB:I '*:S' > baseline-diagnostics/lab-startup-logcat.txt 2>&1
             timeout 12 adb -s emulator-5554 exec-out screencap -p > baseline-diagnostics/final-screen.png
             if [ -n "$emulator_pid" ]; then kill "$emulator_pid" 2>/dev/null || true; fi
             rm -f "$KEY" "$OLD"
@@ -144,12 +154,12 @@ jobs:
             --adb "$ANDROID_HOME/platform-tools/adb" \
             --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" \
             --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            --old "$OLD" --output baseline-diagnostics
-      - name: Upload sanitized baseline evidence, never APK or keystore
+            --old "$OLD" --output baseline-diagnostics --lab-instrumented
+      - name: Upload sanitized lab traces, never APK or keystore
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sudokura-v140-cold-reopen-diagnostics
+          name: sudokura-v140-instrumented-startup-diagnostics
           path: baseline-diagnostics/
           if-no-files-found: warn
           retention-days: 7
