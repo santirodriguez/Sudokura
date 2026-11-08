@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed parser and identity tests for disposable upgrade acceptance."""
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
