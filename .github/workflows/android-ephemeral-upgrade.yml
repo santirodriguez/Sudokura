@@ -1,4 +1,4 @@
-name: Android v1.4.0 PATCHED candidate cold-reopen verification
+name: Android v1.4.0 isolated saved-game save-gate diagnosis
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
       - name: Checkout exact PATCHED v1.4.0 candidate source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: b874e4ea14a8fac6da5f7ac7d540c69bdae38572
+          ref: 82c73c61571a1c67474a9589250980cf9f0d837e
           path: source140
           persist-credentials: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C source140 rev-parse HEAD)" = b874e4ea14a8fac6da5f7ac7d540c69bdae38572
+          test "$(git -C source140 rev-parse HEAD)" = 82c73c61571a1c67474a9589250980cf9f0d837e
           grep -Fxq '#define SUDOKURA_VERSION_ANDROID_CODE 1' source140/src/version.h
           grep -Fq "applicationId 'org.cajapersonal.sudokura'" source140/android/app/build.gradle
           python3 -m py_compile probe/android/scripts/ephemeral_upgrade.py probe/android/scripts/old_cold_reopen.py
@@ -103,11 +103,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p baseline-diagnostics
-          test "$(git -C source140 rev-parse HEAD)" = b874e4ea14a8fac6da5f7ac7d540c69bdae38572
+          test "$(git -C source140 rev-parse HEAD)" = 82c73c61571a1c67474a9589250980cf9f0d837e
           test -z "$(git -C source140 status --porcelain)"
           grep -Fq 'result->attempt_id = record->id;' source140/src/game_library.h
           grep -Fq 'if(!game_library_profile_result(&record,&terminal_result))return false;' source140/src/sudokura_sdl/01_runtime.inc
-          printf '%s\n' 'b874e4ea14a8fac6da5f7ac7d540c69bdae38572' > baseline-diagnostics/patched-source-commit.txt
+          printf '%s\n' '82c73c61571a1c67474a9589250980cf9f0d837e' > baseline-diagnostics/patched-source-commit.txt
           source_log="$RUNNER_TEMP/sudokura-source-prepare.log"
           for attempt in 1 2 3; do
             if python3 source140/android/scripts/prepare_sources.py >"$source_log" 2>&1; then
@@ -128,10 +128,17 @@ jobs:
           make -C source140 assets
           bash source140/android/gradlew --no-daemon --max-workers 2 \
             :app:assembleProductionRelease \
+            -PsudokuraLabSaveTrace=true \
             -PsudokuraFont=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
             -PsudokuraFontLicense=/usr/share/doc/fonts-dejavu-core/copyright
           APK="source140/android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk"
           test -s "$APK"
+          # Fail before installing if the exact test APK lacks the opted-in
+          # native save-gate instrumentation.
+          unzip -p "$APK" lib/arm64-v8a/libmain.so > "$RUNNER_TEMP/sudokura-save-trace-main.so"
+          grep -aFq 'SUDOKURA_LAB_SAVE stage=%s' "$RUNNER_TEMP/sudokura-save-trace-main.so"
+          rm -f "$RUNNER_TEMP/sudokura-save-trace-main.so"
+          printf '%s\n' 'source='$(git -C source140 rev-parse HEAD) 'trace_opt_in=PASS' > baseline-diagnostics/trace-build-receipt.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > baseline-diagnostics/unsigned-v140.txt
           grep -Fq "package: name='org.cajapersonal.sudokura' versionCode='1' versionName='1.4.0'" baseline-diagnostics/unsigned-v140.txt
           python3 source140/android/scripts/audit_apk.py \
@@ -157,6 +164,12 @@ jobs:
             trap - EXIT
             set +e
             timeout 18 adb -s emulator-5554 logcat -d -t 1100 > baseline-diagnostics/final-logcat.txt 2>&1
+            # Only bounded, synthetic-session diagnostic lines are exported.
+            timeout 18 adb -s emulator-5554 logcat -d -t 8000 -v threadtime 2>/dev/null |
+              grep -F 'SUDOKURA_LAB_SAVE' > baseline-diagnostics/save-gate-trace.txt || true
+            if [ ! -s baseline-diagnostics/save-gate-trace.txt ]; then
+              printf '%s\n' 'NO_SAVE_GATE_TRACE_OBSERVED' > baseline-diagnostics/save-gate-trace-status.txt
+            fi
             timeout 12 adb -s emulator-5554 exec-out screencap -p > baseline-diagnostics/final-screen.png
             if [ -n "$emulator_pid" ]; then kill "$emulator_pid" 2>/dev/null || true; fi
             rm -f "$KEY" "$OLD"
@@ -204,7 +217,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sudokura-v140-patched-cold-reopen-diagnostics
+          name: sudokura-v140-save-gate-diagnostics
           path: baseline-diagnostics/
           if-no-files-found: warn
           retention-days: 7

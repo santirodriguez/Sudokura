@@ -13,7 +13,7 @@ from ephemeral_upgrade import (
 
 
 # Exact nonpublished v1.4.0 patch candidate, never the public 1.4.0 APK.
-OLD_SHA = "b874e4ea14a8fac6da5f7ac7d540c69bdae38572"
+OLD_SHA = "82c73c61571a1c67474a9589250980cf9f0d837e"
 
 KEEP_TITLE = "Keep your current game?"
 KEEP_BODY = ("Loading will replace the current unsaved game. "
