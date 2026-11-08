@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "android" / "script
 from old_cold_reopen import OldBaseline
 import old_cold_reopen as baseline
 
-assert baseline.OLD_SHA == "65e769b95aef66db3ad447ca74a4f4b2d52b4ab5"
+assert baseline.OLD_SHA == "3077dd6f0b803a523f7ab41d6203dfce9cfde978"
 assert baseline.OLD_SHA != baseline.PUBLISHED_SHA
 
 root = "/data/user/0/" + baseline.PACKAGE
@@ -254,12 +254,21 @@ def simulate_preview(response):
         n for n in tree.iter("node") if
         n.get("enabled") == "true" and n.get("content-desc") == title]
     probe.tap_node = lambda node: tapped.append(node.get("content-desc"))
-    result = OldBaseline.board(probe, "saved-preview-1")
+    try:
+        result = OldBaseline.board(probe, "saved-preview-1")
+    except RuntimeError:
+        assert tapped == [], "No unsafe modal action may be tapped"
+        raise
     assert len(baseline.parse_cells(result)) == 81
     return tapped
 
 
-assert simulate_preview(known) == ["Save and leave"]
+try:
+    simulate_preview(known)
+except RuntimeError as exc:
+    assert "Unexpected Save-and-leave gate" in str(exc)
+else:
+    raise AssertionError("An unnecessary Save-and-leave dialog was accepted")
 assert simulate_preview(board) == []
 try:
     bad = modal_tree()
@@ -282,4 +291,4 @@ script_source = (Path(__file__).resolve().parents[1] / "android" / "scripts" /
 assert '"-r"' not in script_source
 assert '"--new"' not in script_source
 assert "source141" not in script_source
-print("PASS: patched two-checkpoint metadata, guarded modal and device safety fixtures")
+print("PASS: fixed-source cold reopen fixtures reject any unexpected save/abandon prompt")
