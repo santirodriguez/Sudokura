@@ -1,5 +1,6 @@
 #define SUDOKURA_STORE_TESTING 1
 #include "game_library.h"
+#include "game_migration.h"
 #include "journey.h"
 #include "seed.h"
 #include "store_io.h"
@@ -2334,6 +2335,76 @@ static void test_daily_activation_interrupted_and_retried(void) {
   cleanup();
 }
 
+/* The exact API30 interrupted-source shape is terminal, not an
+   unsaved ACTIVE game. A later Saved Games selection must leave its archive,
+   earlier backup, identity and notes untouched. */
+static void test_interrupted_saved_game_archive_remains_immutable(void) {
+  prepare();
+  ProfileSession played = make_session(SESSION_ACTIVE);
+  played.started = true;
+  played.explicitly_saved = false;
+  int note_cell = -1;
+  for (int i = 0; i < 81; ++i) {
+    if (!played.session.game.fixed[i]) { note_cell = i; break; }
+  }
+  assert(note_cell >= 0);
+  played.session.game.notes[note_cell] = 1u << 3;
+  assert(session_validate_runtime(&played.session));
+
+  GameAttemptId source = make_id(19911), target = make_id(19912);
+  GameLibraryHotCache source_cache = {0}, target_cache = {0};
+  GameLibraryRecord record, terminal, previous, observed;
+  assert(game_library_make_exact_runtime(&record, source, 4, &played, true));
+  assert(game_library_save_runtime(root, &record, &source_cache) == STORE_OK);
+
+  ProfileSession interrupted = played;
+  interrupted.session.status = SESSION_INTERRUPTED;
+  assert(game_library_make_exact_runtime(&record, source, 5, &interrupted, true));
+  assert(game_library_save_runtime(root, &record, &source_cache) == STORE_OK);
+  assert(game_library_load(root, source, &terminal) == STORE_OK);
+  assert(game_library_load_previous(root, source, &previous) == STORE_OK);
+  assert(terminal.revision == 5 &&
+         terminal.result.status == SESSION_INTERRUPTED);
+  assert(terminal.exact.started && !terminal.exact.explicitly_saved);
+  assert(terminal.exact.session.game.notes[note_cell] == (1u << 3));
+  assert(previous.revision == 4 && previous.result.status == SESSION_ACTIVE);
+  ProfileSlot hot = {0};
+  hot.present = hot.retained = true;
+  hot.attempt_id = source;
+  hot.revision = 5;
+  hot.value = interrupted;
+  assert(game_library_verify_retained_snapshot(root, &hot) == STORE_OK);
+
+  /* The destination is an independent saved Classic attempt. */
+  ProfileSession saved = make_session(SESSION_ACTIVE);
+  saved.started = saved.explicitly_saved = true;
+  assert(game_library_make_exact_runtime(&record, target, 3, &saved, true));
+  assert(game_library_save_runtime(root, &record, &target_cache) == STORE_OK);
+
+  /* The pre-fix erroneous Save-and-leave is forbidden by the archive gate. */
+  ProfileSession invalid_save = interrupted;
+  invalid_save.explicitly_saved = true;
+  assert(game_library_make_exact_runtime(&record, source, 6,
+                                         &invalid_save, true));
+  assert(game_library_save_runtime(root, &record, &source_cache) ==
+         STORE_IO_ERROR);
+  assert(game_library_load(root, source, &observed) == STORE_OK);
+  assert(observed.revision == terminal.revision &&
+         observed.result.status == SESSION_INTERRUPTED &&
+         !observed.exact.explicitly_saved);
+  assert(observed.exact.session.game.notes[note_cell] == (1u << 3));
+  assert(game_attempt_id_equal(observed.id, source));
+  assert(observed.updated_utc == terminal.updated_utc);
+  assert(game_library_load_previous(root, source, &observed) == STORE_OK);
+  assert(observed.revision == previous.revision &&
+         observed.result.status == SESSION_ACTIVE);
+  assert(observed.exact.session.game.notes[note_cell] == (1u << 3));
+  assert(game_library_load(root, target, &observed) == STORE_OK);
+  assert(observed.revision == 3 && observed.exact.explicitly_saved);
+  assert(game_attempt_id_equal(observed.id, target));
+  cleanup();
+}
+
 static void test_interrupted_journey_and_replay(void) {
   prepare();
   ProfileSession played=make_session(SESSION_INTERRUPTED);
@@ -2344,6 +2415,42 @@ static void test_interrupted_journey_and_replay(void) {
   assert(game_library_save_runtime_at(root,&first,&cache,100)==STORE_OK);
   assert(game_library_load(root,first.id,&output)==STORE_OK);
   assert(output.exact.started && output.result.status==SESSION_INTERRUPTED);
+
+  /* Interrupted history must use the archived record's attempt ID.
+     A current profile with a valid history link must skip legacy import. */
+  ProfileResult linked;
+  assert(game_library_profile_result(&first,&linked));
+  assert(game_attempt_id_equal(linked.attempt_id,first.id));
+  assert(linked.status==SESSION_INTERRUPTED);
+  ProfileResult untouched=linked;
+  assert(!game_library_profile_result(NULL,&linked));
+  assert(!game_library_profile_result(&first,NULL));
+  GameLibraryRecord invalid=first;
+  invalid.id=(GameAttemptId){0,0};
+  assert(!game_library_profile_result(&invalid,&linked));
+  assert(game_attempt_id_equal(linked.attempt_id,untouched.attempt_id));
+  assert(linked.status==untouched.status && linked.practice==untouched.practice);
+
+  ProfileData history;
+  profile_defaults(&history);
+  bool inserted=false;
+  assert(profile_record_result(&history,&linked,&inserted) && inserted);
+  assert(history.result_count==1);
+  assert(game_attempt_id_equal(history.results[0].attempt_id,first.id));
+  assert(profile_validate(&history));
+  const char *history_path=".sudokura-library-test/profile-interrupted.dat";
+  const char *history_backup=".sudokura-library-test/profile-interrupted.dat.bak";
+  assert(profile_save_file(history_path,history_backup,&history)==STORE_OK);
+  ProfileData reopened;
+  assert(profile_load_file(history_path,&reopened)==STORE_OK);
+  bool upgraded=true;
+  assert(game_migration_upgrade(root,history_path,history_backup,
+                                &reopened,&upgraded)==STORE_OK);
+  assert(!upgraded);
+  assert(game_migration_reconcile(root,history_path,history_backup,
+                                  &reopened)==STORE_OK);
+  assert(profile_encoded_equal(&reopened,&history));
+
   assert(game_library_prepare_replay(&replay,&output,make_id(19002)));
   assert(!replay.exact.started && !replay.exact.explicitly_saved);
   assert(game_attempt_id_equal(replay.parent,first.id));
@@ -2358,6 +2465,7 @@ static void test_interrupted_journey_and_replay(void) {
 }
 
 int main(void) {
+  test_interrupted_saved_game_archive_remains_immutable();
   test_interrupted_journey_and_replay();
   test_daily_activation_interrupted_and_retried();
   cleanup();
