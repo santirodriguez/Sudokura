@@ -74,7 +74,23 @@ jobs:
           grep -Fq 'result->attempt_id = record->id;' source140/src/game_library.h
           grep -Fq 'if(!game_library_profile_result(&record,&terminal_result))return false;' source140/src/sudokura_sdl/01_runtime.inc
           printf '%s\n' 'b874e4ea14a8fac6da5f7ac7d540c69bdae38572' > baseline-diagnostics/patched-source-commit.txt
-          python3 source140/android/scripts/prepare_sources.py
+          source_log="$RUNNER_TEMP/sudokura-source-prepare.log"
+          for attempt in 1 2 3; do
+            if python3 source140/android/scripts/prepare_sources.py >"$source_log" 2>&1; then
+              cat "$source_log"
+              break
+            fi
+            cat "$source_log" >&2
+            if ! grep -Eq 'urllib\.error\.HTTPError: HTTP Error (429|502|503|504):' "$source_log"; then
+              echo "Non-transient dependency preparation failure; stopping" >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Source preparation exhausted three attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
           make -C source140 assets
           bash source140/android/gradlew --no-daemon --max-workers 2 \
             :app:assembleProductionRelease \
