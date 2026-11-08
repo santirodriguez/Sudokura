@@ -10,6 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "android" / "script
 from old_cold_reopen import OldBaseline
 import old_cold_reopen as baseline
 
+assert baseline.OLD_SHA == "b874e4ea14a8fac6da5f7ac7d540c69bdae38572"
+assert baseline.OLD_SHA != baseline.PUBLISHED_SHA
+
 root = "/data/user/0/" + baseline.PACKAGE
 files = root + "/files"
 inventory = {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test-only cold-start baseline; supports a labeled, modified lab build of v1.4.0."""
+"""Two-stage cold reopen of a patched, nonpublished v1.4.0 test APK."""
 import argparse
 import json
 from pathlib import Path
@@ -7,8 +7,12 @@ import re
 import subprocess
 
 from ephemeral_upgrade import (
-    OLD_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present, signing_cert
+    OLD_SHA as PUBLISHED_SHA, PACKAGE, PUBLIC_CERT, Upgrade, package_present, signing_cert
 )
+
+
+# Exact nonpublished v1.4.0 patch candidate, never the public 1.4.0 APK.
+OLD_SHA = "b874e4ea14a8fac6da5f7ac7d540c69bdae38572"
 
 
 class OldBaseline(Upgrade):
@@ -54,9 +58,7 @@ class OldBaseline(Upgrade):
             entry["present"] = True
         snapshot = {
             "source": OLD_SHA, "version": "1.4.0", "code": 1,
-            "build_kind": ("LAB_INSTRUMENTED" if getattr(
-                getattr(self, "args", None), "lab_instrumented", False)
-                else "UNMODIFIED_TEST_APK"),
+            "build_kind": "PATCHED_V140_TEST_CANDIDATE",
             "package": PACKAGE, "stage": label,
             "files_sha256": inventory, "metadata": metadata
         }
@@ -70,7 +72,7 @@ class OldBaseline(Upgrade):
         after_stop = self.capture_private(label + "-after-stop")
         if (before["files_sha256"] != after_stop["files_sha256"] or
                 before["metadata"] != after_stop["metadata"]):
-            raise RuntimeError("Original private files changed during force-stop")
+            raise RuntimeError("Patched candidate private files changed during force-stop")
         self.stage(label + "-reopen")
         self.start()
         cold_theme = self.settings()
@@ -78,13 +80,11 @@ class OldBaseline(Upgrade):
         cold_history = self.history() if history is not None else None
         if (cold_theme != theme or cold_saved != saved or
                 (history is not None and cold_history != history)):
-            raise RuntimeError("Original version cold reopen did not retain " + label)
+            raise RuntimeError("Patched candidate cold reopen did not retain " + label)
         self.stage(label + "-verified")
         (self.out / (label + "-receipt.json")).write_text(
             json.dumps({"source": OLD_SHA, "version": "1.4.0",
-                        "build_kind": ("LAB_INSTRUMENTED" if getattr(
-                            getattr(self, "args", None), "lab_instrumented", False)
-                            else "UNMODIFIED_TEST_APK"),
+                        "build_kind": "PATCHED_V140_TEST_CANDIDATE",
                         "stage": label, "cold_reopen": "PASS",
                         "two_saved_boards_and_notes": "PASS",
                         "light_theme": "PASS",
@@ -110,7 +110,7 @@ class OldBaseline(Upgrade):
             self.adb("wait-for-device", timeout=45)
         if self.shell("id", "-u").strip() != "0":
             raise RuntimeError("Require rooted disposable emulator for diagnostics")
-        self.stage("install_original")
+        self.stage("install_patched_candidate")
         self.adb("install", str(self.args.old), timeout=100)
         self.start()
         self.home()
@@ -131,16 +131,14 @@ class OldBaseline(Upgrade):
         self.checkpoint("stage-B-interrupted", (classic, daily), theme, saved, history)
         receipt = {
             "source": OLD_SHA, "version": "1.4.0", "code": 1,
-            "build_kind": ("LAB_INSTRUMENTED" if getattr(
-                getattr(self, "args", None), "lab_instrumented", False)
-                else "UNMODIFIED_TEST_APK"),
+            "build_kind": "PATCHED_V140_TEST_CANDIDATE",
             "signer": "disposable_test_only", "test_signer_sha256": fingerprint,
             "stage_A_saved_cold_reopen": "PASS",
             "stage_B_interrupted_cold_reopen": "PASS",
             "v141_install": "NOT_RUN", "upgrade_preservation": "NOT_ESTABLISHED",
             "real_device_and_production_signer": "NOT_RUN"
         }
-        self.stage("old_baseline_verified")
+        self.stage("patched_candidate_baseline_verified")
         (self.out / "baseline-receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n")
         print(json.dumps(receipt, sort_keys=True))
@@ -153,6 +151,5 @@ if __name__ == "__main__":
     parser.add_argument("--apksigner", required=True)
     parser.add_argument("--serial", default="emulator-5554")
     parser.add_argument("--old", type=Path, required=True)
-    parser.add_argument("--lab-instrumented", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     OldBaseline(parser.parse_args()).run()
