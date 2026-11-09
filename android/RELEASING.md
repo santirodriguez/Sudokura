@@ -56,12 +56,12 @@ These identify the public certificates, not JKS-file checksums. A matching alias
 
 ### Current CI configuration
 
-Exactly two repository secrets are used for direct APK signing:
+The established direct-APK signing JKS is unchanged. Its old repository-scoped secrets (`SUDOKURA_APP_KEYSTORE_BASE64` and `SUDOKURA_APP_KEYSTORE_PASSWORD`) are **not referenced by the protected signing job** and must be retired only after an approved secure migration. The protected job requires two differently named secrets located in its `sudokura-app-signing` Environment:
 
-- `SUDOKURA_APP_KEYSTORE_BASE64`: base64 of the app-signing JKS.
-- `SUDOKURA_APP_KEYSTORE_PASSWORD`: the shared JKS store/key-entry password.
+- `SUDOKURA_SIGNING_ENV_KEYSTORE_BASE64`: encoded original app-signing JKS.
+- `SUDOKURA_SIGNING_ENV_KEYSTORE_PASSWORD`: its existing store/key-entry password.
 
-The alias is fixed as `sudokura`. The store password and key-entry password are different concepts, but this key uses the same value for both; no third secret is needed. Signing is allowed on the exact trusted `release/1.4.0` branch source and on push events for version-matched release tags whose exact commit belongs to `main`. Pull requests, arbitrary refs, mismatched sources and manual tag dispatch do not sign. The context is checked before the signing step receives credentials. The Play upload JKS and password are not used by this workflow.
+The alias remains `sudokura`; no new signing key or Play upload key is needed. The original JKS uses the same secret value for store and key-entry passwords. Manual signing is allowed only for the reviewed full SHA on `release/1.4.1`; version-matched tag pushes whose source belongs to `main` retain the release path, subject to the same protected Environment controls. Ordinary pushes, PRs, arbitrary refs, mismatched sources and manually dispatched tags cannot sign. Configure and verify Environment ref/approval protections and secret scope separately before use; merely naming the Environment in YAML is insufficient.
 
 Keep private JKS files and password records outside source control, chat, Issues and ordinary build artifacts. Base64 is an encoding, not encryption. Do not echo secret values or enable shell tracing while handling them. Keep JKS files mode 0600 and their private directory mode 0700. Preserve role-labelled `01-app-signing/`, `02-play-upload/` and `public/` groups in private custody; only exported public certificates belong in the last group.
 
@@ -81,13 +81,13 @@ The direct APK uses the pinned signing toolchain. Before claiming F-Droid develo
 
 ## Internal combined candidate
 
-The trusted release-branch CI signs and verifies the APK, then emits `artifact-manifest-android.json`, `SHA256SUMS-android.txt` and `build-provenance-android.txt`. These bind source/version, application ID, app certificate, APK bytes and signed audit receipts. They do not certify device, reproducibility, store or 16 KiB runtime acceptance.
+The separately authorized protected signing job signs and verifies the APK, then emits `artifact-manifest-android.json`, `SHA256SUMS-android.txt` and `build-provenance-android.txt`. These bind source/version, application ID, app certificate, APK bytes and signed audit receipts. They do not certify device, reproducibility, store or 16 KiB runtime acceptance.
 
-When that same CI run builds Android, its final internal bundle includes the signed APK alongside the four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
+When the protected release packaging workflow runs with approved signing access, its combined bundle includes the signed APK alongside four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
 
 ### Exact public upload handoff
 
-For a pre-publication audit or separately authorized manual upload, use an accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle contains all five application packages and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to that specific candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then stages only seven public files in a new directory:
+For a pre-publication audit or separately authorized manual upload, use an accepted exact-source signed `release-bundle` from the approved release packaging workflow, not the desktop-only `phase9-release-bundle` from ordinary CI. The accepted signed bundle contains all five application packages and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to that specific candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then stages only seven public files in a new directory:
 
 ```sh
 python3 scripts/release_bundle.py export \
@@ -100,7 +100,7 @@ This stages files only: it creates no tag, draft, release or network request, an
 
 For normal publication, separately authorize the exact `main`-ancestor source commit and release tag. The tag-triggered workflow rebuilds and signs Android and desktop from its resolved source, validates seven release assets, and creates a draft only; do not relabel older branch-CI bytes as a new tag build. Validate the draft's seven uploaded assets using `scripts/release_bundle.py validate-assets --version 1.4.0 --assets-json draft-release-assets.json --include-android` and independently confirm the uploaded bytes, source and checksums before publication; after publication require the `--published` validation mode. The export procedure above is an audit/staging option, not a requirement to replace the tag-built draft. Any source change requires regeneration and validation of its own exact-source bundle.
 
-The tag workflow now calls the reusable Android job with the resolved source commit and requires trusted signing. Its combined bundle includes the signed APK, and the draft upload, labels and asset validator all require seven files. A failure in Android, either Linux runtime check or another package job blocks the draft. Tags trigger the release workflow without also triggering the general CI. Manual packaging creates no draft and must use an exact trusted workflow source; it cannot sign an arbitrary historical ref. No tag or draft is created as part of a branch CI run.
+The tag workflow calls the reusable Android build and protected signing jobs with the resolved source commit, and requires Environment-approved original-key signing. Its combined bundle includes the signed APK, and the draft upload, labels and asset validator all require seven files. A failure in Android, either Linux runtime check or another package job blocks the draft. Tags trigger the release workflow without also triggering the general CI. Manual packaging creates no draft and must use an exact trusted workflow source; it cannot sign an arbitrary historical ref. No tag or draft is created as part of a branch CI run.
 
 ## Distribution acceptance and limitations
 
