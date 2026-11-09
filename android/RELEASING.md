@@ -9,7 +9,7 @@ Sudokura 1.4.0 is the **first public Android distribution version** after privat
 | Variant | Application ID | Version | Intended use |
 | --- | --- | --- | --- |
 | Prototype debug | `org.sudokura.prototype.debug` | `1.4.0-prototype` / 1 | Separate test installation; ephemeral debug signer |
-| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 1 | Gradle stages unsigned APK/AAB; trusted release-branch CI signs the direct APK |
+| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 1 | Gradle stages unsigned APK/AAB; the original direct APK was separately signed for the published release |
 
 The production ID was confirmed on November 3, 2026. The internal Java namespace remains independent of the application ID; retain the JNI class names. The production label is Sudokura. Prototype data is separate; no automatic migration or uninstall workaround is promised. Keep backup/device transfer excluded and preserve local progress.
 
@@ -17,12 +17,13 @@ The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.
 
 ## Build outputs and verified signing
 
-The existing reusable Android job, called by CI, builds only `prototypeDebug` and `productionRelease`. It retains:
+The reusable Android workflow separates an unsigned `android-debug` build job from a conditional Environment-gated `android-sign` job. Its outputs are:
 
 - `sudokura-android-debug-prototype`: the installable debug APK and structural receipts.
 - `sudokura-android-unsigned-production`: the unsigned production APK, unsigned Play AAB, source/version/checksum receipts and APK/native/alignment audits.
 - `sudokura-android-signed-github`: the signed direct APK, verified app certificate and source-bound manifest/checksum receipts.
-- `phase9-release-bundle`: the five application files with shared Build-Info and checksums, after the standard cross-platform package jobs succeed.
+- `phase9-release-bundle`: four desktop application packages, shared Build-Info and checksums, produced by ordinary CI.
+- `release-bundle`: the five application packages (including the original-signed direct APK), shared Build-Info and checksums, produced only by a separately approved release workflow.
 
 The production APK is not installable until signed. CI validates the AAB with official bundletool 1.18.3, downloaded from its release with SHA-256 verification, and retains the validation output and tool identity. This structural validation does not establish upload signing or Console acceptance; both remain open. The reusable Android build and ordinary CI run without production signing credentials. Signing is isolated in an `android-sign` job bound to the `sudokura-app-signing` Environment, taking verified source-bound unsigned artifacts from that same run. Manual v1.4.1 signing requires an exact reviewed full SHA in the workflow dispatch; version-matched release tags on `main` keep the release path. The SHA check is not independent access approval. The protected job reads new secret names `SUDOKURA_SIGNING_ENV_KEYSTORE_BASE64` and `SUDOKURA_SIGNING_ENV_KEYSTORE_PASSWORD`, never the existing repository-level names. Before any production signing, configure those names at Environment scope, enforce and verify ref/approval restrictions, and retire the broad repository secrets. Missing Environment credentials must fail closed. The workflow code alone is **not** a completed access boundary. The Play upload JKS stays separate and is never used by this job. A signed CI artifact is not a public release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
 
@@ -33,11 +34,11 @@ bash android/gradlew --no-daemon :app:assemblePrototypeDebug :app:assembleProduc
 python3 android/scripts/audit_apk.py /path/to/aapt android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk --variant release --require-unsigned
 ```
 
-Do not install tooling on the maintainer's computer merely to reproduce CI. Final signed APK naming remains `Sudokura-1.4.0-Android-arm64.apk`; files containing `unsigned` are staging artifacts, not public downloads. AABs remain internal Play preparation, not GitHub public release assets. Desktop release assets and their existing checks remain unchanged.
+Do not install tooling on the maintainer's computer merely to reproduce CI. The signed direct APK name is derived from source version (`Sudokura-<version>-Android-arm64.apk`; the published v1.4.0 asset uses `Sudokura-1.4.0-Android-arm64.apk`). Files containing `unsigned` are staging artifacts, not public downloads. AABs remain internal Play preparation, not GitHub public release assets. Desktop release assets and their existing checks remain unchanged.
 
 ## Existing signing identities and recovery
 
-The two independent Sudokura keys have already been created. The app key signs the direct APK in CI; the Play upload key remains separate. Do not generate replacements or repeat initial setup for a normal build, update or password change. Never reuse another application's keys.
+The two independent Sudokura keys have already been created. The app key signed the published v1.4.0 direct APK; future signing requires the approved protected job. The Play upload key remains separate. Do not generate replacements or repeat initial setup for a normal build, update or password change. Never reuse another application's keys.
 
 | Role | Private filename / alias | Purpose | Current state |
 | --- | --- | --- | --- |
@@ -91,7 +92,7 @@ For a pre-publication audit or separately authorized manual upload, use an accep
 
 ```sh
 python3 scripts/release_bundle.py export \
-  --artifacts-dir /path/to/extracted/phase9-release-bundle \
+  --artifacts-dir /path/to/extracted/release-bundle \
   --output-dir /path/to/new/public-upload \
   --version 1.4.0 --source-commit "$SOURCE_COMMIT" --include-android
 ```

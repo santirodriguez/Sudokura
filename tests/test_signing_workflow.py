@@ -8,6 +8,7 @@ preview = (root / '.github/workflows/android-preview.yml').read_text()
 release = (root / '.github/workflows/release.yml').read_text()
 assert 'SUDOKURA_APP_KEYSTORE_' not in ci
 assert 'INCLUDE_ANDROID: "false"' in ci
+assert "github.base_ref == 'release/1.4.1'" in ci
 assert 'SUDOKURA_APP_KEYSTORE_' not in release
 assert 'approved_source_sha:' in release
 assert 'environment: sudokura-app-signing' in preview
