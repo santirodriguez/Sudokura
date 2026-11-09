@@ -19,8 +19,9 @@ assert 'verify_signing_input.py' in preview
 assert 'SUDOKURA_APPROVED_SOURCE_SHA:' in preview
 build, signed = preview.split('\n  android-sign:\n', 1)
 assert 'SUDOKURA_APP_KEYSTORE_' not in build
-assert signed.count('SUDOKURA_APP_KEYSTORE_BASE64:') == 1
-assert signed.count('SUDOKURA_APP_KEYSTORE_PASSWORD:') == 1
+secret_bindings = [line.strip().split(':', 1)[0] for line in signed.splitlines()
+                   if line.strip().startswith('SUDOKURA_APP_KEYSTORE_') and 'secrets.' in line]
+assert sorted(secret_bindings) == ['SUDOKURA_APP_KEYSTORE_BASE64', 'SUDOKURA_APP_KEYSTORE_PASSWORD']
 assert "if: needs.android-debug.outputs.sign == 'true'" in signed
 assert 'REQUIRE_SIGNED: "true"' in signed
 assert 'sudokura-android-unsigned-production' in signed
