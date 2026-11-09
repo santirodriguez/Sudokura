@@ -11,7 +11,11 @@ def signing_allowed(event, ref, source, event_commit, version, tag_commit=None, 
     if event == 'pull_request':
         return False
     if ref == 'refs/heads/release/1.4.0':
-        return event in ('push', 'workflow_dispatch')
+        return event in ('push', 'workflow_dispatch') and version == '1.4.0'
+    # A prepublication 1.4.1 candidate can be signed only by manual dispatch.
+    # A merge/push or PR must never unlock the production signing key.
+    if ref == 'refs/heads/release/1.4.1':
+        return event == 'workflow_dispatch' and version == '1.4.1'
     return (event == 'push' and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version)
             and ref == 'refs/tags/v' + version and tag_commit == source and on_main)
 
