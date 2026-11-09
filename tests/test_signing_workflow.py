@@ -22,6 +22,10 @@ assert 'SUDOKURA_APP_KEYSTORE_' not in build
 secret_bindings = [line.strip().split(':', 1)[0] for line in signed.splitlines()
                    if line.strip().startswith('SUDOKURA_APP_KEYSTORE_') and 'secrets.' in line]
 assert sorted(secret_bindings) == ['SUDOKURA_APP_KEYSTORE_BASE64', 'SUDOKURA_APP_KEYSTORE_PASSWORD']
+assert 'SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_SIGNING_ENV_KEYSTORE_BASE64 }}' in signed
+assert 'SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_SIGNING_ENV_KEYSTORE_PASSWORD }}' in signed
+assert 'secrets.SUDOKURA_APP_KEYSTORE_BASE64' not in signed
+assert 'secrets.SUDOKURA_APP_KEYSTORE_PASSWORD' not in signed
 assert "if: needs.android-debug.outputs.sign == 'true'" in signed
 assert 'REQUIRE_SIGNED: "true"' in signed
 assert 'sudokura-android-unsigned-production' in signed

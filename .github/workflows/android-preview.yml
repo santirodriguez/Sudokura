@@ -217,8 +217,8 @@ jobs:
       - name: Sign production APK with the Sudokura app key
         shell: bash
         env:
-          SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
-          SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
+          SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_SIGNING_ENV_KEYSTORE_BASE64 }}
+          SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_SIGNING_ENV_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
           : "${SUDOKURA_APP_KEYSTORE_BASE64:?Missing repository secret SUDOKURA_APP_KEYSTORE_BASE64}"
