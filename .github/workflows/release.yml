@@ -7,6 +7,10 @@ on:
         description: Exact current workflow commit to package without publishing
         required: true
         type: string
+      approved_source_sha:
+        description: Exact reviewed source SHA for manual signing (40 lowercase hex)
+        required: false
+        type: string
   push:
     tags:
       - 'v*'
@@ -44,9 +48,7 @@ jobs:
     with:
       source_commit: ${{ needs.version.outputs.commit }}
       require_signed: true
-    secrets:
-      SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
-      SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
+      approved_source_sha: ${{ inputs.approved_source_sha || '' }}
 
   linux:
     needs: version

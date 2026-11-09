@@ -76,9 +76,6 @@ jobs:
     needs: android-changes
     if: needs.android-changes.outputs.build == 'true'
     uses: ./.github/workflows/android-preview.yml
-    secrets:
-      SUDOKURA_APP_KEYSTORE_BASE64: ${{ secrets.SUDOKURA_APP_KEYSTORE_BASE64 }}
-      SUDOKURA_APP_KEYSTORE_PASSWORD: ${{ secrets.SUDOKURA_APP_KEYSTORE_PASSWORD }}
 
   # Feature and final pre-merge UI candidates need source-exact Android debug
   # builds, without passing release-signing secrets to these branches.
@@ -102,6 +99,11 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y build-essential binutils file desktop-file-utils pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libdecor-0-plugin-1-cairo libfuse2 curl fonts-dejavu-core
       - run: make assets
       - run: python3 tests/test_flag_notice.py
+      - name: Validate Android signing controls without credentials
+        run: |
+          python3 tests/test_signing_context.py
+          python3 tests/test_signing_artifact.py
+          python3 tests/test_signing_workflow.py
       - run: make WERROR=-Werror test test-ui
       - run: python3 scripts/validate_contrast.py
       - name: Run ASan and UBSan core tests
@@ -354,7 +356,7 @@ jobs:
       needs.macos.result == 'success' &&
       (needs.android.result == 'success' || needs.android.result == 'skipped')
     env:
-      INCLUDE_ANDROID: ${{ needs.android.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/release/1.4.0' }}
+      INCLUDE_ANDROID: "false" # Only explicit release packaging can include a signed APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Keep original signing credentials out of ordinary CI and build jobs."""
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+ci = (root / '.github/workflows/ci.yml').read_text()
+preview = (root / '.github/workflows/android-preview.yml').read_text()
+release = (root / '.github/workflows/release.yml').read_text()
+assert 'SUDOKURA_APP_KEYSTORE_' not in ci
+assert 'INCLUDE_ANDROID: "false"' in ci
+assert 'SUDOKURA_APP_KEYSTORE_' not in release
+assert 'approved_source_sha:' in release
+assert 'environment: sudokura-app-signing' in preview
+assert 'needs: android-debug' in preview
+assert 'name: sudokura-android-unsigned-production' in preview
+assert 'name: sudokura-android-signed-github' in preview
+assert 'Verify approved source and downloaded unsigned inputs' in preview
+assert 'verify_signing_input.py' in preview
+assert 'SUDOKURA_APPROVED_SOURCE_SHA:' in preview
+build, signed = preview.split('\n  android-sign:\n', 1)
+assert 'SUDOKURA_APP_KEYSTORE_' not in build
+assert signed.count('SUDOKURA_APP_KEYSTORE_BASE64:') == 1
+assert signed.count('SUDOKURA_APP_KEYSTORE_PASSWORD:') == 1
+assert "if: needs.android-debug.outputs.sign == 'true'" in signed
+assert 'REQUIRE_SIGNED: "true"' in signed
+assert 'sudokura-android-unsigned-production' in signed
+assert 'ref: $' + '{{ needs.android-debug.outputs.source }}' in signed
+print('PASS: ordinary CI is keyless, protected signing is source-bound')
