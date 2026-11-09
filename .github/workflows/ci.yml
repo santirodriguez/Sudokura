@@ -104,13 +104,6 @@ jobs:
       - run: python3 tests/test_flag_notice.py
       - run: make WERROR=-Werror test test-ui
       - run: python3 scripts/validate_contrast.py
-      - name: Identify generator benchmark host
-        run: |
-          uname -a
-          cc --version | head -1
-          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' || true
-      - name: Run generator quality corpus
-        run: make WERROR=-Werror quality
       - name: Run ASan and UBSan core tests
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
@@ -152,11 +145,7 @@ jobs:
           ./tests/test_save_policy_san
           ./tests/test_human_san
           ./tests/test_session_san
-          cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
-            -DSUDOKURA_STORE_TESTING -DSUDOKURA_GAME_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
-            tests/test_game_library.c src/game_library.c src/game_library_codec.c \
-            src/profile.c src/store_io.c src/seed.c src/session.c src/game.c \
-            src/human.c -o tests/test_game_library_san
+          make WERROR=-Werror tests/test_game_library_san
           ./tests/test_profile_san
           cc -I. -Isrc -O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror \
             -DSUDOKURA_STORE_TESTING -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -182,6 +171,13 @@ jobs:
           SDL_RENDER_VSYNC: '0'
         run: ./sudokura --smoke-test
       - run: ldd sudokura && size sudokura && du -h sudokura
+      - name: Identify generator benchmark host
+        run: |
+          uname -a
+          cc --version | head -1
+          lscpu | grep -E 'Model name|CPU\(s\)|Thread|Core|Socket' || true
+      - name: Run generator quality corpus
+        run: make WERROR=-Werror quality
       - name: Build and validate Linux candidate package
         env:
           SUDOKURA_ARTIFACT_KIND: ci-candidate

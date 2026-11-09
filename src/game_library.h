@@ -58,6 +58,15 @@ typedef bool (*GameLibraryScanFn)(const GameLibraryEntry *entry, void *context);
 
 bool game_attempt_id_valid(GameAttemptId id);
 bool game_attempt_id_equal(GameAttemptId a, GameAttemptId b);
+
+/* Copy a record's result into profile history with its attempt identity. */
+static inline bool game_library_profile_result(
+    const GameLibraryRecord *record, ProfileResult *result) {
+  if (!record || !result || !game_attempt_id_valid(record->id)) return false;
+  *result = record->result;
+  result->attempt_id = record->id;
+  return true;
+}
 void game_attempt_id_hex(GameAttemptId id, char out[33]);
 bool game_attempt_id_parse(const char *hex, GameAttemptId *id);
 bool game_library_new_id(const char *root, const GameAttemptId *reserved,
