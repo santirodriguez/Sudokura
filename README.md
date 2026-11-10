@@ -71,11 +71,11 @@ saved-game formats or the established recovery behavior.
 ## See the board
 
 <p align="center">
-  <a href="docs/images/sudokura-v1.4.0.png">
-    <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura 1.4.0 Classic gameplay with entered numbers, a pencil note, number palette and Save controls" width="900">
+  <a href="docs/images/sudokura-v1.4.1.png">
+    <img src="docs/images/sudokura-v1.4.1.png" alt="Authentic 1.4.0 Classic gameplay with entered numbers and Save controls, reused unchanged as the Sudokura 1.4.1 visual reference" width="900">
   </a>
   <br>
-  <sub>Authentic Sudokura 1.4.0 Linux gameplay, still representative of the unchanged 1.4.1 visual design; this is not a newly captured 1.4.1 image.</sub>
+  <sub>The approved authentic 1.4.0 Linux gameplay capture is reused byte-for-byte as the 1.4.1 visual reference. This is not a new 1.4.1 capture.</sub>
 </p>
 
 ### Android phone gallery

@@ -64,7 +64,13 @@ for name in names:
     assert header[:8] == b"\x89PNG\r\n\x1a\n", name
     assert struct.unpack(">II", header[16:24]) == (1080, 1920), name
     assert header[24:26] == b"\x08\x02", name  # 8-bit RGB, no alpha
-assert (root / "docs/images/sudokura-v1.4.0.png").is_file()
+historical_desktop = root / "docs/images/sudokura-v1.4.0.png"
+current_desktop = root / f"docs/images/sudokura-v{version}.png"
+assert historical_desktop.is_file() and current_desktop.is_file()
+# Version-specific canonical path uses only the approved, unchanged 1.4.0 pixels.
+assert current_desktop.read_bytes() == historical_desktop.read_bytes()
+assert f"docs/images/sudokura-v{version}.png" in readme
+assert f"sudokura-v{version}.png" in gallery
 
 # Resolve local Markdown and HTML links in the release-facing corpus. External
 # URLs / same-page anchors are intentionally not tested by this checker.
