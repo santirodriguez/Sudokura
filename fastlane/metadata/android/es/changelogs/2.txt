@@ -1,0 +1,1 @@
+Sudokura 1.4.1 mejora el cambio entre partidas guardadas después de intentos terminados o interrumpidos y conserva su historial. Mantenemos el certificado original de Android. Se comprobó la actualización sobre la versión pública 1.4.0 sin perder las partidas anteriores. Actualizá sin desinstalar.

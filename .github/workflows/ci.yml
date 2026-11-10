@@ -105,6 +105,8 @@ jobs:
           python3 tests/test_signing_context.py
           python3 tests/test_signing_artifact.py
           python3 tests/test_signing_workflow.py
+          python3 tests/test_release_workflow.py
+          python3 tests/test_release_readiness.py
       - run: make WERROR=-Werror test test-ui
       - run: python3 scripts/validate_contrast.py
       - name: Run ASan and UBSan core tests

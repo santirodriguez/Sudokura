@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.1]
+
+### Safer saved games and history
+- Fixed Saved Games loading after an interrupted, finished or lost attempt so a terminal attempt does not incorrectly request another Save-and-leave confirmation. Active, started, unsaved attempts still offer the appropriate choice when switching games.
+- Preserved original attempt identities when recording interrupted terminal results in profile history. This keeps the saved-game library, Achieved/Try again ancestry and recovery paths consistent without changing puzzle identities or game rules.
+- Added focused tests for terminal/active Saved Games transitions and result identity; the maintainer reported normal gameplay and retained saves after updating on Android.
+
+### Update without clearing Android progress
+- Android production remains `org.cajapersonal.sudokura`, now versionName `1.4.1` and versionCode `2`, signed with the **same original app certificate** as public 1.4.0.
+- The maintainer confirmed installing 1.4.1 **over** the published 1.4.0 APK without uninstalling and retaining previously saved games. No cloud backup, device transfer or migration from private debug prototypes is provided.
+- Native ARM64 ELF and APK ZIP 16 KiB alignment and unsigned AAB structure passed automated checks. **Actual 16 KiB page-size device execution and complete TalkBack testing remain unverified.**
+
+### Distribution and packaging
+- Preserved the Windows x64 installer and portable EXE, Linux x64 AppImage and experimental macOS 15+ Apple Silicon DMG, with shared Build-Info and checksum contracts.
+- Corrected bundled flag attribution and distribution notices without altering the established visual design or approved historical screenshots.
+- Kept automatic CI **without production signing credentials**. Original-key APK signing is an exact-source, owner-initiated manual GitHub Actions step using existing repository Secrets; this stage builds internal artifacts only. Publication remains a separate explicit action.
+- F-Droid and Google Play are separate channels and are not implicitly available because a GitHub APK is published.
+
 ## [1.4.0]
 
 ### A familiar puzzle, now on Android

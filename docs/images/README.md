@@ -2,7 +2,11 @@
 
 A real Sudoku board is a better introduction than a wall of technical details. These genuine captures are kept with their release history so you know what you're looking at.
 
-[Back to Sudokura](../../README.md) · [What's new in 1.4.0](../RELEASE_NOTES_1.4.0.md)
+[Back to Sudokura](../../README.md) · [What's new in 1.4.1](../RELEASE_NOTES_1.4.1.md) · [1.4.0 historical notes](../RELEASE_NOTES_1.4.0.md)
+
+## Current visual reference for 1.4.1
+
+Sudokura 1.4.1 improves saved-game recovery and update safety without redesigning the pictured interface. The approved desktop and Android images below are authentic **1.4.0** captures, retained as truthful visual references; none has been altered, re-labeled or passed off as a fresh 1.4.1 capture.
 
 ## Sudokura v1.4.0
 

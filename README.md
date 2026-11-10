@@ -12,7 +12,7 @@
   <a href="#download">Download</a> ·
   <a href="#pick-your-puzzle">Play your way</a> ·
   <a href="#see-the-board">Screenshots</a> ·
-  <a href="docs/RELEASE_NOTES_1.4.0.md">What's new in 1.4.0</a> ·
+  <a href="docs/RELEASE_NOTES_1.4.1.md">What's new in 1.4.1</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
@@ -24,14 +24,14 @@
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Windows-x64-789BE8?style=for-the-badge&logo=windows11&logoColor=white" alt="Windows x64 — installer and portable EXE" height="28"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage-343F57?style=for-the-badge&logo=linux&logoColor=white" alt="Linux AppImage" height="28"></a>
   <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/macOS-arm64-343F57?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon DMG" height="28"></a>
-  <a href="https://github.com/santirodriguez/Sudokura/releases/download/v1.4.0/Sudokura-1.4.0-Android-arm64.apk"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
+  <a href="https://github.com/santirodriguez/Sudokura/releases/latest"><img src="https://img.shields.io/badge/Android-APK-3D8065?style=for-the-badge&logo=android&logoColor=white" alt="Android APK" height="28"></a>
 </p>
 <p align="center">
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/santirodriguez/Sudokura"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Add Sudokura to Obtainium" height="48"></a><br>
-  <sub>Follow Android releases with Obtainium. APK downloads begin with the published v1.4.0 release.</sub>
+  <sub>Follow signed Android releases through GitHub and Obtainium. Install updates over the existing app to retain your local games.</sub>
 </p>
 
-Desktop buttons open the **latest published release**. The Android button downloads the signed **v1.4.0 APK** once that release is published. See the [screenshot gallery](docs/images/README.md) and [release notes](docs/RELEASE_NOTES_1.4.0.md).
+The download buttons open the **latest published GitHub release**, including its signed Android APK when available. See the [screenshot gallery](docs/images/README.md) and [1.4.1 release notes](docs/RELEASE_NOTES_1.4.1.md). GitHub Releases is the source of truth for what has actually been published.
 
 <details>
 <summary><strong>Which download should I choose?</strong></summary>
@@ -39,7 +39,7 @@ Desktop buttons open the **latest published release**. The Android button downlo
 - **Windows:** Windows 11 x64. Installer or single-file portable EXE; unsigned builds can trigger a SmartScreen reputation warning.
 - **Linux:** x86_64 AppImage. Run `chmod +x Sudokura-*-Linux-x64.AppImage`; without FUSE, use `--appimage-extract-and-run`.
 - **macOS:** macOS 15+ Apple Silicon. Experimental, ad-hoc signed and not Apple-notarized.
-- **Android:** Android 9+ on ARM64. The signed APK requires a published v1.4.0 release; F-Droid and Google Play are separate channels.
+- **Android:** Android 9+ on ARM64. Select the signed APK from the latest published GitHub release; F-Droid and Google Play are separate channels.
 - **Verification:** Published packages include `SHA256SUMS.txt` and a matching Build-Info file.
 
 </details>
@@ -61,7 +61,7 @@ Desktop buttons open the **latest published release**. The Android button downlo
 
 ## A consistent look for every puzzle
 
-Sudokura 1.4.0 brings a unified dark/light interface to Home, About, the
+Introduced in Sudokura 1.4.0 and retained in 1.4.1, the unified dark/light interface extends across Home, About, the
 live board and number controls, Saved Games, Your journey, Settings, Help,
 Pause, Results and decision dialogs. Original vector icons, clearer button
 roles and responsive layouts make the same actions easier to find on
@@ -75,10 +75,12 @@ saved-game formats or the established recovery behavior.
     <img src="docs/images/sudokura-v1.4.0.png" alt="Sudokura 1.4.0 Classic gameplay with entered numbers, a pencil note, number palette and Save controls" width="900">
   </a>
   <br>
-  <sub>Real Sudokura 1.4.0 gameplay on Linux, with the unified design, entered numbers, a pencil note and visible controls.</sub>
+  <sub>Authentic Sudokura 1.4.0 Linux gameplay, still representative of the unchanged 1.4.1 visual design; this is not a newly captured 1.4.1 image.</sub>
 </p>
 
 ### Android phone gallery
+
+These are the accepted authentic 1.4.0 phone captures; the pictured interface remains representative of 1.4.1. They were not recaptured or relabeled as 1.4.1 screenshots.
 
 <table>
 <tr>
@@ -139,16 +141,16 @@ Compatible v1.2 and v1.3 desktop data retains migration and recovery safeguards.
 
 ## Android
 
-The familiar grid, made for thumbs. Sudokura 1.4.0 brings portrait and landscape play, touch controls, dated Daily puzzles and Your journey to Android.
+The familiar grid, made for thumbs. Sudokura 1.4.1 keeps the portrait/landscape controls, dated Daily puzzles and Your journey introduced in 1.4.0, with safer Saved Games transitions and preserved attempt history.
 
 <p align="center"><a href="#android-phone-gallery">See the six Android screenshots above</a></p>
 
-Requires **Android 9+ on ARM64**. Download the [signed v1.4.0 APK](https://github.com/santirodriguez/Sudokura/releases/download/v1.4.0/Sudokura-1.4.0-Android-arm64.apk) **once v1.4.0 is published**, or follow the repository in Obtainium. F-Droid and Google Play availability will be announced separately.
+Requires **Android 9+ on ARM64**. Find the signed APK under the [latest published GitHub release](https://github.com/santirodriguez/Sudokura/releases/latest), or follow releases in Obtainium. F-Droid and Google Play availability is separate. **To preserve existing games, install updates over the same signed app; do not uninstall or clear data.**
 
 <details>
 <summary><strong>Android progress and compatibility</strong></summary>
 
-The signed production candidate has been tested on a real phone, including Save, force-stop and reopening with numbers and notes intact. Automatic cloud backup, device transfer and migration from private prototypes are not provided. **Keep the installation containing your progress:** another store's signing certificate can prevent an in-place update.
+The maintainer confirmed that the original-signed 1.4.1 APK installed directly over public 1.4.0 **without uninstalling or losing existing saved games**, and reported normal play and reopening afterward. This is user-reported on-device acceptance, not an instrumented page-size or accessibility test. Automatic cloud backup, device transfer and migration from private prototypes are not provided. **Keep the installation containing your progress:** another store's signing certificate may prevent an in-place update.
 
 Full TalkBack navigation and actual 16 KiB page-size runtime compatibility remain unverified. Read [Android builds](android/README.md) and [installation/signing details](android/RELEASING.md).
 
