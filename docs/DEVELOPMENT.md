@@ -80,7 +80,7 @@ This document describes the project's maintained technical, gameplay, and releas
 - Do not claim signing, notarization, or manual platform testing unless it actually occurred.
 - Package previews must never publish a release.
 - Public release filenames are derived from the source version and use the stable contract: `Sudokura-<version>-Windows-x64-Setup.exe`, `Sudokura-<version>-Windows-x64-Portable.exe`, `Sudokura-<version>-Linux-x64.AppImage`, `Sudokura-<version>-macOS-arm64.dmg`, `SHA256SUMS.txt`, and `Sudokura-<version>-Build-Info.json`. Android-enabled candidate bundles additionally include `Sudokura-<version>-Android-arm64.apk` under the same checksums and Build-Info, with verified app-signing/source metadata. The tag workflow builds the signed APK from the same resolved source as desktop, validates all seven assets and creates a draft only. Signing requires the exact trusted release branch or a version-matched tag on main; PRs never sign. Publishing the draft remains separate. The public Windows portable ZIP is retired; an internal ZIP may remain only as validation evidence.
-- A release tag must match the source version. Release automation may create a draft release for manual verification; publishing remains a separate explicit action.
+- A release tag must match the source version. The v1.4.1 candidate uses a manually dispatched, exact-SHA, signed staging workflow; automatic tag signing and draft creation are disabled in that candidate pending a separately reviewed release workflow. Publishing remains a separate explicit action.
 
 ## Completion standard
 
