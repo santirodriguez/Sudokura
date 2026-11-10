@@ -1,59 +1,69 @@
 #!/usr/bin/env python3
-"""Check the release dependency/asset contract without creating a tag or draft."""
+"""Exercise the v1.4.1 manual release staging contract without credentials."""
 from pathlib import Path
-import yaml
+
 root = Path(__file__).resolve().parents[1]
-load = lambda name: yaml.load((root / '.github/workflows' / name).read_text(), Loader=yaml.BaseLoader)
-release, android, ci = map(load, ['release.yml', 'android-preview.yml', 'ci.yml'])
-assert 'branches' in ci['on']['push'] and 'tags' not in ci['on']['push']
-assert "refs/heads/main" in ci['jobs']['android-changes']['if']
-android_gate = ci['jobs']['android-changes']['if']
-assert "github.event_name == 'pull_request'" in android_gate
-assert "github.base_ref == 'main'" in android_gate
-assert "github.head_ref == 'release/1.4.0'" in android_gate
-assert "github.ref == 'refs/heads/release/1.4.1'" in android_gate
-assert "github.head_ref == 'release/1.4.1'" in android_gate
-selector = next(s for s in ci['jobs']['android-changes']['steps'] if s.get('id') == 'paths')['run']
-for required in ("'LICENSE'", "'.gitattributes'", "'assets/flags/LICENSE-MIT.txt'"):
-    assert required in selector
-debug = ci['jobs']['android-ui-debug']
-assert "github.event_name == 'push'" in debug['if']
-assert "refs/heads/feature/unified-ui" in debug['if']
-assert "refs/heads/release-prep/1.4.0-unified-ui" in debug['if']
-assert debug['uses'] == './.github/workflows/android-preview.yml'
-assert debug['with']['source_commit'] == '${{ github.sha }}'
-assert 'secrets' not in debug
-ubuntu = ci['jobs']['linux-ubuntu24']
-assert ubuntu['timeout-minutes'] == '15'
-install = next(s for s in ubuntu['steps']
-               if s.get('name') == 'Install Ubuntu runtime validation dependencies')
-assert 'timeout --signal=TERM --kill-after=10s 180s' in install['run']
-assert 'timeout --signal=TERM --kill-after=10s 480s' in install['run']
-assert 'install -y --no-install-recommends' in install['run']
-assert 'binutils libfuse2t64 xvfb weston dbus-x11 gdb strace' in install['run']
-assert 'validate-linux-runtime.sh' in ubuntu['steps'][-2]['run']
-release_ubuntu = release['jobs']['linux-ubuntu24']
-assert release_ubuntu['timeout-minutes'] == '15'
-release_install = next(s for s in release_ubuntu['steps']
-                       if s.get('name') == 'Install Ubuntu runtime validation dependencies')
-assert release_install['run'] == install['run']
-assert 'validate-linux-runtime.sh' in release_ubuntu['steps'][-2]['run']
-assert 'ubuntu24 required' in release_ubuntu['steps'][-2]['run']
-assert release['jobs']['android']['with']['require_signed'] == 'true'
-assert 'needs.version.outputs.commit' in release['jobs']['android']['with']['source_commit']
-assert 'android' in release['jobs']['release-bundle']['needs']
-assert 'release-bundle' in release['jobs']['draft-release']['needs']
-steps = release['jobs']['release-bundle']['steps']
-assert any('--include-android' in s.get('run', '') and ' build ' in s.get('run', '') for s in steps)
-draft = release['jobs']['draft-release']
-upload = next(s for s in draft['steps'] if s.get('id') == 'create-release')
-assert upload['with']['draft'] == 'true'
-assert '-Android-arm64.apk' in upload['with']['files']
-assert len(upload['with']['files'].strip().splitlines()) == 7
-validation = draft['steps'][-1]['run']
-assert 'labels --version "$VERSION" --include-android' in validation
-assert '--assets-json draft-release-assets.json --include-android' in validation
-sign_step = next(s for s in android['jobs']['android-debug']['steps'] if s.get('name', '').startswith('Sign production'))
-assert sign_step['if'] == "steps.signing.outputs.sign == 'true'"
-assert all('GITHUB_SHA' not in s.get('run', '') for s in android['jobs']['android-debug']['steps'])
-print('PASS tag routing, main Android checks, exact-source reusable build, signing guard and seven-file draft contract')
+workflows = root / ".github" / "workflows"
+release = (workflows / "release.yml").read_text(encoding="utf-8")
+android = (workflows / "android-preview.yml").read_text(encoding="utf-8")
+ci = (workflows / "ci.yml").read_text(encoding="utf-8")
+packager = (root / "scripts/release_bundle.py").read_text(encoding="utf-8")
+
+# The signing and packaging workflow is NOT automatically invoked by a tag
+# or push and cannot create a GitHub Release or publish anything.
+assert release.startswith("name: Package Sudokura release\n")
+assert "\n  workflow_dispatch:\n" in release
+assert "\n  push:\n" not in release
+assert "\n  draft-release:\n" not in release
+assert "\n  publish-release:\n" not in release
+assert "approved_source_sha:" in release
+assert "required: true" in release
+assert 'test "$GITHUB_ACTOR" = santirodriguez' in release
+assert 'test "$GITHUB_REF" = refs/heads/release/1.4.1' in release
+assert 'test "$GITHUB_SHA" = "$APPROVED_SOURCE_SHA"' in release
+assert 'test "$(sh scripts/version.sh)" = 1.4.1' in release
+
+# Production keys are absent from the reusable Android and ordinary CI jobs.
+assert "  android-sign:" not in android
+assert "secrets.SUDOKURA_APP_KEYSTORE_" not in android
+assert "secrets.SUDOKURA_APP_KEYSTORE_" not in ci
+for job in ("version", "android", "android-sign", "linux", "linux-ubuntu24",
+            "linux-fedora44", "windows", "macos", "release-bundle"):
+    assert "\n  " + job + ":\n" in release, job
+
+sign_job = release.split("\n  android-sign:\n", 1)[1].split("\n  linux:\n", 1)[0]
+assert "needs: [version, android]" in sign_job
+assert "github.event_name == 'workflow_dispatch'" in sign_job
+assert "github.actor == 'santirodriguez'" in sign_job
+assert "Verify approved source and downloaded unsigned inputs" in sign_job
+assert "python3 android/scripts/verify_signing_input.py" in sign_job
+assert sign_job.index("Verify approved source and downloaded unsigned inputs") < (
+    sign_job.index("Sign production APK with the original Sudokura app key"))
+assert sign_job.count("secrets.SUDOKURA_APP_KEYSTORE_BASE64") == 1
+assert sign_job.count("secrets.SUDOKURA_APP_KEYSTORE_PASSWORD") == 1
+
+# Five platform packages plus a source-bound Build-Info and SHA256SUMS
+# constitute the seven uploadable release files; the bundle is internal.
+bundle = release.split("\n  release-bundle:\n", 1)[1]
+assert "needs: [version, linux, linux-ubuntu24, linux-fedora44, windows, macos, android-sign]" in bundle
+assert "--include-android" in bundle
+asset_names = [
+    "Sudokura-*-Windows-x64-Setup.exe",
+    "Sudokura-*-Windows-x64-Portable.exe",
+    "Sudokura-*-Linux-x64.AppImage",
+    "Sudokura-*-macOS-arm64.dmg",
+    "Sudokura-*-Android-arm64.apk",
+    "SHA256SUMS.txt",
+    "Sudokura-*-Build-Info.json",
+]
+uploads = bundle.split("name: release-bundle", 1)[1]
+for name in asset_names:
+    assert ("artifacts/" + name) in uploads, name
+assert 'f"Sudokura-{version}-Android-arm64.apk"' in packager
+assert 'f"Sudokura-{version}-Build-Info.json"' in packager
+assert "if include_android:" in packager
+
+# The two source-only release checks run on Linux CI.
+assert "python3 tests/test_release_workflow.py" in ci
+assert "python3 tests/test_release_readiness.py" in ci
+print("PASS: manual-only release, source-bound signing and seven-file staging contract")

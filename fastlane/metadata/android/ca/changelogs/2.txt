@@ -1,0 +1,1 @@
+Sudokura 1.4.1 millora el canvi entre partides desades després d'intents acabats o interromputs i en conserva l'historial. Es manté el certificat original d'Android. S'ha comprovat l'actualització sobre la versió pública 1.4.0 sense perdre les partides anteriors. Actualitza sense desinstal·lar.
