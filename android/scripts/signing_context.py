@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
-"""Fail closed on source/ref/event mismatch before offering protected APK signing."""
+"""Permit original-key Android signing only for an exact, manually approved source."""
 import os
 import re
 import subprocess
 
 SHA_RE = re.compile(r'[0-9a-f]{40}')
-VERSION_RE = re.compile(r'[0-9]+\.[0-9]+\.[0-9]+')
 
 
-def signing_allowed(event, ref, source, event_commit, version, tag_commit=None,
-                    on_main=False, approved_source=''):
-    if not isinstance(source, str) or not SHA_RE.fullmatch(source):
-        return False
-    if source != event_commit:
-        return False
-    if event == 'workflow_dispatch':
-        # Matching an operator-provided SHA is necessary, but the Environment
-        # must independently authorize use of the actual signing credentials.
-        return (ref == 'refs/heads/release/1.4.1' and version == '1.4.1'
-                and isinstance(approved_source, str)
-                and SHA_RE.fullmatch(approved_source) is not None
-                and approved_source == source)
-    # Only a version-matched tag whose source belongs to main may sign automatically
-    # after the separate protected Environment gate.
-    return (event == 'push' and VERSION_RE.fullmatch(version) is not None
-            and ref == 'refs/tags/v' + version
-            and tag_commit == source and on_main)
+def signing_allowed(event, ref, source, event_commit, version, approved_source=''):
+    # A full source SHA binds one explicitly dispatched release-branch run.
+    # Repository secrets remain usable by other privileged workflows; this
+    # check is not a GitHub secret access boundary or an independent approval.
+    return (
+        event == 'workflow_dispatch'
+        and ref == 'refs/heads/release/1.4.1'
+        and version == '1.4.1'
+        and isinstance(source, str)
+        and SHA_RE.fullmatch(source) is not None
+        and source == event_commit
+        and isinstance(approved_source, str)
+        and SHA_RE.fullmatch(approved_source) is not None
+        and approved_source == source
+    )
 
 
 def git(*args):
@@ -41,17 +37,11 @@ def main():
     if not SHA_RE.fullmatch(event_sha):
         raise SystemExit('Invalid event SHA')
     event_commit = git('rev-parse', '--verify', event_sha + '^{commit}')
-    tag_commit, on_main = None, False
-    if event == 'push' and ref == 'refs/tags/v' + version:
-        tag_commit = git('rev-parse', '--verify', ref + '^{commit}')
-        on_main = subprocess.run(['git', 'merge-base', '--is-ancestor', source,
-                                  'refs/remotes/origin/main'], check=False).returncode == 0
     approved_source = os.environ.get('SUDOKURA_APPROVED_SOURCE_SHA', '')
-    allowed = signing_allowed(event, ref, source, event_commit, version, tag_commit,
-                              on_main, approved_source)
+    allowed = signing_allowed(event, ref, source, event_commit, version, approved_source)
     required = os.environ.get('REQUIRE_SIGNED') == 'true'
     if not allowed and (required or approved_source):
-        raise SystemExit('Signing denied: event, trusted ref, version or approved source differs')
+        raise SystemExit('Signing denied: manual event, trusted branch, version or source SHA mismatch')
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
         output.write('sign=' + str(allowed).lower() + '\n')
         output.write('source=' + source + '\n')
