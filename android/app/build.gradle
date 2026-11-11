@@ -113,6 +113,10 @@ tasks.register('prepareSudokuraAssets', Copy) {
         into 'licenses'
         rename { 'Sudokura-GPLv3.txt' }
     }
+    from(new File(projectRoot, 'assets/flags/LICENSE-MIT.txt')) {
+        into 'licenses'
+        rename { 'flag-icons-MIT.txt' }
+    }
     from(new File(projectRoot, 'assets/audio/README.md')) {
         into 'audio'
     }

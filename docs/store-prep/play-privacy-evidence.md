@@ -1,8 +1,8 @@
 # Sudokura Play privacy and Data safety — evidence worksheet (NOT final declarations)
 
-Base source examined: `76fdc4811a4a83541e1e83c4432dc0f2785f37d3`.
-Re-audit when app source or SDK dependencies change. All responses below are
-preparation notes, not Play Console selections or an approved legal policy.
+Historical source originally examined: `76fdc4811a4a83541e1e83c4432dc0f2785f37d3`.
+The public GitHub Android baseline is 1.4.0/code 1; 1.4.1/code 2 is a separate original-signed internal update candidate. The earlier source/privacy worksheet was **not** re-audited against the complete final SDK/network/dependency tree of 1.4.1; no Google Play Data safety answers have been submitted or approved on this evidence.
+Re-audit the actual final app source and SDK dependencies before any Play upload. All responses below are preparation notes, not Console selections or an approved legal policy.
 
 ## Source-backed observations
 

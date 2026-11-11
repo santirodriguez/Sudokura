@@ -112,6 +112,8 @@ cp "$font" dist/
 cp packaging/licenses/DejaVu-FONT-LICENSE.txt dist/
 cp LICENSE dist/LICENSE.txt
 cp packaging/licenses/DISTRIBUTION-NOTICES.md dist/
+cp assets/flags/LICENSE-MIT.txt dist/FLAG-ICONS-LICENSE-MIT.txt
+python3 packaging/ci/check_flag_notice.py dist/FLAG-ICONS-LICENSE-MIT.txt
 cp packaging/windows/README.txt dist/README.txt
 mkdir dist/audio
 cp assets/audio/music-main.ogg dist/audio/
@@ -167,6 +169,7 @@ archive="Sudokura-${VERSION}-Windows-x64-Internal.zip"
 unzip -t "$archive"
 zip_inventory=$(unzip -Z1 "$archive")
 grep -q '^sudokura.exe$' <<<"$zip_inventory"
+python3 packaging/ci/check_flag_notice.py "$archive" --member FLAG-ICONS-LICENSE-MIT.txt
 for audio in music-main.ogg music-fail.ogg jingle-win.ogg jingle-fail.ogg; do grep -Fxq "audio/$audio" <<<"$zip_inventory"; done
 
 zip_extract="$PWD/zipcheck/Prueba con espacios á漢"
@@ -343,6 +346,7 @@ env MSYS2_ARG_CONV_EXCL='*' "$timeout_bin" 120s "$PWD/$installer" \
   "/DIR=$(cygpath -w "$install_dir")"
 test -s "$install_dir/sudokura.exe"
 test -s "$install_dir/README.txt"
+python3 packaging/ci/check_flag_notice.py "$install_dir/FLAG-ICONS-LICENSE-MIT.txt"
 test -s "$profile_sentinel"
 installed_path="$install_dir:/c/Windows/System32:/c/Windows"
 installed_start=$(date +%s%3N)

@@ -13,6 +13,15 @@ included as `LICENSE.txt` (or the platform-equivalent documentation resource).
 The fallback font is DejaVu Sans. Its license text is included with every
 package as `DejaVu-FONT-LICENSE.txt`.
 
+## Language flags
+
+The English, Spanish and Catalan language flags use vendored artwork from
+`lipis/flag-icons` (https://github.com/lipis/flag-icons), copyright (c) 2013
+Panayiotis Lipiridis, under the MIT License. The original copyright and
+permission notice is included verbatim as `FLAG-ICONS-LICENSE-MIT.txt` in
+desktop packages and `assets/licenses/flag-icons-MIT.txt` in Android packages.
+The checked-in original is `assets/flags/LICENSE-MIT.txt`.
+
 ## Audio
 
 The four bundled OGG files come from MintoDog's `Cozy Puzzle Jingle & Result`

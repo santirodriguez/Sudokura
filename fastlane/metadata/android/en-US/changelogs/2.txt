@@ -1,0 +1,1 @@
+Sudokura 1.4.1 makes Saved Games transitions safer after finished or interrupted attempts and keeps related history consistent. The original Android signing certificate is unchanged. The maintainer verified an update over public 1.4.0 with previous saved games retained. Keep your existing installation and update without uninstalling.

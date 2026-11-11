@@ -1004,11 +1004,13 @@ static bool journey_interrupt_slot(Persistence *p, UI *ui, bool daily) {
       record.original_daily_month=previous.original_daily_month;
       record.original_daily_day=previous.original_daily_day;
     }
+    ProfileResult terminal_result;
+    if(!game_library_profile_result(&record,&terminal_result))return false;
     if (game_library_save_runtime(p->profile_directory,&record,
           &p->game_cache[daily?1:0])!=STORE_OK) return false;
     *slot=terminal;
     bool inserted=false;
-    if (!profile_record_result(&p->profile,&record.result,&inserted)) return false;
+    if (!profile_record_result(&p->profile,&terminal_result,&inserted)) return false;
     save_policy_mark(&p->save_policy,SAVE_DIRTY_RESULTS,now_ms());
   }
   if (ui && ui->session_open && ui->is_daily==daily) {

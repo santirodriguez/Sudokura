@@ -22,9 +22,13 @@ def load(name, path):
 
 android = load('android_release', ROOT / 'android/scripts/release_manifest.py')
 bundle = load('release_bundle', ROOT / 'scripts/release_bundle.py')
-VERSION = '1.4.0'
+apk_audit = load('apk_audit', ROOT / 'android/scripts/audit_apk.py')
+identity = apk_audit.expected_identity(
+    (ROOT / 'src/version.h').read_text(encoding='utf-8'), variant='release')
+VERSION = identity['version_name']
+VERSION_CODE = identity['version_code']
 SOURCE = 'a' * 40
-APK = 'Sudokura-1.4.0-Android-arm64.apk'
+APK = f'Sudokura-{VERSION}-Android-arm64.apk'
 
 
 def fixture(root):
@@ -37,7 +41,7 @@ def fixture(root):
         f'Number of signers: 1\nSigner #1 certificate SHA-256 digest: {android.APP_CERT}\n')
     (root / 'signed-zipalign.txt').write_text('Verification succesful\n')
     audit = {'application_id': android.APP_ID, 'version_name': VERSION,
-             'version_code': 1, 'build_variant': 'release',
+             'version_code': VERSION_CODE, 'build_variant': 'release',
              'android_backup': False, 'permissions': [], 'bytes': len(data),
              'unsigned_preparation': False}
     (root / 'signed-apk-audit.json').write_text(json.dumps(audit))
@@ -64,7 +68,7 @@ with tempfile.TemporaryDirectory() as directory:
     assert document['reproducibility_claim'].startswith('Not established')
     print('PASS signed receipt binding without device/store/reproducibility claims')
     for key, value in [('application_id', 'org.sudokura.prototype.debug'),
-                       ('version_code', 10309), ('android_backup', True),
+                       ('version_code', VERSION_CODE + 1), ('android_backup', True),
                        ('build_variant', 'debug'), ('permissions', ['android.permission.INTERNET'])]:
         bad = copy.deepcopy(audit)
         bad[key] = value

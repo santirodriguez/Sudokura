@@ -63,6 +63,15 @@ typedef struct {
 } GamesLoadGate;
 static GamesLoadGate games_load_gate;
 
+/* A terminal attempt already has its durable outcome. Only an active,
+   started, unsaved attempt needs confirmation before loading another game. */
+static bool games_browser_load_keep_required(
+    const ProfileSlot *departing, bool same_attempt) {
+  return departing && !same_attempt && departing->present &&
+         departing->value.session.status == SESSION_ACTIVE &&
+         departing->value.started && !departing->value.explicitly_saved;
+}
+
 
 /* A library modal binds the selected record, not its position in a list. */
 static bool games_browser_modal_binding(Persistence *p, UI *ui,
@@ -457,6 +466,37 @@ static void games_browser_filter(void) {
   games_browser.count=out;free(entries);free(roots);
 }
 
+/* Exercise the exact same-domain Save-and-leave predicate used by the
+   Saved Games controller, including the interrupted API30 hot-slot state. */
+static bool games_browser_load_keep_smoke(void) {
+  ProfileSlot departing = {0};
+  departing.present = true;
+  departing.retained = true;
+  departing.revision = 5;
+  departing.value.session.mode = MODE_CLASSIC;
+  departing.value.session.is_daily = false;
+  departing.value.started = true;
+  departing.value.explicitly_saved = false;
+  departing.value.session.status = SESSION_INTERRUPTED;
+  bool ok = !games_browser_load_keep_required(&departing, false);
+  departing.value.session.status = SESSION_WON;
+  ok = ok && !games_browser_load_keep_required(&departing, false);
+  departing.value.session.status = SESSION_LOST;
+  ok = ok && !games_browser_load_keep_required(&departing, false);
+  departing.value.session.status = SESSION_ACTIVE;
+  ok = ok && games_browser_load_keep_required(&departing, false);
+  ok = ok && !games_browser_load_keep_required(&departing, true);
+  departing.value.explicitly_saved = true;
+  ok = ok && !games_browser_load_keep_required(&departing, false);
+  departing.value.explicitly_saved = false;
+  departing.value.started = false;
+  ok = ok && !games_browser_load_keep_required(&departing, false);
+  departing.value.started = true;
+  departing.present = false;
+  ok = ok && !games_browser_load_keep_required(&departing, false);
+  return ok && !games_browser_load_keep_required(NULL, false);
+}
+
 static bool journey_browser_smoke(void) {
   GamesBrowser previous=games_browser;bool ok=true;
   for(int view=0;view<4;++view) {
@@ -481,7 +521,7 @@ static bool journey_browser_smoke(void) {
     if(view==JOURNEY_ATTEMPTS)ok=ok&&games_browser.count==3;
     free(games_browser.rows);
   }
-  games_browser=previous;return ok;
+  games_browser=previous;return ok && games_browser_load_keep_smoke();
 }
 
 static void games_browser_change_view(Persistence *p, Gfx *gfx, GamesView view) {
@@ -1220,8 +1260,7 @@ static bool games_browser_activate_bound(Persistence *p, Game *game, UI *ui,
                                     APP_MODAL_LOAD_CHECKPOINT);
       return false;
     }
-    if (!same_attempt && departing->present && !departing->value.explicitly_saved &&
-        departing->value.started) {
+    if (games_browser_load_keep_required(departing, same_attempt)) {
       (void)games_browser_load_offer(p,ui,gfx,expected,daily,
                                     APP_MODAL_LOAD_KEEP);
       return false;

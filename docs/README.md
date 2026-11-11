@@ -6,19 +6,20 @@ Here for a quick download, a puzzle tip or the deeper technical details? You're 
 
 ## Start with the game
 
-- **[What's new in v1.4.0](RELEASE_NOTES_1.4.0.md)** — Android, Your journey and an easier return to the grid.
+- **[What's new in v1.4.1](RELEASE_NOTES_1.4.1.md)** — safer Saved Games and Android updates that retain local progress.
 - **[See the real screenshots](images/README.md)** — the familiar desktop board and historical galleries.
 - **[Something not working?](REPORTING_ISSUES.md)** — report a bug, protect your saves or recover a game.
 - **[Read the full changelog](../CHANGELOG.md)** — the release-by-release history.
 
 ## Playing on Android
 
-The familiar grid now fits in your pocket. Android 1.4.0 uses a separate production identity from the earlier private prototypes, so keep your progress safe when switching builds.
+Sudokura arrived on Android in 1.4.0. Version 1.4.1 keeps the same production application ID and original signing certificate, enabling a direct update that preserves locally saved games; the maintainer verified this over-install on a real phone. Private debug prototypes have a different identity and are not migrated automatically.
 
 - [Android builds and known limitations](../android/README.md)
 - [Installing, signing and updating](../android/RELEASING.md)
 - [Android roadmap and distribution plans](ANDROID_RELEASE_PLAN.md)
 - [v1.4.0 implementation and acceptance record](V1.4.0_BLUEPRINT.md)
+- [1.4.1 changes and compatibility](RELEASE_NOTES_1.4.1.md)
 
 **Availability:** [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) shows what's actually published. Google Play and F-Droid are independent channels.
 
@@ -38,7 +39,7 @@ The familiar grid now fits in your pocket. Android 1.4.0 uses a separate product
 
 ## Previous releases
 
-- [v1.3.9](RELEASE_NOTES_1.3.9.md) · [v1.3.8](RELEASE_NOTES_1.3.8.md) · [v1.3.7](RELEASE_NOTES_1.3.7.md) · [v1.3.6](RELEASE_NOTES_1.3.6.md) · [v1.3.5](RELEASE_NOTES_1.3.5.md)
+- [v1.4.0](RELEASE_NOTES_1.4.0.md) · [v1.3.9](RELEASE_NOTES_1.3.9.md) · [v1.3.8](RELEASE_NOTES_1.3.8.md) · [v1.3.7](RELEASE_NOTES_1.3.7.md) · [v1.3.6](RELEASE_NOTES_1.3.6.md) · [v1.3.5](RELEASE_NOTES_1.3.5.md)
 - [v1.3.0](RELEASE_NOTES_1.3.0.md) · [v1.2.0](RELEASE_NOTES_1.2.0.md) · [v1.1.0](RELEASE_NOTES_1.1.0.md)
 - [All published releases](https://github.com/santirodriguez/Sudokura/releases)
 

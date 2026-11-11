@@ -33,7 +33,7 @@ The `profile.dat` recent-result index retains up to 128 summaries, while complet
 
 ## Saved Games and Your journey
 
-In v1.4.0, Saved Games lists explicit saves plus one latest global autosave. Achieved and Try again group finished or interrupted attempts by their verified replay ancestry and retain earlier attempt statistics. Adding notes, selecting a cell or viewing an untouched board does not start a failed attempt; submitting a digit or applying a reveal does. Backgrounding checkpoints progress without abandoning the attempt. Report missing or incorrectly grouped history separately from a missing saved board.
+Since v1.4.0, Saved Games lists explicit saves plus one latest global autosave. Achieved and Try again group finished or interrupted attempts by verified replay ancestry and retain earlier attempt statistics. Version 1.4.1 corrects the Save-and-leave decision when opening another game after a terminal/ interrupted attempt and preserves the original attempt identity in recorded results. An active, started, unsaved attempt still requires a retention choice. Adding notes, selecting a cell or viewing an untouched board does not start a failed attempt; submitting a digit or applying a reveal does. Backgrounding checkpoints progress without abandoning the attempt. Report missing or incorrectly grouped history separately from a missing saved board.
 
 ## Before recovery or rollback
 1. Close every Sudokura instance.
@@ -45,7 +45,7 @@ In v1.4.0, Saved Games lists explicit saves plus one latest global autosave. Ach
 
 A newer profile/session is not expected to become readable by an older incompatible release. Preserve the original data for a future compatible upgrade.
 
-Android production (`org.cajapersonal.sudokura`) and the private prototype (`org.sudokura.prototype.debug`) use separate application-private data directories. Both disable Android backup/device transfer. No automatic prototype migration, desktop-save transfer or cross-store migration is promised. Production direct updates must retain the same application ID and app-signing certificate; debug builds may have incompatible ephemeral signatures. **Do not uninstall the only copy of a game to resolve an installation error**: uninstalling can delete local progress. The desktop directory-copy instructions above do not imply that Android private storage is accessible through a file manager.
+Android production (`org.cajapersonal.sudokura`) and the private prototype (`org.sudokura.prototype.debug`) use separate application-private data directories. Both disable Android backup/device transfer. No automatic prototype migration, desktop-save transfer or cross-store migration is promised. Production direct updates must retain the same application ID and app-signing certificate; debug builds may have incompatible ephemeral signatures. The maintainer confirmed directly updating from public signed 1.4.0/code1 to original-signed 1.4.1/code2 with earlier games retained; this is user-reported compatibility evidence, not a promise for every store/device. **Do not uninstall the only copy of a game to resolve an installation error**: uninstalling can delete local progress. The desktop directory-copy instructions above do not imply that Android private storage is accessible through a file manager.
 
 ## Platform details
 - **Windows:** record the exact SmartScreen/reputation message if launch is warned or blocked; do not disable security protections as troubleshooting.

@@ -1,30 +1,32 @@
-# First public Android release: Sudokura 1.4.0
+# Android production releases: signing and safe updates
 
 Solving the Sudoku is the fun part. This page covers the equally important part: making sure you're installing the right APK and an update doesn't take your saved games with it.
 
-Sudokura 1.4.0 is the **first public Android distribution version** after private debug prototypes. It shares the desktop version number; Android starts at `versionCode 1`, not a separate 1.0.0 series. Only [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) determines actual APK availability. Signing, store submission and approval are separate steps.
+Sudokura 1.4.0 was the **first public Android distribution version** after private debug prototypes, using Android `versionCode 1`. Sudokura 1.4.1 is the next production update, with `versionCode 2` and the same original signing certificate; the maintainer tested an in-place install over 1.4.0 with previous saved games intact. Only [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) determines what is **actually published**. Internal signing, store submission, main-branch merge, tags and publication have separate approvals.
 
 ## One production identity
 
 | Variant | Application ID | Version | Intended use |
 | --- | --- | --- | --- |
-| Prototype debug | `org.sudokura.prototype.debug` | `1.4.0-prototype` / 1 | Separate test installation; ephemeral debug signer |
-| Production release | `org.cajapersonal.sudokura` | `1.4.0` / 1 | Gradle stages unsigned APK/AAB; trusted release-branch CI signs the direct APK |
+| Prototype debug | `org.sudokura.prototype.debug` | `1.4.1-prototype` / 2 | Separate test installation; ephemeral debug signer; no automatic migration |
+| Original published production | `org.cajapersonal.sudokura` | `1.4.0` / 1 | First public signed Android APK; historical baseline |
+| Production update candidate | `org.cajapersonal.sudokura` | `1.4.1` / 2 | Unsigned Gradle APK/AAB; original-key signed direct APK only after authorized manual GitHub Actions run |
 
 The production ID was confirmed on November 3, 2026. The internal Java namespace remains independent of the application ID; retain the JNI class names. The production label is Sudokura. Prototype data is separate; no automatic migration or uninstall workaround is promised. Keep backup/device transfer excluded and preserve local progress.
 
-The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.h`. The independent `SUDOKURA_VERSION_ANDROID_CODE` in the same header starts at 1 and is shared by GitHub/Obtainium, F-Droid and Google Play for equivalent releases. It must stay between 1 and 2100000000. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. Initial F-Droid and Play listings must identify this as the first Android release. Internal production candidates used code 10400; Android refuses a normal downgrade to code 1. Preserve installations holding progress: no uninstall/data-clear workaround or automatic progress migration is provided. Matching version numbers alone do not establish cross-store signing compatibility. F-Droid and Play acceptance must be checked independently; GitHub publication does not establish their availability.
+The visible version comes from the MAJOR/MINOR/PATCH components in `src/version.h`. The independent `SUDOKURA_VERSION_ANDROID_CODE` in the same header starts at 1 and is shared by GitHub/Obtainium, F-Droid and Google Play for equivalent releases. It must stay between 1 and 2100000000. Codes must increase for every subsequently distributed production build, including prereleases; never replace distributed bytes under the same version/code. Before an actual store upload, verify the highest consumed code in that store. An initial F-Droid or Play listing must identify the actual independently accepted version/code in that store; do not assume its first version equals GitHub's original 1.4.0/code 1. Internal production candidates used code 10400; Android refuses a normal downgrade to code 1. Preserve installations holding progress: no uninstall/data-clear workaround or automatic progress migration is provided. Matching version numbers alone do not establish cross-store signing compatibility. F-Droid and Play acceptance must be checked independently; GitHub publication does not establish their availability.
 
 ## Build outputs and verified signing
 
-The existing reusable Android job, called by CI, builds only `prototypeDebug` and `productionRelease`. It retains:
+The reusable Android workflow builds only unsigned Android candidates in `android-debug`. The separate `release.yml` workflow can perform manually authorized original-key signing. The available outputs are:
 
 - `sudokura-android-debug-prototype`: the installable debug APK and structural receipts.
 - `sudokura-android-unsigned-production`: the unsigned production APK, unsigned Play AAB, source/version/checksum receipts and APK/native/alignment audits.
 - `sudokura-android-signed-github`: the signed direct APK, verified app certificate and source-bound manifest/checksum receipts.
-- `phase9-release-bundle`: the five application files with shared Build-Info and checksums, after the standard cross-platform package jobs succeed.
+- `phase9-release-bundle`: four desktop application packages, shared Build-Info and checksums, produced by ordinary CI.
+- `release-bundle`: the five application packages (including the original-signed direct APK), shared Build-Info and checksums, produced only by a separately approved release workflow.
 
-The production APK is not installable until signed. CI validates the AAB with official bundletool 1.18.3, downloaded from its release with SHA-256 verification, and retains the validation output and tool identity. This structural validation does not establish upload signing or Console acceptance; both remain open. Repository secrets `SUDOKURA_APP_KEYSTORE_BASE64` and `SUDOKURA_APP_KEYSTORE_PASSWORD` let the trusted release-branch job sign an internal GitHub APK artifact. Pull-request runs never receive or use them. The Play upload JKS stays separate and is not used by this APK-signing job. A signed CI artifact is not a public release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
+The production APK is not installable until signed. CI validates the AAB with official bundletool 1.18.3 and a pinned checksum, but does not establish Play acceptance. Ordinary CI and the reusable Android builder do not reference signing credentials. Only an explicitly dispatched `release.yml` run on the exact approved `release/1.4.1` HEAD may reach the `android-sign` job, which rechecks the full 40-character source SHA and verifies the unsigned APK/AAB before accessing the existing GitHub Actions repository Secrets. This is a **workflow-level guard, not a restriction on other workflows that privileged repository contributors can modify**: repository-level secrets remain available to authorized workflows in this repository. No Environment setup or secret migration is required for this approach. Tag pushes do not automatically sign, create drafts or publish; tag-based release packaging would require separately approved re-enablement. The Play upload JKS stays separate and is never used by this job. A signed Actions artifact is not a public release. Native 16 KiB alignment is not 16 KiB runtime acceptance.
 
 From an already equipped environment, build the pinned sources/assets and run:
 
@@ -33,11 +35,11 @@ bash android/gradlew --no-daemon :app:assemblePrototypeDebug :app:assembleProduc
 python3 android/scripts/audit_apk.py /path/to/aapt android/app/build/outputs/apk/production/release/app-production-release-unsigned.apk --variant release --require-unsigned
 ```
 
-Do not install tooling on the maintainer's computer merely to reproduce CI. Final signed APK naming remains `Sudokura-1.4.0-Android-arm64.apk`; files containing `unsigned` are staging artifacts, not public downloads. AABs remain internal Play preparation, not GitHub public release assets. Desktop release assets and their existing checks remain unchanged.
+Do not install tooling on the maintainer's computer merely to reproduce CI. The signed direct APK name is derived from source version (`Sudokura-<version>-Android-arm64.apk`; the published v1.4.0 asset uses `Sudokura-1.4.0-Android-arm64.apk`). Files containing `unsigned` are staging artifacts, not public downloads. AABs remain internal Play preparation, not GitHub public release assets. Desktop release assets and their existing checks remain unchanged.
 
 ## Existing signing identities and recovery
 
-The two independent Sudokura keys have already been created. The app key signs the direct APK in CI; the Play upload key remains separate. Do not generate replacements or repeat initial setup for a normal build, update or password change. Never reuse another application's keys.
+The two independent Sudokura keys have already been created. The app key signed the published v1.4.0 direct APK; future signing requires a separately approved manual `release.yml` run. The Play upload key remains separate. Do not generate replacements or repeat initial setup for a normal build, update or password change. Never reuse another application's keys.
 
 | Role | Private filename / alias | Purpose | Current state |
 | --- | --- | --- | --- |
@@ -56,12 +58,12 @@ These identify the public certificates, not JKS-file checksums. A matching alias
 
 ### Current CI configuration
 
-Exactly two repository secrets are used for direct APK signing:
+The established direct-APK signing JKS is unchanged. The manual `android-sign` job in `.github/workflows/release.yml` uses the **existing** GitHub Actions repository Secrets without moving or duplicating their values:
 
-- `SUDOKURA_APP_KEYSTORE_BASE64`: base64 of the app-signing JKS.
-- `SUDOKURA_APP_KEYSTORE_PASSWORD`: the shared JKS store/key-entry password.
+- `SUDOKURA_APP_KEYSTORE_BASE64`: encoded original app-signing JKS.
+- `SUDOKURA_APP_KEYSTORE_PASSWORD`: its existing store/key-entry password.
 
-The alias is fixed as `sudokura`. The store password and key-entry password are different concepts, but this key uses the same value for both; no third secret is needed. Signing is allowed on the exact trusted `release/1.4.0` branch source and on push events for version-matched release tags whose exact commit belongs to `main`. Pull requests, arbitrary refs, mismatched sources and manual tag dispatch do not sign. The context is checked before the signing step receives credentials. The Play upload JKS and password are not used by this workflow.
+The alias remains `sudokura`; no new signing key or Play upload key is needed. The original JKS uses the same value for store and key-entry passwords. The manual run must select `release/1.4.1` in GitHub Actions, be initiated by `santirodriguez`, and supply its exact current HEAD SHA as `approved_source_sha`. Source/actor/event/version checks run before signing. Ordinary pushes, PRs, tags, other refs and mismatched SHAs cannot trigger this signing job through the checked-in workflow. **Because these are repository Secrets and the release branch is currently unprotected, this is not independent authorization against someone able to change privileged workflows.** Review the final exact SHA before any later authorized run; no run is approved by this documentation.
 
 Keep private JKS files and password records outside source control, chat, Issues and ordinary build artifacts. Base64 is an encoding, not encryption. Do not echo secret values or enable shell tracing while handling them. Keep JKS files mode 0600 and their private directory mode 0700. Preserve role-labelled `01-app-signing/`, `02-play-upload/` and `public/` groups in private custody; only exported public certificates belong in the last group.
 
@@ -81,29 +83,29 @@ The direct APK uses the pinned signing toolchain. Before claiming F-Droid develo
 
 ## Internal combined candidate
 
-The trusted release-branch CI signs and verifies the APK, then emits `artifact-manifest-android.json`, `SHA256SUMS-android.txt` and `build-provenance-android.txt`. These bind source/version, application ID, app certificate, APK bytes and signed audit receipts. They do not certify device, reproducibility, store or 16 KiB runtime acceptance.
+The separately authorized manual signing job signs and verifies the APK, then emits `artifact-manifest-android.json`, `SHA256SUMS-android.txt` and `build-provenance-android.txt`. These bind source/version, application ID, app certificate, APK bytes and signed audit receipts. They do not certify device, reproducibility, store or 16 KiB runtime acceptance.
 
-When that same CI run builds Android, its final internal bundle includes the signed APK alongside the four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
+When the manually dispatched release packaging workflow passes its source guard and original-key signing, its combined bundle includes the signed APK alongside four desktop applications, shared `SHA256SUMS.txt` and `Sudokura-<version>-Build-Info.json`. `scripts/release_bundle.py --help` exposes an explicit `--include-android` option on each subcommand; the desktop-only contract remains available when Android is not built. Missing/mismatched Android bytes, source, identity or signer fail validation.
 
 ### Exact public upload handoff
 
-For a pre-publication audit or separately authorized manual upload, use an accepted `phase9-release-bundle` from one exact release-branch CI run. The bundle contains all five application packages and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to that specific candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then stages only seven public files in a new directory:
+For a pre-publication audit or separately authorized manual upload, use an accepted exact-source signed `release-bundle` from the approved release packaging workflow, not the desktop-only `phase9-release-bundle` from ordinary CI. The accepted signed bundle contains all five application packages and their shared Build-Info/checksums. Set `SOURCE_COMMIT` to that specific candidate's complete 40-character Git commit SHA. The export command rechecks every file against the embedded per-platform manifests, exact source commit, version and Android signer, then stages only seven public files in a new directory:
 
 ```sh
 python3 scripts/release_bundle.py export \
-  --artifacts-dir /path/to/extracted/phase9-release-bundle \
+  --artifacts-dir /path/to/extracted/release-bundle \
   --output-dir /path/to/new/public-upload \
-  --version 1.4.0 --source-commit "$SOURCE_COMMIT" --include-android
+  --version 1.4.1 --source-commit "$SOURCE_COMMIT" --include-android
 ```
 
 This stages files only: it creates no tag, draft, release or network request, and refuses an existing output directory. Do not substitute unsigned APKs, AABs, per-platform receipts or another run's checksums. Keep the downloaded Actions ZIP digest and source commit with the acceptance record.
 
-For normal publication, separately authorize the exact `main`-ancestor source commit and release tag. The tag-triggered workflow rebuilds and signs Android and desktop from its resolved source, validates seven release assets, and creates a draft only; do not relabel older branch-CI bytes as a new tag build. Validate the draft's seven uploaded assets using `scripts/release_bundle.py validate-assets --version 1.4.0 --assets-json draft-release-assets.json --include-android` and independently confirm the uploaded bytes, source and checksums before publication; after publication require the `--published` validation mode. The export procedure above is an audit/staging option, not a requirement to replace the tag-built draft. Any source change requires regeneration and validation of its own exact-source bundle.
+For publication, separately authorize the **final reviewed release source**, pre-publication public documentation/screenshots, merge into `main`, tag and the seven public assets. At this stage `release.yml` runs **only on explicit `workflow_dispatch`** from the approved `release/1.4.1` SHA and generates a source-verified staging bundle; it does not respond to tag pushes, create a draft or publish. Choose and separately approve a secure publication mechanism *before* the definitive release. One possible route is a separately reviewed workflow change for an exact-source draft and uploaded-asset validation; do not assume tag-based signing is currently enabled. For a draft, verify every uploaded file against the same final source and checksums using `scripts/release_bundle.py validate-assets --version 1.4.1 --assets-json draft-release-assets.json --include-android`, followed by its published mode after release. A successful manual build is not publication authorization, and signed artifacts from an older source SHA are not automatically valid for a later documentation or workflow commit.
 
-The tag workflow now calls the reusable Android job with the resolved source commit and requires trusted signing. Its combined bundle includes the signed APK, and the draft upload, labels and asset validator all require seven files. A failure in Android, either Linux runtime check or another package job blocks the draft. Tags trigger the release workflow without also triggering the general CI. Manual packaging creates no draft and must use an exact trusted workflow source; it cannot sign an arbitrary historical ref. No tag or draft is created as part of a branch CI run.
+The current manual release workflow runs unsigned Android compilation, Windows/Linux/macOS packaging and a separate original-key signer from the **same approved source**; it assembles five applications and shared checksums only after all required jobs pass. There is no automatic tag-signing or draft-creation route in this candidate. The manual signing job must fail closed on missing Secrets or mismatched source, and source SHA cannot be an arbitrary historical ref. Normal branch CI creates no tag or draft. Any future tag/draft automation requires its own design review and explicit approval.
 
 ## Distribution acceptance and limitations
 
-The November 4 acceptance amendment in the [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) defers full manual accessibility, extended performance measurements and further emulator debugging. Preserve their unverified status and public limitations; known critical defects, source/signing/checksum integrity, and screenshot/public-copy review remain release requirements. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. Record same-ID/same-key clean-install and sequential-upgrade evidence with retained saves. Store submissions and acceptance are external steps.
+The November 4 acceptance amendment in the [blueprint](../docs/V1.4.0_BLUEPRINT.md) and [roadmap](../docs/ANDROID_RELEASE_PLAN.md) defers full manual accessibility, extended performance measurements and further emulator debugging. Preserve their unverified status and public limitations; known critical defects, source/signing/checksum integrity, and screenshot/public-copy review remain release requirements. Independently rebuild the same exact unsigned source and compare bytes before claiming reproducibility. The maintainer confirmed one in-place public 1.4.0 to originally signed 1.4.1 candidate update retaining saved games without uninstalling. Preserve this exact-source acceptance evidence, and record any separately authorized follow-up clean-install or upgrade checks without deleting user data. Store submissions and acceptance are external steps.
 
 Review the exact signed artifacts, public certificates, immutable source, checksums, approved screenshots with truthful capture provenance and final EN/ES/CA copy before separately authorized merge/publication. First-Android release wording does not waive those gates.

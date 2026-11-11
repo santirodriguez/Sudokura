@@ -43,6 +43,14 @@ tests/test_profile: tests/test_profile.c src/profile.c src/profile.h src/session
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_profile.c src/profile.c src/session.c src/store_io.c src/game.c src/human.c -o $@
 tests/test_game_library: src/journey.h tests/test_game_library.c src/game_library.c src/game_library_codec.c src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING -DSUDOKURA_GAME_TESTING tests/test_game_library.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
+# Keep the sanitized Saved Games test on the same source set as the
+# ordinary test so migration/codec dependencies cannot silently diverge.
+tests/test_game_library_san: tests/test_game_library.c $(LIBRARY) src/journey.h src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
+	$(CC) $(CPPFLAGS) -O1 -g -std=c11 -Wall -Wextra -Wpedantic $(WERROR) \
+		-DSUDOKURA_STORE_TESTING -DSUDOKURA_GAME_TESTING \
+		-fsanitize=address,undefined -fno-omit-frame-pointer \
+		tests/test_game_library.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
+
 tests/test_game_migration: tests/test_game_migration.c $(LIBRARY) src/game_migration.h src/game_library.h src/profile.c src/profile.h src/store_io.c src/seed.c src/session.c src/game.c src/human.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DSUDOKURA_STORE_TESTING tests/test_game_migration.c $(LIBRARY) src/profile.c src/store_io.c src/seed.c src/session.c src/game.c src/human.c -o $@
 tests/test_live_save: tests/test_live_save.c src/profile.c src/profile.h src/save_policy.c src/save_policy.h src/session.c src/session.h src/store_io.c src/store_io.h src/store_status.h src/game.c src/game.h src/i18n.h

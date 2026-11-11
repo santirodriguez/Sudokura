@@ -2,6 +2,8 @@
 
 Status (2026-11-04): v1.4.0 implementation, signing and exact-source seven-file release-candidate bundle verified by cross-platform CI. This is a dated acceptance record, not a live publication indicator; see [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for current public availability. F-Droid and Google Play are separate distribution channels.
 Reviewed: 2026-11-06 (unified-design screenshot/copy amendment; earlier release evidence remains dated).
+
+**Later factual milestone (2026-11-10):** The first public Android release, 1.4.0/code 1, is already available on GitHub. An internal original-signed 1.4.1/code 2 APK was built from the release branch and the maintainer confirmed installing it directly over the public 1.4.0 without uninstalling, with prior saved games retained. Actual 16 KiB ARM64 page-size runtime, complete TalkBack navigation and external store acceptance remain unverified. This dated milestone does not say whether 1.4.1 has since been published; follow [GitHub Releases](https://github.com/santirodriguez/Sudokura/releases) for live availability. Older planning language below remains historical.
 Published baseline at the start of v1.4.0 work: `f7e8acb4a2a3fdfed9267d8862e8b30057710d7a` (`main` at the time and published tag `v1.3.9`). This is historical provenance, not a claim about the current release.
 Implementation specification: [v1.4.0 blueprint](V1.4.0_BLUEPRINT.md). Completed prototype contract: [v1.3.9 blueprint](V1.3.9_BLUEPRINT.md).
 Historical v1.3.8 specification: [v1.3.8 blueprint](V1.3.8_BLUEPRINT.md), originally based on v1.3.7 `483edc8ea3f93698f7781e7fe933a9d996f93fdf`.

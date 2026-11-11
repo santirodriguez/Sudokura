@@ -1,0 +1,2 @@
+# Keep the vendored license bytes identical on Windows and Unix package builders.
+assets/flags/LICENSE-MIT.txt text eol=lf

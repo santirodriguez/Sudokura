@@ -2,13 +2,21 @@
 
 A real Sudoku board is a better introduction than a wall of technical details. These genuine captures are kept with their release history so you know what you're looking at.
 
-[Back to Sudokura](../../README.md) · [What's new in 1.4.0](../RELEASE_NOTES_1.4.0.md)
+[Back to Sudokura](../../README.md) · [What's new in 1.4.1](../RELEASE_NOTES_1.4.1.md) · [1.4.0 historical notes](../RELEASE_NOTES_1.4.0.md)
+
+## Current visual reference for 1.4.1
+
+Sudokura 1.4.1 improves saved-game recovery and update safety without redesigning the pictured interface. The approved desktop image is reused **byte-for-byte** from the authentic 1.4.0 capture as `sudokura-v1.4.1.png`; it is a canonical reference for 1.4.1, **not a newly captured 1.4.1 screenshot**. The six genuine English Android phone screenshots below also remain unchanged from 1.4.0.
+
+### Current desktop gameplay
+
+[![Authentic 1.4.0 Classic desktop gameplay, reused unchanged as the 1.4.1 visual reference](sudokura-v1.4.1.png)](sudokura-v1.4.1.png)
 
 ## Sudokura v1.4.0
 
 ### Desktop gameplay with the unified design
 
-[![Sudokura 1.4.0 Classic Linux gameplay with the unified design, real entries, pencil note, number palette and Save](sudokura-v1.4.0.png)](sudokura-v1.4.0.png)
+[Open the original, unchanged 1.4.0 desktop capture](sudokura-v1.4.0.png)
 
 - **`sudokura-v1.4.0.png`:** a new native 1024 × 720 capture of real Classic gameplay from the 1.4.0 Linux AppImage with the unified interface, entered numbers, a pencil note, and the actual gameplay controls. This is not a generated mockup or an Android screen.
 - Six matching **Android phone screenshots** in the canonical [Fastlane source](../../fastlane/metadata/android/en-US/images/phoneScreenshots/) were captured on a disposable x86_64 Android emulator from source-equivalent 1.4.0 UI, in English. The Android arm64 release-signing, device-runtime and store approval gates are independent. Spanish and Catalan phone captures have not been claimed.
